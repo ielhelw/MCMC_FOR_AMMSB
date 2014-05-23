@@ -10,7 +10,7 @@ def process():
     # id_to_title_pair stores the attribute for each node. i.e title, name. etc
     # i.e {0: "WU, C", 1 :CHUA, L"}
     id_to_title_pair = {}               
-    tree = ET.parse("/home/liwenzhe/workspace/SGRLDForMMSB/datasets/netscience.xml")
+    tree = ET.parse("datasets/netscience.xml")
     for node in tree.iter("node"):
         attrs = node.attrib
         id_to_title_pair[attrs['id']] = attrs['title']
