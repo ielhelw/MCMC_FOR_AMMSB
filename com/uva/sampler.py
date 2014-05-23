@@ -128,14 +128,19 @@ class Sampler(object):
                 #print "alpha is" + str(self.pi[0])
             
             mini_batch = self.sample_mini_batch(self.mini_batch_size, sample_strategy)
+            nodes_in_batch = self.nodes_in_batch(mini_batch)
+            Zs = {}
             # iterate through each node in the mini batch. 
-            for node in self.nodes_in_batch(mini_batch):
+            for node in nodes_in_batch:
                 # sample a mini-batch of neighbors. 
                 neighborhood_nodes = self.sample_neighbor_nodes(self.num_node_sample, node)
                 # sample latent variables z_ab for each pair of nodes
                 z = self.sample_latent_vars(node, neighborhood_nodes)
+                Zs[node] = z
+            # update pi
+            for node in nodes_in_batch:
                 # update \phi and \pi. 
-                self.update_pi_for_node(node, z, len(neighborhood_nodes))
+                self.update_pi_for_node(node, Zs[node], len(neighborhood_nodes))
             
             # update \theta and \beta 
             self.update_beta(mini_batch)
