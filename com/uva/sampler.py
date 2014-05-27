@@ -6,6 +6,7 @@ import copy
 from sets import Set
 import cProfile, pstats, StringIO
 from com.uva.sample_latent_vars import sample_z_ab_from_edge
+from nl.vu.cs import clsampler
 
 
 class Sampler(object):
@@ -99,6 +100,14 @@ class Sampler(object):
         self.train_link_map = {}    # For each node, we store all the neighborhood nodes. 
         
         self.init_train_link_map()
+
+        # construct Cl sampler with graph info
+        self.clsampler = clsampler.ClSampler(self.K, self.N,
+                    len(self.network.edges_set),
+                    self.train_link_map,# contains all links, non removed yet
+                    self.mini_batch_size,
+                    self.num_node_sample)
+
         self.init_hold_out_set()
         self.init_test_set()
      
@@ -135,8 +144,12 @@ class Sampler(object):
             for node in nodes_in_batch:
                 # sample a mini-batch of neighbors. 
                 neighborhood_nodes[node] = self.sample_neighbor_nodes(self.num_node_sample, node)
+                self.clsampler.update_node_neighbors(node, list(neighborhood_nodes[node]))
                 # sample latent variables z_ab for each pair of nodes
                 Zs[node] = self.sample_latent_vars(node, neighborhood_nodes[node])
+            Zs2 = self.clsampler.sample_latent_vars(list(nodes_in_batch), self.pi, self.beta, np.float64(self.epsilon))
+            for node in nodes_in_batch:
+                np.testing.assert_equal(Zs[node], Zs2[node], 'Z vector mismatch: node %d' % node)
             # update pi
             for node in nodes_in_batch:
                 # update \phi and \pi. 
@@ -146,7 +159,8 @@ class Sampler(object):
             self.update_beta(mini_batch)
                    
             self.step_count += 1
-            
+            if (self.step_count == 10): break # TODO: remove
+
     def sample_mini_batch(self, mini_batch_size, sample_strategy):
         '''
         sample mini-batch of samples from the whole training set
