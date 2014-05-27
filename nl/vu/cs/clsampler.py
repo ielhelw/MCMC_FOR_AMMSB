@@ -6,12 +6,15 @@ class ClSampler(object):
     def __init__(self, K, num_nodes, num_edges, link_map, batch_size, sample_size):
         sample_size += 1
         self.K = K
+        self.batch_size = batch_size
         self.ctx = cl.create_some_context()
+        print self.ctx.devices
+        #self.ctx = cl.Context(dev_type=cl.device_type.GPU)
         self.queue = cl.CommandQueue(self.ctx)
         self._init_graph(num_nodes, num_edges, link_map)
         # create grid for all num_nodes (not batch_size) so mapping of nodeId works directly
         self.np_sample_neighbor_nodes = np.empty((num_nodes, sample_size), dtype=np.int32)
-        self.np_Zs = np.empty((num_nodes, self.K), dtype=np.int32)
+        self.np_Zs = np.empty((num_nodes, self.K), dtype=np.float64)
         #
         self.cl_sample_neighbor_nodes = cl.Buffer(self.ctx, cl.mem_flags.READ_WRITE, size=self.np_sample_neighbor_nodes.nbytes)
         self.cl_Zs = cl.Buffer(self.ctx, cl.mem_flags.READ_WRITE, size=self.np_Zs.nbytes);
@@ -21,9 +24,11 @@ class ClSampler(object):
         gopts = ['-IOpenCL/include']
         sampler_opts = gopts + ['-DK=%d' % self.K, '-DNEIGHBOR_SAMPLE_SIZE=%d' % (sample_size)]
         self.gprog = cl.Program(self.ctx, ''.join(open('OpenCL/graph.cl', 'r').readlines())).build(options=gopts)
+        print 'DONE'
         self.prog = cl.Program(self.ctx, ''.join(open('OpenCL/sampler.cl', 'r').readlines())).build(options=sampler_opts)
         self.gprog.graph_init(self.queue, (1, 1), None, self.cl_graph, self.cl_edges, self.cl_node_edges)
         self.queue.finish()
+        print 'DONE'
 
     def _init_graph(self, num_nodes, num_edges, link_map):
         self.np_edges = np.empty(num_edges*2, dtype=np.int32)
@@ -47,7 +52,7 @@ class ClSampler(object):
         cl.enqueue_copy(self.queue, self.cl_nodes, np_nodes)
         cl.enqueue_copy(self.queue, self.cl_pi, pi)
         cl.enqueue_copy(self.queue, self.cl_beta, beta.copy())
-        self.prog.sample_latent_vars(self.queue, (1, 1), None,
+        self.prog.sample_latent_vars(self.queue, (len(nodes), 1), None,
                                     self.cl_graph,
                                     self.cl_nodes,
                                     np.int32(len(nodes)),

@@ -8,12 +8,14 @@
 #error "Need definition of NEIGHBOR_SAMPLE_SIZE"
 #endif
 
+#pragma OPENCL EXTENSION cl_khr_fp64: enable
+
 // adapted from sample_latent_vars.pyx
 int sample_z_ab_from_edge(
 		global double* pi_a,
 		global double *pi_b,
 		global double *beta,
-		double epsilon, int y) {
+		double epsilon, double y) {
 	double p[K];
 	double bounds[K];
 	double location = 0;
@@ -38,7 +40,7 @@ inline void sample_latent_vars_of(
 		global double *pi,
 		global double *beta,
 		double epsilon,
-		global int *z /* K elements */) {
+		global double *z /* K elements */) {
 	for (int i = 0; i < K; ++i) z[i] = 0;
 	for (int i = 0; i < NEIGHBOR_SAMPLE_SIZE; ++i) {
 		int neighbor = neighbor_nodes[node * NEIGHBOR_SAMPLE_SIZE + i];
@@ -58,7 +60,7 @@ kernel void sample_latent_vars(
 		global double *pi,// (#total_nodes, K)
 		global double *beta,// (#K)
 		double epsilon,
-		global int *Z// (#total_nodes, K)
+		global double *Z// (#total_nodes, K)
 ) {
 	for (int i = get_global_id(0); i < N; i += get_global_size(0)) {
 		sample_latent_vars_of(

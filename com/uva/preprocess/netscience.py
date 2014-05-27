@@ -11,7 +11,7 @@ def process():
     # i.e {0: "WU, C", 1 :CHUA, L"}
     id_to_title_pair = {}               
     tree = ET.parse("datasets/netscience.xml")
-    for node in tree.iter("node"):
+    for node in tree.getiterator("node"):
         attrs = node.attrib
         id_to_title_pair[attrs['id']] = attrs['title']
     
@@ -19,7 +19,7 @@ def process():
     D = len(id_to_title_pair)           
     # iterate every link in the graph, and store those links into Set<Edge> object. 
     edges_set = Set()
-    for link in tree.iter("link"):
+    for link in tree.getiterator("link"):
         attrs = link.attrib
         edges_set.add(Edge(int(attrs['target']), int(attrs['source'])))
       

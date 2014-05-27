@@ -149,7 +149,8 @@ class Sampler(object):
                 Zs[node] = self.sample_latent_vars(node, neighborhood_nodes[node])
             Zs2 = self.clsampler.sample_latent_vars(list(nodes_in_batch), self.pi, self.beta, np.float64(self.epsilon))
             for node in nodes_in_batch:
-                np.testing.assert_equal(Zs[node], Zs2[node], 'Z vector mismatch: node %d' % node)
+                np.testing.assert_array_almost_equal(Zs[node], Zs2[node], decimal=4, err_msg='Z vector mismatch: node %d' % node)
+#                Zs[node] = Zs2[node]
             # update pi
             for node in nodes_in_batch:
                 # update \phi and \pi. 
