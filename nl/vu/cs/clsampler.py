@@ -1,5 +1,5 @@
 import numpy as np
-import pyopencl as cl
+import opencl4py as cl
 
 class ClSampler(object):
     
@@ -7,31 +7,35 @@ class ClSampler(object):
         sample_size += 1
         self.K = K
         self.batch_size = batch_size
-        self.ctx = cl.create_some_context()
+        self.ctx = cl.Platforms().create_some_context()
         self.max_nodes_in_batch = 2*batch_size
-        print self.ctx.devices
-        #self.ctx = cl.Context(dev_type=cl.device_type.GPU)
-        self.queue = cl.CommandQueue(self.ctx)
+        print self.ctx.devices[0].platform.name, ' | ', self.ctx.devices[0].name
+        self.queue = self.ctx.create_queue(self.ctx.devices[0])
         self._init_graph(num_nodes, num_edges, link_map)
         # create grid for all num_nodes (not batch_size) so mapping of nodeId works directly
         self.np_sample_neighbor_nodes = np.empty((num_nodes, sample_size), dtype=np.int32)
         self.np_Zs = np.empty((num_nodes, self.K), dtype=np.float64)
         #
-        self.cl_sample_neighbor_nodes = cl.Buffer(self.ctx, cl.mem_flags.READ_WRITE, size=self.np_sample_neighbor_nodes.nbytes)
-        self.cl_Zs = cl.Buffer(self.ctx, cl.mem_flags.READ_WRITE, size=self.np_Zs.nbytes);
-        self.cl_nodes = cl.Buffer(self.ctx, cl.mem_flags.READ_ONLY, size=self.max_nodes_in_batch*4) # at most: 2 unique nodes per edge, 4-bytes each
-        self.cl_pi = cl.Buffer(self.ctx, cl.mem_flags.READ_WRITE, size=num_nodes*self.K*8)# (N, K) double
-        self.cl_beta = cl.Buffer(self.ctx, cl.mem_flags.READ_WRITE, size=self.K*8) # (K) double
-        self.cl_p = cl.Buffer(self.ctx, cl.mem_flags.READ_WRITE, size=self.max_nodes_in_batch*self.K*8) # at most: 2 unique nodes per edge, K*8-bytes each
-        self.cl_bounds = cl.Buffer(self.ctx, cl.mem_flags.READ_WRITE, size=self.max_nodes_in_batch*self.K*8)
+        self.cl_sample_neighbor_nodes = self.ctx.create_buffer(cl.CL_MEM_READ_WRITE, size=self.np_sample_neighbor_nodes.nbytes)
+        self.cl_Zs = self.ctx.create_buffer(cl.CL_MEM_READ_WRITE, size=self.np_Zs.nbytes);
+        self.cl_nodes = self.ctx.create_buffer(cl.CL_MEM_READ_ONLY, size=self.max_nodes_in_batch*4) # at most: 2 unique nodes per edge, 4-bytes each
+        self.cl_pi = self.ctx.create_buffer(cl.CL_MEM_READ_WRITE, size=num_nodes*self.K*8)# (N, K) double
+        self.cl_beta = self.ctx.create_buffer(cl.CL_MEM_READ_WRITE, size=self.K*8) # (K) double
+        self.cl_p = self.ctx.create_buffer(cl.CL_MEM_READ_WRITE, size=self.max_nodes_in_batch*self.K*8) # at most: 2 unique nodes per edge, K*8-bytes each
+        self.cl_bounds = self.ctx.create_buffer(cl.CL_MEM_READ_WRITE, size=self.max_nodes_in_batch*self.K*8)
         gopts = ['-IOpenCL/include']
         sampler_opts = gopts + ['-DK=%d' % self.K, '-DNEIGHBOR_SAMPLE_SIZE=%d' % (sample_size)]
-        self.gprog = cl.Program(self.ctx, ''.join(open('OpenCL/graph.cl', 'r').readlines())).build(options=gopts)
+        self.gprog = self.ctx.create_program(''.join(open('OpenCL/graph.cl', 'r').readlines()), options=' '.join(gopts))
+        self.graph_init_kernel = self.gprog.get_kernel('graph_init')
         print 'DONE'
-        self.prog = cl.Program(self.ctx, ''.join(open('OpenCL/sampler.cl', 'r').readlines())).build(options=sampler_opts)
-        self.gprog.graph_init(self.queue, (1, 1), None, self.cl_graph, self.cl_edges, self.cl_node_edges)
+        self.prog = self.ctx.create_program(''.join(open('OpenCL/sampler.cl', 'r').readlines()), options=' '.join(sampler_opts))
+        self.sample_latent_vars_kernel = self.prog.get_kernel('sample_latent_vars')
+        self.graph_init_kernel.set_arg(0, self.cl_graph)
+        self.graph_init_kernel.set_arg(1, self.cl_edges)
+        self.graph_init_kernel.set_arg(2, self.cl_node_edges)
+        self.queue.execute_kernel(self.graph_init_kernel, (1,), (1,))
         self.queue.finish()
-        print self.prog.sample_latent_vars.get_work_group_info(cl.kernel_work_group_info.PRIVATE_MEM_SIZE, self.ctx.devices[0])
+#        print self.prog.sample_latent_vars.get_work_group_info(cl.kernel_work_group_info.PRIVATE_MEM_SIZE, self.ctx.devices[0])
         print 'DONE'
 
     def _init_graph(self, num_nodes, num_edges, link_map):
@@ -44,9 +48,9 @@ class ClSampler(object):
                 self.np_edges[offset] = d
                 offset += 1
         # create CL buffers for graph
-        self.cl_graph = cl.Buffer(self.ctx, cl.mem_flags.READ_WRITE, size=2*64/8) # 2 pointers, each is at most 64-bits        
-        self.cl_edges = cl.Buffer(self.ctx, cl.mem_flags.READ_ONLY|cl.mem_flags.COPY_HOST_PTR, hostbuf=self.np_edges)
-        self.cl_node_edges = cl.Buffer(self.ctx, cl.mem_flags.READ_ONLY|cl.mem_flags.COPY_HOST_PTR, hostbuf=self.np_node_edges)
+        self.cl_graph = self.ctx.create_buffer(cl.CL_MEM_READ_WRITE, size=2*64/8) # 2 pointers, each is at most 64-bits
+        self.cl_edges = self.ctx.create_buffer(cl.CL_MEM_READ_ONLY|cl.CL_MEM_COPY_HOST_PTR, host_array=self.np_edges)
+        self.cl_node_edges = self.ctx.create_buffer(cl.CL_MEM_READ_ONLY|cl.CL_MEM_COPY_HOST_PTR, host_array=self.np_node_edges)
 
     def update_node_neighbors(self, nodeId, neighbor_nodes):
         self.np_sample_neighbor_nodes[nodeId] = neighbor_nodes
@@ -58,20 +62,20 @@ class ClSampler(object):
             g_items += l_items - (g_items % l_items)
         print g_items, l_items
         np_nodes = np.array(nodes, dtype=np.int32)
-        cl.enqueue_copy(self.queue, self.cl_nodes, np_nodes)
-        cl.enqueue_copy(self.queue, self.cl_pi, pi)
-        cl.enqueue_copy(self.queue, self.cl_beta, beta.copy())
-        self.prog.sample_latent_vars(self.queue, (g_items, 1, 1), (l_items, 1, 1),
-                                    self.cl_graph,
-                                    self.cl_nodes,
-                                    np.int32(len(nodes)),
-                                    self.cl_sample_neighbor_nodes,
-                                    self.cl_pi,
-                                    self.cl_beta,
-                                    np.float64(epsilon),
-                                    self.cl_Zs,
-                                    self.cl_p,
-                                    self.cl_bounds)
+        self.queue.write_buffer(self.cl_nodes, np_nodes)
+        self.queue.write_buffer(self.cl_pi, pi)
+        self.queue.write_buffer(self.cl_beta, beta.copy())
+        self.sample_latent_vars_kernel.set_arg(0, self.cl_graph)
+        self.sample_latent_vars_kernel.set_arg(1, self.cl_nodes)
+        self.sample_latent_vars_kernel.set_arg(2, np.array([len(nodes)], dtype=np.int32)[0:1])
+        self.sample_latent_vars_kernel.set_arg(3, self.cl_sample_neighbor_nodes)
+        self.sample_latent_vars_kernel.set_arg(4, self.cl_pi)
+        self.sample_latent_vars_kernel.set_arg(5, self.cl_beta)
+        self.sample_latent_vars_kernel.set_arg(6, np.array([epsilon], dtype=np.float64)[0:1])
+        self.sample_latent_vars_kernel.set_arg(7, self.cl_Zs)
+        self.sample_latent_vars_kernel.set_arg(8, self.cl_p)
+        self.sample_latent_vars_kernel.set_arg(9, self.cl_bounds)
+        self.queue.execute_kernel(self.sample_latent_vars_kernel, (g_items,), (l_items,))
         self.queue.finish()
-        cl.enqueue_copy(self.queue, self.np_Zs, self.cl_Zs)
+        self.queue.read_buffer(self.cl_Zs, self.np_Zs)
         return self.np_Zs.copy()
