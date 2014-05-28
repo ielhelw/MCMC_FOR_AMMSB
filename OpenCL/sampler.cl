@@ -30,6 +30,9 @@ int sample_z_ab_from_edge(
 	for (int i = 0; i < K; ++i) {
 		if (location <= bounds[i]) return i;
 	}
+#if 0
+	printf((__constant char*)"AAAAAAAAAAAAAAAAAAAAAAAAAAAH\n");
+#endif
 	return -1;
 }
 
@@ -45,10 +48,10 @@ inline void sample_latent_vars_of(
 		global double *bounds) {
 	for (int i = 0; i < K; ++i) z[i] = 0;
 	for (int i = 0; i < NEIGHBOR_SAMPLE_SIZE; ++i) {
-		int neighbor = neighbor_nodes[node * NEIGHBOR_SAMPLE_SIZE + i];
+		int neighbor = neighbor_nodes[i];
 		int y_ab = graph_has_peer(g, node, neighbor);
 		int z_ab = sample_z_ab_from_edge(
-				&pi[node * K], &pi[neighbor * K],
+				pi + node * K, pi + neighbor * K,
 				beta, epsilon, y_ab, p, bounds);
 		z[z_ab] += 1;
 	}
@@ -72,10 +75,11 @@ kernel void sample_latent_vars(
 	global double *_b = bounds + gid * K;
 
 	for (int i = gid; i < N; i += gsize) {
+		int node = nodes[i];
 		sample_latent_vars_of(
-				nodes[i],
+				node,
 				g,
-				neighbor_nodes,
+				neighbor_nodes + node * NEIGHBOR_SAMPLE_SIZE,
 				pi,
 				beta,
 				epsilon,

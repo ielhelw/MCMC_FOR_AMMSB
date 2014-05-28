@@ -52,11 +52,16 @@ class ClSampler(object):
         self.np_sample_neighbor_nodes[nodeId] = neighbor_nodes
 
     def sample_latent_vars(self, nodes, pi, beta, epsilon):
+        g_items = len(nodes)
+        l_items = 32
+        if g_items % l_items:
+            g_items += l_items - (g_items % l_items)
+        print g_items, l_items
         np_nodes = np.array(nodes, dtype=np.int32)
         cl.enqueue_copy(self.queue, self.cl_nodes, np_nodes)
         cl.enqueue_copy(self.queue, self.cl_pi, pi)
         cl.enqueue_copy(self.queue, self.cl_beta, beta.copy())
-        self.prog.sample_latent_vars(self.queue, (len(nodes), 1), None,
+        self.prog.sample_latent_vars(self.queue, (g_items, 1, 1), (l_items, 1, 1),
                                     self.cl_graph,
                                     self.cl_nodes,
                                     np.int32(len(nodes)),
