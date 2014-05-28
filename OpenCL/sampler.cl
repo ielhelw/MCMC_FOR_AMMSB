@@ -10,6 +10,8 @@
 
 #pragma OPENCL EXTENSION cl_khr_fp64: enable
 
+#if 0
+
 // adapted from sample_latent_vars.pyx
 int sample_z_ab_from_edge(
 		global double* pi_a,
@@ -30,13 +32,34 @@ int sample_z_ab_from_edge(
 	for (int i = 0; i < K; ++i) {
 		if (location <= bounds[i]) return i;
 	}
-#if 0
-	printf((__constant char*)"AAAAAAAAAAAAAAAAAAAAAAAAAAAH\n");
-#endif
 	return -1;
 }
 
-inline void sample_latent_vars_of(
+#else
+
+// merged version
+int sample_z_ab_from_edge(
+		global double* pi_a,
+		global double *pi_b,
+		global double *beta,
+		double epsilon, double y,
+		global double *p,
+		global double *bounds) {
+	double location = 0;
+	double bound = pow(beta[0], y) * pow(1-beta[0], 1-y) * pi_a[0] * pi_b[0]
+		+ pow(epsilon, y) * pow(1-epsilon, 1-y) * pi_a[0] * (1-pi_b[0]);
+	if (location <= bound) return 0;
+	for (int i = 1; i < K; ++i) {
+		bound += pow(beta[i], y) * pow(1-beta[i], 1-y) * pi_a[i] * pi_b[i]
+		+ pow(epsilon, y) * pow(1-epsilon, 1-y) * pi_a[i] * (1-pi_b[i]);
+		if (location <= bound) return i;
+	}
+	return -1;
+}
+
+#endif
+
+void sample_latent_vars_of(
 		int node,
 		global Graph *g,
 		global int* neighbor_nodes,
