@@ -3,7 +3,6 @@ from com.uva.edge import Edge
 import math
 import numpy as np
 import copy
-from sets import Set
 import cProfile, pstats, StringIO
 from com.uva.sample_latent_vars import sample_z_ab_from_edge
 from nl.vu.cs import clsampler
@@ -186,7 +185,7 @@ class Sampler(object):
         depends on its neighborhood nodes, we do sub-sampling. 
         '''    
         p = sample_size
-        neighborhood_nodes = Set()
+        neighborhood_nodes = set()
         while p > 0:
             nodeList = random.sample(list(xrange(self.N)), sample_size * 2)
             for neighborId in nodeList:
@@ -209,7 +208,7 @@ class Sampler(object):
         '''
         get all the nodes in the mini_batch. avoid duplicate. 
         '''
-        node_set = Set()
+        node_set = set()
         for edge in mini_batch:
             node_set.add(edge.first)
             node_set.add(edge.second)
@@ -437,12 +436,12 @@ class Sampler(object):
     def init_train_link_map(self):
         '''
         create a set for each node, which contains list of 
-        neighborhood nodes. i.e {0: Set[2,3,4], 1: Set[3,5,6]...}
+        neighborhood nodes. i.e {0: set[2,3,4], 1: set[3,5,6]...}
         This is used for sub-sampling 
         in the later. 
         '''  
         for i in range(0, self.N):
-            self.train_link_map[i] = Set()
+            self.train_link_map[i] = set()
         
         for edge in self.network.edges_set:
             self.train_link_map[edge.first].add(edge.second)
@@ -544,7 +543,7 @@ class Sampler(object):
         stops until we get enough (mini_batch_size) edges. 
         '''
         p = mini_batch_size
-        mini_batch_set = Set()     # list of samples in the mini-batch 
+        mini_batch_set = set()     # list of samples in the mini-batch 
         
         # iterate until we get $p$ valid edges. 
         while p > 0:
@@ -583,7 +582,7 @@ class Sampler(object):
         # decide to sample links or non-links
         flag = random.randint(0,1)      # flag=0: non-link edges  flag=1: link edges
         
-        mini_batch_set = Set()
+        mini_batch_set = set()
         
         if flag == 0:
             # this is approximation, since the size of self.train_link_map[nodeId]

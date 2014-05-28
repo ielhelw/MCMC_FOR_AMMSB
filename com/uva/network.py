@@ -1,7 +1,6 @@
 from com.uva.preprocess import netscience
 from com.uva.preprocess import relativity
 import random
-from sets import Set
 from random import shuffle
 from itertools import islice
 

@@ -1,5 +1,4 @@
 import xml.etree.ElementTree as ET
-from sets import Set
 from com.uva.edge import Edge
  
 def process():
@@ -18,7 +17,7 @@ def process():
     # D = total number of nodes. 
     D = len(id_to_title_pair)           
     # iterate every link in the graph, and store those links into Set<Edge> object. 
-    edges_set = Set()
+    edges_set = set()
     for link in tree.getiterator("link"):
         attrs = link.attrib
         edges_set.add(Edge(int(attrs['target']), int(attrs['source'])))
