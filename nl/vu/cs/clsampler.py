@@ -22,8 +22,8 @@ class ClSampler(object):
         self.cl_nodes = cl.Buffer(self.ctx, cl.mem_flags.READ_ONLY, size=self.max_nodes_in_batch*4) # at most: 2 unique nodes per edge, 4-bytes each
         self.cl_pi = cl.Buffer(self.ctx, cl.mem_flags.READ_WRITE, size=num_nodes*self.K*8)# (N, K) double
         self.cl_beta = cl.Buffer(self.ctx, cl.mem_flags.READ_WRITE, size=self.K*8) # (K) double
-        self.cl_p = cl.Buffer(self.ctx, cl.mem_flags.READ_WRITE, size=self.max_nodes_in_batch*8) # at most: 2 unique nodes per edge, 8-bytes each
-        self.cl_bounds = cl.Buffer(self.ctx, cl.mem_flags.READ_WRITE, size=self.max_nodes_in_batch*8)
+        self.cl_p = cl.Buffer(self.ctx, cl.mem_flags.READ_WRITE, size=self.max_nodes_in_batch*self.K*8) # at most: 2 unique nodes per edge, K*8-bytes each
+        self.cl_bounds = cl.Buffer(self.ctx, cl.mem_flags.READ_WRITE, size=self.max_nodes_in_batch*self.K*8)
         gopts = ['-IOpenCL/include']
         sampler_opts = gopts + ['-DK=%d' % self.K, '-DNEIGHBOR_SAMPLE_SIZE=%d' % (sample_size)]
         self.gprog = cl.Program(self.ctx, ''.join(open('OpenCL/graph.cl', 'r').readlines())).build(options=gopts)
