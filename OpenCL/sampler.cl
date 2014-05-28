@@ -15,9 +15,9 @@ int sample_z_ab_from_edge(
 		global double* pi_a,
 		global double *pi_b,
 		global double *beta,
-		double epsilon, double y) {
-	double p[K];
-	double bounds[K];
+		double epsilon, double y,
+		global double *p,
+		global double *bounds) {
 	double location = 0;
 	for (int i = 0; i < K; ++i) {
 		p[i] = pow(beta[i], y) * pow(1-beta[i], 1-y) * pi_a[i] * pi_b[i]
@@ -40,14 +40,16 @@ inline void sample_latent_vars_of(
 		global double *pi,
 		global double *beta,
 		double epsilon,
-		global double *z /* K elements */) {
+		global double *z /* K elements */,
+		global double *p,
+		global double *bounds) {
 	for (int i = 0; i < K; ++i) z[i] = 0;
 	for (int i = 0; i < NEIGHBOR_SAMPLE_SIZE; ++i) {
 		int neighbor = neighbor_nodes[node * NEIGHBOR_SAMPLE_SIZE + i];
 		int y_ab = graph_has_peer(g, node, neighbor);
 		int z_ab = sample_z_ab_from_edge(
 				&pi[node * K], &pi[neighbor * K],
-				beta, epsilon, y_ab);
+				beta, epsilon, y_ab, p, bounds);
 		z[z_ab] += 1;
 	}
 }
@@ -60,9 +62,16 @@ kernel void sample_latent_vars(
 		global double *pi,// (#total_nodes, K)
 		global double *beta,// (#K)
 		double epsilon,
-		global double *Z// (#total_nodes, K)
+		global double *Z,// (#total_nodes, K)
+		global double *p,// (#nodes, K)
+		global double *bounds// (#nodes, K)
 ) {
-	for (int i = get_global_id(0); i < N; i += get_global_size(0)) {
+	size_t gid = get_global_id(0);
+	size_t gsize = get_global_size(0);
+	global double *_p = p + gid * K;
+	global double *_b = bounds + gid * K;
+
+	for (int i = gid; i < N; i += gsize) {
 		sample_latent_vars_of(
 				nodes[i],
 				g,
@@ -70,6 +79,7 @@ kernel void sample_latent_vars(
 				pi,
 				beta,
 				epsilon,
-				Z + nodes[i] * K);
+				Z + nodes[i] * K,
+				_p, _b);
 	}
 }

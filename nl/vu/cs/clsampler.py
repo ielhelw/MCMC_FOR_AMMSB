@@ -8,6 +8,7 @@ class ClSampler(object):
         self.K = K
         self.batch_size = batch_size
         self.ctx = cl.create_some_context()
+        self.max_nodes_in_batch = 2*batch_size
         print self.ctx.devices
         #self.ctx = cl.Context(dev_type=cl.device_type.GPU)
         self.queue = cl.CommandQueue(self.ctx)
@@ -18,9 +19,11 @@ class ClSampler(object):
         #
         self.cl_sample_neighbor_nodes = cl.Buffer(self.ctx, cl.mem_flags.READ_WRITE, size=self.np_sample_neighbor_nodes.nbytes)
         self.cl_Zs = cl.Buffer(self.ctx, cl.mem_flags.READ_WRITE, size=self.np_Zs.nbytes);
-        self.cl_nodes = cl.Buffer(self.ctx, cl.mem_flags.READ_ONLY, size=2*batch_size*4) # at most: 2 unique nodes per edge, 4-bytes each
+        self.cl_nodes = cl.Buffer(self.ctx, cl.mem_flags.READ_ONLY, size=self.max_nodes_in_batch*4) # at most: 2 unique nodes per edge, 4-bytes each
         self.cl_pi = cl.Buffer(self.ctx, cl.mem_flags.READ_WRITE, size=num_nodes*self.K*8)# (N, K) double
         self.cl_beta = cl.Buffer(self.ctx, cl.mem_flags.READ_WRITE, size=self.K*8) # (K) double
+        self.cl_p = cl.Buffer(self.ctx, cl.mem_flags.READ_WRITE, size=self.max_nodes_in_batch*8) # at most: 2 unique nodes per edge, 8-bytes each
+        self.cl_bounds = cl.Buffer(self.ctx, cl.mem_flags.READ_WRITE, size=self.max_nodes_in_batch*8)
         gopts = ['-IOpenCL/include']
         sampler_opts = gopts + ['-DK=%d' % self.K, '-DNEIGHBOR_SAMPLE_SIZE=%d' % (sample_size)]
         self.gprog = cl.Program(self.ctx, ''.join(open('OpenCL/graph.cl', 'r').readlines())).build(options=gopts)
@@ -28,6 +31,7 @@ class ClSampler(object):
         self.prog = cl.Program(self.ctx, ''.join(open('OpenCL/sampler.cl', 'r').readlines())).build(options=sampler_opts)
         self.gprog.graph_init(self.queue, (1, 1), None, self.cl_graph, self.cl_edges, self.cl_node_edges)
         self.queue.finish()
+        print self.prog.sample_latent_vars.get_work_group_info(cl.kernel_work_group_info.PRIVATE_MEM_SIZE, self.ctx.devices[0])
         print 'DONE'
 
     def _init_graph(self, num_nodes, num_edges, link_map):
@@ -60,7 +64,9 @@ class ClSampler(object):
                                     self.cl_pi,
                                     self.cl_beta,
                                     np.float64(epsilon),
-                                    self.cl_Zs)
+                                    self.cl_Zs,
+                                    self.cl_p,
+                                    self.cl_bounds)
         self.queue.finish()
         cl.enqueue_copy(self.queue, self.np_Zs, self.cl_Zs)
         return self.np_Zs.copy()
