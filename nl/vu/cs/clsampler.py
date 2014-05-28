@@ -25,10 +25,9 @@ class ClSampler(object):
         self.cl_bounds = self.ctx.create_buffer(cl.CL_MEM_READ_WRITE, size=self.max_nodes_in_batch*self.K*4)
         gopts = ['-IOpenCL/include']
         sampler_opts = gopts + ['-DK=%d' % self.K, '-DNEIGHBOR_SAMPLE_SIZE=%d' % (sample_size)]
-#        self.gprog = self.ctx.create_program(''.join(open('OpenCL/graph.cl', 'r').readlines()), options=' '.join(gopts))
-#        self.graph_init_kernel = self.gprog.get_kernel('graph_init')
+        self.gprog = self.ctx.create_program(''.join(open('OpenCL/graph.cl', 'r').readlines()), options=' '.join(gopts))
+        self.graph_init_kernel = self.gprog.get_kernel('graph_init')
         self.prog = self.ctx.create_program(''.join(open('OpenCL/sampler.cl', 'r').readlines()), options=' '.join(sampler_opts))
-        self.graph_init_kernel = self.prog.get_kernel('graph_init')
         self.sample_latent_vars_kernel = self.prog.get_kernel('sample_latent_vars')
         self.graph_init_kernel.set_arg(0, self.cl_graph)
         self.graph_init_kernel.set_arg(1, self.cl_edges)
