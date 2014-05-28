@@ -8,19 +8,17 @@
 #error "Need definition of NEIGHBOR_SAMPLE_SIZE"
 #endif
 
-#pragma OPENCL EXTENSION cl_khr_fp64: enable
-
 #if 0
 
 // adapted from sample_latent_vars.pyx
 int sample_z_ab_from_edge(
-		global double* pi_a,
-		global double *pi_b,
-		global double *beta,
-		double epsilon, double y,
-		global double *p,
-		global double *bounds) {
-	double location = 0;
+		global float* pi_a,
+		global float *pi_b,
+		global float *beta,
+		float epsilon, float y,
+		global float *p,
+		global float *bounds) {
+	float location = 0;
 	for (int i = 0; i < K; ++i) {
 		p[i] = pow(beta[i], y) * pow(1-beta[i], 1-y) * pi_a[i] * pi_b[i]
 		+ pow(epsilon, y) * pow(1-epsilon, 1-y) * pi_a[i] * (1-pi_b[i]);
@@ -39,14 +37,14 @@ int sample_z_ab_from_edge(
 
 // merged version
 int sample_z_ab_from_edge(
-		global double* pi_a,
-		global double *pi_b,
-		global double *beta,
-		double epsilon, double y,
-		global double *p,
-		global double *bounds) {
-	double location = 0;
-	double bound = pow(beta[0], y) * pow(1-beta[0], 1-y) * pi_a[0] * pi_b[0]
+		global float* pi_a,
+		global float *pi_b,
+		global float *beta,
+		float epsilon, float y,
+		global float *p,
+		global float *bounds) {
+	float location = 0;
+	float bound = pow(beta[0], y) * pow(1-beta[0], 1-y) * pi_a[0] * pi_b[0]
 		+ pow(epsilon, y) * pow(1-epsilon, 1-y) * pi_a[0] * (1-pi_b[0]);
 	if (location <= bound) return 0;
 	for (int i = 1; i < K; ++i) {
@@ -63,12 +61,12 @@ void sample_latent_vars_of(
 		int node,
 		global Graph *g,
 		global int* neighbor_nodes,
-		global double *pi,
-		global double *beta,
-		double epsilon,
-		global double *z /* K elements */,
-		global double *p,
-		global double *bounds) {
+		global float *pi,
+		global float *beta,
+		float epsilon,
+		global float *z /* K elements */,
+		global float *p,
+		global float *bounds) {
 	for (int i = 0; i < K; ++i) z[i] = 0;
 	for (int i = 0; i < NEIGHBOR_SAMPLE_SIZE; ++i) {
 		int neighbor = neighbor_nodes[i];
@@ -85,17 +83,17 @@ kernel void sample_latent_vars(
 		global int *nodes,
 		int N, // #nodes
 		global int *neighbor_nodes,// (#total_nodes, NEIGHBOR_SAMPLE_SIZE)
-		global double *pi,// (#total_nodes, K)
-		global double *beta,// (#K)
-		double epsilon,
-		global double *Z,// (#total_nodes, K)
-		global double *p,// (#nodes, K)
-		global double *bounds// (#nodes, K)
+		global float *pi,// (#total_nodes, K)
+		global float *beta,// (#K)
+		float epsilon,
+		global float *Z,// (#total_nodes, K)
+		global float *p,// (#nodes, K)
+		global float *bounds// (#nodes, K)
 ) {
 	size_t gid = get_global_id(0);
 	size_t gsize = get_global_size(0);
-	global double *_p = p + gid * K;
-	global double *_b = bounds + gid * K;
+	global float *_p = p + gid * K;
+	global float *_b = bounds + gid * K;
 
 	for (int i = gid; i < N; i += gsize) {
 		int node = nodes[i];
@@ -109,4 +107,13 @@ kernel void sample_latent_vars(
 				Z + nodes[i] * K,
 				_p, _b);
 	}
+}
+
+// Graph initializer
+kernel void graph_init(
+		global Graph* g,
+		global int* edges,
+		global int2* node_edges) {
+	g->_g.edges = edges;
+	g->_g.node_edges = node_edges;
 }
