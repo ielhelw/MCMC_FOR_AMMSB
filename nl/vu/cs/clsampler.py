@@ -25,6 +25,7 @@ class ClSampler(object):
         self.cl_p = self.ctx.create_buffer(cl.CL_MEM_READ_WRITE, size=self.max_nodes_in_batch*self.K*4) # at most: 2 unique nodes per edge, K*8-bytes each
         self.cl_bounds = self.ctx.create_buffer(cl.CL_MEM_READ_WRITE, size=self.max_nodes_in_batch*self.K*4)
         #
+        self.cl_phi = self.ctx.create_buffer(cl.CL_MEM_READ_WRITE, size=num_nodes*self.K*4)# (N, K) float
         self.cl_noise = self.ctx.create_buffer(cl.CL_MEM_READ_WRITE, size=self.max_nodes_in_batch*self.K*4)
         self.cl_grads = self.ctx.create_buffer(cl.CL_MEM_READ_WRITE, size=self.max_nodes_in_batch*self.K*4)
         
@@ -86,25 +87,27 @@ class ClSampler(object):
         self.queue.read_buffer(self.cl_Zs, self.np_Zs)
         return self.np_Zs
     
-    def update_pi_for_node(self, nodes, alpha, a, b, c, step_count, total_node_count):
+    def update_pi_for_node(self, noise, phi, nodes, alpha, a, b, c, step_count, total_node_count):
         g_items = len(nodes)
         l_items = 32
         if g_items % l_items:
             g_items += l_items - (g_items % l_items)
-        noise = np.random.randn((len(nodes)*self.K)).astype(np.float32)
+#         noise = np.random.randn(len(nodes), self.K).astype(np.float32)
+        self.queue.write_buffer(self.cl_phi, phi.astype(np.float32))
         self.queue.write_buffer(self.cl_noise, noise)
         self.update_pi_kernel.set_arg(0, self.cl_nodes)
         self.update_pi_kernel.set_arg(1, np.array([len(nodes)], dtype=np.int32)[0:1])
         self.update_pi_kernel.set_arg(2, self.cl_pi)
-        self.update_pi_kernel.set_arg(3, self.cl_Zs)
-        self.update_pi_kernel.set_arg(4, self.cl_noise)
-        self.update_pi_kernel.set_arg(5, self.cl_grads)
-        self.update_pi_kernel.set_arg(6, np.array([alpha], dtype=np.float32)[0:1])
-        self.update_pi_kernel.set_arg(7, np.array([a], dtype=np.float32)[0:1])
-        self.update_pi_kernel.set_arg(8, np.array([b], dtype=np.float32)[0:1])
-        self.update_pi_kernel.set_arg(9, np.array([c], dtype=np.float32)[0:1])
-        self.update_pi_kernel.set_arg(10, np.array([step_count], dtype=np.int32)[0:1])
-        self.update_pi_kernel.set_arg(11, np.array([total_node_count], dtype=np.float32)[0:1])
+        self.update_pi_kernel.set_arg(2, self.cl_phi)
+        self.update_pi_kernel.set_arg(4, self.cl_Zs)
+        self.update_pi_kernel.set_arg(5, self.cl_noise)
+        self.update_pi_kernel.set_arg(6, self.cl_grads)
+        self.update_pi_kernel.set_arg(7, np.array([alpha], dtype=np.float32)[0:1])
+        self.update_pi_kernel.set_arg(8, np.array([a], dtype=np.float32)[0:1])
+        self.update_pi_kernel.set_arg(9, np.array([b], dtype=np.float32)[0:1])
+        self.update_pi_kernel.set_arg(10, np.array([c], dtype=np.float32)[0:1])
+        self.update_pi_kernel.set_arg(11, np.array([step_count], dtype=np.int32)[0:1])
+        self.update_pi_kernel.set_arg(12, np.array([total_node_count], dtype=np.float32)[0:1])
         self.queue.execute_kernel(self.sample_latent_vars_kernel, (g_items,), (l_items,))
         self.queue.finish()
         np_pi = np.zeros((self.N, self.K), dtype=np.float32)

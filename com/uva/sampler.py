@@ -46,7 +46,7 @@ class Sampler(object):
             args:       containing priors, control parameters for the model. 
         '''
         
-        self.validate_cl = False
+        self.validate_cl = True
         self.use_cl = True
         if self.validate_cl:
             self.compute_latent_vars = self.verify_cl_latent_vars
@@ -156,15 +156,16 @@ class Sampler(object):
                 neighborhood_nodes[node] = self.sample_neighbor_nodes(self.num_node_sample, node)
             Zs = self.compute_latent_vars(nodes_in_batch, neighborhood_nodes)
             # update pi
-            self.update_pi_for_nodes(nodes_in_batch, neighborhood_nodes, Zs)
+            noise = np.random.randn(len(nodes_in_batch), self.K).astype(np.float32)
+            self.update_pi_for_nodes(nodes_in_batch, neighborhood_nodes, Zs, noise)
             # update \theta and \beta 
             self.update_beta(mini_batch)
             self.step_count += 1
             if (self.step_count == 10): break # TODO: remove
 
-    def update_pi_for_nodes_validate(self, nodes_in_batch, neighborhood_nodes, Zs):
-        self.update_pi_for_nodes_(nodes_in_batch, neighborhood_nodes, Zs)
-        pi_update = self.clsampler.update_pi_for_node(list(nodes_in_batch), self.alpha, self.a, self.b, self.c, self.step_count, self.N)
+    def update_pi_for_nodes_validate(self, nodes_in_batch, neighborhood_nodes, Zs, noise):
+        self.update_pi_for_nodes_(nodes_in_batch, neighborhood_nodes, Zs, noise)
+        pi_update = self.clsampler.update_pi_for_node(noise, self.phi, list(nodes_in_batch), self.alpha, self.a, self.b, self.c, self.step_count, self.N)
         for node in nodes_in_batch:
             print pi_update[node].astype(np.float32)
             print self.pi[node].astype(np.float32)
@@ -172,13 +173,15 @@ class Sampler(object):
                                                  self.pi[node].astype(np.float32),
                                                  decimal=2, err_msg='update pi mismatch')
 
-    def update_pi_for_nodes_(self, nodes_in_batch, neighborhood_nodes, Zs):
+    def update_pi_for_nodes_(self, nodes_in_batch, neighborhood_nodes, Zs, noise):
+        i = 0
         for node in nodes_in_batch:
             # update \phi and \pi. 
-            self.update_pi_for_node(node, Zs[node], len(neighborhood_nodes[node]))
+            self.update_pi_for_node(node, Zs[node], len(neighborhood_nodes[node]), noise[i])
+            i += 1
 
-    def update_pi_for_nodes_cl(self, nodes_in_batch, neighborhood_nodes, Zs):
-        pi_update = self.clsampler.update_pi_for_node(list(nodes_in_batch), self.alpha, self.a, self.b, self.c, self.step_count, self.N)
+    def update_pi_for_nodes_cl(self, nodes_in_batch, neighborhood_nodes, Zs, noise):
+        pi_update = self.clsampler.update_pi_for_node(noise, list(nodes_in_batch), self.alpha, self.a, self.b, self.c, self.step_count, self.N)
         for node in nodes_in_batch:
             # update \phi and \pi. 
             self.pi[node] = pi_update[node]
@@ -297,14 +300,14 @@ class Sampler(object):
         self.beta = temp[:,1]
     
     
-    def update_pi_for_node(self, i, z, n):
+    def update_pi_for_node(self, i, z, n, noise):
         '''
         update pi for current node i. 
         '''                                                                                                                                                                                                                                                                                                                           
         eps_t  = self.a*((1 + self.step_count/self.b)**-self.c)        # step size 
         phi_star = copy.copy(self.phi[i])                              # updated \phi
         phi_i_sum = np.sum(self.phi[i])                                   
-        noise = np.random.randn(self.K)                                 # random noise. 
+#         noise = np.random.randn(self.K)                                 # random noise. 
         
         # get the gradients    
         grads = [-n * 1/phi_i_sum * j for j in np.ones(self.K)]

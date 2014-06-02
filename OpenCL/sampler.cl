@@ -112,6 +112,7 @@ kernel void sample_latent_vars(
 void update_pi_for_node_(
 		int node,
 		global float *pi,// #K
+		global float *phi,// #K
 		global float *z, // #K
 		global float *noise, // #K
 		global float *grad, // #K
@@ -121,21 +122,21 @@ void update_pi_for_node_(
 		) {
 	float eps_t = a * pow((1 + step_count/b), -c);
 	float phi_i_sum = 0;
-	for (int i = 0; i < K; ++i) phi_i_sum += pi[i];
+	for (int i = 0; i < K; ++i) phi_i_sum += phi[i];
 	for (int k = 0; k < K; ++k) {
 		grad[k] = -NEIGHBOR_SAMPLE_SIZE * 1/phi_i_sum;
-		grad[k] += 1/pi[k] * z[k];
+		grad[k] += 1/phi[k] * z[k];
 	}
 	for (int k = 0; k < K; ++k) {
-		float phi_star_k = fabs(pi[k] + eps_t/2
-				* (alpha - pi[k] + total_node_count/NEIGHBOR_SAMPLE_SIZE * grad[k])
-				+ pow(eps_t, 0.5f) * pow(pi[k], 0.5f) * noise[k]);
-		pi[k] = phi_star_k * (1.0f/step_count) + (1-1.0f/step_count) * pi[k];
+		float phi_star_k = fabs(phi[k] + eps_t/2
+				* (alpha - phi[k] + total_node_count/NEIGHBOR_SAMPLE_SIZE * grad[k])
+				+ pow(eps_t, 0.5f) * pow(phi[k], 0.5f) * noise[k]);
+		phi[k] = phi_star_k * (1.0f/step_count) + (1-1.0f/step_count) * phi[k];
 	}
 	float phi_sum = 0;
-	for (int i = 0; i < K; ++i) phi_sum += pi[i];
+	for (int i = 0; i < K; ++i) phi_sum += phi[i];
 	for (int i = 0; i < K; ++i) {
-		pi[i] = pi[i]/phi_sum;
+		pi[i] = phi[i]/phi_sum;
 	}
 }
 
@@ -143,6 +144,7 @@ kernel void update_pi_for_node(
 		global int *nodes,
 		int N, // #nodes
 		global float *pi,// (#total_nodes, K)
+		global float *phi,// (#total_nodes, K)
 		global float *Z, // (#total_nodes, K)
 		global float *noise, // (#nodes, K)
 		global float *grad, // (#nodes, K)
@@ -155,6 +157,7 @@ kernel void update_pi_for_node(
 	for (int i = gid; i < N; i += gsize) {
 		update_pi_for_node_(nodes[i],
 				pi + nodes[i] * K,
+				phi + nodes[i] * K,
 				Z + nodes[i] * K,
 				noise + i * K,
 				grad + i * K,
