@@ -65,7 +65,8 @@ class ClSampler(object):
         np_nodes = np.array(nodes, dtype=np.int32)
         self.queue.write_buffer(self.cl_nodes, np_nodes)
         self.queue.write_buffer(self.cl_pi, pi)
-        self.queue.write_buffer(self.cl_beta, beta.copy())
+        self.queue.write_buffer(self.cl_beta, beta)
+        self.queue.write_buffer(self.cl_sample_neighbor_nodes, self.np_sample_neighbor_nodes)
         self.sample_latent_vars_kernel.set_arg(0, self.cl_graph)
         self.sample_latent_vars_kernel.set_arg(1, self.cl_nodes)
         self.sample_latent_vars_kernel.set_arg(2, np.array([len(nodes)], dtype=np.int32)[0:1])
@@ -79,4 +80,4 @@ class ClSampler(object):
         self.queue.execute_kernel(self.sample_latent_vars_kernel, (g_items,), (l_items,))
         self.queue.finish()
         self.queue.read_buffer(self.cl_Zs, self.np_Zs)
-        return self.np_Zs.copy()
+        return self.np_Zs
