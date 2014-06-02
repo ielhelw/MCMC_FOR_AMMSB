@@ -6,6 +6,7 @@ class ClSampler(object):
     def __init__(self, K, num_nodes, num_edges, link_map, batch_size, sample_size):
         sample_size += 1
         self.K = K
+        self.N = num_nodes
         self.batch_size = batch_size
         self.ctx = cl.Platforms().create_some_context()
         self.max_nodes_in_batch = 2*batch_size
@@ -23,17 +24,22 @@ class ClSampler(object):
         self.cl_beta = self.ctx.create_buffer(cl.CL_MEM_READ_WRITE, size=self.K*4) # (K) float
         self.cl_p = self.ctx.create_buffer(cl.CL_MEM_READ_WRITE, size=self.max_nodes_in_batch*self.K*4) # at most: 2 unique nodes per edge, K*8-bytes each
         self.cl_bounds = self.ctx.create_buffer(cl.CL_MEM_READ_WRITE, size=self.max_nodes_in_batch*self.K*4)
+        #
+        self.cl_noise = self.ctx.create_buffer(cl.CL_MEM_READ_WRITE, size=self.max_nodes_in_batch*self.K*4)
+        self.cl_grads = self.ctx.create_buffer(cl.CL_MEM_READ_WRITE, size=self.max_nodes_in_batch*self.K*4)
+        
         gopts = ['-IOpenCL/include']
         sampler_opts = gopts + ['-DK=%d' % self.K, '-DNEIGHBOR_SAMPLE_SIZE=%d' % (sample_size)]
         self.gprog = self.ctx.create_program(''.join(open('OpenCL/graph.cl', 'r').readlines()), options=' '.join(gopts))
         self.graph_init_kernel = self.gprog.get_kernel('graph_init')
-        self.prog = self.ctx.create_program(''.join(open('OpenCL/sampler.cl', 'r').readlines()), options=' '.join(sampler_opts))
-        self.sample_latent_vars_kernel = self.prog.get_kernel('sample_latent_vars')
         self.graph_init_kernel.set_arg(0, self.cl_graph)
         self.graph_init_kernel.set_arg(1, self.cl_edges)
         self.graph_init_kernel.set_arg(2, self.cl_node_edges)
         self.queue.execute_kernel(self.graph_init_kernel, (1,), (1,))
         self.queue.finish()
+        self.prog = self.ctx.create_program(''.join(open('OpenCL/sampler.cl', 'r').readlines()), options=' '.join(sampler_opts))
+        self.sample_latent_vars_kernel = self.prog.get_kernel('sample_latent_vars')
+        self.update_pi_kernel = self.prog.get_kernel('update_pi_for_node')
 #        print self.prog.sample_latent_vars.get_work_group_info(cl.kernel_work_group_info.PRIVATE_MEM_SIZE, self.ctx.devices[0])
 
     def _init_graph(self, num_nodes, num_edges, link_map):
@@ -79,3 +85,28 @@ class ClSampler(object):
         self.queue.finish()
         self.queue.read_buffer(self.cl_Zs, self.np_Zs)
         return self.np_Zs
+    
+    def update_pi_for_node(self, nodes, alpha, a, b, c, step_count, total_node_count):
+        g_items = len(nodes)
+        l_items = 32
+        if g_items % l_items:
+            g_items += l_items - (g_items % l_items)
+        noise = np.random.randn((len(nodes)*self.K)).astype(np.float32)
+        self.queue.write_buffer(self.cl_noise, noise)
+        self.update_pi_kernel.set_arg(0, self.cl_nodes)
+        self.update_pi_kernel.set_arg(1, np.array([len(nodes)], dtype=np.int32)[0:1])
+        self.update_pi_kernel.set_arg(2, self.cl_pi)
+        self.update_pi_kernel.set_arg(3, self.cl_Zs)
+        self.update_pi_kernel.set_arg(4, self.cl_noise)
+        self.update_pi_kernel.set_arg(5, self.cl_grads)
+        self.update_pi_kernel.set_arg(6, np.array([alpha], dtype=np.float32)[0:1])
+        self.update_pi_kernel.set_arg(7, np.array([a], dtype=np.float32)[0:1])
+        self.update_pi_kernel.set_arg(8, np.array([b], dtype=np.float32)[0:1])
+        self.update_pi_kernel.set_arg(9, np.array([c], dtype=np.float32)[0:1])
+        self.update_pi_kernel.set_arg(10, np.array([step_count], dtype=np.int32)[0:1])
+        self.update_pi_kernel.set_arg(11, np.array([total_node_count], dtype=np.float32)[0:1])
+        self.queue.execute_kernel(self.sample_latent_vars_kernel, (g_items,), (l_items,))
+        self.queue.finish()
+        np_pi = np.zeros((self.N, self.K), dtype=np.float32)
+        self.queue.read_buffer(self.cl_pi, np_pi)
+        return np_pi

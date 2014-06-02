@@ -50,10 +50,13 @@ class Sampler(object):
         self.use_cl = True
         if self.validate_cl:
             self.compute_latent_vars = self.verify_cl_latent_vars
+            self.update_pi_for_nodes = self.update_pi_for_nodes_validate
         elif self.use_cl:
             self.compute_latent_vars = self.compute_latent_vars_cl
+            self.update_pi_for_nodes = self.update_pi_for_nodes_cl
         else:
             self.compute_latent_vars = self.compute_latent_vars_cy
+            self.update_pi_for_nodes = self.update_pi_for_nodes_
         # parameters related to network 
         self.network = network
         self.N = network.num_nodes  # total number of nodes in the graph
@@ -153,15 +156,32 @@ class Sampler(object):
                 neighborhood_nodes[node] = self.sample_neighbor_nodes(self.num_node_sample, node)
             Zs = self.compute_latent_vars(nodes_in_batch, neighborhood_nodes)
             # update pi
-            for node in nodes_in_batch:
-                # update \phi and \pi. 
-                self.update_pi_for_node(node, Zs[node], len(neighborhood_nodes[node]))
-            
+            self.update_pi_for_nodes(nodes_in_batch, neighborhood_nodes, Zs)
             # update \theta and \beta 
             self.update_beta(mini_batch)
-                   
             self.step_count += 1
             if (self.step_count == 10): break # TODO: remove
+
+    def update_pi_for_nodes_validate(self, nodes_in_batch, neighborhood_nodes, Zs):
+        self.update_pi_for_nodes_(nodes_in_batch, neighborhood_nodes, Zs)
+        pi_update = self.clsampler.update_pi_for_node(list(nodes_in_batch), self.alpha, self.a, self.b, self.c, self.step_count, self.N)
+        for node in nodes_in_batch:
+            print pi_update[node].astype(np.float32)
+            print self.pi[node].astype(np.float32)
+            np.testing.assert_array_almost_equal(pi_update[node].astype(np.float32),
+                                                 self.pi[node].astype(np.float32),
+                                                 decimal=2, err_msg='update pi mismatch')
+
+    def update_pi_for_nodes_(self, nodes_in_batch, neighborhood_nodes, Zs):
+        for node in nodes_in_batch:
+            # update \phi and \pi. 
+            self.update_pi_for_node(node, Zs[node], len(neighborhood_nodes[node]))
+
+    def update_pi_for_nodes_cl(self, nodes_in_batch, neighborhood_nodes, Zs):
+        pi_update = self.clsampler.update_pi_for_node(list(nodes_in_batch), self.alpha, self.a, self.b, self.c, self.step_count, self.N)
+        for node in nodes_in_batch:
+            # update \phi and \pi. 
+            self.pi[node] = pi_update[node]
 
     def compute_latent_vars_cl(self, nodes_in_batch, neighborhood_nodes):
         for node in nodes_in_batch:
