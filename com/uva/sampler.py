@@ -46,6 +46,14 @@ class Sampler(object):
             args:       containing priors, control parameters for the model. 
         '''
         
+        self.validate_cl = False
+        self.use_cl = True
+        if self.validate_cl:
+            self.compute_latent_vars = self.verify_cl_latent_vars
+        elif self.use_cl:
+            self.compute_latent_vars = self.compute_latent_vars_cl
+        else:
+            self.compute_latent_vars = self.compute_latent_vars_cy
         # parameters related to network 
         self.network = network
         self.N = network.num_nodes  # total number of nodes in the graph
@@ -100,8 +108,9 @@ class Sampler(object):
         
         self.init_train_link_map()
 
-        # construct Cl sampler with graph info
-        self.clsampler = clsampler.ClSampler(self.K, self.N,
+        if self.use_cl or self.validate_cl:
+            # construct Cl sampler with graph info
+            self.clsampler = clsampler.ClSampler(self.K, self.N,
                     len(self.network.edges_set),
                     self.train_link_map,# contains all links, non removed yet
                     self.mini_batch_size,
@@ -137,19 +146,12 @@ class Sampler(object):
             
             mini_batch = self.sample_mini_batch(self.mini_batch_size, sample_strategy)
             nodes_in_batch = self.nodes_in_batch(mini_batch)
-            Zs = {}
             neighborhood_nodes = {}
             # iterate through each node in the mini batch. 
             for node in nodes_in_batch:
                 # sample a mini-batch of neighbors. 
                 neighborhood_nodes[node] = self.sample_neighbor_nodes(self.num_node_sample, node)
-                self.clsampler.update_node_neighbors(node, list(neighborhood_nodes[node]))
-                # sample latent variables z_ab for each pair of nodes
-                Zs[node] = self.sample_latent_vars(node, neighborhood_nodes[node])
-            Zs2 = self.clsampler.sample_latent_vars(list(nodes_in_batch), self.pi, self.beta, np.float64(self.epsilon))
-            for node in nodes_in_batch:
-                np.testing.assert_array_almost_equal(Zs[node], Zs2[node], decimal=4, err_msg='Z vector mismatch: node %d' % node)
-#                Zs[node] = Zs2[node]
+            Zs = self.compute_latent_vars(nodes_in_batch, neighborhood_nodes)
             # update pi
             for node in nodes_in_batch:
                 # update \phi and \pi. 
@@ -160,6 +162,26 @@ class Sampler(object):
                    
             self.step_count += 1
             if (self.step_count == 10): break # TODO: remove
+
+    def compute_latent_vars_cl(self, nodes_in_batch, neighborhood_nodes):
+        for node in nodes_in_batch:
+            self.clsampler.update_node_neighbors(node, list(neighborhood_nodes[node]))
+        Zs = self.clsampler.sample_latent_vars(list(nodes_in_batch), self.pi, self.beta, self.epsilon)
+        return Zs
+
+    def compute_latent_vars_cy(self, nodes_in_batch, neighborhood_nodes):
+        Zs = {}
+        for node in nodes_in_batch:
+            # sample latent variables z_ab for each pair of nodes
+            Zs[node] = self.sample_latent_vars(node, neighborhood_nodes[node])
+        return Zs
+
+    def verify_cl_latent_vars(self, nodes_in_batch, neighborhood_nodes):
+        Zs = self.compute_latent_vars_cy(nodes_in_batch, neighborhood_nodes)
+        Zs2 = self.compute_latent_vars_cl(nodes_in_batch, neighborhood_nodes)
+        for node in nodes_in_batch:
+            np.testing.assert_array_almost_equal(Zs[node], Zs2[node], decimal=4, err_msg='Z vector mismatch: node %d' % node)
+        return Zs
 
     def sample_mini_batch(self, mini_batch_size, sample_strategy):
         '''
