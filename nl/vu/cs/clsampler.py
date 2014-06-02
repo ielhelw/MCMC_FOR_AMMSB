@@ -35,7 +35,6 @@ class ClSampler(object):
         self.queue.execute_kernel(self.graph_init_kernel, (1,), (1,))
         self.queue.finish()
 #        print self.prog.sample_latent_vars.get_work_group_info(cl.kernel_work_group_info.PRIVATE_MEM_SIZE, self.ctx.devices[0])
-        print 'DONE'
 
     def _init_graph(self, num_nodes, num_edges, link_map):
         self.np_edges = np.empty(num_edges*2, dtype=np.int32)
@@ -59,7 +58,6 @@ class ClSampler(object):
         l_items = 32
         if g_items % l_items:
             g_items += l_items - (g_items % l_items)
-        print g_items, l_items
         pi = pi.astype(np.float32)
         beta = beta.astype(np.float32)
         np_nodes = np.array(nodes, dtype=np.int32)
