@@ -156,7 +156,7 @@ class Sampler(object):
                 neighborhood_nodes[node] = self.sample_neighbor_nodes(self.num_node_sample, node)
             Zs = self.compute_latent_vars(nodes_in_batch, neighborhood_nodes)
             # update pi
-            noise = np.random.randn(len(nodes_in_batch), self.K).astype(np.float32)
+            noise = np.random.randn(len(nodes_in_batch), self.K).astype(np.float64)
             self.update_pi_for_nodes(nodes_in_batch, neighborhood_nodes, Zs, noise)
             # update \theta and \beta 
             self.update_beta(mini_batch)
@@ -164,14 +164,14 @@ class Sampler(object):
             if (self.step_count == 10): break # TODO: remove
 
     def update_pi_for_nodes_validate(self, nodes_in_batch, neighborhood_nodes, Zs, noise):
-        self.update_pi_for_nodes_(nodes_in_batch, neighborhood_nodes, Zs, noise)
         pi_update = self.clsampler.update_pi_for_node(noise, self.phi, list(nodes_in_batch), self.alpha, self.a, self.b, self.c, self.step_count, self.N)
+        self.update_pi_for_nodes_(nodes_in_batch, neighborhood_nodes, Zs, noise)
         for node in nodes_in_batch:
-            print pi_update[node].astype(np.float32)
-            print self.pi[node].astype(np.float32)
-            np.testing.assert_array_almost_equal(pi_update[node].astype(np.float32),
-                                                 self.pi[node].astype(np.float32),
-                                                 decimal=2, err_msg='update pi mismatch')
+#            print pi_update[node].astype(np.float32)
+#            print self.pi[node].astype(np.float32)
+            np.testing.assert_array_almost_equal(pi_update[node].astype(np.float64),
+                                                 self.pi[node].astype(np.float64),
+                                                 decimal=3, err_msg='update pi mismatch')
 
     def update_pi_for_nodes_(self, nodes_in_batch, neighborhood_nodes, Zs, noise):
         i = 0
@@ -181,7 +181,7 @@ class Sampler(object):
             i += 1
 
     def update_pi_for_nodes_cl(self, nodes_in_batch, neighborhood_nodes, Zs, noise):
-        pi_update = self.clsampler.update_pi_for_node(noise, list(nodes_in_batch), self.alpha, self.a, self.b, self.c, self.step_count, self.N)
+        pi_update = self.clsampler.update_pi_for_node(noise, self.phi, list(nodes_in_batch), self.alpha, self.a, self.b, self.c, self.step_count, self.N)
         for node in nodes_in_batch:
             # update \phi and \pi. 
             self.pi[node] = pi_update[node]
@@ -319,7 +319,8 @@ class Sampler(object):
             phi_star[k] = abs(self.phi[i,k] + eps_t/2 * (self.alpha - self.phi[i,k] + \
                                 self.N/n * grads[k]) + eps_t**.5*self.phi[i,k]**.5 * noise[k])
         
-        self.phi[i] = phi_star * (1.0/self.step_count) + (1-1.0/self.step_count)*self.phi[i]
+        self.phi[i] = phi_star * (1.0/self.step_count) \
+                + (1-1.0/self.step_count)*self.phi[i]
         
         # update pi
         sum_phi = np.sum(self.phi[i])
