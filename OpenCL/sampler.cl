@@ -12,13 +12,13 @@
 
 // adapted from sample_latent_vars.pyx
 int sample_z_ab_from_edge(
-		global float* pi_a,
-		global float *pi_b,
-		global float *beta,
-		float epsilon, float y,
-		global float *p,
-		global float *bounds) {
-	float location = 0;
+		global double* pi_a,
+		global double *pi_b,
+		global double *beta,
+		double epsilon, int y,
+		global double *p,
+		global double *bounds) {
+	double location = 0;
 	for (int i = 0; i < K; ++i) {
 		p[i] = pow(beta[i], y) * pow(1-beta[i], 1-y) * pi_a[i] * pi_b[i]
 		+ pow(epsilon, y) * pow(1-epsilon, 1-y) * pi_a[i] * (1-pi_b[i]);
@@ -40,7 +40,7 @@ int sample_z_ab_from_edge(
 		global double* pi_a,
 		global double *pi_b,
 		global double *beta,
-		double epsilon, double y,
+		double epsilon, int y,
 		global double *p,
 		global double *bounds) {
 	double location = 0;
