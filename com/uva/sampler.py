@@ -156,7 +156,7 @@ class Sampler(object):
                 neighborhood_nodes[node] = self.sample_neighbor_nodes(self.num_node_sample, node)
             Zs = self.compute_latent_vars(nodes_in_batch, neighborhood_nodes)
             # update pi
-            noise = np.random.randn(len(nodes_in_batch), self.K).astype(np.float64)
+            noise = np.random.randn(len(nodes_in_batch), self.K)
             self.update_pi_for_nodes(nodes_in_batch, neighborhood_nodes, Zs, noise)
             # update \theta and \beta 
             self.update_beta(mini_batch)
@@ -167,10 +167,8 @@ class Sampler(object):
         pi_update = self.clsampler.update_pi_for_node(noise, self.phi, list(nodes_in_batch), self.alpha, self.a, self.b, self.c, self.step_count, self.N)
         self.update_pi_for_nodes_(nodes_in_batch, neighborhood_nodes, Zs, noise)
         for node in nodes_in_batch:
-#            print pi_update[node].astype(np.float32)
-#            print self.pi[node].astype(np.float32)
-            np.testing.assert_array_almost_equal(pi_update[node].astype(np.float64),
-                                                 self.pi[node].astype(np.float64),
+            np.testing.assert_array_almost_equal(pi_update[node],
+                                                 self.pi[node],
                                                  decimal=3, err_msg='update pi mismatch')
 
     def update_pi_for_nodes_(self, nodes_in_batch, neighborhood_nodes, Zs, noise):

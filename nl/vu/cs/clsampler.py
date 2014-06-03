@@ -65,8 +65,6 @@ class ClSampler(object):
         l_items = 32
         if g_items % l_items:
             g_items += l_items - (g_items % l_items)
-        pi = pi.astype(np.float64)
-        beta = beta.astype(np.float64)
         np_nodes = np.array(nodes, dtype=np.int32)
         self.queue.write_buffer(self.cl_nodes, np_nodes)
         self.queue.write_buffer(self.cl_pi, pi)
