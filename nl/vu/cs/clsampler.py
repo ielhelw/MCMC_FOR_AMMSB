@@ -38,7 +38,7 @@ class ClSampler(object):
         self.gprog = self.ctx.create_program(''.join(open('OpenCL/graph.cl', 'r').readlines()), options=' '.join(gopts))
         self.graph_init_kernel = self.gprog.get_kernel('graph_init')
         self.graph_init_kernel.set_arg(0, self.cl_graph)
-        self.graph_init_kernel.set_arg(1, self.cl_edges)
+        self.graph_init_kernel.set_arg(1, self.cl_gedges)
         self.graph_init_kernel.set_arg(2, self.cl_node_edges)
         self.queue.execute_kernel(self.graph_init_kernel, (1,), (1,))
         self.queue.finish()
@@ -59,7 +59,7 @@ class ClSampler(object):
                 offset += 1
         # create CL buffers for graph
         self.cl_graph = self.ctx.create_buffer(cl.CL_MEM_READ_WRITE, size=2*64/8) # 2 pointers, each is at most 64-bits
-        self.cl_edges = self.ctx.create_buffer(cl.CL_MEM_READ_ONLY|cl.CL_MEM_COPY_HOST_PTR, host_array=self.np_edges)
+        self.cl_gedges = self.ctx.create_buffer(cl.CL_MEM_READ_ONLY|cl.CL_MEM_COPY_HOST_PTR, host_array=self.np_edges)
         self.cl_node_edges = self.ctx.create_buffer(cl.CL_MEM_READ_ONLY|cl.CL_MEM_COPY_HOST_PTR, host_array=self.np_node_edges)
 
     def update_node_neighbors(self, nodeId, neighbor_nodes):
@@ -118,9 +118,12 @@ class ClSampler(object):
         return np_pi
 
     def sample_latent_vars2(self, mini_batch, rs):
-        edges = [ [e.first, e.second] for e in mini_batch ]
-        np_edges = np.array(edges, dtype=np.int32)
-        g_items = len(edges)
+        i = 0
+        np_edges = np.zeros((len(mini_batch), 2), dtype=np.int32)
+        for e in mini_batch:
+            np_edges[i] = [e.first, e.second]
+            i += 1
+        g_items = len(mini_batch)
         l_items = 32
         if g_items % l_items:
             g_items += l_items - (g_items % l_items)
@@ -128,7 +131,7 @@ class ClSampler(object):
         self.queue.write_buffer(self.cl_r, rs)
         self.sample_latent_vars2_kernel.set_arg(0, self.cl_graph)
         self.sample_latent_vars2_kernel.set_arg(1, self.cl_edges)
-        self.sample_latent_vars2_kernel.set_arg(2, np.array([len(edges)], dtype=np.int32)[0:1])
+        self.sample_latent_vars2_kernel.set_arg(2, np.array([len(mini_batch)], dtype=np.int32)[0:1])
         self.sample_latent_vars2_kernel.set_arg(3, self.cl_pi)
         self.sample_latent_vars2_kernel.set_arg(4, self.cl_beta)
         self.sample_latent_vars2_kernel.set_arg(5, self.cl_Z_edges)
@@ -137,7 +140,7 @@ class ClSampler(object):
         self.sample_latent_vars2_kernel.set_arg(8, self.cl_r)
         self.queue.execute_kernel(self.sample_latent_vars2_kernel, (g_items,), (l_items,))
         self.queue.finish()
-        np_Z = np.zeros((len(edges),), dtype=np.int32);
+        np_Z = np.zeros((len(mini_batch),), dtype=np.int32);
         self.queue.read_buffer(self.cl_Z_edges, np_Z)
         Z = {}
         i = 0

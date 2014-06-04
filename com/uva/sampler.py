@@ -343,9 +343,9 @@ class Sampler(object):
         for k in zk:
             if z[k] != z2[k]:
                 ne += 1
-                print z[k], z2[k]
-        if ne != 0:
-            print '%d values are not equal' % ne
+        ne_percent = 100*float(ne)/len(zk)
+        if ne_percent > 1:
+            print '%d values are not equal (%f%%)' % (ne, ne_percent)
         return z
 
     def sample_latent_vars2_cl(self, mini_batch, Rs):
