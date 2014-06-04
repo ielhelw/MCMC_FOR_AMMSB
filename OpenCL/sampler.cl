@@ -8,6 +8,8 @@
 #error "Need definition of NEIGHBOR_SAMPLE_SIZE"
 #endif
 
+#pragma OPENCL EXTENSION cl_khr_fp64: enable
+
 #if 0
 
 // adapted from sample_latent_vars.pyx
