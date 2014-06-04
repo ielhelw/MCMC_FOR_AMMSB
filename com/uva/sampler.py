@@ -51,12 +51,15 @@ class Sampler(object):
         if self.validate_cl:
             self.compute_latent_vars = self.verify_cl_latent_vars
             self.update_pi_for_nodes = self.update_pi_for_nodes_validate
+            self.sample_latent_vars2 = self.sample_latent_vars2_verify
         elif self.use_cl:
             self.compute_latent_vars = self.compute_latent_vars_cl
             self.update_pi_for_nodes = self.update_pi_for_nodes_cl
+            self.sample_latent_vars2 = self.sample_latent_vars2_cl
         else:
             self.compute_latent_vars = self.compute_latent_vars_cy
             self.update_pi_for_nodes = self.update_pi_for_nodes_
+            self.sample_latent_vars2 = self.sample_latent_vars2_
         # parameters related to network 
         self.network = network
         self.N = network.num_nodes  # total number of nodes in the graph
@@ -170,6 +173,7 @@ class Sampler(object):
             np.testing.assert_array_almost_equal(pi_update[node],
                                                  self.pi[node],
                                                  decimal=3, err_msg='update pi mismatch')
+            self.pi[node] = pi_update[node]
 
     def update_pi_for_nodes_(self, nodes_in_batch, neighborhood_nodes, Zs, noise):
         i = 0
@@ -267,7 +271,8 @@ class Sampler(object):
         
         # sample (z_ab, z_ba) for each edge in the mini_batch. 
         # z is map structure. i.e  z = {(1,10):3, (2,4):-1}
-        z = self.sample_latent_vars2(mini_batch)
+        Rs = np.random.random(len(mini_batch))
+        z = self.sample_latent_vars2(mini_batch, Rs)
         
         grads = np.zeros((self.K, 2))                               # gradients K*2 dimension
         sums = np.sum(self.theta,1)                                 
@@ -323,26 +328,49 @@ class Sampler(object):
         # update pi
         sum_phi = np.sum(self.phi[i])
         self.pi[i] = [self.phi[i,k]/sum_phi for k in range(0, self.K)]
-            
 
-    def sample_latent_vars2(self, mini_batch):
+
+    def sample_latent_vars2_verify(self, mini_batch, Rs):
+        z = self.clsampler.sample_latent_vars2(mini_batch, Rs)
+        z2 = self.sample_latent_vars2_(mini_batch, Rs)
+        zk = z.keys()
+        z2k = z2.keys()
+        zk.sort()
+        z2k.sort()
+        if zk != z2k:
+            raise Exception('KEYS NOT EQUAL')
+        ne = 0
+        for k in zk:
+            if z[k] != z2[k]:
+                ne += 1
+                print z[k], z2[k]
+        if ne != 0:
+            print '%d values are not equal' % ne
+        return z
+
+    def sample_latent_vars2_cl(self, mini_batch, Rs):
+        return self.clsampler.sample_latent_vars2(mini_batch, Rs)
+
+    def sample_latent_vars2_(self, mini_batch, Rs):
         '''
         sample latent variable (z_ab, z_ba) for each pair of nodes. But we only consider 11 different cases,
         since we only need indicator function in the gradient update. More details, please see the comments 
         within the sample_z_for_each_edge function. 
         '''
         z = {}  
+        i = 0
         for edge in mini_batch:
             y_ab = 0
             if Edge(edge.first, edge.second) in self.network.edges_set:
                 y_ab = 1
             
             z[edge] = self.sample_z_for_each_edge(y_ab, self.pi[edge.first], self.pi[edge.second], \
-                                          self.beta, self.K)            
+                                          self.beta, self.K, Rs[i])
+            i += 1
 
         return z
     
-    def sample_z_for_each_edge(self, y, pi_a, pi_b, beta, K):
+    def sample_z_for_each_edge(self, y, pi_a, pi_b, beta, K, r):
         '''
         sample latent variables z_ab and z_ba 
         but we don't need to consider all of the cases. i.e  (z_ab = j, z_ba = q) for all j and p. 
@@ -366,7 +394,7 @@ class Sampler(object):
          
         # sample community based on probability distribution p. 
         bounds = np.cumsum(p)
-        location = random.random() * bounds[K]
+        location = r * bounds[K]
         
         # get the index of bounds that containing location. 
         for i in range(0, K):

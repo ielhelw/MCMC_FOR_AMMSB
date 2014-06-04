@@ -165,3 +165,57 @@ kernel void update_pi_for_node(
 				alpha, a, b, c, step_count, total_node_count);
 	}
 }
+
+int sample_latent_vars2_(
+		int2 edge,
+		global Graph *g,
+		global double *pi,// (#total_nodes, K)
+		global double *beta,// (#K)
+		global double *p,// #K+1
+		global double *bounds,// #K+1
+		double r
+		) {
+	int y = graph_has_peer(g, edge.x, edge.y);
+	global double *pi_a = pi + edge.x * K;
+	global double *pi_b = pi + edge.y * K;
+	double p_sum = 0;
+	for (int k = 0; k < K; ++k) {
+		p[k] = pow(beta[k], y) * pow(1-beta[k], 1-y) * pi_a[k] * pi_b[k];
+		p_sum += p[k];
+	}
+	p[K] = 1 - p_sum;
+	bounds[0] = p[0];
+	for (int k = 1; k < K+1; ++k) {
+		bounds[k] = bounds[k-1] + p[k];
+	}
+	double location = r * bounds[K];
+	for (int i = 0; i < K; ++i) {
+		if (location <= bounds[i]) return i;
+	}
+	return -1;
+}
+
+kernel void sample_latent_vars2(
+		global Graph *g,
+		global int2 *edges,
+		int E, // #edges
+		global double *pi,// (#total_nodes, K)
+		global double *beta,// (#K)
+		global int *Z,// #edges
+		global double *p,// (#edges, K+1)
+		global double *bounds,// (#edges, K+1)
+		global double *r
+		) {
+	size_t gid = get_global_id(0);
+	size_t gsize = get_global_size(0);
+	for (int i = gid; i < E; i += gsize) {
+		Z[i] = sample_latent_vars2_(edges[i],
+				g,
+				pi,
+				beta,
+				p + i * (K+1),
+				bounds+ i * (K+1),
+				r[i]);
+	}
+}
+
