@@ -1,0 +1,39 @@
+# Compiled Object files
+*.slo
+*.lo
+*.o
+*.class
+
+# Compiled Dynamic libraries
+*.so
+*.dylib
+
+# Compiled Static libraries
+*.lai
+*.la
+*.a
+
+#eclipse files
+.project
+.cproject
+
+#vim guards
+.*.swp
+
+# Generated for configure
+config.cache
+Makefile.config
+
+# lib/obj directories, created on demand
+obj
+lib
+
+# Generated stuff
+
+# executables
+apps/wordcount/wordcount
+test/preprocess/hep_ph/main
+test/preprocess/hep_th/main
+test/preprocess/hep_th2/main
+test/preprocess/netscience/main
+test/preprocess/relativity/main
