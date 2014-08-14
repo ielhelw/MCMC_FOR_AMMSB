@@ -11,7 +11,14 @@ namespace preprocess {
 
 class DataFactory {
 public:
-	static const mcmc::Data *get_data(const std::string &dataset_name) {
+	DataFactory(const std::string &dataset_name)
+   			: dataset_name(dataset_name) {
+	}
+
+	virtual ~DataFactory() {
+	}
+
+	const mcmc::Data *get_data() const {
 		DataSet *dataObj = NULL;
 		if (false) {
 		} else if (dataset_name == "netscience") {
@@ -19,7 +26,7 @@ public:
 		} else if (dataset_name == "relativity") {
 			// dataObj = new NetScience();
 		} else if (dataset_name == "hep_ph") {
-			dataObj = new HepPH();
+			// dataObj = new HepPH();
 		} else if (dataset_name == "astro_ph") {
 			// dataObj = new AstroPH();
 		} else if (dataset_name == "condmat") {
@@ -32,6 +39,9 @@ public:
 
 		return dataObj->process();
 	}
+
+protected:
+	std::string dataset_name;
 };
 
 };	// namespace preprocess

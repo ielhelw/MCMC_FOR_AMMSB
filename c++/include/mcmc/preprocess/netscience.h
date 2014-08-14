@@ -128,7 +128,7 @@ public:
 		
 		::size_t N = V->size();
 		// iterate every link in the graph, and store those links into Set<Edge> object.
-		mcmc::EdgeSet *E = new mcmc::EdgeSet();
+		EdgeSet *E = new EdgeSet();
 
 		c = tree.FirstChildElement("DynamicNetwork");
 		if (c == NULL) {
@@ -163,7 +163,8 @@ public:
 			} catch (boost::bad_lexical_cast &e) {
 				throw mcmc::IOException("Bad number cast from target '" + std::string(target->GetText()) + "'");
 			}
-			E->insert(mcmc::Edge(a, b));
+			// *********************** -----> the problem is in the next line:
+			E->insert(Edge(a, b));
 		}
 
 		return new mcmc::Data((void *)V, E, N);

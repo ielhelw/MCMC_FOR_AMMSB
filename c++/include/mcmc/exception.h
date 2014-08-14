@@ -41,6 +41,7 @@ protected:
 };
 
 
+#if 0
 class OutOfMemoryException : public MCMCException {
 public:
 	OutOfMemoryException() {
@@ -94,6 +95,7 @@ public:
 			: MCMCException(reason) {
 	}
 };
+#endif
 
 
 class NumberFormatException : public MCMCException {
@@ -106,6 +108,7 @@ public:
 	}
 };
 
+#if 0
 
 class SystemException : public MCMCException {
 public:
@@ -116,6 +119,7 @@ public:
 			: MCMCException(reason + ": " + std::string(strerror(errno))) {
 	}
 };
+#endif
 
 class IOException : public MCMCException {
 public:

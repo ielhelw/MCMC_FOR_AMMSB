@@ -15,6 +15,7 @@
 #include <unordered_set>
 #include <utility>
 
+
 namespace mcmc {
 
 typedef typename std::pair<int, int> Edge;
@@ -23,6 +24,19 @@ typedef typename std::unordered_set<Edge> EdgeSet;
 
 typedef std::map<Edge, bool>			EdgeMap;
 
+}	// namespace mcmc
+
+
+namespace std {
+template<>
+struct hash<mcmc::Edge> {
+public:
+	::size_t operator()(const mcmc::Edge &x) const;
+};
+}
+
+
+namespace mcmc {
 
 /**
  * Data class is an abstraction for the raw data, including vertices and edges.
@@ -44,6 +58,10 @@ public:
 		delete const_cast<EdgeSet *>(E);
 	}
 
+	void dump_data() const {
+		std::cerr << "IMPLEMENT/subclass";
+	}
+
 public:
 	const void *V;	// mapping between vertices and attributes.
 	const EdgeSet *E;	// all pair of "linked" edges.
@@ -51,5 +69,12 @@ public:
 };
 
 }	// namespace mcmc
+
+namespace std {
+::size_t hash<mcmc::Edge>::operator()(const mcmc::Edge &x) const {
+	::size_t h = std::hash<int>()(x.first) ^ std::hash<int>()(x.second);
+	return h;
+}
+}
 
 #endif	// ndef MCMC_DATA_H__

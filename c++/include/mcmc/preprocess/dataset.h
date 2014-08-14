@@ -23,6 +23,9 @@ namespace preprocess {
  */
 class DataSet {
 public:
+	virtual ~DataSet() {
+	}
+
 	/**
 	 * Function to process the document. The document can be in any format. (i.e txt, xml,..)
 	 * The subclass will implement this function to handle specific format of

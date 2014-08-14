@@ -9,8 +9,9 @@ int main(int argc, char *argv[]) {
 
 	DataFactory df("netscience");
 
-	df.get_data();
-	df.dump_data();
+	const Data *data = df.get_data();
+	data->dump_data();
+	delete const_cast<Data *>(data);
 
 	return 0;
 }

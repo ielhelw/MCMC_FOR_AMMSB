@@ -45,6 +45,7 @@ public:
 	 *     vlaidation_ratio:  the percentage of data used for validation and testing.
 	 */
 	Network(const Data *data, float held_out_ratio) {
+#if 0
 		N = data->N;							// number of nodes in the graph
 		linked_edges = data->E;					// all pair of linked edges.
 		num_total_edges = linked_edges->size(); // number of total edges.
@@ -59,6 +60,7 @@ public:
 		// randomly sample hold-out and test sets.
 		init_held_out_set();
 		init_test_set();
+#endif
 	}
 
 	virtual ~Network() {
@@ -89,6 +91,7 @@ public:
 	 *  scale equals to 1/h(x), insuring the sampling gives the unbiased gradients.   
 	 */
 	EdgeSample sample_mini_batch(::size_t mini_batch_size, strategy::strategy strategy) {
+#if 0
 		switch (strategy) {
 		case strategy::RANDOM_PAIR:
 			return random_pair_sampling(mini_batch_size);
@@ -101,6 +104,9 @@ public:
 		default:
 			throw MCMCException("Invalid sampling strategy");
 		}
+#else
+		return EdgeSample(NULL, 0.0);
+#endif
 	}
 
 	::size_t get_num_linked_edges() const {
@@ -140,6 +146,7 @@ public:
 	 * @return the caller must delete the result
 	 */
 	EdgeSample random_pair_sampling(::size_t mini_batch_size) {
+#if 0
 		EdgeSet *mini_batch_set = new EdgeSet();
 
 		// iterate until we get $p$ valid edges.
@@ -168,6 +175,9 @@ public:
 		float scale = ((N * (N - 1)) / 2) / mini_batch_size;
 
 		return EdgeSample(mini_batch_set, scale);
+#else
+		return EdgeSample(NULL, 0.0);
+#endif
 	}
 
 
@@ -176,6 +186,7 @@ public:
 	 * the node from N nodes, and sample all the edges for that node. h(x) = 1/N
 	 */
 	EdgeSample random_node_sampling() {
+#if 0
 		EdgeSet *mini_batch_set = new EdgeSet();
 
 		// randomly select the node ID
@@ -194,6 +205,9 @@ public:
 		}
 
 		return EdgeSample(mini_batch_set, N);
+#else
+		return EdgeSample(NULL, 0.0);
+#endif
 	}
 
 
@@ -203,6 +217,7 @@ public:
 	 * 1/N_1 for link, where N_0-> number of non-linked edges, N_1-> # of linked edges.
 	 */
 	EdgeSample stratified_random_pair_sampling(::size_t mini_batch_size) {
+#if 0
 		::size_t p = mini_batch_size;
 
 		EdgeSet *mini_batch_set = new EdgeSet();
@@ -261,9 +276,13 @@ public:
 			return EdgeSample(mini_batch_set,
 							  (N * (N - 1)) / 2 - linked_edges->size() / (float)mini_batch_size);
 		}
+#else
+		return EdgeSample(NULL, 0.0);
+#endif
 	}
 
 
+#if 0
 	static std::vector<int> xrange(int from, int upto) {
 		std::vector<int> r(upto - from);
 		for (int i = 0; i < upto - from; i++) {
@@ -271,6 +290,7 @@ public:
 		}
 		return r;
 	}
+#endif
 
 	/**
 	 * stratified sampling approach gives more attention to link edges (the edge is connected by two
@@ -284,6 +304,7 @@ public:
 	 *         we sample equals to  number of all non-link edges / num_pieces
 	 */
 	EdgeSample stratified_random_node_sampling(::size_t num_pieces) {
+#if 0
 		// randomly select the node ID
 		int nodeId = random.randint(0, N - 1);
 		// decide to sample links or non-links
@@ -343,6 +364,9 @@ public:
 
 			return EdgeSample(mini_batch_set, N);
 		}
+#else
+		return EdgeSample(NULL, 0.0);
+#endif
 	}
 
 
@@ -354,11 +378,13 @@ protected:
 	 * the later.
 	 */
 	void init_train_link_map() {
+#if 0
 		for (EdgeSet::const_iterator edge = linked_edges->begin();
 			 	edge != linked_edges->end();
 				edge++) {
 			train_link_map[edge->first].insert(edge->second);
 		}
+#endif
 	}
 
 
@@ -367,6 +393,7 @@ protected:
 	 * links and non-links from the whole graph.
 	 */
 	void init_held_out_set() {
+#if 0
 		::size_t p = held_out_size / 2;
 
 		// Sample p linked-edges from the network.
@@ -392,6 +419,7 @@ protected:
 		}
 
 		delete sampled_linked_edges;
+#endif
 	}
 
 
@@ -400,6 +428,7 @@ protected:
 	 * linked and non-linked edges
 	 */
 	void init_test_set() {
+#if 0
 		::size_t p = held_out_size / 2;
 		// sample p linked edges from the network
 		while (p > 0) {
@@ -434,6 +463,7 @@ protected:
 			test_map.erase(edge);
 			p--;
 		}
+#endif
 	}
 
 
@@ -445,6 +475,7 @@ protected:
 	 * TODO: add condition for checking the infinit-loop
 	 */
 	Edge sample_non_link_edge_for_held_out() {
+#if 0
 		while (true) {
 			int firstIdx = random.randint(0, N - 1);
 			int secondIdx = random.randint(0, N - 1);
@@ -464,6 +495,9 @@ protected:
 
 			return edge;
 		}
+#else
+		return Edge(0,0);
+#endif
 	}
 
 
@@ -473,6 +507,7 @@ protected:
 	 * TODO prevent the infinit loop
 	 */
 	Edge sample_non_link_edge_for_test() {
+#if 0
 		while (true) {
 			int firstIdx = random.randint(0, N - 1);
 			int secondIdx = random.randint(0, N - 1);
@@ -493,6 +528,9 @@ protected:
 
 			return edge;
 		}
+#else
+		return Edge(0,0);
+#endif
 	}
 
 

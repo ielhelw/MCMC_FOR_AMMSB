@@ -19,6 +19,7 @@ public:
 	 */
 	Learner(const mcmc::Options &args, ::mcmc::Network *network)
 			: network(network) {
+#if 0
 
 		// model priors
 		alpha = args.alpha;
@@ -55,6 +56,10 @@ public:
 		CONVERGENCE_THRESHOLD = 0.000000000001;
 
 		stepsize_switch = false;
+#endif
+	}
+
+	virtual ~Learner() {
 	}
 
 	/**
@@ -117,6 +122,7 @@ protected:
 	 * which is not true representation of actual data set, which is extremely sparse.
 	 */
 	double cal_perplexity(const EdgeSet &data) {
+#if 0
 		double link_likelihood = 0.0;
 		double non_link_likelihood = 0.0;
 		::size_t link_count = 0;
@@ -145,6 +151,9 @@ protected:
 		// std::cerr << "perplexity score is: " << exp(-avg_likelihood) << std::endl;
 
 		return std::exp(-avg_likelihood);
+#else
+		return 0.0;
+#endif
 	}
 
 
@@ -158,6 +167,7 @@ protected:
 							   const std::vector<double> &pi_b,
 							   bool y,
 							   const std::vector<double> &beta) const {
+#if 0
 		double prob = 0.0;
 		double s = 0.0;
 
@@ -180,6 +190,9 @@ protected:
 		}
 
 		return log(prob);
+#else
+		return 0.0;
+#endif
 	}
 
 protected:
