@@ -1,11 +1,16 @@
 #ifndef MCMC_PREPROCESS_DATA_FACTORY_H__
 #define MCMC_PREPROCESS_DATA_FACTORY_H__
 
-namespace mcmc::preprocess {
+#include "mcmc/data.h"
+#include "mcmc/preprocess/dataset.h"
+#include "mcmc/preprocess/netscience.h"
+#include "mcmc/preprocess/hep_ph.h"
+
+namespace mcmc {
+namespace preprocess {
 
 class DataFactory {
 public:
-	template
 	static const mcmc::Data *get_data(const std::string &dataset_name) {
 		DataSet *dataObj = NULL;
 		if (false) {
@@ -29,5 +34,7 @@ public:
 	}
 };
 
-};	// namespace mcmc::preprocess
+};	// namespace preprocess
+};	// namespace mcmc
+
 #endif	// ndef MCMC_PREPROCESS_DATA_FACTORY_H__

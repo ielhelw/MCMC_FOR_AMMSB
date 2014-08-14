@@ -1,6 +1,7 @@
 #include "mcmc/mcmc.h"
 
 using namespace mcmc;
+using namespace mcmc::preprocess;
 
 int main(int argc, char *argv[]) {
 

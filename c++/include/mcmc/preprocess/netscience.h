@@ -13,17 +13,43 @@
 #define MCMC_PREPROCESS_NETSCIENCE_H__
 
 #include <fstream>
+#include <unordered_map>
 
-#include <tinyxml.h>
+#include <tinyxml2.h>
 
-#include "data.h"
-#include "preprocess/dataset.h"
+#include "mcmc/data.h"
+#include "mcmc/preprocess/dataset.h"
 
-namespace mcmc::preprocess {
+namespace tinyxml2 {
 
-typedef std::unordered_set<int, std::string> Vertex;
+class XMLException : public std::exception {
+public:
+	XMLException(const std::string &reason) throw()
+			: reason("XMLException" + reason) {
+	}
 
-class NetScience : public DataSet<Vertex> {
+	virtual ~XMLException() throw() {
+	}
+
+	virtual const char *what() const throw() {
+		return reason.c_str();
+	}
+
+protected:
+	std::string reason;
+};
+
+}	// namespace tinyxml2
+
+
+namespace mcmc {
+namespace preprocess {
+
+using namespace tinyxml2;
+
+typedef std::unordered_map<int, std::string> Vertex;
+
+class NetScience : public DataSet {
 public:
 	NetScience(const char *filename = "datasets/netscience.xml") : filename(filename) {
 	}
@@ -37,7 +63,7 @@ public:
 	 * * if vertices are not record as the format of 0,1,2,3....., we need to do some 
 	 * process.  Fortunally, there is no such issue with netscience data set.   
 	 */
-	virtual const *mcmc::DATA process() {
+	virtual const mcmc::Data *process() {
 
 		// V stores the mapping between node ID and attribute. i.e title, name. etc
 		// i.e {0: "WU, C", 1 :CHUA, L"}
@@ -94,9 +120,9 @@ public:
 			XMLElement *id = n->FirstChildElement("id");
 			XMLElement *title = n->FirstChildElement("title");
 			try {
-				(*V)[boost::lexical_cast<int>(id->getText())] = std::string(title->getText());
+				(*V)[boost::lexical_cast<int>(id->GetText())] = std::string(title->GetText());
 			} catch (boost::bad_lexical_cast &e) {
-				throw mcmc::IOException("Bad number cast from id '" + std::string(id->getText()) + "'");
+				throw mcmc::IOException("Bad number cast from id '" + std::string(id->GetText()) + "'");
 			}
 		}
 		
@@ -128,23 +154,26 @@ public:
 			int a;
 			int b;
 			try {
-				a = boost::lexical_cast<int>(source->getText());
+				a = boost::lexical_cast<int>(source->GetText());
 			} catch (boost::bad_lexical_cast &e) {
-				throw mcmc::IOException("Bad number cast from source '" + std::string(source->getText()) + "'");
+				throw mcmc::IOException("Bad number cast from source '" + std::string(source->GetText()) + "'");
 			}
 			try {
-				b = boost::lexical_cast<int>(target->getText());
+				b = boost::lexical_cast<int>(target->GetText());
 			} catch (boost::bad_lexical_cast &e) {
-				throw mcmc::IOException("Bad number cast from target '" + std::string(target->getText()) + "'");
+				throw mcmc::IOException("Bad number cast from target '" + std::string(target->GetText()) + "'");
 			}
 			E->insert(mcmc::Edge(a, b));
 		}
 
-		return new mcmc::Data<Vertex>(V, E, N);
+		return new mcmc::Data((void *)V, E, N);
 	}
 
 protected:
 	std::string filename;
 };
+
+}	// namespace preprocess
+}	// namespace mcmc
 
 #endif	// ndef MCMC_PREPROCESS_NETSCIENCE_H__

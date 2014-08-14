@@ -13,13 +13,15 @@
 #define MCMC_DATA_H__
 
 #include <unordered_set>
-#include <pair>
+#include <utility>
 
 namespace mcmc {
 
 typedef typename std::pair<int, int> Edge;
 
 typedef typename std::unordered_set<Edge> EdgeSet;
+
+typedef std::map<Edge, bool>			EdgeMap;
 
 
 /**
@@ -29,26 +31,25 @@ typedef typename std::unordered_set<Edge> EdgeSet;
  *             
  * The data can be absorbed directly by sampler.
  */
-template
-class Data<class Vertex> {
+class Data {
 public:
-	Data(const Vertex *V, const EdgeSet *E, int N) {
+	Data(const void *V, const EdgeSet *E, int N) {
 		this->V = V;
 		this->E = E;
 		this->N = N;
 	}
 
 	virtual ~Data() {
-		delete const_cast<Vertex *>(V);
+		// delete const_cast<void *>(V);
 		delete const_cast<EdgeSet *>(E);
 	}
 
 public:
-	const Vertex *V;	// mapping between vertices and attributes.
+	const void *V;	// mapping between vertices and attributes.
 	const EdgeSet *E;	// all pair of "linked" edges.
 	int N;				// number of vertices
 };
 
-};	// namespace mcmc
+}	// namespace mcmc
 
 #endif	// ndef MCMC_DATA_H__

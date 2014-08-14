@@ -35,8 +35,8 @@ CXXFLAGS += -Wextra
 CXXFLAGS += -Wno-unused-parameter
 CXXFLAGS += -Wno-ignored-qualifiers
 CXXFLAGS += -I$(PROJECT_HOME)/include
+CXXFLAGS += -I$(PROJECT_HOME)/3rdparty/tinyxml2/include
 CXXFLAGS += -DPROJECT_HOME=$(PROJECT_HOME)
-CXXFLAGS += -I$(CONFIG_OPENCL_CXXFLAGS)
 ifneq (, $(BOOST_INCLUDE))
 CXXFLAGS += -I$(BOOST_INCLUDE)
 BOOST_ROOT = $(dir $(BOOST_INCLUDE))

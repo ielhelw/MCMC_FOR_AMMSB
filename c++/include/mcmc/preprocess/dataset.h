@@ -12,16 +12,16 @@
 #ifndef MCMC_PREPROCESS_DATASET_H__
 #define MCMC_PREPROCESS_DATASET_H__
 
-#include "data.h"
+#include "mcmc/data.h"
 
-namespace mcmc:preprocess {
+namespace mcmc {
+namespace preprocess {
 
 /**
  * Served as the abstract base class for different types of data sets. 
  * For each data set, we should inherit from this class.
  */
-template
-class DataSet<class Vertex> {
+class DataSet {
 public:
 	/**
 	 * Function to process the document. The document can be in any format. (i.e txt, xml,..)
@@ -31,7 +31,10 @@ public:
 	/**
 	 * @return the caller must delete() the result
 	 */
-	virtual const *mcmc::Data<Vertex> process() = NULL;
+	virtual const ::mcmc::Data *process() = 0;
 };
+
+} 	// namespace preprocess
+}	// namespace mcmc
 
 #endif	// ndef MCMC_PREPROCESS_DATASET_H__

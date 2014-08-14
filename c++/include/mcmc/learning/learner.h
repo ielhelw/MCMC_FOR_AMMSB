@@ -1,9 +1,12 @@
 #ifndef MCMC_LEARNING_LEARNER_H__
 #define MCMC_LEARNING_LEARNER_H__
 
-#include "args.h"
+#include "mcmc/options.h"
+#include "mcmc/types.h"
+#include "mcmc/network.h"
 
-namespace mcmc::learner {
+namespace mcmc {
+namespace learner {
 
 /**
  * This is base class for all concrete learners, including MCMC sampler, variational
@@ -14,7 +17,7 @@ public:
 	/**
 	 * initialize base learner parameters.
 	 */
-	Learner(const mcmc::Options &args, mcmc::Network *network)
+	Learner(const mcmc::Options &args, ::mcmc::Network *network)
 			: network(network) {
 
 		// model priors
@@ -25,6 +28,7 @@ public:
 
 		// parameters related to control model
 		K = args.K;
+		epsilon = args.epsilon;
 
 		// parameters related to network
 		N = network->get_num_nodes();
@@ -44,8 +48,8 @@ public:
 		// check the number of iterations.
 		step_count = 1;
 		// store perplexity for all the iterations
-		ppxs_held_out = [];
-		ppxs_test = [];
+		// ppxs_held_out = [];
+		// ppxs_test = [];
 
 		max_iteration = args.max_iteration;
 		CONVERGENCE_THRESHOLD = 0.000000000001;
@@ -64,13 +68,13 @@ public:
 	 * 3. Variational inference for batch learning
 	 * 4. Stochastic variational inference
 	 */
-	virtual void run() = NULL;
+	virtual void run() = 0;
 
-	const <type> &get_ppxs_held_out() const {
+	const std::vector<double> &get_ppxs_held_out() const {
 		return ppxs_held_out;
 	}
 
-	const <type> &get_ppxs_test() const {
+	const std::vector<double> &get_ppxs_test() const {
 		return ppxs_test;
 	}
 
@@ -78,12 +82,12 @@ public:
 		this->max_iteration = max_iteration;
 	}
 
-	double cal_perplexity_held_out() const {
-		return cal_perplexity(network.get_held_out_set());
+	double cal_perplexity_held_out() {
+		return cal_perplexity(network->get_held_out_set());
 	}
 
-	double cal_perplexity_test() const {
-		return cal_perplexity(network.get_test_set());
+	double cal_perplexity_test() {
+		return cal_perplexity(network->get_test_set());
 	}
 
 	bool is_converged() const {
@@ -112,18 +116,18 @@ protected:
 	 * the equal number of link edges and non-link edges for held out data and test data,
 	 * which is not true representation of actual data set, which is extremely sparse.
 	 */
-	double cal_perplexity(<type> data) const {
+	double cal_perplexity(const EdgeSet &data) {
 		double link_likelihood = 0.0;
 		double non_link_likelihood = 0.0;
 		::size_t link_count = 0;
 		::size_t non_link_count = 0;
 
-		for (EdgeSet::iterator &edge = data->keys().begin();
-			 	edge = data->keys().end();
+		for (EdgeSet::const_iterator edge = data.begin();
+			 	edge != data.end();
 				edge++) {
-			double edge_likelihood = cal_edge_likelihood(pi[edge->left], pi[edge->right],
-														 data[*edge], beta);
-			if (network->get_linked_edges()->contains(*edge)) {
+			double edge_likelihood = cal_edge_likelihood(pi[edge->first], pi[edge->second],
+														 data.find(*edge) != data.end(), beta);
+			if (network->get_linked_edges()->find(*edge) != network->get_linked_edges()->end()) {
 				link_count++;
 				link_likelihood += edge_likelihood;
 			} else {
@@ -152,13 +156,13 @@ protected:
 	 */
 	double cal_edge_likelihood(const std::vector<double> &pi_a,
 							   const std::vector<double> &pi_b,
-							   int y,
+							   bool y,
 							   const std::vector<double> &beta) const {
 		double prob = 0.0;
 		double s = 0.0;
 
 		for (::size_t k = 0; k < K; k++) {
-			if (y == 0) {
+			if (! y) {
 				prob += pi_a[k] * pi_b[k] * (1 - beta[k]);
 			} else {
 				prob += pi_a[k] + pi_b[k] * beta[k];
@@ -166,7 +170,7 @@ protected:
 			s += pi_a[k] * pi_b[k];		// common expr w/ above
 		}
 
-		if (y == 0) {
+		if (! y) {
 			prob += (1.0 - s) * (1 - epsilon);
 		} else {
 			prob += (1.0 - s) * epsilon;
@@ -179,23 +183,34 @@ protected:
 	}
 
 protected:
+	::mcmc::Network *network;
+
 	double alpha;
 	std::vector<double> eta;
 	::size_t K;
+	double epsilon;
 	::size_t N;
+
 	std::vector<double> beta;
 	std::vector<std::vector<double>> pi;
+
 	::size_t mini_batch_size;
 	double link_ratio;
+
 	int step_count;
+
 	std::vector<double> ppxs_held_out;
 	std::vector<double> ppxs_test;
+
 	::size_t max_iteration;
+
 	double CONVERGENCE_THRESHOLD;
+
 	bool stepsize_switch;
 };
 
 
-};	// namespace mcmc::learner
+}	// namespace learner
+}	// namespace mcmc
 
 #endif	// ndef MCMC_LEARNING_LEARNER_H__
