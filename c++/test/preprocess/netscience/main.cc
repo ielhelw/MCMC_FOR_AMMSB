@@ -5,9 +5,9 @@ using namespace mcmc::preprocess;
 
 int main(int argc, char *argv[]) {
 
-	Options(argc, argv);
+	Options options(argc, argv);
 
-	DataFactory df("netscience");
+	DataFactory df("netscience", options.filename);
 
 	const Data *data = df.get_data();
 	data->dump_data();

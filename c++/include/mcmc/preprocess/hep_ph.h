@@ -22,7 +22,12 @@ namespace preprocess {
 
 class HepPH : public DataSet {
 public:
-	HepPH(const char *filename = "datasets/CA-HepPh.txt") : filename(filename) {
+	HepPH(const std::string &filename) {
+	    if (filename == "") {
+			this->filename = "datasets/CA-HepPh.txt";
+		} else {
+			this->filename = filename;
+		}
 	}
 
 	virtual ~HepPH() {

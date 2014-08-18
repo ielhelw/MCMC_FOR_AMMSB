@@ -14,6 +14,7 @@
 
 #include <unordered_set>
 #include <utility>
+#include <iomanip>
 
 
 namespace mcmc {
@@ -21,6 +22,7 @@ namespace mcmc {
 typedef typename std::pair<int, int> Edge;
 
 typedef typename std::unordered_set<Edge> EdgeSet;
+// typedef typename std::set<Edge> EdgeSet;
 
 typedef std::map<Edge, bool>			EdgeMap;
 
@@ -59,7 +61,11 @@ public:
 	}
 
 	void dump_data() const {
-		std::cerr << "IMPLEMENT/subclass";
+		std::cout << "Edge set size " << N << std::endl;
+		for (EdgeSet::const_iterator edge = E->begin(); edge != E->end(); edge++) {
+			std::cout << "    " << std::setw(10) << edge->first <<
+				" " << std::setw(10) << edge->second << std::endl;
+		}
 	}
 
 public:

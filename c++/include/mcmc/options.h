@@ -207,6 +207,8 @@ public:
 			("num-updates,u", po::value< ::size_t>(&num_updates)->default_value(1000), "num_updates")
 			("hold-out-prob,h", po::value<double>(&hold_out_prob)->default_value(0.1), "hold_out_prob")
 			("output-dir,o", po::value<std::string>(&output_dir)->default_value("."), "output_dir")
+
+			("input-file,f", po::value<std::string>(&filename)->default_value(""), "input file");
 			;
 
 		po::variables_map vm;
@@ -235,6 +237,8 @@ public:
 	::size_t	num_updates;
 	double		hold_out_prob;
 	std::string	output_dir;
+
+	std::string filename;
 };
 
 };	// namespace mcmc

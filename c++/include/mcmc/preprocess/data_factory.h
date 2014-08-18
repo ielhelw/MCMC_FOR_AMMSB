@@ -11,8 +11,8 @@ namespace preprocess {
 
 class DataFactory {
 public:
-	DataFactory(const std::string &dataset_name)
-   			: dataset_name(dataset_name) {
+	DataFactory(const std::string &dataset_name, const std::string &filename = "")
+   			: dataset_name(dataset_name), filename(filename) {
 	}
 
 	virtual ~DataFactory() {
@@ -22,17 +22,17 @@ public:
 		DataSet *dataObj = NULL;
 		if (false) {
 		} else if (dataset_name == "netscience") {
-			dataObj = new NetScience();
+			dataObj = new NetScience(filename);
 		} else if (dataset_name == "relativity") {
-			// dataObj = new NetScience();
+			// dataObj = new NetScience(filename);
 		} else if (dataset_name == "hep_ph") {
-			// dataObj = new HepPH();
+			// dataObj = new HepPH(filename);
 		} else if (dataset_name == "astro_ph") {
-			// dataObj = new AstroPH();
+			// dataObj = new AstroPH(filename);
 		} else if (dataset_name == "condmat") {
-			// dataObj = new CondMat();
+			// dataObj = new CondMat(filename);
 		} else if (dataset_name == "hep_th") {
-			// dataObj = new HepTH();
+			// dataObj = new HepTH(filename);
 		} else {
 			throw MCMCException("Unknown dataset name \"" + dataset_name + "\"");
 		}
@@ -42,6 +42,7 @@ public:
 
 protected:
 	std::string dataset_name;
+	std::string filename;
 };
 
 };	// namespace preprocess

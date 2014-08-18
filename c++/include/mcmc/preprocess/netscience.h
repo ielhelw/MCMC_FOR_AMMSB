@@ -51,7 +51,12 @@ typedef std::unordered_map<int, std::string> Vertex;
 
 class NetScience : public DataSet {
 public:
-	NetScience(const char *filename = "datasets/netscience.xml") : filename(filename) {
+	NetScience(const std::string &filename) {
+		if (filename == "") {
+			this->filename = "datasets/netscience.xml";
+		} else {
+			this->filename = filename;
+		}
 	}
 
 	virtual ~NetScience() {
@@ -80,13 +85,13 @@ public:
 					<documents>
 						<document>
 					</documents>
-					<nodeclass id="agent" type="agent">
-						<nodes>
+					<nodes>
+						<nodeclass id="agent" type="agent">
 							<node id="0" title="WU, C">
 							<node id="1" title="CHUA, L">
 							...
-						</nodes>
-					</nodeclass>
+						</nodeclass>
+					</nodes>
 					<networks>
 						<network id="agent x agent" isDirected="false">
 							<link source="1" target="0" type="double" value="2.5">
@@ -106,26 +111,28 @@ public:
 		if (c == NULL) {
 			throw XMLException("Cannot get 'MetaNetwork'");
 		}
-		c = c->FirstChildElement("nodeclass");
-		if (c == NULL) {
-			throw XMLException("Cannot get 'nodeclass'");
-		}
 		c = c->FirstChildElement("nodes");
 		if (c == NULL) {
 			throw XMLException("Cannot get 'nodes'");
 		}
+		c = c->FirstChildElement("nodeclass");
+		if (c == NULL) {
+			throw XMLException("Cannot get 'nodeclass'");
+		}
 		for (XMLElement *n = c->FirstChildElement("node");
 				 n != NULL;
 				 n = n->NextSiblingElement("node")) {
-			XMLElement *id = n->FirstChildElement("id");
-			XMLElement *title = n->FirstChildElement("title");
-			try {
-				(*V)[boost::lexical_cast<int>(id->GetText())] = std::string(title->GetText());
-			} catch (boost::bad_lexical_cast &e) {
-				throw mcmc::IOException("Bad number cast from id '" + std::string(id->GetText()) + "'");
+			int id;
+			if (n->QueryIntAttribute("id", &id) != XML_NO_ERROR) {
+				throw XMLException("Cannot get int attribute 'id'");
 			}
+			const char *title = n->Attribute("title");
+			if (title == NULL) {
+				throw XMLException("Cannot get attribute 'title'");
+			}
+			(*V)[id] = title;
 		}
-		
+
 		::size_t N = V->size();
 		// iterate every link in the graph, and store those links into Set<Edge> object.
 		EdgeSet *E = new EdgeSet();
@@ -149,21 +156,14 @@ public:
 		for (XMLElement *n = c->FirstChildElement("link");
 				 n != NULL;
 				 n = n->NextSiblingElement("link")) {
-			XMLElement *source = n->FirstChildElement("source");
-			XMLElement *target = n->FirstChildElement("target");
 			int a;
 			int b;
-			try {
-				a = boost::lexical_cast<int>(source->GetText());
-			} catch (boost::bad_lexical_cast &e) {
-				throw mcmc::IOException("Bad number cast from source '" + std::string(source->GetText()) + "'");
+			if (n->QueryIntAttribute("source", &a) != XML_NO_ERROR) {
+				throw XMLException("Cannot get int attribute 'source'");
 			}
-			try {
-				b = boost::lexical_cast<int>(target->GetText());
-			} catch (boost::bad_lexical_cast &e) {
-				throw mcmc::IOException("Bad number cast from target '" + std::string(target->GetText()) + "'");
+			if (n->QueryIntAttribute("target", &b) != XML_NO_ERROR) {
+				throw XMLException("Cannot get int attribute 'target'");
 			}
-			// *********************** -----> the problem is in the next line:
 			E->insert(Edge(a, b));
 		}
 
