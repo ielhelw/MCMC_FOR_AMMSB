@@ -86,11 +86,26 @@ public:
 	}
 
 
-	void gamma(std::vector<std::vector<double> > *a,
-			   double p1, double p2, ::size_t n1, ::size_t n2) {
+	std::vector<std::vector<double> > gamma(double p1, double p2, ::size_t n1, ::size_t n2) {
 #if 1
+		// std::vector<std::vector<double> > *a = new std::vector<double>(n1, std::vector<double>(n2, 0.0));
+		std::vector<std::vector<double> > a(n1, std::vector<double>(n2));
+
+		std::default_random_engine generator;
+		std::gamma_distribution<double> distribution(p1, p2);
+
+		for (::size_t i = 0; i < n1; i++) {
+			for (::size_t j = 0; j < n2; j++) {
+				a[i][j] = distribution(generator);
+			}
+		}
+
+		return a;
+
 #else
 		throw UnimplementedException("Random.gamma");
+
+		return NULL;
 #endif
 	}
 

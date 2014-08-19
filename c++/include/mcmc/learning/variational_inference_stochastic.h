@@ -64,8 +64,8 @@ public:
 	SVI(const Options &args, const Network &network)
    			: Learner(args, network) {
 		// variational parameters.
-		Random::random.gamma(&lamda, eta[0], eta[1], K, 2);	// variational parameters for beta
-		Random::random.gamma(&gamma, 1, 1, N, K);			// variational parameters for pi
+		lamda = Random::random.gamma(eta[0], eta[1], K, 2);	// variational parameters for beta
+		gamma = Random::random.gamma(1, 1, N, K);			// variational parameters for pi
 		update_pi_beta();
 		// step size parameters.
 		kappa = args.b;
@@ -163,6 +163,15 @@ protected:
 		}
 	}
 
+	template <typename Type>
+	static void row_sum(std::vector<Type> &result, const std::vector<std::vector<Type> > &a) {
+		for (::size_t i = 0; i < a.size(); i++) {
+			(*result)[i] = 0.0;
+			for (::size_t j = 0; j < a[i].size(); j++) {
+				(*result)[i] += a[j][i];
+			}
+		}
+	}
 
 	void update_pi_beta() {
 #if 0
@@ -170,7 +179,15 @@ protected:
 		temp = lamda/np.sum(lamda,1)[:,np.newaxis];
 		beta = temp[:,1];
 #else
-		throw UnimplementedException(__func__);
+#if 0
+		std::vector<double> gamma_row_sum(gamma.size());
+		std::vector<double> lamda_row_sum(lamda.size());
+	   	row_sum(&gamma_row_sum, gamma);
+		row_sum(&lamda_row_sum, lamda);
+#endif
+
+		std::cerr << "Ignore, both pi and beta are unused in this learner" << std::endl;
+		// throw UnimplementedException(__func__);
 #endif
 	}
 
