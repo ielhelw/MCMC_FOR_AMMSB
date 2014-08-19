@@ -66,12 +66,18 @@ public:
 	}
 
 
-	std::vector<int> *sample(const std::vector<int> &list, ::size_t count) {
+	template <class Element>
+	std::vector<Element> *sample(const std::vector<Element> &list, ::size_t count) {
 #if 1
 		std::unordered_set<int> accu;
 		sample(&accu, 0, list.size(), count);
 
-		std::vector<int> *result = new std::vector<int>(accu.begin(), accu.end());
+		std::vector<Element> *result = new std::vector<Element>(accu.size());
+
+		for (std::unordered_set<int>::const_iterator i = accu.begin(); i != accu.end(); i++) {
+			result->push_back(list[*i]);
+		}
+
 #else
 		throw UnimplementedException("Random.sample");
 #endif
@@ -82,7 +88,10 @@ public:
 
 	void gamma(std::vector<std::vector<double> > *a,
 			   double p1, double p2, ::size_t n1, ::size_t n2) {
+#if 1
+#else
 		throw UnimplementedException("Random.gamma");
+#endif
 	}
 
 	static Random random;
