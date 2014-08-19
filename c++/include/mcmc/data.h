@@ -14,6 +14,9 @@
 
 #include <unordered_set>
 #include <utility>
+#include <map>
+#include <unordered_map>
+#include <iostream>
 #include <iomanip>
 
 
@@ -24,7 +27,8 @@ typedef typename std::pair<int, int> Edge;
 typedef typename std::unordered_set<Edge> EdgeSet;
 // typedef typename std::set<Edge> EdgeSet;
 
-typedef std::map<Edge, bool>			EdgeMap;
+// typedef std::map<Edge, bool>			EdgeMap;
+typedef std::unordered_map<Edge, bool>			EdgeMap;
 
 }	// namespace mcmc
 

@@ -1,8 +1,12 @@
+MAJOR	= 0
+MINOR	= 23
+
 PROJECT_HOME = $(shell cd $(PROJECT); pwd)
 
 # include $(PROJECT_HOME)/config.mk
 
 LD = g++
+LDSHARED = g++
 
 CXXFLAGS += -std=c++0x
 ifeq (1, $(CONFIG_OPTIMIZE))
@@ -44,7 +48,7 @@ CXXFLAGS += -I$(BOOST_INCLUDE)
 BOOST_ROOT = $(dir $(BOOST_INCLUDE))
 endif
 
-LDFLAGS += -L$(PROJECT_HOME)/lib
+LDFLAGS += -L$(PROJECT_HOME)/lib -l mcmc
 LDFLAGS += -L$(PROJECT_HOME)/3rdparty/tinyxml2/lib -ltinyxml2
 ifdef USE_MUDFLAP
 LIBS	+= -lmudflapth -rdynamic

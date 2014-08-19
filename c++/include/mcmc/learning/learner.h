@@ -1,12 +1,14 @@
 #ifndef MCMC_LEARNING_LEARNER_H__
 #define MCMC_LEARNING_LEARNER_H__
 
-#include "mcmc/options.h"
+#include <cmath>
+
 #include "mcmc/types.h"
+#include "mcmc/options.h"
 #include "mcmc/network.h"
 
 namespace mcmc {
-namespace learner {
+namespace learning {
 
 /**
  * This is base class for all concrete learners, including MCMC sampler, variational
@@ -17,9 +19,8 @@ public:
 	/**
 	 * initialize base learner parameters.
 	 */
-	Learner(const mcmc::Options &args, ::mcmc::Network *network)
+	Learner(const Options &args, const Network &network)
 			: network(network) {
-#if 0
 
 		// model priors
 		alpha = args.alpha;
@@ -32,7 +33,7 @@ public:
 		epsilon = args.epsilon;
 
 		// parameters related to network
-		N = network->get_num_nodes();
+		N = network.get_num_nodes();
 
 		// model parameters to learn
 		beta = std::vector<double>(K, 0.0D);
@@ -45,7 +46,7 @@ public:
 		}
 
 		// ration between link edges and non-link edges
-		link_ratio = network->get_num_linked_edges() / ((N * (N - 1)) / 2);
+		link_ratio = network.get_num_linked_edges() / ((N * (N - 1)) / 2);
 		// check the number of iterations.
 		step_count = 1;
 		// store perplexity for all the iterations
@@ -56,7 +57,6 @@ public:
 		CONVERGENCE_THRESHOLD = 0.000000000001;
 
 		stepsize_switch = false;
-#endif
 	}
 
 	virtual ~Learner() {
@@ -75,6 +75,7 @@ public:
 	 */
 	virtual void run() = 0;
 
+protected:
 	const std::vector<double> &get_ppxs_held_out() const {
 		return ppxs_held_out;
 	}
@@ -88,11 +89,11 @@ public:
 	}
 
 	double cal_perplexity_held_out() {
-		return cal_perplexity(network->get_held_out_set());
+		return cal_perplexity(network.get_held_out_set());
 	}
 
 	double cal_perplexity_test() {
-		return cal_perplexity(network->get_test_set());
+		return cal_perplexity(network.get_test_set());
 	}
 
 	bool is_converged() const {
@@ -122,7 +123,6 @@ protected:
 	 * which is not true representation of actual data set, which is extremely sparse.
 	 */
 	double cal_perplexity(const EdgeSet &data) {
-#if 0
 		double link_likelihood = 0.0;
 		double non_link_likelihood = 0.0;
 		::size_t link_count = 0;
@@ -133,7 +133,7 @@ protected:
 				edge++) {
 			double edge_likelihood = cal_edge_likelihood(pi[edge->first], pi[edge->second],
 														 data.find(*edge) != data.end(), beta);
-			if (network->get_linked_edges()->find(*edge) != network->get_linked_edges()->end()) {
+			if (network.get_linked_edges()->find(*edge) != network.get_linked_edges()->end()) {
 				link_count++;
 				link_likelihood += edge_likelihood;
 			} else {
@@ -151,9 +151,6 @@ protected:
 		// std::cerr << "perplexity score is: " << exp(-avg_likelihood) << std::endl;
 
 		return std::exp(-avg_likelihood);
-#else
-		return 0.0;
-#endif
 	}
 
 
@@ -167,7 +164,6 @@ protected:
 							   const std::vector<double> &pi_b,
 							   bool y,
 							   const std::vector<double> &beta) const {
-#if 0
 		double prob = 0.0;
 		double s = 0.0;
 
@@ -190,13 +186,10 @@ protected:
 		}
 
 		return log(prob);
-#else
-		return 0.0;
-#endif
 	}
 
 protected:
-	::mcmc::Network *network;
+	const Network &network;
 
 	double alpha;
 	std::vector<double> eta;
@@ -210,7 +203,7 @@ protected:
 	::size_t mini_batch_size;
 	double link_ratio;
 
-	int step_count;
+	::size_t step_count;
 
 	std::vector<double> ppxs_held_out;
 	std::vector<double> ppxs_test;
@@ -223,7 +216,7 @@ protected:
 };
 
 
-}	// namespace learner
+}	// namespace learning
 }	// namespace mcmc
 
 #endif	// ndef MCMC_LEARNING_LEARNER_H__

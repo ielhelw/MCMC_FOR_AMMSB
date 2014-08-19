@@ -84,6 +84,7 @@ public:
 			: MCMCException(reason) {
 	}
 };
+#endif
 
 
 class UnimplementedException : public MCMCException {
@@ -95,7 +96,6 @@ public:
 			: MCMCException(reason) {
 	}
 };
-#endif
 
 
 class NumberFormatException : public MCMCException {

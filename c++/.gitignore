@@ -31,7 +31,7 @@ lib
 # Generated stuff
 
 # executables
-apps/wordcount/wordcount
+apps/main/main
 test/preprocess/hep_ph/main
 test/preprocess/hep_th/main
 test/preprocess/hep_th2/main
