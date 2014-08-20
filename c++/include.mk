@@ -16,6 +16,7 @@ else
 	CXXFLAGS += -g3
 	CXXFLAGS += -DVTIMERS
 	CXXFLAGS += -DMEASURE_READERS_WRITERS
+	CXXFLAGS += -fno-inline-functions
 endif
 ifeq (1, $(CONFIG_PROFILE))
 	CXXFLAGS += -pg

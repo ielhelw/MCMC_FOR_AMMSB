@@ -6,6 +6,8 @@
 
 #include <boost/math/special_functions/digamma.hpp>
 
+#include "mcmc/np.h"
+
 #include "mcmc/types.h"
 #include "mcmc/data.h"
 #include "mcmc/random.h"
@@ -66,6 +68,7 @@ public:
 		// variational parameters.
 		lamda = Random::random.gamma(eta[0], eta[1], K, 2);	// variational parameters for beta
 		gamma = Random::random.gamma(1, 1, N, K);			// variational parameters for pi
+		std::cerr << "gamma.size() " << gamma.size() << " gamma[0].size() " << gamma[0].size() << std::endl;
 		update_pi_beta();
 		// step size parameters.
 		kappa = args.b;
@@ -163,16 +166,6 @@ protected:
 		}
 	}
 
-	template <typename Type>
-	static void row_sum(std::vector<Type> &result, const std::vector<std::vector<Type> > &a) {
-		for (::size_t i = 0; i < a.size(); i++) {
-			(*result)[i] = 0.0;
-			for (::size_t j = 0; j < a[i].size(); j++) {
-				(*result)[i] += a[j][i];
-			}
-		}
-	}
-
 	void update_pi_beta() {
 #if 0
 		pi = gamma/np.sum(gamma,1)[:,np.newaxis];
@@ -182,8 +175,8 @@ protected:
 #if 0
 		std::vector<double> gamma_row_sum(gamma.size());
 		std::vector<double> lamda_row_sum(lamda.size());
-	   	row_sum(&gamma_row_sum, gamma);
-		row_sum(&lamda_row_sum, lamda);
+		np::row_sum(&gamma_row_sum, gamma);
+		np::row_sum(&lamda_row_sum, lamda);
 #endif
 
 		std::cerr << "Ignore, both pi and beta are unused in this learner" << std::endl;
@@ -210,24 +203,26 @@ protected:
 			const std::vector<double> &phi_ab = phi[Edge(a,b)];
 			const std::vector<double> &phi_ba = phi[Edge(b,a)];
 			if (grad_gamma.find(a) != grad_gamma.end()) {
-				for (::size_t k = 0; k < grad_gamma[a].size(); k++) {
+				for (::size_t k = 0; k < phi_ab.size(); k++) {
 					grad_gamma[a][k] += phi_ab[k];
 				}
 				counter[a]++;
 			} else {
-				for (::size_t k = 0; k < grad_gamma[a].size(); k++) {
+				grad_gamma[a].resize(K);
+				for (::size_t k = 0; k < phi_ab.size(); k++) {
 					grad_gamma[a][k] = phi_ab[k];
 				}
 				counter[a] = 1;
 			}
 
 			if (grad_gamma.find(b) != grad_gamma.end()) {
-				for (::size_t k = 0; k < grad_gamma[b].size(); k++) {
+				for (::size_t k = 0; k < phi_ba.size(); k++) {
 					grad_gamma[b][k] += phi_ba[k];
 				}
 				counter[b]++;
 			} else {
-				for (::size_t k = 0; k < grad_gamma[b].size(); k++) {
+				grad_gamma[b].resize(K);
+				for (::size_t k = 0; k < phi_ba.size(); k++) {
 					grad_gamma[b][k] = phi_ba[k];
 				}
 				counter[b] = 1;
@@ -312,27 +307,6 @@ protected:
 	}
 
 
-	// diff2 = np.sum(np.abs(phi_ba - phi_ba_old))
-	static double sum_abs(const std::vector<double> &a, const std::vector<double> &b) {
-		double diff = 0.0;
-		for (::size_t i = 0; i < a.size(); i++) {
-			diff += fabs(a[i] - b[i]);
-		}
-
-		return diff;
-	}
-
-
-	static double sum(const std::vector<double> &a) {
-		double sum = 0.0;
-		for (::size_t i = 0; i < a.size(); i++) {
-			sum += a[i];
-		}
-
-		return sum;
-	}
-
-
 	void estimate_phi_for_edge(const Edge &edge, PhiMap *phi) {
 
 		/**
@@ -382,7 +356,7 @@ protected:
 										 (digamma(lamda[k][1])-digamma(lamda[k][0]+lamda[k][1]))+u);
 				}
 			}
-			double sum_phi_ab = sum(phi_ab);
+			double sum_phi_ab = np::sum(phi_ab);
 			for (::size_t k = 0; k < phi_ab.size(); k++) {
 				phi_ab[k] /= sum_phi_ab;
 			}
@@ -400,7 +374,7 @@ protected:
 				}
 			}
 
-			double sum_phi_ba = sum(phi_ba);
+			double sum_phi_ba = np::sum(phi_ba);
 			for (::size_t k = 0; k < phi_ba.size(); k++) {
 				phi_ba[k] /= sum_phi_ba;
 			}
@@ -408,8 +382,8 @@ protected:
 			// calculate the absolute difference between new value and old value
 			// diff1 = np.sum(np.abs(phi_ab - phi_ab_old))
 			// diff2 = np.sum(np.abs(phi_ba - phi_ba_old))
-			double diff1 = sum_abs(phi_ab, phi_ab_old);
-			double diff2 = sum_abs(phi_ba, phi_ba_old);
+			double diff1 = np::sum_abs(phi_ab, phi_ab_old);
+			double diff2 = np::sum_abs(phi_ba, phi_ba_old);
 			if (diff1 < phi_update_threshold and diff2 < phi_update_threshold) {
 				break;
 			}
