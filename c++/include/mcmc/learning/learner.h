@@ -181,6 +181,7 @@ protected:
 		} else {
 			prob += (1.0 - s) * epsilon;
 		}
+		std::cerr << "Calculate s " << s << " prob " << prob << std::endl;
 		if (prob < 0.0) {
 			std::cerr << "adsfadsfadsf" << std::endl;
 		}

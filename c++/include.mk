@@ -3,7 +3,7 @@ MINOR	= 23
 
 PROJECT_HOME = $(shell cd $(PROJECT); pwd)
 
-# include $(PROJECT_HOME)/config.mk
+include $(PROJECT_HOME)/config.mk
 
 LD = g++
 LDSHARED = g++
@@ -14,8 +14,6 @@ ifeq (1, $(CONFIG_OPTIMIZE))
 	CXXFLAGS += -DNDEBUG
 else
 	CXXFLAGS += -g3
-	CXXFLAGS += -DVTIMERS
-	CXXFLAGS += -DMEASURE_READERS_WRITERS
 	CXXFLAGS += -fno-inline-functions
 endif
 ifeq (1, $(CONFIG_PROFILE))

@@ -5,6 +5,7 @@
 
 #include <unordered_set>
 #include <vector>
+#include <random>
 
 #include "mcmc/exception.h"
 

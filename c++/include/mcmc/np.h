@@ -3,17 +3,15 @@
 
 #include <cmath>
 
+#include <algorithm>
+
+
 namespace mcmc {
 namespace np {
 
 template <typename Type>
-static void row_sum(std::vector<Type> &result, const std::vector<std::vector<Type> > &a) {
-	for (::size_t i = 0; i < a.size(); i++) {
-		(*result)[i] = static_cast<Type>(0);
-		for (::size_t j = 0; j < a[i].size(); j++) {
-			(*result)[i] += a[j][i];
-		}
-	}
+static std::vector<std::vector<Type> > row_sum(const std::vector<std::vector<Type> > &a) {
+	return r(std::tranform(std::accumulate(a));
 }
 
 

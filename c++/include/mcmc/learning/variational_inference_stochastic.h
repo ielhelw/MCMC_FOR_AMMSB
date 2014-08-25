@@ -63,8 +63,8 @@ public:
 	 * 	   network:    representation of the graph.
 	 * 	   args:       containing priors, control parameters for the model.
 	 */
-	SVI(const Options &args, const Network &network)
-   			: Learner(args, network) {
+	SVI(const Options &args, const Network &graph)
+   			: Learner(args, graph) {
 		// variational parameters.
 		lamda = Random::random.gamma(eta[0], eta[1], K, 2);	// variational parameters for beta
 		gamma = Random::random.gamma(1, 1, N, K);			// variational parameters for pi
@@ -116,7 +116,7 @@ public:
 			double scale = edgeSample.second;
 
 			// evaluate model after processing every 10 mini-batches.
-			if (step_count % 2 == 1) {
+			if (step_count % 1 == 0) {
 				double ppx_score = cal_perplexity_held_out();
 				std::cout << "perplexity for hold out set is: " << ppx_score << std::endl;
 				ppxs_held_out.push_back(ppx_score);
@@ -131,6 +131,7 @@ public:
 			sample_latent_vars_for_edges(&phi, mini_batch);
 			update_gamma_and_lamda(phi, mini_batch, scale);
 			update_pi_beta();
+			std::cerr << "GC phi values?" << std::endl;
 
 			step_count++;
 		}
@@ -142,6 +143,8 @@ public:
 			ps = pstats.Stats(pr, stream=s).sort_stats(sortby)
 			ps.print_stats()
 			print s.getvalue()
+#else
+		std::cerr << "Would like to print stats here" << std::endl;
 #endif
 	}
 
@@ -159,6 +162,7 @@ protected:
 																		 lamda, K, phi_update_threshold,
 																		 epsilon, online_iterations,
 																		 network.get_linked_edges());
+			std::cerr << "GC old values?" << std::endl;
 			(*phi)[Edge(a,b)]=phi_abba.first;
 			(*phi)[Edge(b,a)]=phi_abba.second;
 
@@ -167,19 +171,31 @@ protected:
 	}
 
 	void update_pi_beta() {
+		/**
+		 * Spell this out from numpy terms
+		 * gamma :: double[N,K]
+		 *	pi = gamma/np.sum(gamma,1)[:,np.newaxis]
+		 *		s = np.sum(gamma,1) :: double[N]; s[i] = sum_j gamma[i,j]
+		 *		s = map(sum(gamma))
+		 *		t = s[:,np.newaxis] :: double[N,1]; t[i,0] = s[i]
+		 *		pi = gamma/t :: double[N,K]; pi[i,j] = gamma[i,j] / t[i,0] = gamma[i,j] / s[i]
+		 *
+		 * lamda :: double[K,2]
+		 * temp = lamda/np.sum(lamda,1)[:,np.newaxis]
+		 * beta = temp[:,1]
+		 * 		s = np.sum(lamda,1) :: double[K]; s[i] sum_j lamda[i,j]
+		 * 		temp = gamma/t :: double[K,2]; temp[i,j] = lamda[i,j] / s[i]
+		 */
 #if 0
 		pi = gamma/np.sum(gamma,1)[:,np.newaxis];
 		temp = lamda/np.sum(lamda,1)[:,np.newaxis];
 		beta = temp[:,1];
 #else
-#if 0
-		std::vector<double> gamma_row_sum(gamma.size());
-		std::vector<double> lamda_row_sum(lamda.size());
-		np::row_sum(&gamma_row_sum, gamma);
-		np::row_sum(&lamda_row_sum, lamda);
-#endif
-
-		std::cerr << "Ignore, both pi and beta are unused in this learner" << std::endl;
+		std::vector<double> s_gamma(gamma.size(), np::row_sum(gamma));
+		pi = std::transform(std::transform(gamma, divTgamma));
+		std::vector<double> s_lamda(lamda.size(), np::row_sum(lamda));
+		temp = std::transform(std::transform(lamda, divTlamda));
+		beta = std::transform(temp, selectColumn(1));
 		// throw UnimplementedException(__func__);
 #endif
 	}
@@ -210,9 +226,6 @@ protected:
 			} else {
 				grad_gamma[a].resize(K);
 				for (::size_t k = 0; k < phi_ab.size(); k++) {
-					grad_gamma[a][k] = phi_ab[k];
-				}
-				counter[a] = 1;
 			}
 
 			if (grad_gamma.find(b) != grad_gamma.end()) {
@@ -321,6 +334,9 @@ protected:
 			if y =0:
 		phi_ba[k]=exp(psi(gamma[b][k])+phi_ab[k]*(psi(lamda[k][1])-psi(lambda[k0]+lambda[k][1]))-phi_ab[k]*log(1-epsilon))
 			if y=1:
+		phi_ba[k]=exp(psi(gamma[b][k])+phi_ab[k]*(psi(lamda[k][0])-psi(lambda[k0]+lambda[k][1]))-phi_ab[k]*log(epsilon))
+
+		*/
 		phi_ba[k]=exp(psi(gamma[b][k])+phi_ab[k]*(psi(lamda[k][0])-psi(lambda[k0]+lambda[k][1]))-phi_ab[k]*log(epsilon))
 
 		*/
