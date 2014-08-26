@@ -21,6 +21,7 @@
 .*.swp
 
 # Generated for configure
+config.mk
 config.cache
 Makefile.config
 
