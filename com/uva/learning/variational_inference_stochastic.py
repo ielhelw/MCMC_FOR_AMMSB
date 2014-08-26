@@ -1,4 +1,4 @@
-import random
+from com.uva.file_random import file_random as random
 from com.uva.edge import Edge
 import math
 import numpy as np
@@ -91,7 +91,8 @@ class SVI(Learner):
             (mini_batch, scale) = self._network.sample_mini_batch(self._mini_batch_size, "stratified-random-node")
             
              # evaluate model after processing every 10 mini-batches. 
-            if self._step_count % 2 ==  1:
+            # if self._step_count % 2 ==  1:
+            if self._step_count % 1 ==  0:
                 ppx_score = self._cal_perplexity_held_out()
                 print "perplexity for hold out set is: "  + str(ppx_score)
                 self._ppxs_held_out.append(ppx_score)
@@ -166,7 +167,9 @@ class SVI(Learner):
                 grad_gamma[b] = phi_ba
                 counter[b] = 1
         
-        for edge in mini_batch:    
+	# OOPPSSS RFHH phi_ab remains the last value from the loop, not updated
+	# OOPPSSS RFHH why not do it in the same loop?
+        # for edge in mini_batch:    
             """
             calculate the gradient for lambda
             """
