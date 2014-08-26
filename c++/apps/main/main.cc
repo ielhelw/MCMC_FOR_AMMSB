@@ -22,15 +22,17 @@ int main(int argc, char *argv[]) {
 	// MCMCSamplerBatch mcmcSampler(args, network);
 	// mcmcSampler.run();
 
-	if (false) {
+	if (true) {
 		std::cout << "start variational inference stochastical" << std::endl;
 		SVI sviSampler(args, network);
 		sviSampler.run();
 	}
 
-	std::cout << "start variational inference batch" << std::endl;
-	SV svSampler(args, network);
-	svSampler.run();
+	if (false) {
+		std::cout << "start variational inference batch" << std::endl;
+		SV svSampler(args, network);
+		svSampler.run();
+	}
 
 	return 0;
 }

@@ -165,7 +165,11 @@ protected:
 																		 lamda, K, phi_update_threshold,
 																		 epsilon, online_iterations,
 																		 network.get_linked_edges());
-			std::cerr << "GC old values?" << std::endl;
+			static bool first = true;
+			if (first) {
+				std::cerr << "GC old values?" << std::endl;
+				first = false;
+			}
 			(*phi)[Edge(a,b)]=phi_abba.first;
 			(*phi)[Edge(b,a)]=phi_abba.second;
 
