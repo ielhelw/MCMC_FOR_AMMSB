@@ -154,4 +154,8 @@ distclean: clean ALWAYS
 
 depends: $(DEPENDS)
 
+build:	default
+
+default: subdirs
+
 -include $(DEPENDS)
