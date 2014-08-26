@@ -9,6 +9,7 @@ LD = g++
 LDSHARED = g++
 
 CXXFLAGS += -std=c++0x
+CXXFLAGS += -fPIC
 ifeq (1, $(CONFIG_OPTIMIZE))
 	CXXFLAGS += -g3 -O2 -finline-functions
 	CXXFLAGS += -DNDEBUG

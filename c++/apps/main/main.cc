@@ -4,7 +4,7 @@
 #include "mcmc/preprocess/data_factory.h"
 // #include "mcmc/learning/mcmc_sampler_stochastic.h"
 #include "mcmc/learning/variational_inference_stochastic.h"
-// #include "mcmc/learning/variational_inference_batch.h"
+#include "mcmc/learning/variational_inference_batch.h"
 // #include "mcmc/learning/mcmc_sampler_batch.h"
 
 using namespace mcmc;
@@ -22,9 +22,15 @@ int main(int argc, char *argv[]) {
 	// MCMCSamplerBatch mcmcSampler(args, network);
 	// mcmcSampler.run();
 
+	if (false) {
+		std::cout << "start variational inference stochastical" << std::endl;
+		SVI sviSampler(args, network);
+		sviSampler.run();
+	}
+
 	std::cout << "start variational inference batch" << std::endl;
-	SVI sviSampler(args, network);
-	sviSampler.run();
+	SV svSampler(args, network);
+	svSampler.run();
 
 	return 0;
 }

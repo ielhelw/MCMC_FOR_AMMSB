@@ -31,7 +31,7 @@ static DoubleVectorPair sample_latent_vars_for_each_pair(int a, int b,
 														 const std::vector<double> &gamma_b,
 														 const std::vector<std::vector<double> > &lamda,
 														 ::size_t K, double update_threshold, double epsilon,
-														 ::size_t online_iterations, const EdgeSet *linked_edges) {
+														 ::size_t online_iterations, const EdgeSet &linked_edges) {
 	using ::boost::math::digamma;
 
 	std::vector<double> phi_ab(K, 1.0 / K);
@@ -39,7 +39,7 @@ static DoubleVectorPair sample_latent_vars_for_each_pair(int a, int b,
 
     double u = 0.0;
     bool y = false;
-	if (linked_edges->find(Edge(a, b)) != linked_edges->end()) {
+	if (linked_edges.find(Edge(a, b)) != linked_edges.end()) {
         y = true;
 	}
 

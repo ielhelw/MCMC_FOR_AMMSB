@@ -1,8 +1,10 @@
 #ifndef MCMC_VARIATIONAL_INFERENCE_STOCHASTIC_H__
 #define MCMC_VARIATIONAL_INFERENCE_STOCHASTIC_H__
 
-#include <unordered_map>
 #include <cmath>
+#include <unordered_map>
+#include <algorithm>
+#include <functional>
 
 #include <boost/math/special_functions/digamma.hpp>
 
@@ -18,6 +20,7 @@ namespace mcmc {
 namespace learning {
 
 typedef std::unordered_map<Edge, std::vector<double> >	PhiMap;
+
 
 /**
  *  Stochastic variational inference for assortive mixture membership stochastic model.
@@ -170,6 +173,7 @@ protected:
 		}
 	}
 
+
 	void update_pi_beta() {
 		/**
 		 * Spell this out from numpy terms
@@ -191,11 +195,11 @@ protected:
 		temp = lamda/np.sum(lamda,1)[:,np.newaxis];
 		beta = temp[:,1];
 #else
-		std::vector<double> s_gamma(gamma.size(), np::row_sum(gamma));
-		pi = std::transform(std::transform(gamma, divTgamma));
-		std::vector<double> s_lamda(lamda.size(), np::row_sum(lamda));
-		temp = std::transform(std::transform(lamda, divTlamda));
-		beta = std::transform(temp, selectColumn(1));
+		np::row_normalize(&pi, gamma);
+
+		std::vector<std::vector<double> > temp(lamda.size(), std::vector<double>(lamda[0].size()));
+		np::row_normalize(&temp, lamda);
+		std::transform(temp.begin(), temp.end(), beta.begin(), np::SelectColumn<double>(1));
 		// throw UnimplementedException(__func__);
 #endif
 	}
@@ -226,6 +230,9 @@ protected:
 			} else {
 				grad_gamma[a].resize(K);
 				for (::size_t k = 0; k < phi_ab.size(); k++) {
+					grad_gamma[a][k] = phi_ab[k];
+				}
+				counter[b] = 1;
 			}
 
 			if (grad_gamma.find(b) != grad_gamma.end()) {
@@ -251,7 +258,7 @@ protected:
 			 * calculate the gradient for lambda
 			 */
 			int y = 0;
-			if (network.get_linked_edges()->find(*edge) != network.get_linked_edges()->end()) {
+			if (network.get_linked_edges().find(*edge) != network.get_linked_edges().end()) {
 				y = 1;
 				flag = true;
 			}
@@ -320,6 +327,7 @@ protected:
 	}
 
 
+#ifdef UNUSED
 	void estimate_phi_for_edge(const Edge &edge, PhiMap *phi) {
 
 		/**
@@ -350,7 +358,7 @@ protected:
 		std::vector<double> phi_ba(K, 1.0 / K);
 
 		bool y = false;
-		if (network.get_linked_edges()->find(edge) != network.get_linked_edges()->end()) {
+		if (network.get_linked_edges().find(edge) != network.get_linked_edges().end()) {
 			y = true;
 		}
 
@@ -408,6 +416,7 @@ protected:
 		(*phi)[Edge(a,b)] = phi_ab;
 		(*phi)[Edge(b,a)] = phi_ba;
 	}
+#endif
 
 protected:
 	std::vector<std::vector<double> > lamda;	// variational parameters for beta

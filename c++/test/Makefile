@@ -1,5 +1,5 @@
-PROJECT = ..
+PROJECT = $(shell cd ..; pwd)
 
-SUBDIRS = preprocess
+SUBDIRS += preprocess
 
 include $(PROJECT)/include.mk

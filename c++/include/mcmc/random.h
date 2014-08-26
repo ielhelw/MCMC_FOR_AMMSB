@@ -13,6 +13,10 @@ namespace mcmc {
 
 class Random {
 public:
+	Random(unsigned int seed) {
+		srand(seed);
+	}
+
 	int randint(int from, int upto) {
 #if 0
 		throw UnimplementedException("Random.randint");

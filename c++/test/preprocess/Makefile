@@ -1,10 +1,5 @@
-PROJECT = ../..
+PROJECT = $(shell cd ../..; pwd)
 
-SUBDIRS :=
-SUBDIRS	+= hep_ph
-SUBDIRS	+= hep_th
-SUBDIRS	+= hep_th2
-SUBDIRS	+= netscience
-SUBDIRS	+= relativity
+SUBDIRS += netscience
 
 include $(PROJECT)/include.mk

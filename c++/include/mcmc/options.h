@@ -1,6 +1,8 @@
 #ifndef MCMC_OPTIONS_H__
 #define MCMC_OPTIONS_H__
 
+#include <iostream>
+
 #include "mcmc/exception.h"
 
 #include <boost/program_options.hpp>

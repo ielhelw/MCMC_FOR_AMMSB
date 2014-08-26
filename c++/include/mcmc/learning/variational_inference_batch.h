@@ -4,41 +4,47 @@
 #include "mcmc/learning/learner.h"
 #include "mcmc/estimate_phi.h"
 
+#ifdef UNUSED
+#error No UNUSED cannot be set
+#endif
+
 
 namespace mcmc {
 namespace learning {
 
 // Helper classes for the transforms
-class UpdateGammaStar : public binary_function<double, double, double> {
-	UpdateGammaStar(double p_t, double alpha) : p_t(p_t), alpha(alpha) {
+template <class T>
+class UpdateGammaStar : public std::binary_function<T, T, T> {
+public:
+	UpdateGammaStar(T p_t, T alpha) : p_t(p_t), alpha(alpha) {
 	}
 
-	double operator()(const double &x, const double &y) {
+	T operator()(const T &x, const T &y) {
 		// gamma_star = (1-p_t)*gamma[node] + p_t * (alpha + gamma_grad[node]);
 		return (1.0 - p_t) * x + p_t * (alpha + y);
 	}
 
 protected:
-	double p_t;
-	double alpha;
+	T p_t;
+	T alpha;
 };
 
 
-class UpdateGamma : public binary_function<double, double, double> {
+template <class T>
+class UpdateGamma : public std::binary_function<T, T, T> {
+public:
 	UpdateGamma(::size_t step_count) : step_count(step_count) {
 	}
 
-	double operator()(const double &x, const double &y) {
+	T operator()(const T &x, const T &y) {
 		// gamma[node] = (1-1.0/(step_count))*gamma[node] + gamma_star;
-		return (1.0 - 1.0 / step_count) * x + y;
+		return ((T)1 - (T)1 / step_count) * x + y;
 	}
 
 protected:
 	::size_t step_count;
 };
 
-
-UpdateGamma update_gamma(step_count);
 
 class SV : public Learner {
 public:
@@ -109,8 +115,8 @@ protected:
 		for (::size_t a = 0; a < N; a++) {
 			for (::size_t b = a + 1; b < N; b++) {
 				Edge edge(a, b);
-				if (network.get_held_out_set()->find(edge) != network.get_held_out_set()->end() ||
-						network.get_test_set()->find(edge) != network.get_test_set()->end()) {
+				if (network.get_held_out_set().find(edge) != network.get_held_out_set().end() ||
+						network.get_test_set().find(edge) != network.get_test_set().end()) {
                     continue;
 				}
 
@@ -121,35 +127,38 @@ protected:
 
                 // update gamma_grad and lamda_grad
 				std::transform(gamma_grad[a].begin(), gamma_grad[a].end(),
-							   phi_abba.first->begin(), phi_abba.first->end(),
-							   gamma_grad[a].begin());
+							   phi_abba.first.begin(),
+							   gamma_grad[a].begin(),
+							   std::plus<double>());
 				std::transform(gamma_grad[b].begin(), gamma_grad[b].end(),
-							   phi_abba.second->begin(), phi_abba.second->end(),
-							   gamma_grad[b].begin());
+							   phi_abba.second.begin(),
+							   gamma_grad[b].begin(),
+							   std::plus<double>());
 
                 int y = 0;
-				if (network.get_linked_edges()->find(edge) != network.get_linked_edges()->end()) {
+				if (network.get_linked_edges().find(edge) != network.get_linked_edges().end()) {
                     y = 1;
 				}
 
                 for (::size_t k = 0; k < K; k++) {
-                    lamda_grad[k][0] += phi_abba->first[k] * phi_abba->second[k] * y;
-                    lamda_grad[k][1] += phi_abba->first[k] * phi_abba->second[k] * (1-y);
+                    lamda_grad[k][0] += phi_abba.first[k] * phi_abba.second[k] * y;
+                    lamda_grad[k][1] += phi_abba.first[k] * phi_abba.second[k] * (1-y);
 				}
-				std::cerr << "GC phi_abba vectors?" << std::endl;
+				// std::cerr << "GC phi_abba vectors?" << std::endl;
 			}
+			std::cerr << "Row[" << a << "]" << std::endl;
 		}
 
         // update gamma, only update node in the grad
 		double p_t;
-        if (! self.stepsize_switch) {
+        if (! stepsize_switch) {
             p_t = std::pow(1024 + step_count, -0.5);
 		} else {
             p_t = 0.01*std::pow(1+step_count/1024.0, 0.55);
 		}
 
-		UpdateGammaStar update_gamma_star(p_t, alpha);
-		UpdateGamma update_gamma(step_count);
+		UpdateGammaStar<double> update_gamma_star(p_t, alpha);
+		UpdateGamma<double> update_gamma(step_count);
         for (::size_t node = 0; node < K; node++) {
 			std::vector<double> gamma_star(K, 0.0);
 
@@ -161,7 +170,7 @@ protected:
 							   update_gamma_star);
                 // gamma[node] = (1-1.0/(step_count))*gamma[node] + gamma_star;
 				std::transform(gamma[node].begin(), gamma[node].end(),
-							   gamma_star[node].begin(),
+							   gamma_star.begin(),
 							   gamma[node].begin(),
 							   update_gamma);
 			} else {
@@ -200,7 +209,7 @@ protected:
 
 #ifdef UNUSED
     def __estimate_phi_for_edge(self, edge, phi):
-        '''
+        /*
         calculate (phi_ab, phi_ba) for given edge : (a,b)
         (a) calculate phi_ab given phi_ba
             if y =0:
@@ -214,7 +223,7 @@ protected:
             if y=1:
         phi_ba[k]=exp(psi(gamma[b][k])+phi_ab[k]*(psi(lamda[k][0])-psi(lambda[k0]+lambda[k][1]))-phi_ab[k]*log(epsilon))
 
-        '''
+        */
 
         a = edge[0]
         b = edge[1]
@@ -272,6 +281,19 @@ protected:
         phi[(b,a)] = phi_ba
 #endif
 
+protected:
+	std::vector<std::vector<double> > lamda;	// variational parameters for beta
+	std::vector<std::vector<double> > gamma;			// variational parameters for pi
+	double kappa;
+	double tao;
+
+	// control parameters for learning
+	::size_t online_iterations;
+	double phi_update_threshold;
+
+	// lift
+	double log_epsilon;
+	double log_1_epsilon;
 };
 
 }	// namespace learning

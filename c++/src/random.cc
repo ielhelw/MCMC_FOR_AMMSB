@@ -2,6 +2,6 @@
 
 namespace mcmc {
 
-Random Random::random;
+Random Random::random(0);
 
 }	// namespace mcmc

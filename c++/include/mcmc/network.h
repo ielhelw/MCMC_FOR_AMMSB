@@ -118,8 +118,8 @@ public:
 		return N;
 	}
 
-	const EdgeSet *get_linked_edges() const {
-		return linked_edges;
+	const EdgeSet &get_linked_edges() const {
+		return *linked_edges;
 	}
 
 	const EdgeSet &get_held_out_set() const {

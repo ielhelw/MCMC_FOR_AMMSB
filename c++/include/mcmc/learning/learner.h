@@ -133,7 +133,7 @@ protected:
 				edge++) {
 			double edge_likelihood = cal_edge_likelihood(pi[edge->first], pi[edge->second],
 														 data.find(*edge) != data.end(), beta);
-			if (network.get_linked_edges()->find(*edge) != network.get_linked_edges()->end()) {
+			if (network.get_linked_edges().find(*edge) != network.get_linked_edges().end()) {
 				link_count++;
 				link_likelihood += edge_likelihood;
 			} else {

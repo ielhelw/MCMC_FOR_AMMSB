@@ -9,9 +9,47 @@
 namespace mcmc {
 namespace np {
 
-template <typename Type>
-static std::vector<std::vector<Type> > row_sum(const std::vector<std::vector<Type> > &a) {
-	return r(std::tranform(std::accumulate(a));
+
+template <typename T>
+class SelectColumn {
+public:
+	SelectColumn(int j) : j(j) {
+	}
+
+	T operator() (const std::vector<T> &v) {
+		return v[j];
+	}
+
+protected:
+	int j;
+};
+
+
+template <typename T>
+class DivideBy {
+public:
+	DivideBy(T d) : d(d) {
+	}
+
+	T operator() (const T &v) {
+		return v / d;
+	}
+
+protected:
+	T d;
+};
+
+
+/**
+ * r[i,j] = a[i,j] / s[i] where s[i] = sum_j a[i,j]
+ */
+template <typename T>
+static void row_normalize(std::vector<std::vector<T> > *r,
+						  const std::vector<std::vector<T> > &a) {
+	for (::size_t i = 0; i < a.size(); i++) {
+		T row_sum = std::accumulate(a[i].begin(), a[i].end(), (T)0);
+		std::transform(a[i].begin(), a[i].end(), (*r)[i].begin(), np::DivideBy<T>(row_sum));
+	}
 }
 
 
