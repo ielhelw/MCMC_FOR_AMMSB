@@ -122,21 +122,23 @@ protected:
 	 * the equal number of link edges and non-link edges for held out data and test data,
 	 * which is not true representation of actual data set, which is extremely sparse.
 	 */
-	double cal_perplexity(const EdgeSet &data) {
+	double cal_perplexity(const EdgeMapBool &data) {
 		double link_likelihood = 0.0;
 		double non_link_likelihood = 0.0;
 		::size_t link_count = 0;
 		::size_t non_link_count = 0;
 
-		for (EdgeSet::const_iterator edge = data.begin();
+		for (EdgeMapBool::const_iterator edge = data.begin();
 			 	edge != data.end();
 				edge++) {
-			double edge_likelihood = cal_edge_likelihood(pi[edge->first], pi[edge->second],
-														 data.find(*edge) != data.end(), beta);
-			if (network.get_linked_edges().find(*edge) != network.get_linked_edges().end()) {
+			const Edge &e = edge->first;
+			double edge_likelihood = cal_edge_likelihood(pi[e.first], pi[e.second],
+														 edge->second, beta);
+			if (network.get_linked_edges().find(e) != network.get_linked_edges().end()) {
 				link_count++;
 				link_likelihood += edge_likelihood;
 			} else {
+				assert(! present(network.get_linked_edges(), e));
 				non_link_count++;
 				non_link_likelihood += edge_likelihood;
 			}
@@ -171,7 +173,7 @@ protected:
 			if (! y) {
 				prob += pi_a[k] * pi_b[k] * (1 - beta[k]);
 			} else {
-				prob += pi_a[k] + pi_b[k] * beta[k];
+				prob += pi_a[k] * pi_b[k] * beta[k];
 			}
 			s += pi_a[k] * pi_b[k];		// common expr w/ above
 		}

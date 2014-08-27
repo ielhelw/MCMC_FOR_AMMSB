@@ -57,8 +57,8 @@ public:
 	 */
 	SV(const Options &args, const Network &graph) : Learner(args, graph) {
 		// variational parameters.
-		lamda = Random::random.gamma(eta[0], eta[1], K, 2);	// variational parameters for beta
-		gamma = Random::random.gamma(1, 1, N, K);			// variational parameters for pi
+		lamda = Random::random->gamma(eta[0], eta[1], K, 2);	// variational parameters for beta
+		gamma = Random::random->gamma(1, 1, N, K);			// variational parameters for pi
 		std::cerr << "gamma.size() " << gamma.size() << " gamma[0].size() " << gamma[0].size() << std::endl;
 		update_pi_beta();
 		// step size parameters.

@@ -15,6 +15,14 @@ namespace mcmc {
 typedef std::pair<EdgeSet *, float>		EdgeSample;
 // typedef std::set<int>					VertexSet;
 typedef std::unordered_set<int>					VertexSet;
+// typedef std::unordered_map<Edge, bool>	EdgeMapBool;
+typedef std::map<Edge, bool>	EdgeMapBool;
+
+void dump(const EdgeMapBool &s) {
+	for (EdgeMapBool::const_iterator e = s.begin(); e != s.end(); e++) {
+		std::cout << e->first << ": " << e->second << std::endl;
+	}
+}
 
 /**
  * Network class represents the whole graph that we read from the 
@@ -122,11 +130,11 @@ public:
 		return *linked_edges;
 	}
 
-	const EdgeSet &get_held_out_set() const {
+	const EdgeMapBool &get_held_out_set() const {
 		return held_out_map;
 	}
 
-	const EdgeSet &get_test_set() const {
+	const EdgeMapBool &get_test_set() const {
 		return test_map;
 	}
 
@@ -143,12 +151,13 @@ public:
 	 * @return the caller must delete the result
 	 */
 	EdgeSample random_pair_sampling(::size_t mini_batch_size) const {
+
 		EdgeSet *mini_batch_set = new EdgeSet();
 
 		// iterate until we get $p$ valid edges.
 		for (::size_t p = mini_batch_size; p > 0; p--) {
-			int firstIdx = Random::random.randint(0, N - 1);
-			int secondIdx = Random::random.randint(0, N - 1);
+			int firstIdx = Random::random->randint(0, N - 1);
+			int secondIdx = Random::random->randint(0, N - 1);
 			if (firstIdx == secondIdx) {
 				continue;
 			}
@@ -182,7 +191,7 @@ public:
 		EdgeSet *mini_batch_set = new EdgeSet();
 
 		// randomly select the node ID
-		int nodeId = Random::random.randint(0, N - 1);
+		int nodeId = Random::random->randint(0, N - 1);
 		for (int i = 0; i < N; i++) {
 			// make sure the first index is smaller than the second one, since
 			// we are dealing with undirected graph.
@@ -210,11 +219,11 @@ public:
 
 		EdgeSet *mini_batch_set = new EdgeSet();
 
-		int flag = Random::random.randint(0, 1);
+		int flag = Random::random->randint(0, 1);
 
 		if (flag == 0) {
 			// sample mini-batch from linked edges
-			EdgeSet *sampled_linked_edges = Random::random.sample(linked_edges, mini_batch_size * 2);
+			EdgeSet *sampled_linked_edges = Random::random->sample(linked_edges, mini_batch_size * 2);
 			for (EdgeSet::iterator edge = sampled_linked_edges->begin();
 				 	edge != sampled_linked_edges->end();
 					edge++) {
@@ -239,8 +248,8 @@ public:
 		} else {
 			// sample mini-batch from non-linked edges
 			while (p > 0) {
-				int firstIdx = Random::random.randint(0, N - 1);
-				int secondIdx = Random::random.randint(0, N - 1);
+				int firstIdx = Random::random->randint(0, N - 1);
+				int secondIdx = Random::random->randint(0, N - 1);
 
 				if (firstIdx == secondIdx) {
 					continue;
@@ -288,9 +297,9 @@ public:
 	 */
 	EdgeSample stratified_random_node_sampling(::size_t num_pieces) const {
 		// randomly select the node ID
-		int nodeId = Random::random.randint(0, N - 1);
+		int nodeId = Random::random->randint(0, N - 1);
 		// decide to sample links or non-links
-		int flag = Random::random.randint(0, 1);	// flag=0: non-link edges  flag=1: link edges
+		int flag = Random::random->randint(0, 1);	// flag=0: non-link edges  flag=1: link edges
 
 		EdgeSet *mini_batch_set = new EdgeSet();
 
@@ -304,7 +313,7 @@ public:
 			while (p > 0) {
 				// because of the sparsity, when we sample $mini_batch_size*2$ nodes, the list likely
 				// contains at least mini_batch_size valid nodes.
-				std::vector<int> *nodeList = Random::random.sample(xrange(0, N), mini_batch_size * 2);
+				std::vector<int> *nodeList = Random::random->sample(xrange(0, N), mini_batch_size * 2);
 				for (std::vector<int>::iterator neighborId = nodeList->begin();
 					 	neighborId != nodeList->end();
 						neighborId++) {
@@ -379,11 +388,11 @@ protected:
 							    "please use smaller held out ratio.");
 		}
 
-		EdgeSet *sampled_linked_edges = Random::random.sample(linked_edges, p);
+		EdgeSet *sampled_linked_edges = Random::random->sample(linked_edges, p);
 		for (EdgeSet::iterator edge = sampled_linked_edges->begin();
 			 	edge != sampled_linked_edges->end();
 				edge++) {
-			held_out_map.insert(*edge);
+			held_out_map[*edge] = true;
 			train_link_map[edge->first].erase(edge->second);
 			train_link_map[edge->second].erase(edge->first);
 		}
@@ -391,9 +400,14 @@ protected:
 		// sample p non-linked edges from the network
 		while (p > 0) {
 			Edge edge = sample_non_link_edge_for_held_out();
-			held_out_map.erase(edge);
+			held_out_map[edge] = false;
 			p--;
 		}
+
+		std::cout << "sampled_linked_edges:" << std::endl;
+		dump(*sampled_linked_edges);
+		std::cout << "held_out_set:" << std::endl;
+		dump(held_out_map);
 
 		delete sampled_linked_edges;
 	}
@@ -410,7 +424,7 @@ protected:
 			// Because we already used some of the linked edges for held_out sets,
 			// here we sample twice as much as links, and select among them, which
 			// is likely to contain valid p linked edges.
-			EdgeSet *sampled_linked_edges = Random::random.sample(linked_edges, 2 * p);
+			EdgeSet *sampled_linked_edges = Random::random->sample(linked_edges, 2 * p);
 			for (EdgeSet::iterator edge = sampled_linked_edges->begin();
 				 	edge != sampled_linked_edges->end();
 					edge++) {
@@ -424,7 +438,7 @@ protected:
 					continue;
 				}
 
-				test_map.insert(*edge);
+				test_map[*edge] = true;
 				train_link_map[edge->first].erase(edge->second);
 				train_link_map[edge->second].erase(edge->first);
 				p--;
@@ -435,7 +449,7 @@ protected:
 		p = held_out_size / 2;
 		while (p > 0) {
 			Edge edge = sample_non_link_edge_for_test();
-			test_map.erase(edge);
+			test_map[edge] = false;
 			p--;
 		}
 	}
@@ -450,8 +464,8 @@ protected:
 	 */
 	Edge sample_non_link_edge_for_held_out() {
 		while (true) {
-			int firstIdx = Random::random.randint(0, N - 1);
-			int secondIdx = Random::random.randint(0, N - 1);
+			int firstIdx = Random::random->randint(0, N - 1);
+			int secondIdx = Random::random->randint(0, N - 1);
 
 			if (firstIdx == secondIdx) {
 				continue;
@@ -478,8 +492,8 @@ protected:
 	 */
 	Edge sample_non_link_edge_for_test() {
 		while (true) {
-			int firstIdx = Random::random.randint(0, N - 1);
-			int secondIdx = Random::random.randint(0, N - 1);
+			int firstIdx = Random::random->randint(0, N - 1);
+			int secondIdx = Random::random->randint(0, N - 1);
 
 			if (firstIdx == secondIdx) {
 				continue;
@@ -518,8 +532,8 @@ protected:
 	// 10000: [0,441,9000]
 	//                         }
 	std::vector<VertexSet> train_link_map;	//
-	EdgeSet held_out_map;			// store all held out edges
-	EdgeSet test_map;				// store all test edges
+	EdgeMapBool held_out_map;			// store all held out edges
+	EdgeMapBool test_map;				// store all test edges
 
 	::size_t	num_pieces;
 

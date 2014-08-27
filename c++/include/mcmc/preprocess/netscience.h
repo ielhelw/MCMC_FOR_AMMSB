@@ -164,7 +164,7 @@ public:
 			if (n->QueryIntAttribute("target", &b) != XML_NO_ERROR) {
 				throw XMLException("Cannot get int attribute 'target'");
 			}
-			E->insert(Edge(a, b));
+			E->insert(Edge(b, a));
 		}
 
 		return new mcmc::Data((void *)V, E, N);

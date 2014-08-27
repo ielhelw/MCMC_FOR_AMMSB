@@ -1,7 +1,10 @@
 #include "mcmc/random.h"
 
+
 namespace mcmc {
+namespace Random {
 
-Random Random::random(0);
+FileReaderRandom *random = new FileReaderRandom(0);
 
+}	// namespace Random
 }	// namespace mcmc

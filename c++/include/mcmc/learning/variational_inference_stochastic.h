@@ -69,8 +69,8 @@ public:
 	SVI(const Options &args, const Network &graph)
    			: Learner(args, graph) {
 		// variational parameters.
-		lamda = Random::random.gamma(eta[0], eta[1], K, 2);	// variational parameters for beta
-		gamma = Random::random.gamma(1, 1, N, K);			// variational parameters for pi
+		lamda = Random::random->gamma(eta[0], eta[1], K, 2);	// variational parameters for beta
+		gamma = Random::random->gamma(1, 1, N, K);			// variational parameters for pi
 		std::cerr << "gamma.size() " << gamma.size() << " gamma[0].size() " << gamma[0].size() << std::endl;
 		update_pi_beta();
 		// step size parameters.
@@ -121,7 +121,7 @@ public:
 			// evaluate model after processing every 10 mini-batches.
 			if (step_count % 1 == 0) {
 				double ppx_score = cal_perplexity_held_out();
-				std::cout << "perplexity for hold out set is: " << ppx_score << std::endl;
+				std::cout << "perplexity for hold out set is: " << std::setprecision(15) << ppx_score << std::endl;
 				ppxs_held_out.push_back(ppx_score);
 				if (ppx_score < 13.0) {
 					// we will use different step size schema

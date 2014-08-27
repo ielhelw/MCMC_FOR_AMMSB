@@ -98,6 +98,17 @@ public:
 };
 
 
+class MalformattedException : public MCMCException {
+public:
+	MalformattedException() {
+	}
+
+	MalformattedException(const std::string &reason)
+			: MCMCException(reason) {
+	}
+};
+
+
 class NumberFormatException : public MCMCException {
 public:
 	NumberFormatException() {
