@@ -20,7 +20,8 @@ class NetScience(DataSet):
         # i.e {0: "WU, C", 1 :CHUA, L"}
         V = {}               
         # file path of netscience data set. 
-        tree = ET.parse("/home/liwenzhe/workspace/SGRLDForMMSB/datasets/netscience.xml")
+        # tree = ET.parse("/home/liwenzhe/workspace/SGRLDForMMSB/datasets/netscience.xml")
+        tree = ET.parse("datasets/netscience.xml")
         for node in tree.iter("node"):
             attrs = node.attrib
             V[attrs['id']] = attrs['title']

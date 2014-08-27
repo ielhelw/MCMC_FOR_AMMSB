@@ -1,4 +1,5 @@
-import random
+# import com.uva.file_random
+from com.uva.file_random import file_random as random
 from sets import Set
 
 class Network(object):
@@ -64,7 +65,7 @@ class Network(object):
         # randomly sample hold-out and test sets. 
         self.__init_held_out_set()
         self.__init_test_set()
-    
+
     def sample_mini_batch(self, mini_batch_size, strategy):
         """
         Sample a mini-batch of edges from the training data. 
@@ -313,6 +314,7 @@ class Network(object):
             self.__held_out_map[edge] = True
             self.__train_link_map[edge[0]].remove(edge[1])
             self.__train_link_map[edge[1]].remove(edge[0])
+        print sampled_linked_edges
         
         # sample p non-linked edges from the network 
         while p > 0:

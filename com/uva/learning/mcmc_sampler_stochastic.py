@@ -1,7 +1,7 @@
 from com.uva.learning.learner import Learner
 from sets import Set
 import math
-import random
+from com.uva.file_random import file_random as random
 import numpy as np
 import copy
 from com.uva.sample_latent_vars import sample_z_ab_from_edge
@@ -54,8 +54,8 @@ class MCMCSamplerStochastic(Learner):
         # restrict this is using re-reparameterization techniques, where we 
         # introduce another set of variables, and update them first followed by 
         # updating \pi and \beta.  
-        self.__theta = np.random.gamma(self._eta[0],self._eta[1],(self._K, 2))      # parameterization for \beta
-        self.__phi = np.random.gamma(1,1,(self._N, self._K))   # parameterization for \pi
+        self.__theta = random.gamma(self._eta[0],self._eta[1],(self._K, 2))      # parameterization for \beta
+        self.__phi = random.gamma(1,1,(self._N, self._K))   # parameterization for \pi
         
         temp = self.__theta/np.sum(self.__theta,1)[:,np.newaxis]
         self._beta = temp[:,1]
@@ -173,7 +173,7 @@ class MCMCSamplerStochastic(Learner):
         for i in range(0, self._N):
             if counter[i] < 1:
                 continue
-            noise = np.random.randn(self._K)  
+            noise = random.randn(self._K)  
             sum_phi_i = np.sum(self.__phi[i])
             for k in range(0, self._K):
                 
@@ -205,7 +205,7 @@ class MCMCSamplerStochastic(Learner):
             
         grads = np.zeros((self._K, 2))                               # gradients K*2 dimension
         sums = np.sum(self.__theta,1)                                 
-        noise = np.random.randn(self._K, 2)                          # random noise. 
+        noise = random.randn(self._K, 2)                          # random noise. 
         
         for edge in z.keys():
             y_ab = 0
@@ -248,7 +248,7 @@ class MCMCSamplerStochastic(Learner):
     
         phi_star = copy.copy(self.__phi[i])                              # updated \phi
         phi_i_sum = np.sum(self.__phi[i])                                   
-        noise = np.random.randn(self._K)                                 # random noise. 
+        noise = random.randn(self._K)                                 # random noise. 
         
         # get the gradients    
         grads = [-n * 1/phi_i_sum * j for j in np.ones(self._K)]

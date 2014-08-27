@@ -1,4 +1,4 @@
-import random
+from com.uva.file_random import file_random as random
 from com.uva.edge import Edge
 import math
 import numpy as np
@@ -61,8 +61,8 @@ class Sampler(object):
         # restrict this is using re-reparameterization techniques, where we 
         # introduce another set of variables, and update them first followed by 
         # updating \pi and \beta.  
-        self.theta = np.random.gamma(1,1,(self.K, 2))      # parameterization for \beta
-        self.phi = np.random.gamma(1,1,(self.N, self.K))   # parameterization for \pi
+        self.theta = random.gamma(1,1,(self.K, 2))      # parameterization for \beta
+        self.phi = random.gamma(1,1,(self.N, self.K))   # parameterization for \pi
         temp = self.theta/np.sum(self.theta,1)[:,np.newaxis]
         self.beta = temp[:,1]
         self.pi = self.phi/np.sum(self.phi,1)[:,np.newaxis]
@@ -209,7 +209,7 @@ class Sampler(object):
         
         grads = np.zeros((self.K, 2))                               # gradients K*2 dimension
         sums = np.sum(self.theta,1)                                 
-        noise = np.random.randn(self.K, 2)                          # random noise. 
+        noise = random.randn(self.K, 2)                          # random noise. 
         
         for edge in z.keys():
             y_ab = 0
@@ -243,7 +243,7 @@ class Sampler(object):
         eps_t  = self.a*((1 + self.step_count/self.b)**-self.c)        # step size 
         phi_star = copy.copy(self.phi[i])                              # updated \phi
         phi_i_sum = np.sum(self.phi[i])                                   
-        noise = np.random.randn(self.K)                                 # random noise. 
+        noise = random.randn(self.K)                                 # random noise. 
         
         # get the gradients    
         grads = [-n * 1/phi_i_sum * j for j in np.ones(self.K)]

@@ -55,8 +55,8 @@ class SVI(Learner):
         Learner.__init__(self, args, graph)
         
         # variational parameters. 
-        self.__lamda = np.random.gamma(self._eta[0],self._eta[1],(self._K, 2))      # variational parameters for beta  
-        self.__gamma = np.random.gamma(1,1,(self._N, self._K)) # variational parameters for pi
+        self.__lamda = random.gamma(self._eta[0],self._eta[1],(self._K, 2))      # variational parameters for beta  
+        self.__gamma = random.gamma(1,1,(self._N, self._K)) # variational parameters for pi
         self.__update_pi_beta()
         # step size parameters. 
         self.__kappa = args.b
@@ -133,6 +133,8 @@ class SVI(Learner):
     
     def __update_pi_beta(self):
         
+        gamma = self.__gamma         # debugger ignores __<identifier>
+        lamda = self.__lamda         # debugger ignores __<identifier>
         self._pi = self.__gamma/np.sum(self.__gamma,1)[:,np.newaxis]
         temp = self.__lamda/np.sum(self.__lamda,1)[:,np.newaxis]
         self._beta = temp[:,1]

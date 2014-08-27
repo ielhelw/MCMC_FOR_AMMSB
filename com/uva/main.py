@@ -1,3 +1,4 @@
+import com.uva.file_random as random
 import argparse
 from com.uva.network import Network
 from com.uva.preprocess.data_factory import DataFactory
@@ -49,19 +50,22 @@ def main():
     parser.add_argument('hold_out_prob', type=float, default=0.1)
     parser.add_argument('output_dir', type=str,default='.')
     args = parser.parse_args()
-    
+
+    random.seed(0)
+
     data = DataFactory.get_data("netscience")
     network = Network(data, 0.1)
     
-    print "start MCMC batch"
-    ppx_mcmc = []
-    sampler = MCMCSamplerBatch(args, network)
-    #work_mcmc(sampler, ppx_mcmc)
-    sampler.run()
+    if False:
+	    print "start MCMC batch"
+	    ppx_mcmc = []
+	    sampler = MCMCSamplerBatch(args, network)
+	    #work_mcmc(sampler, ppx_mcmc)
+	    sampler.run()
         
-    print "start variational inference batch"
+    print "start variational inference stochastic batch"
     ppx_svi = []
-    sampler  = SV(args, network)
+    sampler  = SVI(args, network)
     #work_svi(sampler, ppx_svi)
     sampler.run()
     

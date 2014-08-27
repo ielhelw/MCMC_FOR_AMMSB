@@ -1,4 +1,5 @@
 from random import Random
+import numpy as np
 # import random
 
 class FileRandom(Random):
@@ -15,11 +16,18 @@ class FileRandom(Random):
         self.random_sample_file = open("random.sample", "w")
         self.random_gamma_file = open("random.gamma", "w")
         self.random_choice_file = open("random.choice", "w")
+        self.random_noise_file = open("random.noise", "w")
+
+
+    def seed(self, x):
+        print "Set random seed to " + str(x) + "\n"
+        Random.seed(self, x)
+        np.random.seed(x)
 
 
     def random(self):
         r = Random.random(self)
-        self.random_float_file.write("%s%f\n" % (self.prefix, r))
+        self.random_float_file.write("%s%.17g\n" % (self.prefix, r))
 
         return r;
 
@@ -36,7 +44,7 @@ class FileRandom(Random):
 
     def sample(self, population, k):
         old = self.prefix
-        self.prefix = self.prefix + "% sample "
+        self.prefix = self.prefix + "# sample "
         s = Random.sample(self, population, k)
         for n in s:
             self.random_sample_file.write("%s\n" % str(n))
@@ -48,7 +56,7 @@ class FileRandom(Random):
     def choice(self, seq):
         # sys.std.write("in FileRandom.choice\n")
         old = self.prefix
-        self.prefix = self.prefix + "% choice "
+        self.prefix = self.prefix + "# choice "
         c = Random.choice(self, seq)
         for n in c:
             self.random_choice_file.write("%s\n" % str(n))
@@ -57,11 +65,28 @@ class FileRandom(Random):
         return c;
 
 
+    def gamma(self, a, b, dims):
+        x = np.random.gamma(a, b, dims)
+        for r in x:
+            for c in r:
+                self.random_gamma_file.write("%.17g " % c)
+            self.random_gamma_file.write("\n")
+
+        return x
+
+
+    def randn(self, a):
+        x = np.randn(a)
+        self.random_noise_file.write("%.17g\n" % x)
+        return x
+
+
 _inst = FileRandom()
 random = _inst.random
 randint = _inst.randint
 sample = _inst.sample
 choice = _inst.choice
+seed = _inst.seed
 file_random = _inst
 
 if __name__ == '__main__':
