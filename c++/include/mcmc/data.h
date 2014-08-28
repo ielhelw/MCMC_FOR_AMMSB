@@ -3,8 +3,8 @@
  */
 
 /*
- * @author Rutger Hofman, VU Amsterdam
  * @author Wenzhe Li
+ * @author Rutger Hofman, VU Amsterdam
  *
  * @date 2014-08-6
  */
@@ -99,8 +99,8 @@ inline std::istream &operator>> (std::istream &s, Edge &e) {
 }
 
 
-typedef typename std::set<Edge> EdgeSet;
-// typedef typename std::unordered_set<Edge> EdgeSet;
+// typedef typename std::set<Edge> EdgeSet;
+typedef typename std::unordered_set<Edge> EdgeSet;
 
 // typedef std::map<Edge, bool>			EdgeMap;
 typedef std::unordered_map<Edge, bool>			EdgeMap;

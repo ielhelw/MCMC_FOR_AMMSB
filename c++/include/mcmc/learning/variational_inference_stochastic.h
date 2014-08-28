@@ -221,7 +221,7 @@ protected:
 		bool flag = false;
 		// calculate the gradient for gamma
 		std::vector<std::vector<double> > grad_lamda(K, std::vector<double>(2, 0.0));
-		std::unordered_map<int, std::vector<double> > grad_gamma;	// ie. grad[a] = array[] which is K dimensional vector
+		std::unordered_map<int, std::vector<double> > grad_gamma(N);	// ie. grad[a] = array[] which is K dimensional vector
 		std::unordered_map<int, ::size_t> counter;	// used for scaling
 		for (EdgeSet::const_iterator edge = mini_batch.begin();
 				 edge != mini_batch.end();

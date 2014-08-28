@@ -12,13 +12,6 @@ namespace mcmc {
 typedef std::pair<std::vector<double>, std::vector<double> >	DoubleVectorPair;
 
 
-static void init_phi(std::vector<double> *phi, ::size_t K) {
-	phi->resize(K);
-	np::DivideBy<double> divByK(1.0 * K);
-	std::transform(phi->begin(), phi->end(), phi->begin(), divByK);
-}
-
-
 /**
  * @result resize and fill [ phi_ab, phi_ba ]
  */
@@ -33,8 +26,8 @@ sample_latent_vars_for_each_pair(int a, int b,
 								 std::vector<double> *phi_ba) {
 	using ::boost::math::digamma;
 
-	init_phi(phi_ab, K);
-	init_phi(phi_ba, K);
+	phi_ab->assign(K, 1.0 / K);
+	phi_ba->assign(K, 1.0 / K);
 	// std::vector<double> phi_ab(K, 1.0 / K);
 	// std::vector<double> phi_ba(K, 1.0 / K);
 

@@ -15,8 +15,8 @@ namespace mcmc {
 typedef std::pair<EdgeSet *, float>		EdgeSample;
 // typedef std::set<int>					VertexSet;
 typedef std::unordered_set<int>					VertexSet;
-// typedef std::unordered_map<Edge, bool>	EdgeMapBool;
-typedef std::map<Edge, bool>	EdgeMapBool;
+typedef std::unordered_map<Edge, bool>	EdgeMapBool;
+// typedef std::map<Edge, bool>	EdgeMapBool;
 
 void dump(const EdgeMapBool &s) {
 	for (EdgeMapBool::const_iterator e = s.begin(); e != s.end(); e++) {
