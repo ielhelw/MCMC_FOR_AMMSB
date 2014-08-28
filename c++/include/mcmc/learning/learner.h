@@ -134,7 +134,7 @@ protected:
 			const Edge &e = edge->first;
 			double edge_likelihood = cal_edge_likelihood(pi[e.first], pi[e.second],
 														 edge->second, beta);
-			if (network.get_linked_edges().find(e) != network.get_linked_edges().end()) {
+			if (e.in(network.get_linked_edges())) {
 				link_count++;
 				link_likelihood += edge_likelihood;
 			} else {

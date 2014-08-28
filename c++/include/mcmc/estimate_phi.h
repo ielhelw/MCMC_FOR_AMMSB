@@ -33,7 +33,7 @@ sample_latent_vars_for_each_pair(int a, int b,
 
     double u = 0.0;
     bool y = false;
-	if (linked_edges.find(Edge(a, b)) != linked_edges.end()) {
+	if (Edge(a,b).in(linked_edges)) {
         y = true;
 	}
 

@@ -167,9 +167,7 @@ public:
 			Edge edge(std::min(firstIdx, secondIdx), std::max(firstIdx, secondIdx));
 
 			// the edge should not be in  1)hold_out set, 2)test_set  3) mini_batch_set (avoid duplicate)
-			if (held_out_map.find(edge) != held_out_map.end() ||
-					test_map.find(edge) != test_map.end() ||
-					mini_batch_set->find(edge) != mini_batch_set->end()) {
+			if (edge.in(held_out_map) || edge.in(test_map) || edge.in(*mini_batch_set)) {
 				continue;
 			}
 
@@ -196,9 +194,7 @@ public:
 			// make sure the first index is smaller than the second one, since
 			// we are dealing with undirected graph.
 			Edge edge(std::min(nodeId, i), std::max(nodeId, i));
-			if (held_out_map.find(edge) != held_out_map.end() ||
-					test_map.find(edge) != test_map.end() ||
-					mini_batch_set->find(edge) != mini_batch_set->end()) {
+			if (edge.in(held_out_map) || edge.in(test_map) || edge.in(*mini_batch_set)) {
 				continue;
 			}
 
@@ -231,9 +227,7 @@ public:
 					break;
 				}
 
-				if (held_out_map.find(*edge) != held_out_map.end() ||
-						test_map.find(*edge) != test_map.end() ||
-						mini_batch_set->find(*edge) != mini_batch_set->end()) {
+				if (edge->in(held_out_map) || edge->in(test_map) || edge->in(*mini_batch_set)) {
 					continue;
 				}
 
@@ -259,10 +253,8 @@ public:
 				Edge edge(std::min(firstIdx, secondIdx), std::max(firstIdx, secondIdx));
 
 				// check conditions:
-				if (linked_edges->find(edge) != linked_edges->end() ||
-						held_out_map.find(edge) != held_out_map.end() ||
-						test_map.find(edge) != test_map.end() ||
-						mini_batch_set->find(edge) != mini_batch_set->end()) {
+				if (edge.in(*linked_edges) || edge.in(held_out_map) ||
+						edge.in(test_map) || edge.in(*mini_batch_set)) {
 					continue;
 				}
 
@@ -326,10 +318,8 @@ public:
 
 					// check condition, and insert into mini_batch_set if it is valid.
 					Edge edge(std::min(nodeId, *neighborId), std::max(nodeId, *neighborId));
-					if (linked_edges->find(edge) != linked_edges->end() ||
-							held_out_map.find(edge) != held_out_map.end() ||
-							test_map.find(edge) != test_map.end() ||
-							mini_batch_set->find(edge) != mini_batch_set->end()) {
+					if (edge.in(*linked_edges) || edge.in(held_out_map) ||
+							edge.in(test_map) || edge.in(*mini_batch_set)) {
 						continue;
 					}
 
@@ -444,8 +434,7 @@ protected:
 				}
 
 				// check whether it is already used in hold_out set
-				if (held_out_map.find(*edge) != held_out_map.end() ||
-						test_map.find(*edge) != test_map.end()) {
+				if (edge->in(held_out_map) || edge->in(test_map)) {
 					continue;
 				}
 
@@ -486,8 +475,7 @@ protected:
 			Edge edge(std::min(firstIdx, secondIdx), std::max(firstIdx, secondIdx));
 
 			// check conditions.
-			if (linked_edges->find(edge) != linked_edges->end() ||
-					held_out_map.find(edge) != held_out_map.end()) {
+			if (edge.in(*linked_edges) || edge.in(held_out_map)) {
 				continue;
 			}
 
@@ -514,9 +502,7 @@ protected:
 			Edge edge(std::min(firstIdx, secondIdx), std::max(firstIdx, secondIdx));
 
 			// check conditions.
-			if (linked_edges->find(edge) != linked_edges->end() ||
-					held_out_map.find(edge) != held_out_map.end() ||
-					test_map.find(edge) != test_map.end()) {
+			if (edge.in(*linked_edges) || edge.in(held_out_map) || edge.in(test_map)) {
 				continue;
 			}
 

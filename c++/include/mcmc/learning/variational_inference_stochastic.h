@@ -269,7 +269,7 @@ protected:
 			 * calculate the gradient for lambda
 			 */
 			int y = 0;
-			if (network.get_linked_edges().find(*edge) != network.get_linked_edges().end()) {
+			if (edge->in(network.get_linked_edges())) {
 				y = 1;
 				flag = true;
 			}
@@ -369,7 +369,7 @@ protected:
 		std::vector<double> phi_ba(K, 1.0 / K);
 
 		bool y = false;
-		if (network.get_linked_edges().find(edge) != network.get_linked_edges().end()) {
+		if (edge.in(network.get_linked_edges())) {
 			y = true;
 		}
 

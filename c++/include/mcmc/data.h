@@ -12,10 +12,10 @@
 #ifndef MCMC_DATA_H__
 #define MCMC_DATA_H__
 
-#include <unordered_set>
 #include <utility>
 #include <map>
 #include <unordered_map>
+#include <unordered_set>
 #include <iostream>
 #include <iomanip>
 
@@ -33,6 +33,11 @@ public:
 	}
 
 	virtual ~Edge() {
+	}
+
+	template <typename SET>
+	bool in(const SET &s) const {
+		return s.find(*this) != s.end();
 	}
 
 	virtual bool operator== (const Edge &a) const {
@@ -118,6 +123,7 @@ public:
 
 
 namespace mcmc {
+
 
 void dump(const EdgeSet &s) {
 	for (EdgeSet::const_iterator e = s.begin(); e != s.end(); e++) {
