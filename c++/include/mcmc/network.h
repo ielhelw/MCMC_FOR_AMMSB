@@ -25,18 +25,18 @@ void dump(const EdgeMapBool &s) {
 }
 
 /**
- * Network class represents the whole graph that we read from the 
- * data file. Since we store all the edges ONLY, the size of this 
- * information is much smaller due to the graph sparsity (in general, 
+ * Network class represents the whole graph that we read from the
+ * data file. Since we store all the edges ONLY, the size of this
+ * information is much smaller due to the graph sparsity (in general,
  * around 0.1% of links are connected)
- *                     
+ *
  * We use the term "linked edges" to denote the edges that two nodes
  * are connected, "non linked edges", otherwise. If we just say edge,
- * it means either linked or non-link edge. 
+ * it means either linked or non-link edge.
  *
- * The class also contains lots of sampling methods that sampler can utilize. 
+ * The class also contains lots of sampling methods that sampler can utilize.
  * This is great separation between different learners and data layer. By calling
- * the function within this class, each learner can get different types of 
+ * the function within this class, each learner can get different types of
  * data.
  */
 class Network {
@@ -45,14 +45,14 @@ public:
 
 	/**
 	 * In this initialization step, we separate the whole data set
-	 * into training, validation and testing sets. Basically, 
-	 * Training ->  used for tuning the parameters. 
+	 * into training, validation and testing sets. Basically,
+	 * Training ->  used for tuning the parameters.
 	 * Held-out/Validation -> used for evaluating the current model, avoid over-fitting
 	 *               , the accuracy for validation set used as stopping criteria
-	 * Testing -> used for calculating final model accuracy. 
-	 *                                                                
+	 * Testing -> used for calculating final model accuracy.
+	 *
 	 * Arguments:
-	 *     data:   representation of the while graph. 
+	 *     data:   representation of the while graph.
 	 *     vlaidation_ratio:  the percentage of data used for validation and testing.
 	 */
 	Network(const Data *data, float held_out_ratio) {
@@ -61,7 +61,7 @@ public:
 		num_total_edges = linked_edges->size(); // number of total edges.
 	   	this->held_out_ratio = held_out_ratio;	// percentage of held-out data size
 
-		// Based on the a-MMSB paper, it samples equal number of 
+		// Based on the a-MMSB paper, it samples equal number of
 		// linked edges and non-linked edges.
 		held_out_size = held_out_ratio * linked_edges->size();
 
@@ -76,28 +76,28 @@ public:
 	}
 
 	/**
-	 * Sample a mini-batch of edges from the training data. 
+	 * Sample a mini-batch of edges from the training data.
 	 * There are four different sampling strategies for edge sampling
 	 * 1.random-pair sampling
-	 *   sample node pairs uniformly at random.This method is an instance of independent 
+	 *   sample node pairs uniformly at random.This method is an instance of independent
 	 *   pair sampling, with h(x) equal to 1/(N(N-1)/2) * mini_batch_size
-	 * 
+	 *
 	 * 2.random-node sampling
-	 *    A set consists of all the pairs that involve one of the N nodes: we first sample one of 
+	 *    A set consists of all the pairs that involve one of the N nodes: we first sample one of
 	 *    the node from N nodes, and sample all the edges for that node. h(x) = 1/N
-	 *   
+	 *
 	 * 3.stratified-random-pair sampling
 	 *   We divide the edges into linked and non-linked edges, and each time either sample
 	 *   mini-batch from linked-edges or non-linked edges.  g(x) = 1/N_0 for non-link and
 	 *   1/N_1 for link, where N_0-> number of non-linked edges, N_1-> # of linked edges.
-	 *   
+	 *
 	 * 4.stratified-random-node sampling
-	 *   For each node, we define a link set consisting of all its linkes, and m non-link sets 
+	 *   For each node, we define a link set consisting of all its linkes, and m non-link sets
 	 *   that partition its non-links. We first selct a random node, and either select its link
 	 *   set or sample one of its m non-link sets. h(x) = 1/N if linked set, 1/Nm otherwise
-	 *   
+	 *
 	 *  Returns (sampled_edges, scale)
-	 *  scale equals to 1/h(x), insuring the sampling gives the unbiased gradients.   
+	 *  scale equals to 1/h(x), insuring the sampling gives the unbiased gradients.
 	 */
 	EdgeSample sample_mini_batch(::size_t mini_batch_size, strategy::strategy strategy) const {
 		switch (strategy) {
@@ -144,7 +144,7 @@ public:
 
 	/**
 	 * sample list of edges from the whole training network uniformly, regardless
-	 * of links or non-links edges.The sampling approach is pretty simple: randomly generate 
+	 * of links or non-links edges.The sampling approach is pretty simple: randomly generate
 	 * one edge and then check if that edge passes the conditions. The iteration
 	 * stops until we get enough (mini_batch_size) edges.
 	 *
@@ -184,7 +184,7 @@ public:
 
 
 	/**
-	 * A set consists of all the pairs that involve one of the N nodes: we first sample one of 
+	 * A set consists of all the pairs that involve one of the N nodes: we first sample one of
 	 * the node from N nodes, and sample all the edges for that node. h(x) = 1/N
 	 */
 	EdgeSample random_node_sampling() const {
@@ -269,7 +269,7 @@ public:
 				mini_batch_set->insert(edge);
 				p--;
 			}
-			
+
 			return EdgeSample(mini_batch_set,
 							  (N * (N - 1)) / 2 - linked_edges->size() / (float)mini_batch_size);
 		}
@@ -286,12 +286,12 @@ public:
 
 	/**
 	 * stratified sampling approach gives more attention to link edges (the edge is connected by two
-	 * nodes). The sampling process works like this: 
+	 * nodes). The sampling process works like this:
 	 * a) randomly choose one node $i$ from all nodes (1,....N)
-	 * b) decide to choose link edges or non-link edges with (50%, 50%) probability. 
+	 * b) decide to choose link edges or non-link edges with (50%, 50%) probability.
 	 * c) if we decide to sample link edge:
 	 *         return all the link edges for the chosen node $i$
-	 *    else 
+	 *    else
 	 *         sample edges from all non-links edges for node $i$. The number of edges
 	 *         we sample equals to  number of all non-link edges / num_pieces
 	 */
@@ -340,12 +340,17 @@ public:
 				delete nodeList;
 			}
 
-			return EdgeSample(mini_batch_set,
-							  (N * (N - 1)) / 2 - linked_edges->size() / (float)mini_batch_size);
+			if (false) {
+				std::cerr << "A Create mini batch size " << mini_batch_set->size() << " scale " << (N * num_pieces) << std::endl;
+			}
+			return EdgeSample(mini_batch_set, N * num_pieces);
 
 		} else {
 			/* sample linked edges */
 			// return all linked edges
+			if (false) {
+				std::cerr << "train_link_map[" << nodeId << "] size " << train_link_map[nodeId].size() << std::endl;
+			}
 			for (VertexSet::const_iterator neighborId = train_link_map[nodeId].begin();
 				 	neighborId != train_link_map[nodeId].end();
 					neighborId++) {
@@ -353,6 +358,9 @@ public:
 										   	std::max(nodeId, *neighborId)));
 			}
 
+			if (false) {
+				std::cerr << "B Create mini batch size " << mini_batch_set->size() << " scale " << N << std::endl;
+			}
 			return EdgeSample(mini_batch_set, N);
 		}
 	}
@@ -360,9 +368,9 @@ public:
 
 protected:
 	/**
-	 * create a set for each node, which contains list of 
+	 * create a set for each node, which contains list of
 	 * nodes. i.e {0: Set[2,3,4], 1: Set[3,5,6]...}
-	 * is used for sub-sampling 
+	 * is used for sub-sampling
 	 * the later.
 	 */
 	void init_train_link_map() {
@@ -371,12 +379,13 @@ protected:
 			 	edge != linked_edges->end();
 				edge++) {
 			train_link_map[edge->first].insert(edge->second);
+			train_link_map[edge->second].insert(edge->first);
 		}
 	}
 
 
 	/**
-	 * Sample held out set. we draw equal number of 
+	 * Sample held out set. we draw equal number of
 	 * links and non-links from the whole graph.
 	 */
 	void init_held_out_set() {
@@ -404,17 +413,19 @@ protected:
 			p--;
 		}
 
-		std::cout << "sampled_linked_edges:" << std::endl;
-		dump(*sampled_linked_edges);
-		std::cout << "held_out_set:" << std::endl;
-		dump(held_out_map);
+		if (false) {
+			std::cout << "sampled_linked_edges:" << std::endl;
+			dump(*sampled_linked_edges);
+			std::cout << "held_out_set:" << std::endl;
+			dump(held_out_map);
+		}
 
 		delete sampled_linked_edges;
 	}
 
 
 	/**
-	 * sample test set. we draw equal number of samples for 
+	 * sample test set. we draw equal number of samples for
 	 * linked and non-linked edges
 	 */
 	void init_test_set() {
@@ -457,8 +468,8 @@ protected:
 
 protected:
 	/**
-	 * sample one non-link edge for held out set from the network. We should make sure the edge is not 
-	 * been used already, so we need to check the condition before we add it into 
+	 * sample one non-link edge for held out set from the network. We should make sure the edge is not
+	 * been used already, so we need to check the condition before we add it into
 	 * held out sets
 	 * TODO: add condition for checking the infinit-loop
 	 */
@@ -486,8 +497,8 @@ protected:
 
 
 	/**
-	 * Sample one non-link edge for test set from the network. We first randomly generate one 
-	 * edge, then check conditions. If that edge passes all the conditions, return that edge. 
+	 * Sample one non-link edge for test set from the network. We first randomly generate one
+	 * edge, then check conditions. If that edge passes all the conditions, return that edge.
 	 * TODO prevent the infinit loop
 	 */
 	Edge sample_non_link_edge_for_test() {

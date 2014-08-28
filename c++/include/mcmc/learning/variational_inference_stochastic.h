@@ -134,7 +134,6 @@ public:
 			sample_latent_vars_for_edges(&phi, mini_batch);
 			update_gamma_and_lamda(phi, mini_batch, scale);
 			update_pi_beta();
-			std::cerr << "GC phi values?" << std::endl;
 
 			step_count++;
 		}
@@ -154,6 +153,9 @@ public:
 
 protected:
 	void sample_latent_vars_for_edges(PhiMap *phi, const EdgeSet &mini_batch) const {
+		if (false) {
+			std::cerr << "Minibatch size " << mini_batch.size() << std::endl;
+		}
 		for (EdgeSet::const_iterator edge = mini_batch.begin();
 				 edge != mini_batch.end();
 				 edge++) {
@@ -161,17 +163,15 @@ protected:
 			int b = edge->second;
 			//estimate_phi_for_edge(edge, phi)  // this can be done in parallel.
 
-			DoubleVectorPair phi_abba = sample_latent_vars_for_each_pair(a, b, gamma[a], gamma[b],
-																		 lamda, K, phi_update_threshold,
-																		 epsilon, online_iterations,
-																		 network.get_linked_edges());
-			static bool first = true;
-			if (first) {
-				std::cerr << "GC old values?" << std::endl;
-				first = false;
+			if (false) {
+				std::cerr << "Investigate " << *edge << std::endl;
 			}
-			(*phi)[Edge(a,b)]=phi_abba.first;
-			(*phi)[Edge(b,a)]=phi_abba.second;
+			sample_latent_vars_for_each_pair(a, b, gamma[a], gamma[b],
+											 lamda, K, phi_update_threshold,
+											 epsilon, online_iterations,
+											 network.get_linked_edges(),
+											 &(*phi)[Edge(a,b)],
+											 &(*phi)[Edge(b,a)]);
 
 			//estimate_phi_for_edge(edge, phi)
 		}
@@ -194,18 +194,25 @@ protected:
 		 * 		s = np.sum(lamda,1) :: double[K]; s[i] sum_j lamda[i,j]
 		 * 		temp = gamma/t :: double[K,2]; temp[i,j] = lamda[i,j] / s[i]
 		 */
-#if 0
-		pi = gamma/np.sum(gamma,1)[:,np.newaxis];
-		temp = lamda/np.sum(lamda,1)[:,np.newaxis];
-		beta = temp[:,1];
-#else
+		// pi = gamma/np.sum(gamma,1)[:,np.newaxis];
+		// temp = lamda/np.sum(lamda,1)[:,np.newaxis];
+		// beta = temp[:,1];
 		np::row_normalize(&pi, gamma);
 
 		std::vector<std::vector<double> > temp(lamda.size(), std::vector<double>(lamda[0].size()));
 		np::row_normalize(&temp, lamda);
 		std::transform(temp.begin(), temp.end(), beta.begin(), np::SelectColumn<double>(1));
-		// throw UnimplementedException(__func__);
-#endif
+
+		if (false) {
+			std::cerr << "beta:" << std::endl;
+			for (::size_t k = 0; k < 32; k++) {
+				std::cerr << std::setprecision(8) << beta[k] << " ";
+				if ((k + 1) % 6 == 0) {
+					std::cerr << std::endl;
+				}
+			}
+			std::cerr << std::endl;
+		}
 	}
 
 

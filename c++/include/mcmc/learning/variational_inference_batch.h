@@ -120,18 +120,21 @@ protected:
                     continue;
 				}
 
-				DoubleVectorPair phi_abba = sample_latent_vars_for_each_pair(a, b, gamma[a], gamma[b],
-																			 lamda, K, phi_update_threshold,
-																			 epsilon, online_iterations,
-																			 network.get_linked_edges());
+				std::vector<double> phi_ab;
+				std::vector<double> phi_ba;
+				sample_latent_vars_for_each_pair(a, b, gamma[a], gamma[b],
+												 lamda, K, phi_update_threshold,
+												 epsilon, online_iterations,
+												 network.get_linked_edges(),
+												 &phi_ab, &phi_ba);
 
                 // update gamma_grad and lamda_grad
 				std::transform(gamma_grad[a].begin(), gamma_grad[a].end(),
-							   phi_abba.first.begin(),
+							   phi_ab.begin(),
 							   gamma_grad[a].begin(),
 							   std::plus<double>());
 				std::transform(gamma_grad[b].begin(), gamma_grad[b].end(),
-							   phi_abba.second.begin(),
+							   phi_ba.begin(),
 							   gamma_grad[b].begin(),
 							   std::plus<double>());
 
@@ -141,10 +144,9 @@ protected:
 				}
 
                 for (::size_t k = 0; k < K; k++) {
-                    lamda_grad[k][0] += phi_abba.first[k] * phi_abba.second[k] * y;
-                    lamda_grad[k][1] += phi_abba.first[k] * phi_abba.second[k] * (1-y);
+                    lamda_grad[k][0] += phi_ab[k] * phi_ba[k] * y;
+                    lamda_grad[k][1] += phi_ab[k] * phi_ba[k] * (1-y);
 				}
-				// std::cerr << "GC phi_abba vectors?" << std::endl;
 			}
 			std::cerr << "Row[" << a << "]" << std::endl;
 		}

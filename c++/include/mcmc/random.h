@@ -166,7 +166,6 @@ protected:
 
 public:
 	double randn() {
-		std::cerr << "Request random.randn value" << std::endl;
 		std::string line;
 
 		getline(noiseReader, line);
@@ -181,7 +180,6 @@ public:
 
 
 	int randint(int from, int upto) {
-		std::cerr << "Request random.int value" << std::endl;
 		std::string line;
 		getline(intReader, line);
 
@@ -196,7 +194,6 @@ public:
 
 protected:
 	void sample(std::unordered_set<int> *accu, int from, int upto, ::size_t count) {
-		std::cerr << "Request " << count << " random.sample/set values" << std::endl;
 		std::string line;
 		for (::size_t i = 0; i < count; i++) {
 			int r;
@@ -213,7 +210,6 @@ protected:
 public:
 	template <class List>
 	List *sample(const List &list, ::size_t count) {
-		std::cerr << "Request " << count << " random.sample/List values" << std::endl;
 		std::string line;
 		List *result = new List();
 

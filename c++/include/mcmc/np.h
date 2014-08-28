@@ -47,7 +47,7 @@ template <typename T>
 static void row_normalize(std::vector<std::vector<T> > *r,
 						  const std::vector<std::vector<T> > &a) {
 	for (::size_t i = 0; i < a.size(); i++) {
-		T row_sum = std::accumulate(a[i].begin(), a[i].end(), (T)0);
+		T row_sum = sum(a[i]);
 		std::transform(a[i].begin(), a[i].end(), (*r)[i].begin(), np::DivideBy<T>(row_sum));
 	}
 }
@@ -67,16 +67,13 @@ static Type sum_abs(const std::vector<Type> &a, const std::vector<Type> &b) {
 
 template <typename Type>
 static Type sum(const std::vector<Type> &a) {
-#if 0
-	Type sum = 0.0;
-	for (::size_t i = 0; i < a.size(); i++) {
-		sum += a[i];
-	}
-
-	return sum;
-#else
 	return std::accumulate(a.begin(), a.end(), static_cast<Type>(0));
-#endif
+}
+
+
+template <typename Type>
+static Type sum(const std::vector<Type> *a) {
+	return sum<Type>(*a);
 }
 
 }	// namespace np
