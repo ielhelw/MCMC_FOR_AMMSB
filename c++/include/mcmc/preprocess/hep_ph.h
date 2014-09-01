@@ -20,14 +20,11 @@
 namespace mcmc {
 namespace preprocess {
 
+// FIXME: identical: hep_ph relativity ...
+
 class HepPH : public DataSet {
 public:
-	HepPH(const std::string &filename) {
-	    if (filename == "") {
-			this->filename = "datasets/CA-HepPh.txt";
-		} else {
-			this->filename = filename;
-		}
+	HepPH(const std::string &filename) : DataSet(filename == "" ?  "datasets/CA-HepPh.txt" : filename) {
 	}
 
 	virtual ~HepPH() {
@@ -80,8 +77,8 @@ public:
 		::size_t N = nodelist.size();
 
 		// change the node ID to make it start from 0
-		std::vector< ::size_t> node_id_map(nodelist.size());
-		::size_t i = 0;
+		std::unordered_map<int, int> node_id_map;
+		int i = 0;
 		for (std::vector<int>::iterator node_id = nodelist.begin();
 			 	node_id != nodelist.end();
 				node_id++) {
@@ -106,9 +103,6 @@ public:
 
 		return new mcmc::Data(NULL, E, N);
 	}
-
-protected:
-	std::string filename;
 };
 
 }	// namespace preprocess

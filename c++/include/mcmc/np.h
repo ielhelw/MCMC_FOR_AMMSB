@@ -42,6 +42,8 @@ protected:
 
 /**
  * r[i,j] = a[i,j] / s[i] where s[i] = sum_j a[i,j]
+ *
+ * r = a / np.sum(a, 1)[:,np:newaxis]
  */
 template <typename T>
 static void row_normalize(std::vector<std::vector<T> > *r,
@@ -74,6 +76,14 @@ static Type sum(const std::vector<Type> &a) {
 template <typename Type>
 static Type sum(const std::vector<Type> *a) {
 	return sum<Type>(*a);
+}
+
+template <typename Type>
+static void copy2D(std::vector<std::vector<Type>> *to, const std::vector<std::vector<Type>> &from) {
+	to->resize(from.size());
+	for (::size_t i = 0; i < from[i].size(); i++) {
+		(*to)[i] = from[i];
+	}
 }
 
 }	// namespace np

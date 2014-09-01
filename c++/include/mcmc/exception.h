@@ -98,6 +98,17 @@ public:
 };
 
 
+class OutOfRangeException : public MCMCException {
+public:
+	OutOfRangeException() {
+	}
+
+	OutOfRangeException(const std::string &reason)
+			: MCMCException(reason) {
+	}
+};
+
+
 class MalformattedException : public MCMCException {
 public:
 	MalformattedException() {

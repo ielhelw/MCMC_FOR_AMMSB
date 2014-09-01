@@ -133,7 +133,7 @@ class MCMCSamplerStochastic : public Learner {
                 neighbor_nodes = sample_neighbor_nodes(num_node_sample, *node);
                 size[node] = neighbor_nodes.size();
                 // sample latent variables z_ab for each pair of nodes
-                std::map<Edge, double> z = sample_latent_vars(*node, neighbor_nodes);
+                std::unordered_map<int, int> z = sample_latent_vars(*node, neighbor_nodes);
                 latent_vars[node] = z;
 			}
 
@@ -141,24 +141,26 @@ class MCMCSamplerStochastic : public Learner {
             for (const EdgeSet::const_iterator &node = mini_batch.begin();
 				 	node != mini_batch.end();
 					node++) {
-                update_pi_for_node(*node, latent_vars[node], size[node]);
+                update_pi_for_node(*node, latent_vars[*node], size[*node]);
 			}
 
             // sample (z_ab, z_ba) for each edge in the mini_batch.
             // z is map structure. i.e  z = {(1,10):3, (2,4):-1}
-			std::map<Edge, double> z = sample_latent_vars2(mini_batch);
+			std::unordered_map<Edge, int> z = sample_latent_vars2(mini_batch);
             update_beta(mini_batch, scale, z);
 
 
-            if self._step_count % 2 == 1:
-                ppx_score = self._cal_perplexity_held_out()
-                print str(ppx_score)
-                self._ppxs_held_out.append(ppx_score)
-                if ppx_score < 5.0:
-                    self.stepsize_switch = True
+            if (step_count % 2 == 1) {
+                double ppx_score = cal_perplexity_held_out();
+				std::cout << "Perplexity: " << ppx_score << std::endl;
+                ppxs_held_out.push_back(ppx_score);
+                if (ppx_score < 5.0) {
+                    self.stepsize_switch = true;
                     //print "switching to smaller step size mode!"
+				}
+			}
 
-            self._step_count += 1
+            step_count++;
             /**
             pr.disable()
             s = StringIO.StringIO()
@@ -167,6 +169,8 @@ class MCMCSamplerStochastic : public Learner {
             ps.print_stats()
             print s.getvalue()
              */
+		}
+	}
 
 
 #if 0
@@ -222,7 +226,7 @@ class MCMCSamplerStochastic : public Learner {
 
 
 
-    void update_beta(const EdgeSet &mini_batch, double scale, const std::map<Edge, double> &z) {
+    void update_beta(const EdgeSet &mini_batch, double scale, const std::unordered_map<Edge, int> &z) {
         /**
         update beta for mini_batch.
          */
@@ -301,22 +305,27 @@ class MCMCSamplerStochastic : public Learner {
         self._pi[i] = [self.__phi[i,k]/sum_phi for k in range(0, self._K)]
 
 
-    def __sample_latent_vars2(self, mini_batch):
+    std::unordered_map<Edge, int> sample_latent_vars2(const EdgeSet &mini_batch) const {
         /**
         sample latent variable (z_ab, z_ba) for each pair of nodes. But we only consider 11 different cases,
         since we only need indicator function in the gradient update. More details, please see the comments
         within the sample_z_for_each_edge function.
          */
-        z = {}
-        for edge in mini_batch:
-            y_ab = 0
-            if edge in self._network.get_linked_edges():
-                y_ab = 1
+		std::unordered_map<int, int> z;
+		for (const EdgeSet::const_iterator &edge = mini_batch.begin();
+			 	edge != mini_batch.end();
+				edge++) {
+            int y_ab = 0;
+            if (edge->in(network.get_linked_edges())) {
+                y_ab = 1;
+			}
 
-            z[edge] = self.__sample_z_for_each_edge(y_ab, self._pi[edge[0]], self._pi[edge[1]], \
-                                          self._beta, self._K)
+            z[*edge] = sample_z_for_each_edge(y_ab, pi[edge->first], pi[edg->second], \
+											  beta, _K);
+		}
 
-        return z
+        return z;
+	}
 
 
 	// TODO FIXME shared code w/ mcmc_sampler_batch
@@ -362,12 +371,12 @@ class MCMCSamplerStochastic : public Learner {
 	}
 
 
-    std::map<Edge, double> sample_latent_vars(int node, const VertexSet &neighbor_nodes) const {
+    std::unordered_map<int, int> sample_latent_vars(int node, const VertexSet &neighbor_nodes) const {
         /**
         given a node and its neighbors (either linked or non-linked), return the latent value
         z_ab for each pair (node, neighbor_nodes[i].
          */
-		std::vector<double> z(K, 0.0);
+		std::unordered_map<int, int> z;
         for (const VertexSet::const_iterator &neighbor = neighbor_nodes.begin();
 			 	neighbor != neighbor_nodes.end();
 				neighbor++) {

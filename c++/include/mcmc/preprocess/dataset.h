@@ -23,6 +23,9 @@ namespace preprocess {
  */
 class DataSet {
 public:
+	DataSet(const std::string &filename) : filename(filename) {
+	}
+
 	virtual ~DataSet() {
 	}
 
@@ -35,6 +38,9 @@ public:
 	 * @return the caller must delete() the result
 	 */
 	virtual const ::mcmc::Data *process() = 0;
+
+protected:
+	std::string filename;
 };
 
 } 	// namespace preprocess

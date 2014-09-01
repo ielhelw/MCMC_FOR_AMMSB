@@ -5,6 +5,7 @@
 #include "mcmc/preprocess/dataset.h"
 #include "mcmc/preprocess/netscience.h"
 #include "mcmc/preprocess/hep_ph.h"
+#include "mcmc/preprocess/relativity.h"
 
 namespace mcmc {
 namespace preprocess {
@@ -24,7 +25,7 @@ public:
 		} else if (dataset_name == "netscience") {
 			dataObj = new NetScience(filename);
 		} else if (dataset_name == "relativity") {
-			// dataObj = new NetScience(filename);
+			dataObj = new Relativity(filename);
 		} else if (dataset_name == "hep_ph") {
 			// dataObj = new HepPH(filename);
 		} else if (dataset_name == "astro_ph") {

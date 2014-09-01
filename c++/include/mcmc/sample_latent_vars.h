@@ -14,7 +14,7 @@ namespace mcmc {
  * then we simply sample z_ab based on the distribution p.
  * this runs in O(K)
  */
-static ::size_t sample_z_ab_from_edge(int y, const std::vector<double> &pi_a,
+static int sample_z_ab_from_edge(int y, const std::vector<double> &pi_a,
 									  const std::vector<double> &pi_b,
 									  const std::vector<double> &beta,
 									  double epsilon, ::size_t K) {
@@ -33,17 +33,17 @@ static ::size_t sample_z_ab_from_edge(int y, const std::vector<double> &pi_a,
 	}
 
     double location = Random::random->random() * bounds[K-1];
-    # get the index of bounds that containing location.
+    // get the index of bounds that containing location.
     for (::size_t i = 0; i < K; i++) {
 		if (location <= bounds[i]) {
-			return i;
+			return (int)i;
 		}
 	}
 
-    # failed, should not happen!
-    throw OutOfRangeException("location out of bounds");
+    // failed, should not happen!
+    return -1;
 }
 
-}
+}	// namespace mcmc
 
 #endif	// ndef MCMC_SAMPLE_LATENT_VARS_H__

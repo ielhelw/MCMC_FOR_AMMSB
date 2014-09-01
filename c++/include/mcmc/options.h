@@ -210,7 +210,8 @@ public:
 			("hold-out-prob,h", po::value<double>(&hold_out_prob)->default_value(0.1), "hold_out_prob")
 			("output-dir,o", po::value<std::string>(&output_dir)->default_value("."), "output_dir")
 
-			("input-file,f", po::value<std::string>(&filename)->default_value(""), "input file");
+			("input-file,f", po::value<std::string>(&filename)->default_value(""), "input file")
+			("class,c", po::value<std::string>(&dataset_class)->default_value("netscience"), "input class");
 			;
 
 		po::variables_map vm;
@@ -241,6 +242,7 @@ public:
 	std::string	output_dir;
 
 	std::string filename;
+	std::string dataset_class;
 };
 
 };	// namespace mcmc

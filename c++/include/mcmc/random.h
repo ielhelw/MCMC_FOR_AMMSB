@@ -34,10 +34,19 @@ public:
 #endif
 	}
 
+	double random() {
+#if 0
+		throw UnimplementedException("Random.random");
+		return -1;
+#else
+		return rand();
+#endif
+	}
 
-	double randn() {
+
+	std::vector<double> randn(::size_t K) {
 		throw UnimplementedException("Random.randn");
-		return 0.0;
+		return std::vector<double>(K, 0.0);
 	}
 
 
@@ -165,16 +174,45 @@ protected:
 
 
 public:
-	double randn() {
+	std::vector<double> randn(::size_t K) {
 		std::string line;
+		std::vector<double> r(K);
 
 		getline(noiseReader, line);
+		std::istringstream is(line);
+		for (::size_t k = 0; k < K; k++) {
+			is >> r[k];
+		}
+
+		std::cerr << "Read random.randn[" << K << "]" << std::endl;
+		for (::size_t k = 0; k < K; k++) {
+			std::cerr << r[k] << std::endl;
+		}
+		std::cerr << std::endl;
+
+		return r;
+	}
+
+
+	std::vector<std::vector<double> > randn(::size_t K, ::size_t N) {
+		std::vector<std::vector<double> > r(K);
+		for (::size_t k = 0; k < K; K++) {
+			r[k] = randn(N);
+		}
+
+		return r;
+	}
+
+
+	double random() {
+		std::string line;
+		getline(floatReader, line);
 
 		double r;
 		std::istringstream is(line);
 		is >> r;
 
-		std::cerr << "Read random.randn " << r << std::endl;
+		std::cerr << "Read random.random " << r << std::endl;
 		return r;
 	}
 
@@ -187,7 +225,7 @@ public:
 		std::istringstream is(line);
 		is >> r;
 
-		std::cerr << "Read random.int " << r << std::endl;
+		std::cerr << "Read random.randint " << r << std::endl;
 		return r;
 	}
 

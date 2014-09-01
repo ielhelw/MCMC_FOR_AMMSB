@@ -51,12 +51,7 @@ typedef std::unordered_map<int, std::string> Vertex;
 
 class NetScience : public DataSet {
 public:
-	NetScience(const std::string &filename) {
-		if (filename == "") {
-			this->filename = "datasets/netscience.xml";
-		} else {
-			this->filename = filename;
-		}
+	NetScience(const std::string &filename) : DataSet(filename == "" ? "datasets/netscience.xml" : filename) {
 	}
 
 	virtual ~NetScience() {
@@ -169,9 +164,6 @@ public:
 
 		return new mcmc::Data((void *)V, E, N);
 	}
-
-protected:
-	std::string filename;
 };
 
 }	// namespace preprocess
