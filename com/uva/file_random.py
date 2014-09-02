@@ -76,6 +76,7 @@ class FileRandom(Random):
 
 
     def randn(self, k, k2 = 1):
+        print "Store randn[" + str(k) + "," + str(k2) + "]";
         x = np.random.randn(k, k2)
         for r in x:
             for c in r:
