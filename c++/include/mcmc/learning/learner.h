@@ -122,13 +122,13 @@ protected:
 	 * the equal number of link edges and non-link edges for held out data and test data,
 	 * which is not true representation of actual data set, which is extremely sparse.
 	 */
-	double cal_perplexity(const EdgeMapBool &data) {
+	double cal_perplexity(const EdgeMap &data) {
 		double link_likelihood = 0.0;
 		double non_link_likelihood = 0.0;
 		::size_t link_count = 0;
 		::size_t non_link_count = 0;
 
-		for (EdgeMapBool::const_iterator edge = data.begin();
+		for (EdgeMap::const_iterator edge = data.begin();
 			 	edge != data.end();
 				edge++) {
 			const Edge &e = edge->first;

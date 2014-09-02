@@ -13,16 +13,6 @@
 namespace mcmc {
 
 typedef std::pair<EdgeSet *, float>		EdgeSample;
-// typedef std::set<int>					VertexSet;
-typedef std::unordered_set<int>					VertexSet;
-typedef std::unordered_map<Edge, bool>	EdgeMapBool;
-// typedef std::map<Edge, bool>	EdgeMapBool;
-
-void dump(const EdgeMapBool &s) {
-	for (EdgeMapBool::const_iterator e = s.begin(); e != s.end(); e++) {
-		std::cout << e->first << ": " << e->second << std::endl;
-	}
-}
 
 /**
  * Network class represents the whole graph that we read from the
@@ -130,11 +120,11 @@ public:
 		return *linked_edges;
 	}
 
-	const EdgeMapBool &get_held_out_set() const {
+	const EdgeMap &get_held_out_set() const {
 		return held_out_map;
 	}
 
-	const EdgeMapBool &get_test_set() const {
+	const EdgeMap &get_test_set() const {
 		return test_map;
 	}
 
@@ -268,14 +258,6 @@ public:
 	}
 
 
-	static std::vector<int> xrange(int from, int upto) {
-		std::vector<int> r(upto - from);
-		for (int i = 0; i < upto - from; i++) {
-			r[i] = from + i;
-		}
-		return r;
-	}
-
 	/**
 	 * stratified sampling approach gives more attention to link edges (the edge is connected by two
 	 * nodes). The sampling process works like this:
@@ -305,7 +287,7 @@ public:
 			while (p > 0) {
 				// because of the sparsity, when we sample $mini_batch_size*2$ nodes, the list likely
 				// contains at least mini_batch_size valid nodes.
-				std::vector<int> *nodeList = Random::random->sample(xrange(0, N), mini_batch_size * 2);
+				std::vector<int> *nodeList = Random::random->sample(np::xrange(0, N), mini_batch_size * 2);
 				for (std::vector<int>::iterator neighborId = nodeList->begin();
 					 	neighborId != nodeList->end();
 						neighborId++) {
@@ -529,8 +511,8 @@ protected:
 	// 10000: [0,441,9000]
 	//                         }
 	std::vector<VertexSet> train_link_map;	//
-	EdgeMapBool held_out_map;			// store all held out edges
-	EdgeMapBool test_map;				// store all test edges
+	EdgeMap held_out_map;			// store all held out edges
+	EdgeMap test_map;				// store all test edges
 
 	::size_t	num_pieces;
 

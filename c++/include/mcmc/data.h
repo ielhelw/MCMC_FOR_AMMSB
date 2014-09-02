@@ -103,12 +103,14 @@ inline std::istream &operator>> (std::istream &s, Edge &e) {
 	return e.get(s);
 }
 
+// typedef std::set<int>				VertexSet;
+typedef std::unordered_set<int>			VertexSet;
 
-// typedef typename std::set<Edge> EdgeSet;
-typedef typename std::unordered_set<Edge> EdgeSet;
+// typedef std::set<Edge> EdgeSet;
+typedef std::unordered_set<Edge>		EdgeSet;
 
 // typedef std::map<Edge, bool>			EdgeMap;
-typedef std::unordered_map<Edge, bool>			EdgeMap;
+typedef std::unordered_map<Edge, bool>	EdgeMap;
 
 }	// namespace mcmc
 
@@ -140,6 +142,12 @@ bool present(const EdgeSet &s, const Edge &edge) {
 	}
 
 	return false;
+}
+
+void dump(const EdgeMap &s) {
+	for (EdgeMap::const_iterator e = s.begin(); e != s.end(); e++) {
+		std::cout << e->first << ": " << e->second << std::endl;
+	}
 }
 
 /**

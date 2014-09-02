@@ -20,9 +20,9 @@ namespace learning {
 typedef std::unordered_set<int>	NodeSet;
 
 template <typename T>
-class MyOp {
+class MCMCMyOp {
 public:
-	MyOp(T a, T b) : a(a), b(b) {
+	MCMCMyOp(T a, T b) : a(a), b(b) {
 	}
 
 	T operator() (const T &x, const T &y) {
@@ -70,6 +70,10 @@ public:
         // self._pi = self.__phi/np.sum(self.__phi,1)[:,np.newaxis]
 		pi.resize(phi.size(), std::vector<double>(phi[0].size()));
 		np::row_normalize(&pi, phi);
+	}
+
+
+    virtual ~MCMCSamplerBatch() {
 	}
 
 
@@ -161,7 +165,7 @@ public:
 
         // update theta
 		std::vector<std::vector<double> > noise = Random::random->randn(K, 2);
-		std::vector<std::vector<double> > theta_star(theta);
+		std::vector<std::vector<double> > theta_star = np::clone(theta);
         for (::size_t k = 0; k < K; k++) {
             for (::size_t i = 0; i < 2; i++) {
 				// FIXME rewrite a**0.5 * b**0.5 as sqrt(a * b)
@@ -173,12 +177,12 @@ public:
 
         if (step_count < 50000) {
 			// np::copy2D(&theta, theta_star);
-			theta = theta_star;
+			np::copy(&theta, theta_star);
 		} else {
 			// self.__theta = theta_star * 1.0/(self._step_count) + (1-1.0/(self._step_count))*self.__theta
 			double inv_step_count = 1.0 / step_count;
 			double one_inv_step_count = 1.0 - inv_step_count;
-			MyOp<double> myOp(inv_step_count, one_inv_step_count);
+			MCMCMyOp<double> myOp(inv_step_count, one_inv_step_count);
 			for (::size_t k = 0; k < theta.size(); k++) {
 				std::transform(theta[k].begin(), theta[k].end(),
 							   theta_star[k].begin(),
@@ -303,6 +307,7 @@ public:
 	}
 
 protected:
+	// replicated in both mcmc_sampler_
 	double	a;
 	double	b;
 	double	c;

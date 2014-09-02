@@ -12,11 +12,14 @@
 #include "mcmc/sample_latent_vars.h"
 
 #include "mcmc/learning/learner.h"
+#include "mcmc/learning/mcmc_sampler_batch.h"
 
 namespace mcmc {
 namespace learning {
 
+
 class MCMCSamplerStochastic : public Learner {
+public:
     /**
     Mini-batch based MCMC sampler for community overlapping problems. Basically, given a
     connected graph where each node connects to other nodes, we try to find out the
@@ -45,7 +48,8 @@ class MCMCSamplerStochastic : public Learner {
     parameters for each iteration, here we only use mini-batch (subset) of the examples.
     This method is great marriage between MCMC and stochastic methods.
     */
-    MCMCSamplerStochastic(args, graph) : Learner(args, graph) {
+    MCMCSamplerStochastic(const Options &args, const Network &graph)
+			: Learner(args, graph) {
 
         // step size parameters.
         this->a = args.a;
@@ -73,6 +77,9 @@ class MCMCSamplerStochastic : public Learner {
         // self._pi = self.__phi/np.sum(self.__phi,1)[:,np.newaxis]
 		pi.resize(phi.size(), std::vector<double>(phi[0].size()));
 		np::row_normalize(&pi, phi);
+	}
+
+	virtual ~MCMCSamplerStochastic() {
 	}
 
 #if 0
@@ -126,20 +133,21 @@ class MCMCSamplerStochastic : public Learner {
 			std::unordered_map<int, std::vector<double> > latent_vars;
 			std::unordered_map<int, ::size_t> size;
             // iterate through each node in the mini batch.
-            for (const EdgeSet::const_iterator &node = mini_batch.begin();
-				 	node != mini_batch.end();
+			VertexSet nodes = nodes_in_batch(mini_batch);
+            for (VertexSet::iterator node = nodes.begin();
+				 	node != nodes.end();
 					node++) {
                 // sample a mini-batch of neighbors
-                neighbor_nodes = sample_neighbor_nodes(num_node_sample, *node);
-                size[node] = neighbor_nodes.size();
+                VertexSet neighbor_nodes = sample_neighbor_nodes(num_node_sample, *node);
+                size[*node] = neighbor_nodes.size();
                 // sample latent variables z_ab for each pair of nodes
-                std::unordered_map<int, int> z = sample_latent_vars(*node, neighbor_nodes);
-                latent_vars[node] = z;
+                std::vector<double> z = sample_latent_vars(*node, neighbor_nodes);
+                latent_vars[*node] = z;
 			}
 
             // update pi for each node
-            for (const EdgeSet::const_iterator &node = mini_batch.begin();
-				 	node != mini_batch.end();
+            for (VertexSet::iterator node = nodes.begin();
+				 	node != nodes.end();
 					node++) {
                 update_pi_for_node(*node, latent_vars[*node], size[*node]);
 			}
@@ -155,10 +163,13 @@ class MCMCSamplerStochastic : public Learner {
 				std::cout << "Perplexity: " << ppx_score << std::endl;
                 ppxs_held_out.push_back(ppx_score);
                 if (ppx_score < 5.0) {
-                    self.stepsize_switch = true;
+                    stepsize_switch = true;
                     //print "switching to smaller step size mode!"
 				}
 			}
+
+			std::cerr << "GC mini_batch->first EdgeSet *" << std::endl;
+			delete edgeSample.first;
 
             step_count++;
             /**
@@ -172,6 +183,8 @@ class MCMCSamplerStochastic : public Learner {
 		}
 	}
 
+
+protected:
 
 #if 0
     def __update_pi1(self, mini_batch):
@@ -225,84 +238,117 @@ class MCMCSamplerStochastic : public Learner {
 #endif
 
 
-
+	// FIXME lots of code sharing w/ mcmc_sampler_batch
     void update_beta(const EdgeSet &mini_batch, double scale, const std::unordered_map<Edge, int> &z) {
         /**
         update beta for mini_batch.
          */
         // update gamma, only update node in the grad
 		double eps_t;
-        if (! self.stepsize_switch) {
+        if (! stepsize_switch) {
             eps_t = std::pow(1024.0 + step_count, -0.5);
 		} else {
             eps_t  = a*std::pow(1.0 + step_count / b, -c);
 		}
 
-		std::vector<std::vector<double> > grads(K, std::vector<double>(2));		// gradients K*2 dimension
+		std::vector<std::vector<double> > grads(K, std::vector<double>(2, 0.0));	// gradients K*2 dimension
         // sums = np.sum(self.__theta,1)
 		std::vector<double> sums(theta.size());
 		std::transform(theta.begin(), theta.end(), sums.begin(), np::sum<double>);
 		std::vector<std::vector<double> > noise = Random::random->randn(K, 2);	// random noise.
 
-        for edge in z.keys():
-            y_ab = 0
-            if edge in self._network.get_linked_edges():
-                y_ab = 1
-            k = z[edge]
+        for (std::unordered_map<Edge, int>::const_iterator edge = z.begin();
+			 	edge != z.end();
+				edge++) {
+            int y_ab = 0;
+            if (edge->first.in(network.get_linked_edges())) {
+                y_ab = 1;
+			}
+            int k = edge->second;
             // if k==-1 means z_ab != z_ba => gradient is 0.
-            if k == -1:
-                continue
+            if (k == -1) {
+                continue;
+			}
 
-            grads[k,0] += abs(1-y_ab)/self.__theta[k,0] - 1/ sums[k]
-            grads[k,1] += abs(-y_ab)/self.__theta[k,1] - 1/sums[k]
+            grads[k][0] += std::abs(1-y_ab) / theta[k][0] - 1 / sums[k];
+            grads[k][1] += std::abs(-y_ab) / theta[k][1] - 1 / sums[k];
+		}
 
         // update theta
-        theta_star = copy.copy(self.__theta)
-        for k in range(0,self._K):
-            for i in range(0,2):
-                theta_star[k,i] = abs(self.__theta[k,i] + eps_t/2 * (self._eta[i] - self.__theta[k,i] + \
-                                    scale * grads[k,i]) + eps_t**.5*self.__theta[k,i] ** .5 * noise[k,i])
+		std::vector<std::vector<double> > theta_star = np::clone(theta);
+        for (::size_t k = 0; k < K; k++) {
+            for (::size_t i = 0; i < 2; i++) {
+				// FIXME rewrite a**0.5 * b**0.5 as sqrt(a * b)
+                theta_star[k][i] = std::abs(theta[k][i] + eps_t / 2.0 * (eta[i] - theta[k][i] + \
+																		 scale * grads[k][i]) +
+										   	std::pow(eps_t, .5) * std::pow(theta[k][i], .5) * noise[k][i]);
+			}
+		}
 
-        if  self._step_count < 50000:
-            self.__theta = theta_star
-        else:
-            self.__theta = theta_star * 1.0/(self._step_count) + (1-1.0/(self._step_count))*self.__theta
-        //self.__theta = theta_star
-        // update beta from theta
-        temp = self.__theta/np.sum(self.__theta,1)[:,np.newaxis]
-        self._beta = temp[:,1]
+        if (step_count < 50000) {
+			np::copy(&theta, theta_star);
+		} else {
+            // self.__theta = theta_star * 1.0/(self._step_count) + (1-1.0/(self._step_count))*self.__theta
+			double inv_step_count = 1.0 / step_count;
+			double one_inv_step_count = 1.0 - inv_step_count;
+			MCMCMyOp<double> myOp(inv_step_count, one_inv_step_count);
+			for (::size_t k = 0; k < theta.size(); k++) {
+				std::transform(theta[k].begin(), theta[k].end(),
+							   theta_star[k].begin(),
+							   theta[k].begin(),
+							   myOp);
+			}
+		}
+		//self.__theta = theta_star
+		// update beta from theta
+		// temp = self.__theta/np.sum(self.__theta,1)[:,np.newaxis]
+		// self._beta = temp[:,1]
+		std::vector<std::vector<double> > temp(theta.size(), std::vector<double>(theta[0].size()));
+		np::row_normalize(&temp, theta);
+		std::transform(temp.begin(), temp.end(), beta.begin(), np::SelectColumn<double>(1));
+	}
 
 
-    def __update_pi_for_node(self, i, z, n):
+    void update_pi_for_node(int i, const std::vector<double> &z, int n) {
         /**
         update pi for current node i.
          */
         // update gamma, only update node in the grad
-        if self.stepsize_switch == False:
-            eps_t = (1024+self._step_count)**(-0.5)
-        else:
-            eps_t  = self.__a*((1 + self._step_count/self.__b)**-self.__c)
+		double eps_t;
+        if (! stepsize_switch) {
+            eps_t = std::pow(1024+step_count, -0.5);
+		} else {
+            eps_t  = a * std::pow(1 + step_count / b, -c);
+		}
 
-        phi_star = copy.copy(self.__phi[i])                              // updated \phi
-        phi_i_sum = np.sum(self.__phi[i])
-        noise = random.randn(self._K)                                 // random noise.
+		std::vector<double> phi_star(phi[i]);					// updated \phi
+		double phi_i_sum = np::sum(phi[i]);
+		std::vector<double> noise = Random::random->randn(K);	// random noise.
 
         // get the gradients
-        grads = [-n * 1/phi_i_sum * j for j in np.ones(self._K)]
-        for k in range(0, self._K):
-            grads[k] += 1/self.__phi[i,k] * z[k]
+        // grads = [-n * 1/phi_i_sum * j for j in np.ones(self._K)]
+        std::vector<double> grads(K, -n * 1.0/phi_i_sum);
+        for (::size_t k = 0; k < K; k++) {
+            grads[k] += 1.0 / phi[i][k] * z[k];
+		}
 
         // update the phi
-        for k in range(0, self._K):
-            phi_star[k] = abs(self.__phi[i,k] + eps_t/2 * (self._alpha - self.__phi[i,k] + \
-                                self._N/n * grads[k]) + eps_t**.5*self.__phi[i,k]**.5 * noise[k])
+        for (::size_t k = 0; k < K; k++) {
+			// FIXME replace a**0.5 * b**0.5 with sqrt(a * b)
+            phi_star[k] = std::abs(phi[i][k] + eps_t/2 * (alpha - phi[i][k] + \
+														  N/n * grads[k]) +
+								   std::pow(eps_t, .5) * std::pow(phi[i][k], .5) * noise[k]);
+		}
 
-        self.__phi[i] = phi_star
+        // self.__phi[i] = phi_star
+		phi[i] = phi_star;
         //self.__phi[i] = phi_star * (1.0/(self._step_count+1)) + (1-1.0/(self._step_count+1))*self.__phi[i]
 
         // update pi
-        sum_phi = np.sum(self.__phi[i])
-        self._pi[i] = [self.__phi[i,k]/sum_phi for k in range(0, self._K)]
+        // double sum_phi = np::sum(phi[i]);
+        // self._pi[i] = [self.__phi[i,k]/sum_phi for k in range(0, self._K)]
+		np::normalize(&pi[i], phi[i]);
+	}
 
 
     std::unordered_map<Edge, int> sample_latent_vars2(const EdgeSet &mini_batch) const {
@@ -311,8 +357,8 @@ class MCMCSamplerStochastic : public Learner {
         since we only need indicator function in the gradient update. More details, please see the comments
         within the sample_z_for_each_edge function.
          */
-		std::unordered_map<int, int> z;
-		for (const EdgeSet::const_iterator &edge = mini_batch.begin();
+		std::unordered_map<Edge, int> z;
+		for (EdgeSet::const_iterator edge = mini_batch.begin();
 			 	edge != mini_batch.end();
 				edge++) {
             int y_ab = 0;
@@ -320,8 +366,8 @@ class MCMCSamplerStochastic : public Learner {
                 y_ab = 1;
 			}
 
-            z[*edge] = sample_z_for_each_edge(y_ab, pi[edge->first], pi[edg->second], \
-											  beta, _K);
+            z[*edge] = sample_z_for_each_edge(y_ab, pi[edge->first], pi[edge->second], \
+											  beta, K);
 		}
 
         return z;
@@ -371,13 +417,13 @@ class MCMCSamplerStochastic : public Learner {
 	}
 
 
-    std::unordered_map<int, int> sample_latent_vars(int node, const VertexSet &neighbor_nodes) const {
+    std::vector<double> sample_latent_vars(int node, const VertexSet &neighbor_nodes) const {
         /**
         given a node and its neighbors (either linked or non-linked), return the latent value
         z_ab for each pair (node, neighbor_nodes[i].
          */
-		std::unordered_map<int, int> z;
-        for (const VertexSet::const_iterator &neighbor = neighbor_nodes.begin();
+		std::vector<double> z(K, 0.0);
+        for (VertexSet::const_iterator neighbor = neighbor_nodes.begin();
 			 	neighbor != neighbor_nodes.end();
 				neighbor++) {
             int y_ab = 0;      // observation
@@ -418,42 +464,78 @@ class MCMCSamplerStochastic : public Learner {
         return -1
 #endif
 
-    def __sample_neighbor_nodes(self, sample_size, nodeId):
+	// TODO FIXME make VertexSet an out parameter
+    VertexSet sample_neighbor_nodes(::size_t sample_size, int nodeId) {
         /**
         Sample subset of neighborhood nodes.
          */
-        p = sample_size
-        neighbor_nodes = Set()
-        held_out_set = self._network.get_held_out_set()
-        test_set = self._network.get_test_set()
+        int p = (int)sample_size;
+        VertexSet neighbor_nodes;
+        const EdgeMap &held_out_set = network.get_held_out_set();
+        const EdgeMap &test_set = network.get_test_set();
 
-        while p > 0:
-            nodeList = random.sample(list(xrange(self._N)), sample_size * 2)
-            for neighborId in nodeList:
-                    if p < 0:
-                        break
-                    if neighborId == nodeId:
-                        continue
-                    // check condition, and insert into mini_batch_set if it is valid.
-                    edge = (min(nodeId, neighborId), max(nodeId, neighborId))
-                    if edge in held_out_set or edge in test_set or neighborId in neighbor_nodes:
-                        continue
-                    else:
-                        // add it into mini_batch_set
-                        neighbor_nodes.add(neighborId)
-                        p -= 1
+        while (p > 0) {
+			std::vector<int> *nodeList = Random::random->sample(np::xrange(0, N), sample_size * 2);
+            for (std::vector<int>::const_iterator neighborId = nodeList->begin();
+				 	neighborId != nodeList->end();
+					neighborId++) {
+				if (p < 0) {
+					if (p != 0) {
+						std::cerr << "Are you sure p < 0 is really OK?" << std::endl;
+					}
+					break;
+				}
+				if (*neighborId == nodeId) {
+					continue;
+				}
+				// check condition, and insert into mini_batch_set if it is valid.
+				Edge edge(std::min(nodeId, *neighborId), std::max(nodeId, *neighborId));
+				if (edge.in(held_out_set) || edge.in(test_set) || neighbor_nodes.find(*neighborId) != neighbor_nodes.end()) {
+					continue;
+				} else {
+					// add it into mini_batch_set
+					neighbor_nodes.insert(*neighborId);
+					p -= 1;
+				}
+			}
 
-        return neighbor_nodes
+			delete nodeList;
+		}
 
-    def __nodes_in_batch(self, mini_batch):
+        return neighbor_nodes;
+	}
+
+    VertexSet nodes_in_batch(const EdgeSet &mini_batch) const {
         /**
         Get all the unique nodes in the mini_batch.
          */
-        node_set = Set()
-        for edge in mini_batch:
-            node_set.add(edge[0])
-            node_set.add(edge[1])
-        return node_set
+        VertexSet node_set;
+        for (EdgeSet::const_iterator edge = mini_batch.begin();
+			 	edge != mini_batch.end();
+			   	edge++) {
+            node_set.insert(edge->first);
+            node_set.insert(edge->second);
+		}
+
+        return node_set;
+	}
+
+protected:
+	// replicated in both mcmc_sampler_
+	double	a;
+	double	b;
+	double	c;
+
+	::size_t num_node_sample;
+
+	std::vector<std::vector<double> > theta;		// parameterization for \beta
+	std::vector<std::vector<double> > phi;			// parameterization for \pi
+
+	std::vector<std::vector<double> > pi;
+};
+
+}	// namespace learning
+}	// namespace mcmc
 
 
 

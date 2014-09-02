@@ -40,6 +40,12 @@ protected:
 };
 
 
+template <typename T>
+static void normalize(std::vector<T> *r, const std::vector<T> &a) {
+	T s = sum(a);
+	std::transform(a.begin(), a.end(), (*r).begin(), np::DivideBy<T>(s));
+}
+
 /**
  * r[i,j] = a[i,j] / s[i] where s[i] = sum_j a[i,j]
  *
@@ -49,8 +55,9 @@ template <typename T>
 static void row_normalize(std::vector<std::vector<T> > *r,
 						  const std::vector<std::vector<T> > &a) {
 	for (::size_t i = 0; i < a.size(); i++) {
-		T row_sum = sum(a[i]);
-		std::transform(a[i].begin(), a[i].end(), (*r)[i].begin(), np::DivideBy<T>(row_sum));
+		// T row_sum = sum(a[i]);
+		// std::transform(a[i].begin(), a[i].end(), (*r)[i].begin(), np::DivideBy<T>(row_sum));
+		normalize(&(*r)[i], a[i]);
 	}
 }
 
@@ -79,11 +86,27 @@ static Type sum(const std::vector<Type> *a) {
 }
 
 template <typename Type>
-static void copy2D(std::vector<std::vector<Type>> *to, const std::vector<std::vector<Type>> &from) {
+static void copy(std::vector<std::vector<Type> > *to, const std::vector<std::vector<Type> > &from) {
 	to->resize(from.size());
 	for (::size_t i = 0; i < from[i].size(); i++) {
 		(*to)[i] = from[i];
 	}
+}
+
+template <typename Type>
+static std::vector<std::vector<Type> > clone(const std::vector<std::vector<Type> > &from) {
+	std::vector<std::vector<Type> > to;
+	copy(&to, from);
+
+	return to;
+}
+
+static std::vector<int> xrange(int from, int upto) {
+	std::vector<int> r(upto - from);
+	for (int i = 0; i < upto - from; i++) {
+		r[i] = from + i;
+	}
+	return r;
 }
 
 }	// namespace np

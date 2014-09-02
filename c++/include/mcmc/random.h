@@ -26,21 +26,11 @@ public:
 	}
 
 	int randint(int from, int upto) {
-#if 0
-		throw UnimplementedException("Random.randint");
-		return -1;
-#else
 		return (rand() % (upto - from)) + from;
-#endif
 	}
 
 	double random() {
-#if 0
-		throw UnimplementedException("Random.random");
-		return -1;
-#else
 		return rand();
-#endif
 	}
 
 
@@ -68,7 +58,6 @@ public:
 	List *sample(const List &list, ::size_t count) {
 		List *result = new List();
 
-#if 1
 		std::unordered_set<int> accu;
 		sample(&accu, 0, list.size(), count);
 
@@ -79,10 +68,6 @@ public:
 			}
 			c++;
 		}
-
-#else
-		throw UnimplementedException("Random.sample");
-#endif
 
 		return result;
 	}
@@ -96,7 +81,6 @@ public:
 
 	template <class Element>
 	std::vector<Element> *sample(const std::vector<Element> &list, ::size_t count) {
-#if 1
 		std::unordered_set<int> accu;
 		sample(&accu, 0, list.size(), count);
 
@@ -106,16 +90,11 @@ public:
 			result->push_back(list[*i]);
 		}
 
-#else
-		throw UnimplementedException("Random.sample");
-#endif
-
 		return result;
 	}
 
 
 	std::vector<std::vector<double> > gamma(double p1, double p2, ::size_t n1, ::size_t n2) {
-#if 1
 		// std::vector<std::vector<double> > *a = new std::vector<double>(n1, std::vector<double>(n2, 0.0));
 		std::vector<std::vector<double> > a(n1, std::vector<double>(n2));
 
@@ -129,12 +108,6 @@ public:
 		}
 
 		return a;
-
-#else
-		throw UnimplementedException("Random.gamma");
-
-		return NULL;
-#endif
 	}
 };
 
