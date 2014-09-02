@@ -53,7 +53,8 @@ def main():
 
     random.seed(0)
 
-    data = DataFactory.get_data("netscience")
+    # data = DataFactory.get_data("netscience")
+    data = DataFactory.get_data("relativity")
     network = Network(data, 0.1)
     
     if False:
@@ -63,11 +64,19 @@ def main():
 	    #work_mcmc(sampler, ppx_mcmc)
 	    sampler.run()
         
-    print "start variational inference stochastic batch"
-    ppx_svi = []
-    sampler  = SVI(args, network)
-    #work_svi(sampler, ppx_svi)
-    sampler.run()
+    if True:
+	    print "start MCMC stochastic"
+	    ppx_mcmc = []
+	    sampler = MCMCSamplerStochastic(args, network)
+	    #work_mcmc(sampler, ppx_mcmc)
+	    sampler.run()
+        
+    if False:
+        print "start variational inference stochastic batch"
+        ppx_svi = []
+        sampler  = SVI(args, network)
+        #work_svi(sampler, ppx_svi)
+        sampler.run()
     
 if __name__ == '__main__':
     main()

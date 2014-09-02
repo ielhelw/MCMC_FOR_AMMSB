@@ -27,7 +27,10 @@ class Relativity(DataSet):
         """
         
         # TODO: try catch block.  
-        f= open("/home/liwenzhe/workspace/SGRLDForMMSB/datasets/CA-GrQc.txt", 'r')
+        # f= open("/home/liwenzhe/workspace/SGRLDForMMSB/datasets/CA-GrQc.txt", 'r')
+        # f= open("datasets/CA-GrQc.txt", 'r')
+        print "relativity::open(\"" + "datasets/CA-GrQc-tiny.txt" + "\")";
+        f= open("datasets/CA-GrQc-tiny.txt", 'r')
         lines = f.readlines()
         nodes = Set()
         n = len(lines)

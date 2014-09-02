@@ -271,14 +271,17 @@ class Network(object):
                     mini_batch_set.add(edge)
                     p -= 1
                         
+            # print "A Create mini batch size " + str(len(mini_batch_set)) + " scale " + str(self.__N * self.__num_pieces)
             return (mini_batch_set, self.__N * self.__num_pieces)
         
         else:
             """ sample linked edges """
             # return all linked edges
+            # print "train_link_map[" + str(nodeId) + "] size " + str(len(self.__train_link_map[nodeId]))
             for neighborId in self.__train_link_map[nodeId]:
                 mini_batch_set.add((min(nodeId, neighborId),max(nodeId, neighborId)))
             
+            # print "B Create mini batch size " + str(len(mini_batch_set)) + " scale " + str(self.__N)
             return (mini_batch_set, self.__N)   
     
 
@@ -314,7 +317,7 @@ class Network(object):
             self.__held_out_map[edge] = True
             self.__train_link_map[edge[0]].remove(edge[1])
             self.__train_link_map[edge[1]].remove(edge[0])
-        print sampled_linked_edges
+        # print sampled_linked_edges
         
         # sample p non-linked edges from the network 
         while p > 0:

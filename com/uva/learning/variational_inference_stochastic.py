@@ -116,11 +116,13 @@ class SVI(Learner):
         print s.getvalue()    
     def __sample_latent_vars_for_edges(self, phi, mini_batch):
         
+        # print "Minibatch size " + str(len(mini_batch))
         for edge in mini_batch:
             a = edge[0]
             b = edge[1]
             #self.__estimate_phi_for_edge(edge, phi)  # this can be done in parallel. 
             
+            # print "Investigate " + str(edge)
             (phi_ab, phi_ba) = sample_latent_vars_for_each_pair(a, b, self.__gamma[a], self.__gamma[b],
                                                                 self.__lamda, self._K, self.__phi_update_threshold,
                                                                 self._epsilon, self.__online_iterations, 

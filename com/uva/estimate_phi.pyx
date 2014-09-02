@@ -55,12 +55,16 @@ def sample_latent_vars_for_each_pair(int a, int b,
                 u = -phi_ba[k]* math.log(epsilon)
                 phi_ab[k] = math.exp(psi(gamma_a[k])+phi_ba[k]*\
                                         (psi(lamda[k][0])-psi(lamda[k][0]+lamda[k][1]))+u)
+                if False and k == 0:
+                    print "gamma_a[" + str(k) + "] " + str(gamma_a[k]) + " psi() " + str(psi(gamma_a[k]))
             else:
                 u = -phi_ba[k]* math.log(1-epsilon)
                 phi_ab[k] = math.exp(psi(gamma_a[k])+phi_ba[k]*\
                                          (psi(lamda[k][1])-psi(lamda[k][0]+lamda[k][1]))+u)    
         sum_phi_ab = np.sum(phi_ab)
         phi_ab = phi_ab/sum_phi_ab
+        if False:
+            print "phi_ab[0] " + str(phi_ab[0]) + " log_eps " + str(math.log(epsilon)) + " log(1-eps) " + str(math.log(1 - epsilon)) + " y " + str(y)
                 
         # then update phi_ba
         for k in range(K):
@@ -75,6 +79,8 @@ def sample_latent_vars_for_each_pair(int a, int b,
                
         sum_phi_ba = np.sum(phi_ba)
         phi_ba = phi_ba/sum_phi_ba
+        if False:
+            print "phi_ba[0] " + str(phi_ba[0])
             
         # calculate the absolute difference between new value and old value
         diff1 = np.sum(np.abs(phi_ab - phi_ab_old))

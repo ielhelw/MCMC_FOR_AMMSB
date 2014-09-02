@@ -34,7 +34,7 @@ class FileRandom(Random):
 
     def randint(self, a, b):
         old = self.prefix
-        self.prefix = self.prefix + "% int "
+        self.prefix = self.prefix + "# int "
         r = Random.randint(self, a, b)
         self.prefix = old
         self.random_int_file.write("%s%d\n" % (self.prefix, r))
@@ -75,9 +75,13 @@ class FileRandom(Random):
         return x
 
 
-    def randn(self, a):
-        x = np.randn(a)
-        self.random_noise_file.write("%.17g\n" % x)
+    def randn(self, k, k2 = 1):
+        x = np.random.randn(k, k2)
+        for r in x:
+            for c in r:
+                self.random_noise_file.write("%.17g " % c)
+        self.random_noise_file.write("\n")
+
         return x
 
 
