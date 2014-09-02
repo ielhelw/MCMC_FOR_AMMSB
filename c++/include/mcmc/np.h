@@ -40,9 +40,16 @@ protected:
 };
 
 
+
+template <typename Type>
+static Type sum(const std::vector<Type> &a) {
+	return std::accumulate(a.begin(), a.end(), static_cast<Type>(0));
+}
+
+
 template <typename T>
 static void normalize(std::vector<T> *r, const std::vector<T> &a) {
-	T s = sum(a);
+	T s = np::sum(a);
 	std::transform(a.begin(), a.end(), (*r).begin(), np::DivideBy<T>(s));
 }
 
@@ -71,18 +78,6 @@ static Type sum_abs(const std::vector<Type> &a, const std::vector<Type> &b) {
 	}
 
 	return diff;
-}
-
-
-template <typename Type>
-static Type sum(const std::vector<Type> &a) {
-	return std::accumulate(a.begin(), a.end(), static_cast<Type>(0));
-}
-
-
-template <typename Type>
-static Type sum(const std::vector<Type> *a) {
-	return sum<Type>(*a);
 }
 
 template <typename Type>

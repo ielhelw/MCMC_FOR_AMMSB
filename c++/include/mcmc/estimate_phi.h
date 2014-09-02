@@ -60,7 +60,7 @@ sample_latent_vars_for_each_pair(int a, int b,
                                          (digamma(lamda[k][1])-digamma(lamda[k][0]+lamda[k][1]))+u);
 			}
 		}
-        double sum_phi_ab = np::sum(phi_ab);
+        double sum_phi_ab = np::sum(*phi_ab);
 		np::DivideBy<double> divBy_sum_phi_ab(sum_phi_ab);
         // phi_ab = phi_ab/sum_phi_ab;
 		std::transform(phi_ab->begin(), phi_ab->end(), phi_ab->begin(), divBy_sum_phi_ab);
@@ -81,7 +81,7 @@ sample_latent_vars_for_each_pair(int a, int b,
 			}
 		}
 
-        double sum_phi_ba = np::sum(phi_ba);
+        double sum_phi_ba = np::sum(*phi_ba);
 		np::DivideBy<double> divBy_sum_phi_ba(sum_phi_ba);
         // phi_ba = phi_ba/sum_phi_ba;
 		std::transform(phi_ba->begin(), phi_ba->end(), phi_ba->begin(), divBy_sum_phi_ba);

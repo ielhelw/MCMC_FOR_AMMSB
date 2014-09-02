@@ -5,8 +5,8 @@ PROJECT_HOME = $(shell cd $(PROJECT); pwd)
 
 include $(PROJECT_HOME)/config.mk
 
-LD = g++
-LDSHARED = g++
+LD = $(CXX)
+LDSHARED = $(CXX)
 
 CXXFLAGS += -std=c++0x
 CXXFLAGS += -fPIC
