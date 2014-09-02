@@ -1,8 +1,8 @@
 from com.uva.preprocess.netscience import NetScience
 from com.uva.preprocess.relativity import Relativity
 from com.uva.preprocess.hep_ph import HepPH
-from com.uva.preprocess.astro_ph import AstroPh
-from com.uva.preprocess.condmat import CondMat
+#from com.uva.preprocess.astro_ph import AstroPh
+#from com.uva.preprocess.condmat import CondMat
 from com.uva.preprocess.hep_th import HepTh
 
 

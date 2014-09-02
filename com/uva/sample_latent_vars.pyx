@@ -1,6 +1,7 @@
 from __future__ import division
 cimport numpy as np
 import numpy as np
+import random
 from libc.stdlib cimport rand
 
 def sample_z_ab_from_edge(int y, np.ndarray[double, ndim=1] pi_a, 
