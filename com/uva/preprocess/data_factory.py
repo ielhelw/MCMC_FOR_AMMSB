@@ -4,7 +4,7 @@ from com.uva.preprocess.hep_ph import HepPH
 #from com.uva.preprocess.astro_ph import AstroPh
 #from com.uva.preprocess.condmat import CondMat
 from com.uva.preprocess.hep_th import HepTh
-from com.uva.preprocess.testdata import TestData
+#from com.uva.preprocess.testdata import TestData
 
 class DataFactory(object):
     """
