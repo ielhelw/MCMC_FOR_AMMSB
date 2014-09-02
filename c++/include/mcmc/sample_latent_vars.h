@@ -14,10 +14,10 @@ namespace mcmc {
  * then we simply sample z_ab based on the distribution p.
  * this runs in O(K)
  */
-static int sample_z_ab_from_edge(int y, const std::vector<double> &pi_a,
-									  const std::vector<double> &pi_b,
-									  const std::vector<double> &beta,
-									  double epsilon, ::size_t K) {
+int sample_z_ab_from_edge(int y, const std::vector<double> &pi_a,
+						  const std::vector<double> &pi_b,
+						  const std::vector<double> &beta,
+						  double epsilon, ::size_t K) {
 	std::vector<double> p(K);
     std::vector<double> bounds(K);
 

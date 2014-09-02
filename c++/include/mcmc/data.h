@@ -32,23 +32,20 @@ public:
 		(void)get(s);
 	}
 
-	virtual ~Edge() {
-	}
-
 	template <typename SET>
 	bool in(const SET &s) const {
 		return s.find(*this) != s.end();
 	}
 
-	virtual bool operator== (const Edge &a) const {
+	bool operator== (const Edge &a) const {
 		return a.first == first && a.second == second;
 	}
 
-	virtual bool operator< (const Edge &a) const {
+	bool operator< (const Edge &a) const {
 		return first < a.first || (first == a.first && second < a.second);
 	}
 
-	virtual std::ostream &put(std::ostream &s) const {
+	std::ostream &put(std::ostream &s) const {
 		s << "(" << first << ", " << second << ")";
 
 		return s;
@@ -75,7 +72,7 @@ protected:
 	}
 
 public:
-	virtual std::istream &get(std::istream &s) {
+	std::istream &get(std::istream &s) {
 		// std::string line;
 		// std::getline(s, line);
 		// std::cerr << line << std::endl;
@@ -165,7 +162,7 @@ public:
 		this->N = N;
 	}
 
-	virtual ~Data() {
+	~Data() {
 		// delete const_cast<void *>(V);
 		delete const_cast<EdgeSet *>(E);
 	}

@@ -1,4 +1,4 @@
-import random
+from com.uva.file_random import file_random as random
 from com.uva.edge import Edge
 import math
 import numpy as np
@@ -56,9 +56,8 @@ class SVI(Learner):
         Learner.__init__(self, args, graph)
         
         # variational parameters. 
-        self.__lamda = np.random.gamma(100,0.01,(self._K, 2))      # variational parameters for beta  
-        self.__gamma = np.random.gamma(1,1,(self._N, self._K)) # variational parameters for pi
-        print str(self.__lamda)
+        self.__lamda = random.gamma(self._eta[0],self._eta[1],(self._K, 2))      # variational parameters for beta  
+        self.__gamma = random.gamma(1,1,(self._N, self._K)) # variational parameters for pi
         self.__update_pi_beta()
         # step size parameters. 
         self.__kappa = args.b
@@ -98,8 +97,8 @@ class SVI(Learner):
             pr.enable()
             """
              # evaluate model after processing every 10 mini-batches. 
-            if self._step_count % 5 ==  0:
-                #self.save_model()
+            # if self._step_count % 2 ==  1:
+            if self._step_count % 1 ==  0:
                 ppx_score = self._cal_perplexity_held_out()
                 #print "perplexity for hold out set is: "  + str(ppx_score)
                 self._ppxs_held_out.append(ppx_score)
@@ -136,11 +135,13 @@ class SVI(Learner):
            
     def __sample_latent_vars_for_edges(self, phi, mini_batch):
         
+        # print "Minibatch size " + str(len(mini_batch))
         for edge in mini_batch:
             a = edge[0]
             b = edge[1]
             #self.__estimate_phi_for_edge(edge, phi)  # this can be done in parallel. 
             
+            # print "Investigate " + str(edge)
             (phi_ab, phi_ba) = sample_latent_vars_for_each_pair(a, b, self.__gamma[a], self.__gamma[b],
                                                                 self.__lamda, self._K, self.__phi_update_threshold,
                                                                 self._epsilon, self.__online_iterations, 
@@ -155,6 +156,8 @@ class SVI(Learner):
             
     def __update_pi_beta(self):
         
+        gamma = self.__gamma         # debugger ignores __<identifier>
+        lamda = self.__lamda         # debugger ignores __<identifier>
         self._pi = self.__gamma/np.sum(self.__gamma,1)[:,np.newaxis]
         temp = self.__lamda/np.sum(self.__lamda,1)[:,np.newaxis]
         self._beta = temp[:,0]
@@ -188,7 +191,9 @@ class SVI(Learner):
                 grad_gamma[b] = phi_ba
                 counter[b] = 1
         
-        for edge in mini_batch:    
+	# OOPPSSS RFHH phi_ab remains the last value from the loop, not updated
+	# OOPPSSS RFHH why not do it in the same loop?
+        # for edge in mini_batch:    
             """
             calculate the gradient for lambda
             """

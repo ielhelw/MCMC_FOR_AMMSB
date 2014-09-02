@@ -5,6 +5,7 @@
 #include <unordered_map>
 #include <algorithm>
 #include <functional>
+#include <fstream>
 
 #include <boost/math/special_functions/digamma.hpp>
 
@@ -123,17 +124,29 @@ public:
 				double ppx_score = cal_perplexity_held_out();
 				std::cout << "perplexity for hold out set is: " << std::setprecision(15) << ppx_score << std::endl;
 				ppxs_held_out.push_back(ppx_score);
-				if (ppx_score < 13.0) {
-					// we will use different step size schema
-					stepsize_switch = true;
+
+                if (step_count > 5000) {
+                    ::size_t size = avg_log.size();
+                    ppx_score = (1-1.0/(step_count-50)) * avg_log[size-1] + 1.0/(step_count-50) * ppx_score;
+                    avg_log.push_back(ppx_score);
+				} else {
+                    avg_log.push_back(ppx_score);
 				}
+
+                // self._timing.append(time.time()-start)
+			}
+
+            if (step_count % 50 == 0) {
+                this->save();
 			}
 
 			// update (phi_ab, phi_ba) for each edge
 			PhiMap phi;	// mapping (a,b) => (phi_ab, phi_ba)
 			sample_latent_vars_for_edges(&phi, mini_batch);
 			update_gamma_and_lamda(phi, mini_batch, scale);
+			// std::cerr << "old beta: " << std::setprecision(15) << beta;
 			update_pi_beta();
+			// std::cerr << "new beta: " << std::setprecision(15) << beta;
 
 			step_count++;
 		}
@@ -172,6 +185,8 @@ protected:
 											 network.get_linked_edges(),
 											 &(*phi)[Edge(a,b)],
 											 &(*phi)[Edge(b,a)]);
+			// std::cerr << "phi[(a,b)] " << (*phi)[Edge(a,b)] << std::endl;
+			// std::cerr << "phi[(b,a)] " << (*phi)[Edge(b,a)] << std::endl;
 
 			//estimate_phi_for_edge(edge, phi)
 		}
@@ -201,7 +216,8 @@ protected:
 
 		std::vector<std::vector<double> > temp(lamda.size(), std::vector<double>(lamda[0].size()));
 		np::row_normalize(&temp, lamda);
-		std::transform(temp.begin(), temp.end(), beta.begin(), np::SelectColumn<double>(1));
+		// std::transform(temp.begin(), temp.end(), beta.begin(), np::SelectColumn<double>(1));
+		std::transform(temp.begin(), temp.end(), beta.begin(), np::SelectColumn<double>(0));
 
 		if (false) {
 			std::cerr << "beta:" << std::endl;
@@ -218,7 +234,6 @@ protected:
 
 	void update_gamma_and_lamda(PhiMap &phi, const EdgeSet &mini_batch, double scale) {
 
-		bool flag = false;
 		// calculate the gradient for gamma
 		std::vector<std::vector<double> > grad_lamda(K, std::vector<double>(2, 0.0));
 		std::unordered_map<int, std::vector<double> > grad_gamma(N);	// ie. grad[a] = array[] which is K dimensional vector
@@ -271,7 +286,6 @@ protected:
 			int y = 0;
 			if (edge->in(network.get_linked_edges())) {
 				y = 1;
-				flag = true;
 			}
 #if 0
 			std::cerr << "RFHH: guess need to again define phi_ab and phi_ba" << std::endl;
@@ -295,6 +309,42 @@ protected:
 			p_t = 0.01* std::pow(1+step_count/1024.0, -0.55);
 		}
 
+		struct MyOpIn {
+			MyOpIn(double p_t, double alpha, double scale) : p(1.0 - p_t), a(p_t * alpha), s(p_t * scale) {
+			}
+
+			double operator() (const double &x, const double &y) {
+				return p * x + a + s * y;
+				// p_t * (alpha + scale * y);
+			}
+
+			double p;
+			double a;
+			double s;
+		};
+		struct MyOpNotIn {
+			MyOpNotIn(double p_t, double alpha) : p(1.0 - p_t), a(p_t * alpha) {
+			}
+
+			double operator() (const double &x) {
+				return p * x + a;
+			}
+
+			double p;
+			double a;
+		};
+		MyOpIn myOpIn(p_t, alpha, scale);
+		MyOpNotIn myOpNotIn(p_t, alpha);
+		for (::size_t node = 0; node < N; node++) {
+			if (grad_gamma.find(node) != grad_gamma.end()) {
+				std::transform(gamma[node].begin(), gamma[node].end(), grad_gamma[node].begin(),
+							   gamma[node].begin(), myOpIn);
+			} else {
+				std::transform(gamma[node].begin(), gamma[node].end(),
+							   gamma[node].begin(), myOpNotIn);
+			}
+		}
+#if 0
 		for (std::unordered_map<int, std::vector<double> >::iterator node = grad_gamma.begin();
 			 	node != grad_gamma.end();
 				node++) {
@@ -321,14 +371,15 @@ protected:
 				}
 			}
 		}
+#endif
 
 		// update lamda
 		for (::size_t k = 0; k < K; k++) {
 
-			if (step_count > 400) {
+			if (step_count > 400000) {
 				double lamda_star_0 = (1-p_t)*lamda[k][0] + p_t *(eta[0] + scale * grad_lamda[k][0]);
 				double lamda_star_1 = (1-p_t)*lamda[k][1] + p_t *(eta[1] + scale * grad_lamda[k][1]);
-				lamda[k][0] = (1-1/(step_count)) * lamda[k][0] +1/(step_count)*lamda_star_0;
+				lamda[k][0] = (1-1/(step_count)) * lamda[k][0] +1.0/(step_count)*lamda_star_0;
 				lamda[k][1] = (1-1.0/(step_count)) * lamda[k][1] +1.0/(step_count)*lamda_star_1;
 			} else {
 				lamda[k][0] = (1-p_t)*lamda[k][0] + p_t *(eta[0] + scale * grad_lamda[k][0]);
@@ -428,6 +479,21 @@ protected:
 		(*phi)[Edge(b,a)] = phi_ba;
 	}
 #endif
+    
+    
+    void save() {
+#if 0
+		std::ofstream f;
+        f.open('ppx_variational_sampler.txt');
+        for (::size_t i = 0; i < avg_log.size(); i++) {
+            f << std::exp(avg_log[i]) << "\t" << timing[i] << std::endl;
+		}
+        f.close();
+#else
+		std::cerr << "Would like to dump avg_log and timing" << std::endl;
+#endif
+	}
+
 
 protected:
 	std::vector<std::vector<double> > lamda;	// variational parameters for beta
@@ -441,6 +507,8 @@ protected:
 
 	double log_epsilon;
 	double log_1_epsilon;
+
+	std::vector<double> avg_log;
 };
 
 }	// namespace learning

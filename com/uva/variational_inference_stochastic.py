@@ -1,4 +1,4 @@
-import random
+from com.uva.file_random import file_random as random
 from com.uva.edge import Edge
 import math
 import numpy as np
@@ -55,8 +55,8 @@ class SVI(Learner):
         Learner.__init__(self, args, graph)
         
         # variational parameters. 
-        self.__lamda = np.random.gamma(1,1,(self._K, 2))      # variational parameters for beta  
-        self.__gamma = np.random.gamma(1,1,(self._N, self._K)) # variational parameters for pi
+        self.__lamda = random.gamma(1,1,(self._K, 2))      # variational parameters for beta  
+        self.__gamma = random.gamma(1,1,(self._N, self._K)) # variational parameters for pi
         
         # step size parameters. 
         self.__kappa = args.b

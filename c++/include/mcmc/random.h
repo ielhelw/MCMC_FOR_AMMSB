@@ -163,7 +163,7 @@ public:
 
 		std::cerr << "Read random.randn[" << K << "]" << std::endl;
 		for (::size_t k = 0; k < K; k++) {
-			std::cerr << r[k] << std::endl;
+			std::cerr << r[k] << " ";
 		}
 		std::cerr << std::endl;
 
@@ -172,6 +172,7 @@ public:
 
 
 	std::vector<std::vector<double> > randn(::size_t K, ::size_t N) {
+		std::cerr << "Read random.randn[" << K << "," << N << "]" << std::endl;
 		std::vector<std::vector<double> > r(K);
 		for (::size_t k = 0; k < K; K++) {
 			r[k] = randn(N);

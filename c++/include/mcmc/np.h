@@ -42,13 +42,13 @@ protected:
 
 
 template <typename Type>
-static Type sum(const std::vector<Type> &a) {
+Type sum(const std::vector<Type> &a) {
 	return std::accumulate(a.begin(), a.end(), static_cast<Type>(0));
 }
 
 
 template <typename T>
-static void normalize(std::vector<T> *r, const std::vector<T> &a) {
+void normalize(std::vector<T> *r, const std::vector<T> &a) {
 	T s = np::sum(a);
 	std::transform(a.begin(), a.end(), (*r).begin(), np::DivideBy<T>(s));
 }
@@ -59,7 +59,7 @@ static void normalize(std::vector<T> *r, const std::vector<T> &a) {
  * r = a / np.sum(a, 1)[:,np:newaxis]
  */
 template <typename T>
-static void row_normalize(std::vector<std::vector<T> > *r,
+void row_normalize(std::vector<std::vector<T> > *r,
 						  const std::vector<std::vector<T> > &a) {
 	for (::size_t i = 0; i < a.size(); i++) {
 		// T row_sum = sum(a[i]);
@@ -71,7 +71,7 @@ static void row_normalize(std::vector<std::vector<T> > *r,
 
 // diff2 = np.sum(np.abs(phi_ba - phi_ba_old))
 template <typename Type>
-static Type sum_abs(const std::vector<Type> &a, const std::vector<Type> &b) {
+Type sum_abs(const std::vector<Type> &a, const std::vector<Type> &b) {
 	Type diff = static_cast<Type>(0);
 	for (::size_t i = 0; i < a.size(); i++) {
 		diff += std::abs(a[i] - b[i]);
@@ -81,7 +81,7 @@ static Type sum_abs(const std::vector<Type> &a, const std::vector<Type> &b) {
 }
 
 template <typename Type>
-static void copy(std::vector<std::vector<Type> > *to, const std::vector<std::vector<Type> > &from) {
+void copy(std::vector<std::vector<Type> > *to, const std::vector<std::vector<Type> > &from) {
 	to->resize(from.size());
 	for (::size_t i = 0; i < from[i].size(); i++) {
 		(*to)[i] = from[i];
@@ -89,14 +89,14 @@ static void copy(std::vector<std::vector<Type> > *to, const std::vector<std::vec
 }
 
 template <typename Type>
-static std::vector<std::vector<Type> > clone(const std::vector<std::vector<Type> > &from) {
+std::vector<std::vector<Type> > clone(const std::vector<std::vector<Type> > &from) {
 	std::vector<std::vector<Type> > to;
 	copy(&to, from);
 
 	return to;
 }
 
-static std::vector<int> xrange(int from, int upto) {
+std::vector<int> xrange(int from, int upto) {
 	std::vector<int> r(upto - from);
 	for (int i = 0; i < upto - from; i++) {
 		r[i] = from + i;

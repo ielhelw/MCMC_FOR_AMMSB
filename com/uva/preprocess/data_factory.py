@@ -23,10 +23,10 @@ class DataFactory(object):
             dataObj  = Relativity()
         elif dataset_name == "hep_ph":
             dataObj = HepPH()
-        elif dataset_name == "astro_ph":
-            dataObj = AstroPh()
-        elif dataset_name == "condmat":
-            dataObj = CondMat()
+        # elif dataset_name == "astro_ph":
+            # dataObj = AstroPh()
+        # elif dataset_name == "condmat":
+            # dataObj = CondMat()
         elif dataset_name == "hep_th":
             dataObj = HepTh()
         elif dataset_name == "testdata":

@@ -1,14 +1,4 @@
-#if 0
-#include "mcmc/options.h"
-#include "mcmc/network.h"
-#include "mcmc/preprocess/data_factory.h"
-#include "mcmc/learning/mcmc_sampler_stochastic.h"
-#include "mcmc/learning/variational_inference_stochastic.h"
-#include "mcmc/learning/variational_inference_batch.h"
-#include "mcmc/learning/mcmc_sampler_batch.h"
-#else
 #include "mcmc/mcmc.h"
-#endif
 
 using namespace mcmc;
 using namespace mcmc::preprocess;

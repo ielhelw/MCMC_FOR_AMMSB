@@ -9,7 +9,7 @@
 
 #include "mcmc/np.h"
 #include "mcmc/random.h"
-#include "mcmc/sample_latent_vars.h"
+// #include "mcmc/sample_latent_vars.h"
 
 #include "mcmc/learning/learner.h"
 #include "mcmc/learning/mcmc_sampler_batch.h"
@@ -57,7 +57,9 @@ public:
         this->c = args.c;
 
         // control parameters for learning
-        num_node_sample = static_cast< ::size_t>(std::sqrt(network.get_num_nodes()));
+        // num_node_sample = static_cast< ::size_t>(std::sqrt(network.get_num_nodes()));
+
+		num_node_sample = N / 5;
 
         // model parameters and re-parameterization
         // since the model parameter - \pi and \beta should stay in the simplex,
@@ -65,7 +67,9 @@ public:
         // restrict this is using re-reparameterization techniques, where we
         // introduce another set of variables, and update them first followed by
         // updating \pi and \beta.
-		theta = Random::random->gamma(eta[0], eta[1], K, 2);		// parameterization for \beta
+		std::cerr << "Ignore in random.gamma: eta[], use 100.0 and 0.01" << std::endl;
+		// theta = Random::random->gamma(eta[0], eta[1], K, 2);		// parameterization for \beta
+		theta = Random::random->gamma(100.0, 0.01, K, 2);		// parameterization for \beta
 		phi = Random::random->gamma(1, 1, N, K);					// parameterization for \pi
 
 		// FIXME RFHH -- code sharing with variational_inf*::update_pi_beta()
@@ -91,13 +95,14 @@ public:
              */
             (mini_batch, scale) = self._network.sample_mini_batch(self._mini_batch_size, "stratified-random-node")
             //print "iteration: " + str(self._step_count)
-            /**
+
             if self._step_count % 1 == 0:
+				#print str(self._beta)
                 ppx_score = self._cal_perplexity_held_out()
-                print "perplexity for hold out set is: "  + str(ppx_score)
+				#print "perplexity for hold out set is: "  + str(ppx_score)
                 self._ppxs_held_out.append(ppx_score)
-             */
-            self.__update_pi1(mini_batch)
+
+            self.__update_pi1(mini_batch, scale)
 
             // sample (z_ab, z_ba) for each edge in the mini_batch.
             // z is map structure. i.e  z = {(1,10):3, (2,4):-1}
@@ -118,13 +123,14 @@ public:
 #endif
 
     virtual void run() {
-        /** run mini-batch based MCMC sampler  */
+        /** run mini-batch based MCMC sampler, based on the sungjin's note */
         while (step_count < max_iteration && ! is_converged()) {
             //print "step: " + str(self._step_count)
             /**
             pr = cProfile.Profile()
             pr.enable()
              */
+
             // (mini_batch, scale) = self._network.sample_mini_batch(self._mini_batch_size, "stratified-random-node")
 			EdgeSample edgeSample = network.sample_mini_batch(mini_batch_size, strategy::STRATIFIED_RANDOM_NODE);
 			const EdgeSet &mini_batch = *edgeSample.first;
@@ -132,6 +138,7 @@ public:
 
 			std::unordered_map<int, std::vector<double> > latent_vars;
 			std::unordered_map<int, ::size_t> size;
+
             // iterate through each node in the mini batch.
 			VertexSet nodes = nodes_in_batch(mini_batch);
             for (VertexSet::iterator node = nodes.begin();
@@ -141,7 +148,8 @@ public:
                 VertexSet neighbor_nodes = sample_neighbor_nodes(num_node_sample, *node);
                 size[*node] = neighbor_nodes.size();
                 // sample latent variables z_ab for each pair of nodes
-                std::vector<double> z = sample_latent_vars(*node, neighbor_nodes);
+                std::vector<double> z = this->sample_latent_vars(*node, neighbor_nodes);
+                // save for a while, in order to update together.
                 latent_vars[*node] = z;
 			}
 
@@ -149,7 +157,7 @@ public:
             for (VertexSet::iterator node = nodes.begin();
 				 	node != nodes.end();
 					node++) {
-                update_pi_for_node(*node, latent_vars[*node], size[*node]);
+                update_pi_for_node(*node, latent_vars[*node], size[*node], scale);
 			}
 
             // sample (z_ab, z_ba) for each edge in the mini_batch.
@@ -158,20 +166,23 @@ public:
             update_beta(mini_batch, scale, z);
 
 
-            if (step_count % 2 == 1) {
+            if (step_count % 1 == 0) {
                 double ppx_score = cal_perplexity_held_out();
 				std::cout << "Perplexity: " << ppx_score << std::endl;
                 ppxs_held_out.push_back(ppx_score);
+#if 0
                 if (ppx_score < 5.0) {
                     stepsize_switch = true;
                     //print "switching to smaller step size mode!"
 				}
+#endif
 			}
 
 			std::cerr << "GC mini_batch->first EdgeSet *" << std::endl;
 			delete edgeSample.first;
 
             step_count++;
+
             /**
             pr.disable()
             s = StringIO.StringIO()
@@ -187,7 +198,7 @@ public:
 protected:
 
 #if 0
-    def __update_pi1(self, mini_batch):
+    def __update_pi1(self, mini_batch, scale):
 
         grads = np.zeros((self._N, self._K))
         counter = np.zeros(self._N)
@@ -201,8 +212,9 @@ protected:
             if (min(a, b), max(a, b)) in self._network.get_linked_edges():
                 y_ab = 1
 
-            z_ab = sample_z_ab_from_edge(y_ab, self._pi[a], self._pi[b], self._beta, self._epsilon, self._K)
-            z_ba = sample_z_ab_from_edge(y_ab, self._pi[b], self._pi[a], self._beta, self._epsilon, self._K)
+            z_ab = self.sample_z_ab_from_edge(y_ab, self._pi[a], self._pi[b], self._beta, self._epsilon, self._K)
+            z_ba = self.sample_z_ab_from_edge(y_ab, self._pi[b], self._pi[a], self._beta, self._epsilon, self._K)
+
 
             counter[a] += 1
             counter[b] += 1
@@ -217,15 +229,16 @@ protected:
             eps_t  = self.__a*((1 + self._step_count/self.__b)**-self.__c)
 
         for i in range(0, self._N):
-            if counter[i] < 1:
-                continue
             noise = random.randn(self._K)
             sum_phi_i = np.sum(self.__phi[i])
             for k in range(0, self._K):
 
-                phi_star[i][k] = abs(self.__phi[i,k] + eps_t/2 * (self._alpha - self.__phi[i,k] + \
-                                self._N/counter[i] * (grads[i][k]-1/(sum_phi_i*counter[i])) \
-                                + eps_t**.5*self.__phi[i,k]**.5 * noise[k]))
+                if counter[i] < 1:
+                    phi_star[i][k] = abs((self.__phi[i,k]) + eps_t*(self._alpha - self.__phi[i,k])+(2*eps_t)**.5*self.__phi[i,k]**.5 * noise[k])
+                else:
+                    phi_star[i][k] = abs(self.__phi[i,k] + eps_t * (self._alpha - self.__phi[i,k] + \
+                                scale * (grads[i][k]-(1.0/sum_phi_i)*counter[i])) \
+                                + (2*eps_t)**.5*self.__phi[i,k]**.5 * noise[k])
 
                 if self._step_count < 50000:
                     self.__phi[i][k] = phi_star[i][k]
@@ -244,12 +257,7 @@ protected:
         update beta for mini_batch.
          */
         // update gamma, only update node in the grad
-		double eps_t;
-        if (! stepsize_switch) {
-            eps_t = std::pow(1024.0 + step_count, -0.5);
-		} else {
-            eps_t  = a*std::pow(1.0 + step_count / b, -c);
-		}
+		double eps_t = a * std::pow(1.0 + step_count / b, -c);
 
 		std::vector<std::vector<double> > grads(K, std::vector<double>(2, 0.0));	// gradients K*2 dimension
         // sums = np.sum(self.__theta,1)
@@ -274,33 +282,23 @@ protected:
             grads[k][1] += std::abs(-y_ab) / theta[k][1] - 1 / sums[k];
 		}
 
+        //if (mini_batch.size() < 1) {
+		//	scale = 1;
+		//} else {
+        //	scale = (N * (N-1)/2)/mini_batch.size();
+		//}
         // update theta
 		std::vector<std::vector<double> > theta_star = np::clone(theta);
         for (::size_t k = 0; k < K; k++) {
             for (::size_t i = 0; i < 2; i++) {
 				// FIXME rewrite a**0.5 * b**0.5 as sqrt(a * b)
-                theta_star[k][i] = std::abs(theta[k][i] + eps_t / 2.0 * (eta[i] - theta[k][i] + \
-																		 scale * grads[k][i]) +
-										   	std::pow(eps_t, .5) * std::pow(theta[k][i], .5) * noise[k][i]);
+                theta_star[k][i] = std::abs(theta[k][i] + eps_t * (eta[i] - theta[k][i] + \
+																   scale * grads[k][i]) +
+										   	std::pow(2.0 * eps_t, .5) * std::pow(theta[k][i], .5) * noise[k][i]);
 			}
 		}
 
-        if (step_count < 50000) {
-			np::copy(&theta, theta_star);
-		} else {
-            // self.__theta = theta_star * 1.0/(self._step_count) + (1-1.0/(self._step_count))*self.__theta
-			double inv_step_count = 1.0 / step_count;
-			double one_inv_step_count = 1.0 - inv_step_count;
-			MCMCMyOp<double> myOp(inv_step_count, one_inv_step_count);
-			for (::size_t k = 0; k < theta.size(); k++) {
-				std::transform(theta[k].begin(), theta[k].end(),
-							   theta_star[k].begin(),
-							   theta[k].begin(),
-							   myOp);
-			}
-		}
-		//self.__theta = theta_star
-		// update beta from theta
+		np::copy(&theta, theta_star);
 		// temp = self.__theta/np.sum(self.__theta,1)[:,np.newaxis]
 		// self._beta = temp[:,1]
 		std::vector<std::vector<double> > temp(theta.size(), std::vector<double>(theta[0].size()));
@@ -309,17 +307,17 @@ protected:
 	}
 
 
-    void update_pi_for_node(int i, const std::vector<double> &z, int n) {
+    void update_pi_for_node(int i, const std::vector<double> &z, int n, double scale) {
         /**
         update pi for current node i.
          */
         // update gamma, only update node in the grad
 		double eps_t;
-        if (! stepsize_switch) {
-            eps_t = std::pow(1024+step_count, -0.5);
-		} else {
+        // if (! stepsize_switch) {
+        //     eps_t = std::pow(1024+step_count, -0.5);
+		// } else {
             eps_t  = a * std::pow(1 + step_count / b, -c);
-		}
+		// }
 
 		std::vector<double> phi_star(phi[i]);					// updated \phi
 		double phi_i_sum = np::sum(phi[i]);
@@ -401,14 +399,18 @@ protected:
         p[K] = 1.0 - np::sum(p);
 
         // sample community based on probability distribution p.
+		for (::size_t k = 1; k < K + 1; k++) {
+			p[k] = p[k - 1];
+		}
         // bounds = np.cumsum(p)
-		std::vector<double> bounds(K + 1);
-		std::partial_sum(p.begin(), p.end(), bounds.begin());
-        double location = Random::random->random() * bounds[K];
+		// std::vector<double> bounds(K + 1);
+		// std::partial_sum(p.begin(), p.end(), bounds.begin());
+        // double location = Random::random->random() * bounds[K];
+        double location = Random::random->random() * p[K];
 
         // get the index of bounds that containing location.
         for (::size_t i = 0; i < K; i++) {
-			if (location <= bounds[i]) {
+			if (location <= p[i]) {
 				return i;
 			}
 		}
@@ -432,7 +434,7 @@ protected:
                 y_ab = 1;
 			}
 
-            int z_ab = sample_z_ab_from_edge(y_ab, pi[node], pi[*neighbor], beta, epsilon, K);
+            int z_ab = this->sample_z_ab_from_edge(y_ab, pi[node], pi[*neighbor], beta, epsilon, K);
             z[z_ab] += 1;
 		}
 
@@ -519,6 +521,51 @@ protected:
 
         return node_set;
 	}
+
+#if 0
+    def _save(self):
+        f = open('ppx_mcmc.txt', 'wb')
+        for i in range(0, len(self._avg_log)):
+            f.write(str(math.exp(self._avg_log[i])) + "\t" + str(self._timing[i]) +"\n")
+        f.close()
+#endif
+
+
+    int sample_z_ab_from_edge(int y,
+							  const std::vector<double> &pi_a,
+							  const std::vector<double> &pi_b,
+							  const std::vector<double> &beta,
+							  double epsilon, ::size_t K) const {
+		std::vector<double> p(K, 0.0);
+
+        double tmp = 0.0;
+
+		double fac = std::pow(epsilon, y) * std::pow(1.0 - epsilon, 1.0 - y);
+        for (::size_t i = 0; i < K; i++) {
+			// FIMXE lift common expressions
+            tmp = std::pow(beta[i], y) * std::pow(1-beta[i], 1-y) * pi_a[i] * pi_b[i];
+            // tmp += std::pow(epsilon, y) * std::pow(1-epsilon, 1-y) * pi_a[i] * (1 - pi_b[i]);
+            tmp += fac * pi_a[i] * (1 - pi_b[i]);
+            p[i] = tmp;
+		}
+
+
+        for (::size_t k = 1; k < K; k++) {
+            p[k] += p[k-1];
+		}
+
+        double location = Random::random->random() * p[K-1];
+        // get the index of bounds that containing location.
+        for (::size_t i = 0; i < K; i++) {
+            if (location <= p[i]) {
+                return i;
+			}
+		}
+
+        // failed, should not happen!
+        return -1;
+	}
+
 
 protected:
 	// replicated in both mcmc_sampler_
