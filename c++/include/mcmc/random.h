@@ -97,6 +97,7 @@ public:
 	std::vector<std::vector<double> > gamma(double p1, double p2, ::size_t n1, ::size_t n2) {
 		// std::vector<std::vector<double> > *a = new std::vector<double>(n1, std::vector<double>(n2, 0.0));
 		std::vector<std::vector<double> > a(n1, std::vector<double>(n2));
+#if __GNUC_MINOR__ >= 5
 
 		std::default_random_engine generator;
 		std::gamma_distribution<double> distribution(p1, p2);
@@ -106,6 +107,9 @@ public:
 				a[i][j] = distribution(generator);
 			}
 		}
+#else	// if __GNUC_MINOR__ >= 5
+		throw UnimplementedException("random::gamma");
+#endif
 
 		return a;
 	}

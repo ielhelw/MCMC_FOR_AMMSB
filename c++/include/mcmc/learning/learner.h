@@ -36,8 +36,8 @@ public:
 		N = network.get_num_nodes();
 
 		// model parameters to learn
-		beta = std::vector<double>(K, 0.0D);
-		pi   = std::vector<std::vector<double> >(N, std::vector<double>(K, 0.0D));
+		beta = std::vector<double>(K, 0.0);
+		pi   = std::vector<std::vector<double> >(N, std::vector<double>(K, 0.0));
 
 		// parameters related to sampling
 		mini_batch_size = args.mini_batch_size;
