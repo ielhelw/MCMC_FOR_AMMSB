@@ -201,7 +201,7 @@ public:
 	 * 1/N_1 for link, where N_0-> number of non-linked edges, N_1-> # of linked edges.
 	 */
 	EdgeSample stratified_random_pair_sampling(::size_t mini_batch_size) const {
-		::size_t p = mini_batch_size;
+		int p = (int)mini_batch_size;
 
 		EdgeSet *mini_batch_set = new EdgeSet();
 
@@ -213,7 +213,8 @@ public:
 			for (EdgeSet::iterator edge = sampled_linked_edges->begin();
 				 	edge != sampled_linked_edges->end();
 					edge++) {
-				if (p == 0) {
+				if (p < 0) {
+					std::cerr << __func__ << ": Are you sure p < 0 is a good idea?" << std::endl;
 					break;
 				}
 
@@ -282,7 +283,7 @@ public:
 			// this is approximation, since the size of self.train_link_map[nodeId]
 			// greatly smaller than N.
 			::size_t mini_batch_size = (int)((N - train_link_map[nodeId].size()) / num_pieces);
-			::size_t p = mini_batch_size;
+			int p = (int)mini_batch_size;
 
 			while (p > 0) {
 				// because of the sparsity, when we sample $mini_batch_size*2$ nodes, the list likely
@@ -291,7 +292,8 @@ public:
 				for (std::vector<int>::iterator neighborId = nodeList->begin();
 					 	neighborId != nodeList->end();
 						neighborId++) {
-					if (p == 0) {
+					if (p < 0) {
+						std::cerr << __func__ << ": Are you sure p < 0 is a good idea?" << std::endl;
 						break;
 					}
 					if (*neighborId == nodeId) {
@@ -401,7 +403,7 @@ protected:
 	 * linked and non-linked edges
 	 */
 	void init_test_set() {
-		::size_t p = held_out_size / 2;
+		int p = (int)(held_out_size / 2);
 		// sample p linked edges from the network
 		while (p > 0) {
 			// Because we already used some of the linked edges for held_out sets,
@@ -411,7 +413,8 @@ protected:
 			for (EdgeSet::iterator edge = sampled_linked_edges->begin();
 				 	edge != sampled_linked_edges->end();
 					edge++) {
-				if (p == 0) {
+				if (p < 0) {
+					std::cerr << __func__ << ": Are you sure p < 0 is a good idea?" << std::endl;
 					break;
 				}
 
