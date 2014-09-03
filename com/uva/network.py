@@ -1,3 +1,5 @@
+import sys
+
 # import com.uva.file_random
 from com.uva.file_random import file_random as random
 from sets import Set
@@ -197,6 +199,7 @@ class Network(object):
                 sampled_linked_edges = random.sample(self.__linked_edges, mini_batch_size * 2)
                 for edge in sampled_linked_edges:
                     if p < 0:
+                        print sys._getframe().f_code.co_name + ": Are you sure p < 0 is a good idea?"
                         break
                     
                     if edge in self.__held_out_map or edge in self.__test_map or edge in mini_batch_set:
@@ -258,6 +261,7 @@ class Network(object):
                 nodeList = random.sample(list(xrange(self.__N)), mini_batch_size * 2)
                 for neighborId in nodeList:
                     if p < 0:
+                        print sys._getframe().f_code.co_name + ": Are you sure p < 0 is a good idea?"
                         break
                     if neighborId == nodeId:
                         continue
@@ -272,6 +276,10 @@ class Network(object):
                     p -= 1
                         
             # print "A Create mini batch size " + str(len(mini_batch_set)) + " scale " + str(self.__N * self.__num_pieces)
+            # for e in mini_batch_set:
+            #     sys.stdout.write("%s " % str(e))
+            # sys.stdout.write("\n")
+
             return (mini_batch_set, self.__N * self.__num_pieces)
         
         else:
@@ -340,6 +348,7 @@ class Network(object):
             sampled_linked_edges = random.sample(self.__linked_edges, 2*p)
             for edge in sampled_linked_edges:  
                 if p < 0:
+                    print sys._getframe().f_code.co_name + ": Are you sure p < 0 is a good idea?"
                     break
                 # check whether it is already used in hold_out set
                 if edge in self.__held_out_map or edge in self.__test_map:

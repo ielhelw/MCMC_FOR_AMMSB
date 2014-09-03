@@ -54,15 +54,14 @@ void sample_latent_vars_for_each_pair(int a, int b,
 					std::cerr << "gamma_a[" << k << "] " << std::setprecision(12) << gamma_a[k] << " psi() " << digamma(gamma_a[k]) << std::endl;
 				}
 			} else {
-                u = -(*phi_ba)[k]* log_1_epsilon;
+				u = 0.0;
+                // u = -(*phi_ba)[k]* log_1_epsilon;
                 (*phi_ab)[k] = std::exp(digamma(gamma_a[k])+(*phi_ba)[k]*\
                                          (digamma(lamda[k][1])-digamma(lamda[k][0]+lamda[k][1]))+u);
 			}
 		}
-        double sum_phi_ab = np::sum(*phi_ab);
-		np::DivideBy<double> divBy_sum_phi_ab(sum_phi_ab);
         // phi_ab = phi_ab/sum_phi_ab;
-		std::transform(phi_ab->begin(), phi_ab->end(), phi_ab->begin(), divBy_sum_phi_ab);
+		np::normalize(&*phi_ab, *phi_ab);
 		if (false) {
 			std::cerr << "phi_ab[0] " << (*phi_ab)[0] << " log_eps " << log_epsilon << " log(1-eps) " << log_1_epsilon << " y " << y << std::endl;
 		}
@@ -74,16 +73,15 @@ void sample_latent_vars_for_each_pair(int a, int b,
                 (*phi_ba)[k] = std::exp(digamma(gamma_b[k])+(*phi_ab)[k]*\
                                         (digamma(lamda[k][0])-digamma(lamda[k][0]+lamda[k][1]))+u);
 			} else {
-                u = -(*phi_ab)[k]* log_1_epsilon;
+				u = 0.0;
+                // u = -(*phi_ab)[k]* log_1_epsilon;
                 (*phi_ba)[k] = std::exp(digamma(gamma_b[k])+(*phi_ab)[k]*\
                                         (digamma(lamda[k][1])-digamma(lamda[k][0]+lamda[k][1]))+u);
 			}
 		}
 
-        double sum_phi_ba = np::sum(*phi_ba);
-		np::DivideBy<double> divBy_sum_phi_ba(sum_phi_ba);
         // phi_ba = phi_ba/sum_phi_ba;
-		std::transform(phi_ba->begin(), phi_ba->end(), phi_ba->begin(), divBy_sum_phi_ba);
+		np::normalize(&*phi_ba, *phi_ba);
 		if (false) {
 			std::cerr << "phi_ba[0] " << (*phi_ba)[0] << std::endl;
 		}
@@ -91,7 +89,7 @@ void sample_latent_vars_for_each_pair(int a, int b,
         // calculate the absolute difference between new value and old value
         double diff1 = np::sum_abs(*phi_ab, phi_ab_old);
         double diff2 = np::sum_abs(*phi_ba, phi_ba_old);
-        if (diff1 < update_threshold and diff2 < update_threshold) {
+        if (diff1 < update_threshold && diff2 < update_threshold) {
             break;
 		}
 	}

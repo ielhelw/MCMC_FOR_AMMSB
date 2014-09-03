@@ -60,11 +60,11 @@ void normalize(std::vector<T> *r, const std::vector<T> &a) {
  */
 template <typename T>
 void row_normalize(std::vector<std::vector<T> > *r,
-						  const std::vector<std::vector<T> > &a) {
+				   const std::vector<std::vector<T> > &a) {
 	for (::size_t i = 0; i < a.size(); i++) {
-		// T row_sum = sum(a[i]);
-		// std::transform(a[i].begin(), a[i].end(), (*r)[i].begin(), np::DivideBy<T>(row_sum));
-		normalize(&(*r)[i], a[i]);
+		T row_sum = sum(a[i]);
+		std::transform(a[i].begin(), a[i].end(), (*r)[i].begin(), np::DivideBy<T>(row_sum));
+		// normalize(&(*r)[i], a[i]);
 	}
 }
 

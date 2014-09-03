@@ -19,7 +19,6 @@ int sample_z_ab_from_edge(int y, const std::vector<double> &pi_a,
 						  const std::vector<double> &beta,
 						  double epsilon, ::size_t K) {
 	std::vector<double> p(K);
-    std::vector<double> bounds(K);
 
     for (::size_t i = 0; i < K; i++) {
         double tmp = std::pow(beta[i], y) * std::pow(1.0 - beta[i], 1.0 - y) * pi_a[i] * pi_b[i];
@@ -27,15 +26,14 @@ int sample_z_ab_from_edge(int y, const std::vector<double> &pi_a,
         p[i] = tmp;
 	}
 
-    bounds[0] = p[0];
     for (::size_t k = 1; k < K; k++) {
-        bounds[k] = bounds[k-1] + p[k];
+        p[k] += p[k - 1];
 	}
 
-    double location = Random::random->random() * bounds[K-1];
+    double location = Random::random->random() * p[K-1];
     // get the index of bounds that containing location.
     for (::size_t i = 0; i < K; i++) {
-		if (location <= bounds[i]) {
+		if (location <= p[i]) {
 			return (int)i;
 		}
 	}

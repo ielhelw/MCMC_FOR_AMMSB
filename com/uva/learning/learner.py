@@ -131,12 +131,14 @@ class Learner(object):
         for edge in data.keys():
             edge_likelihood = self.__cal_edge_likelihood(self._pi[edge[0]], self._pi[edge[1]], \
                                                        data[edge], self._beta)
+            # print str(edge) + " in? " + str(edge in self._network.get_linked_edges()) + " -> " + str(edge_likelihood)
             if edge in self._network.get_linked_edges():
                 link_count += 1
                 link_likelihood += edge_likelihood
             else:
                 non_link_count += 1
                 non_link_likelihood += edge_likelihood
+        # print "ratio " + str(self._link_ratio) + " count: link " + str(link_count) + " " + str(link_likelihood) + " non-link " + str(non_link_count) + " " + str(non_link_likelihood)
         
         # weight each part proportionally. 
         avg_likelihood1 = self._link_ratio*(link_likelihood/link_count) + \

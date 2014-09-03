@@ -1,3 +1,5 @@
+import sys
+
 from com.uva.file_random import file_random as random
 from com.uva.edge import Edge
 import math
@@ -100,7 +102,7 @@ class SVI(Learner):
             # if self._step_count % 2 ==  1:
             if self._step_count % 1 ==  0:
                 ppx_score = self._cal_perplexity_held_out()
-                #print "perplexity for hold out set is: "  + str(ppx_score)
+                print "perplexity for hold out set is: "  + str(ppx_score)
                 self._ppxs_held_out.append(ppx_score)
                 
                 if self._step_count > 5000:
@@ -191,9 +193,6 @@ class SVI(Learner):
                 grad_gamma[b] = phi_ba
                 counter[b] = 1
         
-	# OOPPSSS RFHH phi_ab remains the last value from the loop, not updated
-	# OOPPSSS RFHH why not do it in the same loop?
-        # for edge in mini_batch:    
             """
             calculate the gradient for lambda
             """
@@ -237,7 +236,7 @@ class SVI(Learner):
             if self._step_count > 400000:
                 lamda_star_0 = (1-p_t)*self.__lamda[k][0] + p_t *(self._eta[0] + scale * grad_lamda[k][0])
                 lamda_star_1 = (1-p_t)*self.__lamda[k][1] + p_t *(self._eta[1] + scale * grad_lamda[k][1])
-                self.__lamda[k][0] = (1-1/(self._step_count)) * self.__lamda[k][0] +1/(self._step_count)*lamda_star_0
+                self.__lamda[k][0] = (1-1.0/(self._step_count)) * self.__lamda[k][0] +1/(self._step_count)*lamda_star_0
                 self.__lamda[k][1] = (1-1.0/(self._step_count)) * self.__lamda[k][1] +1.0/(self._step_count)*lamda_star_1
             else:
                 self.__lamda[k][0] = (1-p_t)*self.__lamda[k][0] + p_t *(self._eta[0] + scale * grad_lamda[k][0])

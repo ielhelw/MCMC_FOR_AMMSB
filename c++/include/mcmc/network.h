@@ -282,7 +282,8 @@ public:
 			/* sample non-link edges */
 			// this is approximation, since the size of self.train_link_map[nodeId]
 			// greatly smaller than N.
-			::size_t mini_batch_size = (int)((N - train_link_map[nodeId].size()) / num_pieces);
+			// ::size_t mini_batch_size = (int)((N - train_link_map[nodeId].size()) / num_pieces);
+			::size_t mini_batch_size = (int)(N / num_pieces);
 			int p = (int)mini_batch_size;
 
 			while (p > 0) {
@@ -314,9 +315,6 @@ public:
 				delete nodeList;
 			}
 
-			if (false) {
-				std::cerr << "A Create mini batch size " << mini_batch_set->size() << " scale " << (N * num_pieces) << std::endl;
-			}
 			return EdgeSample(mini_batch_set, N * num_pieces);
 
 		} else {

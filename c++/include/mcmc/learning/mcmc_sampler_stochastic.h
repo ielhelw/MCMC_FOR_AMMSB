@@ -17,6 +17,7 @@
 namespace mcmc {
 namespace learning {
 
+typedef std::unordered_map<Edge, int>	EdgeMapZ;
 
 class MCMCSamplerStochastic : public Learner {
 public:
@@ -67,7 +68,7 @@ public:
         // restrict this is using re-reparameterization techniques, where we
         // introduce another set of variables, and update them first followed by
         // updating \pi and \beta.
-		std::cerr << "Ignore in random.gamma: eta[], use 100.0 and 0.01" << std::endl;
+		std::cerr << "Ignore eta[] in random.gamma: use 100.0 and 0.01" << std::endl;
 		// theta = Random::random->gamma(eta[0], eta[1], K, 2);		// parameterization for \beta
 		theta = Random::random->gamma(100.0, 0.01, K, 2);		// parameterization for \beta
 		phi = Random::random->gamma(1, 1, N, K);					// parameterization for \pi
@@ -162,13 +163,13 @@ public:
 
             // sample (z_ab, z_ba) for each edge in the mini_batch.
             // z is map structure. i.e  z = {(1,10):3, (2,4):-1}
-			std::unordered_map<Edge, int> z = sample_latent_vars2(mini_batch);
+			EdgeMapZ z = sample_latent_vars2(mini_batch);
             update_beta(mini_batch, scale, z);
 
 
             if (step_count % 1 == 0) {
                 double ppx_score = cal_perplexity_held_out();
-				std::cout << "Perplexity: " << ppx_score << std::endl;
+				std::cout << "perplexity for hold out set is: " << ppx_score << std::endl;
                 ppxs_held_out.push_back(ppx_score);
 #if 0
                 if (ppx_score < 5.0) {
@@ -252,11 +253,10 @@ protected:
 
 
 	// FIXME lots of code sharing w/ mcmc_sampler_batch
-    void update_beta(const EdgeSet &mini_batch, double scale, const std::unordered_map<Edge, int> &z) {
+    void update_beta(const EdgeSet &mini_batch, double scale, const EdgeMapZ &z) {
         /**
         update beta for mini_batch.
          */
-        // update gamma, only update node in the grad
 		double eps_t = a * std::pow(1.0 + step_count / b, -c);
 
 		std::vector<std::vector<double> > grads(K, std::vector<double>(2, 0.0));	// gradients K*2 dimension
@@ -265,7 +265,7 @@ protected:
 		std::transform(theta.begin(), theta.end(), sums.begin(), np::sum<double>);
 		std::vector<std::vector<double> > noise = Random::random->randn(K, 2);	// random noise.
 
-        for (std::unordered_map<Edge, int>::const_iterator edge = z.begin();
+        for (EdgeMapZ::const_iterator edge = z.begin();
 			 	edge != z.end();
 				edge++) {
             int y_ab = 0;
@@ -349,13 +349,13 @@ protected:
 	}
 
 
-    std::unordered_map<Edge, int> sample_latent_vars2(const EdgeSet &mini_batch) const {
+    EdgeMapZ sample_latent_vars2(const EdgeSet &mini_batch) const {
         /**
         sample latent variable (z_ab, z_ba) for each pair of nodes. But we only consider 11 different cases,
         since we only need indicator function in the gradient update. More details, please see the comments
         within the sample_z_for_each_edge function.
          */
-		std::unordered_map<Edge, int> z;
+		EdgeMapZ z;
 		for (EdgeSet::const_iterator edge = mini_batch.begin();
 			 	edge != mini_batch.end();
 				edge++) {
@@ -402,10 +402,9 @@ protected:
 		for (::size_t k = 1; k < K + 1; k++) {
 			p[k] = p[k - 1];
 		}
-        // bounds = np.cumsum(p)
-		// std::vector<double> bounds(K + 1);
-		// std::partial_sum(p.begin(), p.end(), bounds.begin());
-        // double location = Random::random->random() * bounds[K];
+        // // bounds = np.cumsum(p)
+		// // std::vector<double> bounds(K + 1);
+		// // std::partial_sum(p.begin(), p.end(), bounds.begin());
         double location = Random::random->random() * p[K];
 
         // get the index of bounds that containing location.
@@ -538,12 +537,10 @@ protected:
 							  double epsilon, ::size_t K) const {
 		std::vector<double> p(K, 0.0);
 
-        double tmp = 0.0;
-
 		double fac = std::pow(epsilon, y) * std::pow(1.0 - epsilon, 1.0 - y);
         for (::size_t i = 0; i < K; i++) {
 			// FIMXE lift common expressions
-            tmp = std::pow(beta[i], y) * std::pow(1-beta[i], 1-y) * pi_a[i] * pi_b[i];
+            double tmp = std::pow(beta[i], y) * std::pow(1-beta[i], 1-y) * pi_a[i] * pi_b[i];
             // tmp += std::pow(epsilon, y) * std::pow(1-epsilon, 1-y) * pi_a[i] * (1 - pi_b[i]);
             tmp += fac * pi_a[i] * (1 - pi_b[i]);
             p[i] = tmp;

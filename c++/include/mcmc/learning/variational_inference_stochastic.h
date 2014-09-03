@@ -1,6 +1,7 @@
 #ifndef MCMC_VARIATIONAL_INFERENCE_STOCHASTIC_H__
 #define MCMC_VARIATIONAL_INFERENCE_STOCHASTIC_H__
 
+#include <ctime>
 #include <cmath>
 #include <unordered_map>
 #include <algorithm>
@@ -111,6 +112,7 @@ public:
 		// pr.enable()
 
 		// running until convergence.
+		time_t start = time(NULL);
 		step_count++;
 
 		while (step_count < max_iteration and !is_converged()) {
@@ -119,6 +121,10 @@ public:
 			const EdgeSet &mini_batch = *edgeSample.first;
 			double scale = edgeSample.second;
 
+			/*
+			pr = cRpofile.Profile()
+			pr.enable()
+			*/
 			// evaluate model after processing every 10 mini-batches.
 			if (step_count % 1 == 0) {
 				double ppx_score = cal_perplexity_held_out();
@@ -133,7 +139,7 @@ public:
                     avg_log.push_back(ppx_score);
 				}
 
-                // self._timing.append(time.time()-start)
+                timing.push_back(time(NULL)-start);
 			}
 
             if (step_count % 50 == 0) {
@@ -218,17 +224,6 @@ protected:
 		np::row_normalize(&temp, lamda);
 		// std::transform(temp.begin(), temp.end(), beta.begin(), np::SelectColumn<double>(1));
 		std::transform(temp.begin(), temp.end(), beta.begin(), np::SelectColumn<double>(0));
-
-		if (false) {
-			std::cerr << "beta:" << std::endl;
-			for (::size_t k = 0; k < 32; k++) {
-				std::cerr << std::setprecision(8) << beta[k] << " ";
-				if ((k + 1) % 6 == 0) {
-					std::cerr << std::endl;
-				}
-			}
-			std::cerr << std::endl;
-		}
 	}
 
 
@@ -249,37 +244,27 @@ protected:
 			const std::vector<double> &phi_ab = phi[Edge(a,b)];
 			const std::vector<double> &phi_ba = phi[Edge(b,a)];
 			if (grad_gamma.find(a) != grad_gamma.end()) {
-				for (::size_t k = 0; k < phi_ab.size(); k++) {
-					grad_gamma[a][k] += phi_ab[k];
-				}
+				std::transform(grad_gamma[a].begin(), grad_gamma[a].end(),
+							   phi_ab.begin(),
+							   grad_gamma[a].begin(),
+							   std::plus<double>());
 				counter[a]++;
 			} else {
-				grad_gamma[a].resize(K);
-				for (::size_t k = 0; k < phi_ab.size(); k++) {
-					grad_gamma[a][k] = phi_ab[k];
-				}
+				grad_gamma[a] = phi_ab;
 				counter[b] = 1;
 			}
 
 			if (grad_gamma.find(b) != grad_gamma.end()) {
-				for (::size_t k = 0; k < phi_ba.size(); k++) {
-					grad_gamma[b][k] += phi_ba[k];
-				}
+				std::transform(grad_gamma[b].begin(), grad_gamma[b].end(),
+							   phi_ba.begin(),
+							   grad_gamma[b].begin(),
+							   std::plus<double>());
 				counter[b]++;
 			} else {
-				grad_gamma[b].resize(K);
-				for (::size_t k = 0; k < phi_ba.size(); k++) {
-					grad_gamma[b][k] = phi_ba[k];
-				}
+				grad_gamma[b] = phi_ba;
 				counter[b] = 1;
 			}
-#if 0
-		}
 
-		for (EdgeSet::const_iterator edge = mini_batch.begin();
-				 edge != mini_batch.end();
-				 edge++) {
-#endif
 			/*
 			 * calculate the gradient for lambda
 			 */
@@ -287,13 +272,7 @@ protected:
 			if (edge->in(network.get_linked_edges())) {
 				y = 1;
 			}
-#if 0
-			std::cerr << "RFHH: guess need to again define phi_ab and phi_ba" << std::endl;
-			int a = edge->first;
-			int b = edge->second;
-			const std::vector<double> &phi_ab = phi[Edge(a,b)];
-			const std::vector<double> &phi_ba = phi[Edge(b,a)];
-#endif
+
 			for (::size_t k = 0; k < K; k++) {
 				grad_lamda[k][0] += phi_ab[k] * phi_ba[k] * y;
 				grad_lamda[k][1] += phi_ab[k] * phi_ba[k] * (1-y);
@@ -374,12 +353,13 @@ protected:
 #endif
 
 		// update lamda
+		// std::cerr << std::setprecision(17) << "p_t " << p_t << " eta (" << eta[0] << "," << eta[1] << ")" << " scale " << scale << " step_count " << step_count << std::endl;
 		for (::size_t k = 0; k < K; k++) {
 
 			if (step_count > 400000) {
 				double lamda_star_0 = (1-p_t)*lamda[k][0] + p_t *(eta[0] + scale * grad_lamda[k][0]);
 				double lamda_star_1 = (1-p_t)*lamda[k][1] + p_t *(eta[1] + scale * grad_lamda[k][1]);
-				lamda[k][0] = (1-1/(step_count)) * lamda[k][0] +1.0/(step_count)*lamda_star_0;
+				lamda[k][0] = (1-1.0/(step_count)) * lamda[k][0] +1.0/(step_count)*lamda_star_0;
 				lamda[k][1] = (1-1.0/(step_count)) * lamda[k][1] +1.0/(step_count)*lamda_star_1;
 			} else {
 				lamda[k][0] = (1-p_t)*lamda[k][0] + p_t *(eta[0] + scale * grad_lamda[k][0]);
@@ -404,9 +384,6 @@ protected:
 			if y =0:
 		phi_ba[k]=exp(psi(gamma[b][k])+phi_ab[k]*(psi(lamda[k][1])-psi(lambda[k0]+lambda[k][1]))-phi_ab[k]*log(1-epsilon))
 			if y=1:
-		phi_ba[k]=exp(psi(gamma[b][k])+phi_ab[k]*(psi(lamda[k][0])-psi(lambda[k0]+lambda[k][1]))-phi_ab[k]*log(epsilon))
-
-		*/
 		phi_ba[k]=exp(psi(gamma[b][k])+phi_ab[k]*(psi(lamda[k][0])-psi(lambda[k0]+lambda[k][1]))-phi_ab[k]*log(epsilon))
 
 		*/
@@ -509,6 +486,7 @@ protected:
 	double log_1_epsilon;
 
 	std::vector<double> avg_log;
+	std::vector<time_t> timing;
 };
 
 }	// namespace learning

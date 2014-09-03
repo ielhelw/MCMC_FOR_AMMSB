@@ -46,7 +46,7 @@ public:
 		}
 
 		// ration between link edges and non-link edges
-		link_ratio = network.get_num_linked_edges() / ((N * (N - 1)) / 2);
+		link_ratio = network.get_num_linked_edges() / ((N * (N - 1)) / 2.0);
 		// check the number of iterations.
 		step_count = 1;
 		// store perplexity for all the iterations
@@ -134,6 +134,7 @@ protected:
 			const Edge &e = edge->first;
 			double edge_likelihood = cal_edge_likelihood(pi[e.first], pi[e.second],
 														 edge->second, beta);
+			// std::cerr << e << " in? " << (e.in(network.get_linked_edges()) ? "True" : "False") << " -> " << edge_likelihood << std::endl;
 			if (e.in(network.get_linked_edges())) {
 				link_count++;
 				link_likelihood += edge_likelihood;
@@ -143,16 +144,22 @@ protected:
 				non_link_likelihood += edge_likelihood;
 			}
 		}
+		// std::cerr << std::setprecision(15) << "ratio " << link_ratio << " count: link " << link_count << " " << link_likelihood << " non-link " << non_link_count << " " << non_link_likelihood << std::endl;
 
 		// weight each part proportionally.
+		double avg_likelihood1 = link_ratio * (link_likelihood / link_count) + \
+									 (1.0 - link_ratio) * (non_link_likelihood / non_link_count);
 		// avg_likelihood = self._link_ratio*(link_likelihood/link_count) + \
 		//         (1-self._link_ratio)*(non_link_likelihood/non_link_count)
 
 		// direct calculation.
 		double avg_likelihood = (link_likelihood + non_link_likelihood) / (link_count + non_link_count);
+		std::cerr << std::setprecision(15) << avg_likelihood << " " << (link_likelihood / link_count) << " " << link_count << " " << \
+			(non_link_likelihood / non_link_count) << " " << non_link_count << " " << avg_likelihood1 << std::endl;
 		// std::cerr << "perplexity score is: " << exp(-avg_likelihood) << std::endl;
 
-		return std::exp(-avg_likelihood);
+		// return std::exp(-avg_likelihood);
+		return (-avg_likelihood);
 	}
 
 
@@ -166,6 +173,27 @@ protected:
 							   const std::vector<double> &pi_b,
 							   bool y,
 							   const std::vector<double> &beta) const {
+		double s = 0.0;
+		if (y) {
+			for (::size_t k = 0; k < K; k++) {
+				s += pi_a[k] * pi_b[k] * beta[k];
+			}
+		} else {
+			double sum = 0.0;
+			for (::size_t k = 0; k < K; k++) {
+				// FIXME share common subexpressions
+				s += pi_a[k] * pi_b[k] * (1.0 - beta[k]);
+				sum += pi_a[k] * pi_b[k];
+			}
+			s += (1.0 - sum) * (1.0 - epsilon);
+		}
+
+		if (s < 1.0e-30) {
+			s = 1.0e-30;
+		}
+
+		return std::log(s);
+#if 0
 		double prob = 0.0;
 		double s = 0.0;
 
@@ -189,6 +217,7 @@ protected:
 		}
 
 		return log(prob);
+#endif
 	}
 
 protected:

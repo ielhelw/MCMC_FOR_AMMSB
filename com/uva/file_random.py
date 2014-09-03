@@ -45,9 +45,11 @@ class FileRandom(Random):
     def sample(self, population, k):
         old = self.prefix
         self.prefix = self.prefix + "# sample "
-        s = Random.sample(self, population, k)
+        s = Random.sample(self, tuple(population), k)
+        self.random_sample_file.write("# sample[%d]\n" % len(s))
         for n in s:
-            self.random_sample_file.write("%s\n" % str(n))
+            self.random_sample_file.write("%s " % str(n))
+        self.random_sample_file.write("\n");
         self.prefix = old
 
         return s

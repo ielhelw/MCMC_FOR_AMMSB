@@ -208,36 +208,20 @@ public:
 	}
 
 
-protected:
-	void sample(std::unordered_set<int> *accu, int from, int upto, ::size_t count) {
-		std::string line;
-		for (::size_t i = 0; i < count; i++) {
-			int r;
-			getline(sampleReader, line);
-
-			std::istringstream is(line);
-		   	is >> r;
-			accu->insert(r);
-		}
-		std::cerr << "Read " << count << " random.sample values" << std::endl;
-	}
-
-
-public:
 	template <class List>
 	List *sample(const List &list, ::size_t count) {
 		std::string line;
 		List *result = new List();
+		getline(sampleReader, line);
+
+		std::istringstream is(line);
 
 		for (::size_t i = 0; i < count; i++) {
-			getline(sampleReader, line);
-
-			std::istringstream is(line);
 			typename List::key_type key(is);
 			result->insert(key);
 		}
 
-		std::cerr << "Read " << count << " random.sample values" << std::endl;
+		std::cerr << "Read " << count << " random.sample<List> values" << std::endl;
 		return result;
 	}
 
@@ -250,14 +234,20 @@ public:
 
 	template <class Element>
 	std::vector<Element> *sample(const std::vector<Element> &list, ::size_t count) {
-		std::unordered_set<int> accu;
-		sample(&accu, 0, list.size(), count);
+		std::string line;
+		getline(sampleReader, line);
+		std::istringstream is(line);
+		// std::cerr << "Read vector<something>[" << count << "] sample; input line '" << is.str() << "'" << std::endl;
 
-		std::vector<Element> *result = new std::vector<Element>(accu.size());
+		std::vector<Element> *result = new std::vector<Element>();
 
-		for (std::unordered_set<int>::const_iterator i = accu.begin(); i != accu.end(); i++) {
-			result->push_back(list[*i]);
+		for (::size_t i = 0; i < count; i++) {
+			int r;
+
+		   	is >> r;
+			result->push_back(r);
 		}
+		std::cerr << "Read " << count << " random.sample<vector> values" << std::endl;
 
 		return result;
 	}

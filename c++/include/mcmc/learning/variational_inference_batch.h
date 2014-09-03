@@ -127,6 +127,16 @@ protected:
 												 network.get_linked_edges(),
 												 &phi_ab, &phi_ba);
 
+				for (::size_t k = 0; k < phi_ab.size(); k++) {
+					std::cerr << std::setprecision(15) << phi_ab[k] << " ";
+				}
+				std::cerr << std::endl;
+				for (::size_t k = 0; k < phi_ba.size(); k++) {
+					std::cerr << std::setprecision(15) << phi_ba[k] << " ";
+				}
+				std::cerr << std::endl;
+
+				std::cerr << std::endl;
                 // update gamma_grad and lamda_grad
 				std::transform(gamma_grad[a].begin(), gamma_grad[a].end(),
 							   phi_ab.begin(),

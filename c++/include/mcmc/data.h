@@ -75,7 +75,7 @@ public:
 	std::istream &get(std::istream &s) {
 		// std::string line;
 		// std::getline(s, line);
-		// std::cerr << line << std::endl;
+		// std::cerr << "In get(): '" << line << "'" << std::endl;
 
 		consume(s, '(');
 		s >> first;
