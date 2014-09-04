@@ -1,3 +1,5 @@
+import sys
+
 from com.uva.learning.learner import Learner
 from sets import Set
 import math
@@ -107,17 +109,21 @@ class MCMCSamplerStochastic(Learner):
             size = {}
             
             nodes_in_mini_batch = list(self.__nodes_in_batch(mini_batch))
-            nodes_in_mini_batch.sort()
+            nodes_in_mini_batch.sort()  # to be able to replay from C++
 
             # iterate through each node in the mini batch. 
+            first = True
             for node in nodes_in_mini_batch:
                 # sample a mini-batch of neighbors
                 neighbor_nodes = self.__sample_neighbor_nodes(self.__num_node_sample, node)                
-                size[node] = len(neighbor_nodes)
+                neighbor_list = list(neighbor_nodes)
+                neighbor_list.sort()    # to be able to replay from C++
+                size[node] = len(neighbor_list)
                 # sample latent variables z_ab for each pair of nodes
-                z = self.__sample_latent_vars(node, neighbor_nodes)
+                z = self.__sample_latent_vars(node, neighbor_list, first)
                 # save for a while, in order to update together. 
                 latent_vars[node] = z
+                first = False
                 
             # update pi for each node
             for node in nodes_in_mini_batch:
@@ -278,6 +284,7 @@ class MCMCSamplerStochastic(Learner):
             
             z[edge] = self.__sample_z_for_each_edge(y_ab, self._pi[edge[0]], self._pi[edge[1]], \
                                           self._beta, self._K)            
+            print "z[", edge, "]", z[edge]
 
         return z
     
@@ -307,7 +314,9 @@ class MCMCSamplerStochastic(Learner):
         for k in range(1,K+1):
             p[k] += p[k-1] 
         #bounds = np.cumsum(p)
-        location = random.random() * p[K]
+        # FIXME: replace p[K] w/ p[K-1] here. Why? RFHH
+        # location = random.random() * p[K]
+        location = random.random() * p[K-1]
         
         # get the index of bounds that containing location. 
         for i in range(0, K):
@@ -316,18 +325,21 @@ class MCMCSamplerStochastic(Learner):
         return -1
     
             
-    def __sample_latent_vars(self, node, neighbor_nodes):
+    def __sample_latent_vars(self, node, neighbor_nodes, verbose):
         '''
         given a node and its neighbors (either linked or non-linked), return the latent value
         z_ab for each pair (node, neighbor_nodes[i]. 
         '''
         z = np.zeros(self._K)  
+        print "node", node, " ", len(neighbor_nodes)
         for neighbor in neighbor_nodes:
             y_ab = 0      # observation
             if (min(node, neighbor), max(node, neighbor)) in self._network.get_linked_edges():
                 y_ab = 1
             
-            z_ab = self.sample_z_ab_from_edge(y_ab, self._pi[node], self._pi[neighbor], self._beta, self._epsilon, self._K)           
+            z_ab = self.sample_z_ab_from_edge(y_ab, self._pi[node], self._pi[neighbor], self._beta, self._epsilon, self._K, verbose)           
+	    if verbose:
+	    	print neighbor, " ", z_ab
             z[z_ab] += 1
             
         return z
@@ -369,6 +381,7 @@ class MCMCSamplerStochastic(Learner):
             nodeList = random.sample(list(xrange(self._N)), sample_size * 2)
             for neighborId in nodeList:
                     if p < 0:
+                        print sys._getframe().f_code.co_name + ": Are you sure p < 0 is a good idea?"
                         break
                     if neighborId == nodeId:
                         continue
@@ -400,7 +413,7 @@ class MCMCSamplerStochastic(Learner):
         f.close()
         
     
-    def sample_z_ab_from_edge(self, y, pi_a, pi_b, beta, epsilon, K):
+    def sample_z_ab_from_edge(self, y, pi_a, pi_b, beta, epsilon, K, verbose):
         p = np.zeros(K)
    
         tmp = 0.0
@@ -415,6 +428,8 @@ class MCMCSamplerStochastic(Learner):
             p[k] += p[k-1]
     
         location = random.random() * p[K-1]
+        if verbose:
+            print "location ", location
         # get the index of bounds that containing location. 
         for i in range(0, K):
             if location <= p[i]:
