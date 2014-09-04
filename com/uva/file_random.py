@@ -79,11 +79,15 @@ class FileRandom(Random):
 
     def randn(self, k, k2 = 1):
         print "Store randn[" + str(k) + "," + str(k2) + "]";
+        self.random_noise_file.write("# randn(%d, %d)\n" % (k, k2))
         x = np.random.randn(k, k2)
         for r in x:
             for c in r:
                 self.random_noise_file.write("%.17g " % c)
-        self.random_noise_file.write("\n")
+            if k2 > 1:
+                self.random_noise_file.write("\n")
+        if k2 <= 1:
+            self.random_noise_file.write("\n")
 
         return x
 
