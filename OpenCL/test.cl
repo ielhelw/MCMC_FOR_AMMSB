@@ -1,9 +1,9 @@
 #include "graph.h"
 
 kernel void test_print_peers_of (global Graph *g, int n) {
-	printf((__constant char*)"%d, %d\\n", graph_peers_count(g, n), graph_peers_offset(g, n));
+	printf((__constant char*)"%d, %d\n", graph_peers_count(g, n), graph_peers_offset(g, n));
 	for (int i = 0; i < graph_peers_count(g, n); ++i) {
-		printf((__constant char*)"cl peer: %d\\n", graph_get_peer(g, n, i));
+		printf((__constant char*)"cl peer: %d\n", graph_get_peer(g, n, i));
 	}
 }
 
