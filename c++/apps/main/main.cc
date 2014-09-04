@@ -12,27 +12,27 @@ int main(int argc, char *argv[]) {
 	Network network(data, 0.1);
 
 	if (false) {
-		std::cout << "start MCMC stochastical" << std::endl;
-		MCMCSamplerStochastic mcmcSampler(args, network);
-		mcmcSampler.run();
-	}
-
-	if (false) {
 		std::cout << "start MCMC batch" << std::endl;
 		MCMCSamplerBatch mcmcSampler(args, network);
 		mcmcSampler.run();
 	}
 
 	if (true) {
-		std::cout << "start variational inference stochastical" << std::endl;
-		SVI sviSampler(args, network);
-		sviSampler.run();
+		std::cout << "start MCMC stochastical" << std::endl;
+		MCMCSamplerStochastic mcmcSampler(args, network);
+		mcmcSampler.run();
 	}
 
 	if (false) {
 		std::cout << "start variational inference batch" << std::endl;
 		SV svSampler(args, network);
 		svSampler.run();
+	}
+
+	if (false) {
+		std::cout << "start variational inference stochastical" << std::endl;
+		SVI sviSampler(args, network);
+		sviSampler.run();
 	}
 
 	return 0;
