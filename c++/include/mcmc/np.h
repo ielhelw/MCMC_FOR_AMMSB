@@ -2,6 +2,7 @@
 #define MCMC_NP_H__
 
 #include <cmath>
+#include <cassert>
 
 #include <algorithm>
 
@@ -25,21 +26,6 @@ protected:
 };
 
 
-template <typename T>
-class DivideBy {
-public:
-	DivideBy(T d) : d(d) {
-	}
-
-	T operator() (const T &v) {
-		return v / d;
-	}
-
-protected:
-	T d;
-};
-
-
 
 template <typename Type>
 Type sum(const std::vector<Type> &a) {
@@ -48,9 +34,26 @@ Type sum(const std::vector<Type> &a) {
 
 
 template <typename T>
-void normalize(std::vector<T> *r, const std::vector<T> &a) {
+void normalize(std::vector<T> &r, const std::vector<T> &a) {
+	struct DivideBy {
+		DivideBy(T d) : d(d) {
+		}
+
+		T operator() (const T &v) {
+			return v / d;
+		}
+
+		T d;
+	};
+
 	T s = np::sum(a);
-	std::transform(a.begin(), a.end(), (*r).begin(), np::DivideBy<T>(s));
+	std::transform(a.begin(), a.end(), r.begin(), DivideBy(s));
+}
+
+
+template <typename T>
+void normalize(std::vector<T> *r, const std::vector<T> &a) {
+	normalize(*r, a);
 }
 
 /**
@@ -61,10 +64,12 @@ void normalize(std::vector<T> *r, const std::vector<T> &a) {
 template <typename T>
 void row_normalize(std::vector<std::vector<T> > *r,
 				   const std::vector<std::vector<T> > &a) {
+	// No: requires normalize to return its result. What about for_each w/ 2 arguments?
+	// std::transform(a.begin(), a.end(), r->begin(), normalize<T>);
 	for (::size_t i = 0; i < a.size(); i++) {
-		T row_sum = sum(a[i]);
-		std::transform(a[i].begin(), a[i].end(), (*r)[i].begin(), np::DivideBy<T>(row_sum));
-		// normalize(&(*r)[i], a[i]);
+		// T row_sum = sum(a[i]);
+		// std::transform(a[i].begin(), a[i].end(), (*r)[i].begin(), DivideBy(row_sum));
+		normalize((*r)[i], a[i]);
 	}
 }
 
@@ -83,8 +88,9 @@ Type sum_abs(const std::vector<Type> &a, const std::vector<Type> &b) {
 template <typename Type>
 void copy(std::vector<std::vector<Type> > *to, const std::vector<std::vector<Type> > &from) {
 	to->resize(from.size());
-	for (::size_t i = 0; i < from[i].size(); i++) {
+	for (::size_t i = 0; i < from.size(); i++) {
 		(*to)[i] = from[i];
+		assert((*to)[i].size() == from[i].size());
 	}
 }
 

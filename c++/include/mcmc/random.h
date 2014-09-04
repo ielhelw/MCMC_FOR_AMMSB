@@ -158,14 +158,18 @@ public:
 		getline(noiseReader, line);
 		std::istringstream is(line);
 		for (::size_t k = 0; k < K; k++) {
-			is >> r[k];
+			if (! (is >> r[k])) {
+				throw IOException("end of line");
+			}
 		}
 
-		std::cerr << "Read random.randn[" << K << "]" << std::endl;
-		for (::size_t k = 0; k < K; k++) {
-			std::cerr << r[k] << " ";
+		if (K > 2) {
+			std::cerr << "Read random.randn[" << K << "]" << std::endl;
+			for (::size_t k = 0; k < K; k++) {
+				std::cerr << r[k] << " ";
+			}
+			std::cerr << std::endl;
 		}
-		std::cerr << std::endl;
 
 		return r;
 	}
@@ -174,7 +178,7 @@ public:
 	std::vector<std::vector<double> > randn(::size_t K, ::size_t N) {
 		std::cerr << "Read random.randn[" << K << "," << N << "]" << std::endl;
 		std::vector<std::vector<double> > r(K);
-		for (::size_t k = 0; k < K; K++) {
+		for (::size_t k = 0; k < K; k++) {
 			r[k] = randn(N);
 		}
 
@@ -188,7 +192,9 @@ public:
 
 		double r;
 		std::istringstream is(line);
-		is >> r;
+		if (! (is >> r)) {
+			throw IOException("end of line");
+		}
 
 		std::cerr << "Read random.random " << r << std::endl;
 		return r;
@@ -201,7 +207,9 @@ public:
 
 		int r;
 		std::istringstream is(line);
-		is >> r;
+		if (! (is >> r)) {
+			throw IOException("end of line");
+		}
 
 		std::cerr << "Read random.randint " << r << std::endl;
 		return r;
@@ -244,7 +252,9 @@ public:
 		for (::size_t i = 0; i < count; i++) {
 			int r;
 
-		   	is >> r;
+			if (! (is >> r)) {
+				throw IOException("end of line");
+			}
 			result->push_back(r);
 		}
 		std::cerr << "Read " << count << " random.sample<vector> values" << std::endl;
@@ -263,7 +273,9 @@ public:
 
 			std::istringstream is(line);
 			for (::size_t j = 0; j < n2; j++) {
-				is >> a[i][j];
+				if (! (is >> a[i][j])) {
+					throw IOException("end of line");
+				}
 			}
 		}
 		std::cerr << "Read random.gamma[" << n1 << "x" << n2 << "] values" << std::endl;
