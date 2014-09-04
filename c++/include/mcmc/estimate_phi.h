@@ -37,14 +37,17 @@ void sample_latent_vars_for_each_pair(int a, int b,
 	}
 
 	const double log_epsilon = std::log(epsilon);
-	const double log_1_epsilon = std::log(1.0 - epsilon);
+	// const double log_1_epsilon = std::log(1.0 - epsilon);
     // alternatively update phi_ab and phi_ba, until it converges
     // or reach the maximum iterations.
+	// FIXME memo digamma(lamda[k][0]) or digamma(lamda[k][1]) (dependent on y)
+	// FIXME memo digamma(lamda[k][0] + lamda[k][1])
     for (::size_t i = 0; i < online_iterations; i++) {
 		std::vector<double> phi_ab_old(*phi_ab);
         std::vector<double> phi_ba_old(*phi_ba);
 
         // first, update phi_ab
+		// FIXME pull the test on (y) out of the loop
         for (::size_t k = 0; k < K; k++) {
             if (y) {
                 u = -(*phi_ba)[k]* log_epsilon;
@@ -63,10 +66,12 @@ void sample_latent_vars_for_each_pair(int a, int b,
         // phi_ab = phi_ab/sum_phi_ab;
 		np::normalize(&*phi_ab, *phi_ab);
 		if (false) {
-			std::cerr << "phi_ab[0] " << (*phi_ab)[0] << " log_eps " << log_epsilon << " log(1-eps) " << log_1_epsilon << " y " << y << std::endl;
+			std::cerr << "phi_ab[0] " << (*phi_ab)[0] << " log_eps " << log_epsilon // << " log(1-eps) " << log_1_epsilon
+			   	<< " y " << y << std::endl;
 		}
 
         // then update phi_ba
+		// FIXME pull the test on (y) out of the loop
         for (::size_t k = 0; k < K; k++) {
             if (y) {
                 u = -(*phi_ab)[k]* log_epsilon;
