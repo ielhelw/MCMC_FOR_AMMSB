@@ -143,16 +143,18 @@ public:
             // iterate through each node in the mini batch.
 			OrderedVertexSet nodes = nodes_in_batch(mini_batch);
 
+			bool first = true;
             for (auto node = nodes.begin();
 				 	node != nodes.end();
 					node++) {
                 // sample a mini-batch of neighbors
-                VertexSet neighbor_nodes = sample_neighbor_nodes(num_node_sample, *node);
+                OrderedVertexSet neighbor_nodes = sample_neighbor_nodes(num_node_sample, *node);
                 size[*node] = neighbor_nodes.size();
                 // sample latent variables z_ab for each pair of nodes
-                std::vector<double> z = this->sample_latent_vars(*node, neighbor_nodes);
+                std::vector<double> z = this->sample_latent_vars(*node, neighbor_nodes, first);
                 // save for a while, in order to update together.
                 latent_vars[*node] = z;
+				first = false;
 			}
 
             // update pi for each node
@@ -367,6 +369,7 @@ protected:
 
             z[*edge] = sample_z_for_each_edge(y_ab, pi[edge->first], pi[edge->second], \
 											  beta, K);
+			std::cerr << "z[" << *edge << "] " << z[*edge] << std::endl;
 		}
 
         return z;
@@ -374,7 +377,7 @@ protected:
 
 
 	// TODO FIXME shared code w/ mcmc_sampler_batch
-    int sample_z_for_each_edge(double y, const std::vector<double> &pi_a, const std::vector<double> &pi_b, const std::vector<double> &beta, ::size_t K) const {
+    int sample_z_for_each_edge(int y, const std::vector<double> &pi_a, const std::vector<double> &pi_b, const std::vector<double> &beta, ::size_t K) const {
         /**
 		 * sample latent variables z_ab and z_ba
          * but we don't need to consider all of the cases. i.e  (z_ab = j, z_ba = q) for all j and p.
@@ -395,18 +398,20 @@ protected:
 		for (::size_t k = 0; k < K; k++) {
             p[k] = std::pow(beta[k], y) * pow(1-beta[k], 1-y) * pi_a[k] * pi_b[k];
 		}
+		// FIXME: this is dead code because p[K] is overwritten anyway:
         // p[K] = 1 - np.sum(p[0:K])
-		p[K] = 0.0;
-        p[K] = 1.0 - np::sum(p);
+        p[K] = 1.0 - std::accumulate(p.begin(), p.begin() + K, 0.0);
 
         // sample community based on probability distribution p.
 		for (::size_t k = 1; k < K + 1; k++) {
-			p[k] = p[k - 1];
+			p[k] += p[k - 1];
 		}
         // // bounds = np.cumsum(p)
 		// // std::vector<double> bounds(K + 1);
 		// // std::partial_sum(p.begin(), p.end(), bounds.begin());
-        double location = Random::random->random() * p[K];
+		// FIXME: replace p[K] w/ p[K-1] here. Why? RFHH
+        // double location = Random::random->random() * p[K];
+        double location = Random::random->random() * p[K-1];
 
         // get the index of bounds that containing location.
         for (::size_t i = 0; i < K; i++) {
@@ -419,13 +424,14 @@ protected:
 	}
 
 
-    std::vector<double> sample_latent_vars(int node, const VertexSet &neighbor_nodes) const {
+    std::vector<double> sample_latent_vars(int node, const OrderedVertexSet &neighbor_nodes, bool verbose) const {
         /**
         given a node and its neighbors (either linked or non-linked), return the latent value
         z_ab for each pair (node, neighbor_nodes[i].
          */
 		std::vector<double> z(K, 0.0);
-        for (VertexSet::const_iterator neighbor = neighbor_nodes.begin();
+		std::cerr << "node " << node << " " << neighbor_nodes.size() << std::endl;
+        for (auto neighbor = neighbor_nodes.begin();
 			 	neighbor != neighbor_nodes.end();
 				neighbor++) {
             int y_ab = 0;      // observation
@@ -434,7 +440,10 @@ protected:
                 y_ab = 1;
 			}
 
-            int z_ab = this->sample_z_ab_from_edge(y_ab, pi[node], pi[*neighbor], beta, epsilon, K);
+            int z_ab = this->sample_z_ab_from_edge(y_ab, pi[node], pi[*neighbor], beta, epsilon, K, verbose);
+			if (verbose) {
+				std::cerr << *neighbor << " " << z_ab << std::endl;
+			}
             z[z_ab] += 1;
 		}
 
@@ -467,12 +476,12 @@ protected:
 #endif
 
 	// TODO FIXME make VertexSet an out parameter
-    VertexSet sample_neighbor_nodes(::size_t sample_size, int nodeId) {
+    OrderedVertexSet sample_neighbor_nodes(::size_t sample_size, int nodeId) {
         /**
         Sample subset of neighborhood nodes.
          */
         int p = (int)sample_size;
-        VertexSet neighbor_nodes;
+        OrderedVertexSet neighbor_nodes;
         const EdgeMap &held_out_set = network.get_held_out_set();
         const EdgeMap &test_set = network.get_test_set();
 
@@ -483,7 +492,7 @@ protected:
 					neighborId++) {
 				if (p < 0) {
 					if (p != 0) {
-						std::cerr << "Are you sure p < 0 is really OK?" << std::endl;
+						std::cerr << __func__ << ": Are you sure p < 0 is a good idea?" << std::endl;
 					}
 					break;
 				}
@@ -535,14 +544,15 @@ protected:
 							  const std::vector<double> &pi_a,
 							  const std::vector<double> &pi_b,
 							  const std::vector<double> &beta,
-							  double epsilon, ::size_t K) const {
-		std::vector<double> p(K, 0.0);
+							  double epsilon, ::size_t K,
+							  bool verbose) const {
+		std::vector<double> p(K);
 
-		double fac = std::pow(epsilon, y) * std::pow(1.0 - epsilon, 1.0 - y);
         for (::size_t i = 0; i < K; i++) {
 			// FIMXE lift common expressions
             double tmp = std::pow(beta[i], y) * std::pow(1-beta[i], 1-y) * pi_a[i] * pi_b[i];
             // tmp += std::pow(epsilon, y) * std::pow(1-epsilon, 1-y) * pi_a[i] * (1 - pi_b[i]);
+			double fac = std::pow(epsilon, y) * std::pow(1.0 - epsilon, 1 - y);
             tmp += fac * pi_a[i] * (1 - pi_b[i]);
             p[i] = tmp;
 		}
@@ -553,6 +563,9 @@ protected:
 		}
 
         double location = Random::random->random() * p[K-1];
+		if (verbose) {
+			std::cerr << "location " << location << std::endl;
+		}
         // get the index of bounds that containing location.
         for (::size_t i = 0; i < K; i++) {
             if (location <= p[i]) {
