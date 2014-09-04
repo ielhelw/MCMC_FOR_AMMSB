@@ -33,22 +33,22 @@ def work_svi (sampler, ppxs):
     
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument('alpha', type=float, default=0.01)
-    parser.add_argument('eta0', type=float, default=1)
-    parser.add_argument('eta1', type=float, default=1)
-    parser.add_argument('K', type=int, default=300)  
-    parser.add_argument('mini_batch_size', type=int, default=50)   # mini-batch size
-    parser.add_argument('epsilon', type=float, default=0.05)
-    parser.add_argument('max_iteration', type=int, default=10000000)
+    parser.add_argument('--alpha', type=float, default=0.01, required=False)
+    parser.add_argument('--eta0', type=float, default=1, required=False)
+    parser.add_argument('--eta1', type=float, default=1, required=False)
+    parser.add_argument('--K', type=int, default=300, required=False)
+    parser.add_argument('--mini_batch_size', type=int, default=50, required=False)   # mini-batch size
+    parser.add_argument('--epsilon', type=float, default=0.05, required=False)
+    parser.add_argument('--max_iteration', type=int, default=10000000, required=False)
     
     # parameters for step size
-    parser.add_argument('a', type=float, default=0.01)
-    parser.add_argument('b', type=float, default=1024)
-    parser.add_argument('c', type=float, default=0.55)
+    parser.add_argument('--a', type=float, default=0.01, required=False)
+    parser.add_argument('--b', type=float, default=1024, required=False)
+    parser.add_argument('--c', type=float, default=0.55, required=False)
     
-    parser.add_argument('num_updates', type=int, default=1000)
-    parser.add_argument('hold_out_prob', type=float, default=0.1)
-    parser.add_argument('output_dir', type=str,default='.')
+    parser.add_argument('--num_updates', type=int, default=1000, required=False)
+    parser.add_argument('--hold_out_prob', type=float, default=0.1, required=False)
+    parser.add_argument('--output_dir', type=str,default='.', required=False)
     args = parser.parse_args()
 
     random.seed(0)

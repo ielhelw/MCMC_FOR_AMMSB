@@ -103,6 +103,8 @@ inline std::istream &operator>> (std::istream &s, Edge &e) {
 // typedef std::set<int>				VertexSet;
 typedef std::unordered_set<int>			VertexSet;
 
+typedef std::set<int>			OrderedVertexSet;
+
 // typedef std::set<Edge> EdgeSet;
 typedef std::unordered_set<Edge>		EdgeSet;
 

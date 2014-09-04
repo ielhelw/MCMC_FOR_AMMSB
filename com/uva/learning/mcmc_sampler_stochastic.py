@@ -106,8 +106,11 @@ class MCMCSamplerStochastic(Learner):
             latent_vars = {}
             size = {}
             
+            nodes_in_mini_batch = list(self.__nodes_in_batch(mini_batch))
+            nodes_in_mini_batch.sort()
+
             # iterate through each node in the mini batch. 
-            for node in self.__nodes_in_batch(mini_batch):
+            for node in nodes_in_mini_batch:
                 # sample a mini-batch of neighbors
                 neighbor_nodes = self.__sample_neighbor_nodes(self.__num_node_sample, node)                
                 size[node] = len(neighbor_nodes)
@@ -117,7 +120,7 @@ class MCMCSamplerStochastic(Learner):
                 latent_vars[node] = z
                 
             # update pi for each node
-            for node in self.__nodes_in_batch(mini_batch):
+            for node in nodes_in_mini_batch:
                 self.__update_pi_for_node(node, latent_vars[node], size[node], scale)
             
             

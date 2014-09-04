@@ -141,8 +141,9 @@ public:
 			std::unordered_map<int, ::size_t> size;
 
             // iterate through each node in the mini batch.
-			VertexSet nodes = nodes_in_batch(mini_batch);
-            for (VertexSet::iterator node = nodes.begin();
+			OrderedVertexSet nodes = nodes_in_batch(mini_batch);
+
+            for (auto node = nodes.begin();
 				 	node != nodes.end();
 					node++) {
                 // sample a mini-batch of neighbors
@@ -155,7 +156,7 @@ public:
 			}
 
             // update pi for each node
-            for (VertexSet::iterator node = nodes.begin();
+            for (auto node = nodes.begin();
 				 	node != nodes.end();
 					node++) {
                 update_pi_for_node(*node, latent_vars[*node], size[*node], scale);
@@ -506,11 +507,11 @@ protected:
         return neighbor_nodes;
 	}
 
-    VertexSet nodes_in_batch(const EdgeSet &mini_batch) const {
+    OrderedVertexSet nodes_in_batch(const EdgeSet &mini_batch) const {
         /**
         Get all the unique nodes in the mini_batch.
          */
-        VertexSet node_set;
+        OrderedVertexSet node_set;
         for (EdgeSet::const_iterator edge = mini_batch.begin();
 			 	edge != mini_batch.end();
 			   	edge++) {
