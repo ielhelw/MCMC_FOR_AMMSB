@@ -79,7 +79,7 @@ public:
 #endif
 	}
 
-	virtual void run() {return;
+	virtual void run() {
 	        /** run mini-batch based MCMC sampler, based on the sungjin's note */
 	        while (step_count < max_iteration && ! is_converged()) {
 				EdgeSample edgeSample = network.sample_mini_batch(mini_batch_size, strategy::STRATIFIED_RANDOM_NODE);
@@ -88,7 +88,7 @@ public:
 
 				std::unordered_map<int, std::vector<double> > latent_vars;
 				std::unordered_map<int, ::size_t> size;
-				std::unordered_map<int, VertexSet> neighbor_nodes;
+				std::unordered_map<int, OrderedVertexSet> neighbor_nodes;
 
 	            // iterate through each node in the mini batch.
 				OrderedVertexSet nodes = nodes_in_batch(mini_batch);
@@ -106,7 +106,7 @@ public:
 						node != nodes.end();
 						node++){
 	                // sample latent variables z_ab for each pair of nodes
-	                std::vector<double> z = this->sample_latent_vars(*node, neighbor_nodes[*node]);
+	                std::vector<double> z = this->sample_latent_vars(*node, neighbor_nodes[*node], /* FIXME */ false);
 	                // save for a while, in order to update together.
 	                latent_vars[*node] = z;
 				}
