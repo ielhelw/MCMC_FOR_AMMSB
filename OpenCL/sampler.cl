@@ -128,8 +128,9 @@ void update_pi_for_node_(
 		double phi_star_k = fabs(phi[k] + eps_t/2
 				* (alpha - phi[k] + total_node_count/NEIGHBOR_SAMPLE_SIZE * grad[k])
 				+ pow(eps_t, 0.5) * pow(phi[k], 0.5) * noise[k]);
-		phi[k] = phi_star_k * (1.0/step_count)
-				+ (1-1.0/step_count) * phi[k];
+//		phi[k] = phi_star_k * (1.0/step_count)
+//				+ (1-1.0/step_count) * phi[k];
+		phi[k] = phi_star_k;
 	}
 	double phi_sum = 0;
 	for (int i = 0; i < K; ++i) phi_sum += phi[i];

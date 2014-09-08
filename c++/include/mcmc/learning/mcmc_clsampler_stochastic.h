@@ -32,6 +32,7 @@ public:
 
 		sampler_program = this->clContext.createProgram("OpenCL/sampler.cl", progOpts);
 		sample_latent_vars_kernel = cl::Kernel(sampler_program, "sample_latent_vars");
+		update_pi_kernel = cl::Kernel(sampler_program, "update_pi_for_node");
 
 		clNodes = cl::Buffer(clContext.context, CL_MEM_READ_ONLY,
 				N * sizeof(cl_int) // max: 2 unique nodes per edge in batch
@@ -44,6 +45,9 @@ public:
 		clPi = cl::Buffer(clContext.context, CL_MEM_READ_WRITE,
 				N * K * sizeof(double) // #total_nodes x #K
 				);
+		clPhi = cl::Buffer(clContext.context, CL_MEM_READ_WRITE,
+				N * K * sizeof(double) // #total_nodes x #K
+				);
 		clBeta = cl::Buffer(clContext.context, CL_MEM_READ_WRITE,
 				K * sizeof(double) // #total_nodes x #K
 				);
@@ -51,9 +55,9 @@ public:
 				N * K * sizeof(double) // #total_nodes x #K
 				);
 		clRandom = cl::Buffer(clContext.context, CL_MEM_READ_WRITE,
-				N * sizeof(double) // at most #total_nodes
+				N * K * sizeof(double) // at most #total_nodes
 				);
-		clScratchP = cl::Buffer(clContext.context, CL_MEM_READ_WRITE,
+		clScratch = cl::Buffer(clContext.context, CL_MEM_READ_WRITE,
 				N * K * sizeof(double) // #total_nodes x #K
 				);
 	}
@@ -73,12 +77,7 @@ public:
 
 				sample_latent_vars_stub(nodes, size, latent_vars);
 
-	            // update pi for each node
-	            for (auto node = nodes.begin();
-					 	node != nodes.end();
-						node++) {
-	                update_pi_for_node(*node, latent_vars[*node], size[*node], scale);
-				}
+				update_pi_for_node_stub(nodes, size, latent_vars, scale);
 
 	            // sample (z_ab, z_ba) for each edge in the mini_batch.
 	            // z is map structure. i.e  z = {(1,10):3, (2,4):-1}
@@ -101,6 +100,50 @@ public:
 
 
 protected:
+
+	void update_pi_for_node_stub(OrderedVertexSet& nodes,
+			std::unordered_map<int, ::size_t>& size,
+			std::unordered_map<int, std::vector<double> >& latent_vars,
+			double scale) {
+		// update pi for each node
+		int i = 0;
+		for (auto node = nodes.begin();
+				node != nodes.end();
+				++node, ++i) {
+			std::vector<double> noise = Random::random->randn(K);
+			clContext.queue.enqueueWriteBuffer(clRandom, CL_TRUE,
+					i * K * sizeof(cl_double),
+					K * sizeof(cl_double),
+					&(noise[0]));
+		}
+		update_pi_kernel.setArg(0, clNodes);
+		update_pi_kernel.setArg(1, (cl_int)nodes.size());
+		update_pi_kernel.setArg(2, clPi);
+		update_pi_kernel.setArg(3, clPhi);
+		update_pi_kernel.setArg(4, clZ);
+		update_pi_kernel.setArg(5, clRandom);
+		update_pi_kernel.setArg(6, clScratch);
+		update_pi_kernel.setArg(7, (cl_double)alpha);
+		update_pi_kernel.setArg(8, (cl_double)a);
+		update_pi_kernel.setArg(9, (cl_double)b);
+		update_pi_kernel.setArg(10, (cl_double)c);
+		update_pi_kernel.setArg(11, (cl_int)step_count);
+		update_pi_kernel.setArg(12, (cl_int)N);
+
+		// FIXME: threading granularity
+		clContext.queue.enqueueNDRangeKernel(update_pi_kernel, cl::NullRange, cl::NDRange(4), cl::NDRange(1));
+		clContext.queue.finish();
+
+		// read Pi again
+		for (auto node = nodes.begin();
+				node != nodes.end();
+				++node) {
+			clContext.queue.enqueueReadBuffer(clPi, CL_TRUE,
+					*node * K * sizeof(double),
+					K * sizeof(double),
+					&(pi[*node][0]));
+		}
+	}
 
 	void sample_latent_vars_stub(const OrderedVertexSet& nodes,
 			std::unordered_map<int, ::size_t>& size,
@@ -154,7 +197,7 @@ protected:
 		sample_latent_vars_kernel.setArg(6, (cl_double)epsilon);
 		sample_latent_vars_kernel.setArg(7, clZ);
 		sample_latent_vars_kernel.setArg(8, clRandom);
-		sample_latent_vars_kernel.setArg(9, clScratchP);
+		sample_latent_vars_kernel.setArg(9, clScratch);
 
 		// FIXME: threading granularity
 		clContext.queue.enqueueNDRangeKernel(sample_latent_vars_kernel, cl::NullRange, cl::NDRange(4), cl::NDRange(1));
@@ -244,6 +287,7 @@ protected:
 
 	cl::Kernel graph_init_kernel;
 	cl::Kernel sample_latent_vars_kernel;
+	cl::Kernel update_pi_kernel;
 
 	cl::Buffer clGraphEdges;
 	cl::Buffer clGraphNodes;
@@ -252,10 +296,11 @@ protected:
 	cl::Buffer clNodes;
 	cl::Buffer clNodesNeighbors;
 	cl::Buffer clPi;
+	cl::Buffer clPhi;
 	cl::Buffer clBeta;
 	cl::Buffer clZ;
 	cl::Buffer clRandom;
-	cl::Buffer clScratchP;
+	cl::Buffer clScratch;
 };
 
 }

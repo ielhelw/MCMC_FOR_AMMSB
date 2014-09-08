@@ -145,12 +145,7 @@ public:
 
 			sample_latent_vars_stub(nodes, size, latent_vars);
 
-            // update pi for each node
-            for (auto node = nodes.begin();
-				 	node != nodes.end();
-					node++) {
-                update_pi_for_node(*node, latent_vars[*node], size[*node], scale);
-			}
+			update_pi_for_node_stub(nodes, size, latent_vars, scale);
 
             // sample (z_ab, z_ba) for each edge in the mini_batch.
             // z is map structure. i.e  z = {(1,10):3, (2,4):-1}
@@ -204,6 +199,18 @@ protected:
 			// save for a while, in order to update together.
 			latent_vars[*node] = z;
 			first = false;
+		}
+    }
+
+    void update_pi_for_node_stub(OrderedVertexSet& nodes,
+			std::unordered_map<int, ::size_t>& size,
+			std::unordered_map<int, std::vector<double> >& latent_vars,
+			double scale) {
+    	// update pi for each node
+		for (auto node = nodes.begin();
+				node != nodes.end();
+				node++) {
+			update_pi_for_node(*node, latent_vars[*node], size[*node], scale);
 		}
     }
 
@@ -316,7 +323,7 @@ protected:
 	}
 
 
-    void update_pi_for_node(int i, const std::vector<double> &z, int n, double scale) {
+    void update_pi_for_node(int i, std::vector<double> &z, int n, double scale) {
         /**
         update pi for current node i.
          */
