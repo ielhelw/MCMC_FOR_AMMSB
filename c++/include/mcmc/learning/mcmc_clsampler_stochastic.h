@@ -12,8 +12,6 @@
 namespace mcmc {
 namespace learning {
 
-#define MCMC_CL_STOCHASTIC_USE_SCRATCH
-
 class MCMCClSamplerStochastic : public MCMCSamplerStochastic {
 public:
 	MCMCClSamplerStochastic(const Options &args, const Network &graph, const cl::ClContext clContext)
@@ -21,9 +19,6 @@ public:
 
 		std::ostringstream opts;
 		opts << "-IOpenCL/include"
-#ifdef MCMC_CL_STOCHASTIC_USE_SCRATCH
-			 << " -DMCMC_CL_STOCHASTIC_USE_SCRATCH"
-#endif
 			 << " -DNEIGHBOR_SAMPLE_SIZE=" << num_node_sample
 			 << " -DK=" << K
 			 << " -DMAX_NODE_ID=" << N;
@@ -55,14 +50,12 @@ public:
 		clZ = cl::Buffer(clContext.context, CL_MEM_READ_WRITE,
 				N * K * sizeof(double) // #total_nodes x #K
 				);
-#ifdef MCMC_CL_STOCHASTIC_USE_SCRATCH
+		clRandom = cl::Buffer(clContext.context, CL_MEM_READ_WRITE,
+				N * sizeof(double) // at most #total_nodes
+				);
 		clScratchP = cl::Buffer(clContext.context, CL_MEM_READ_WRITE,
 				N * K * sizeof(double) // #total_nodes x #K
 				);
-		clScratchBounds = cl::Buffer(clContext.context, CL_MEM_READ_WRITE,
-				N * K * sizeof(double) // #total_nodes x #K
-				);
-#endif
 	}
 
 	virtual void run() {
@@ -85,22 +78,11 @@ public:
 						node++) {
 	                // sample a mini-batch of neighbors
 	            	neighbor_nodes[*node] = sample_neighbor_nodes(num_node_sample, *node);
-	            	if (neighbor_nodes[*node].size() != num_node_sample) {
-	            		std::cout << neighbor_nodes[*node].size() << " != " << num_node_sample << std::endl;
-	            		abort();
-	            	}
-	            	for (auto X : neighbor_nodes[*node]) {
-	            		if (X < 0 || X >= (int)N) {
-	            			std::cout << "+++++++++++++++++++++++++ " << X << std::endl;
-	            			abort();
-	            		}
-	            	}
 	                size[*node] = neighbor_nodes[*node].size();
 	            }
 
 	            // Copy sampled node IDs
 	            std::vector<int> v_nodes(nodes.begin(), nodes.end()); // FIXME: replace OrderedVertexSet with vector
-	            std::cout << "COPYING #NODES = " << v_nodes.size() << " / " << nodes.size() << std::endl;
             	clContext.queue.enqueueWriteBuffer(clNodes, CL_TRUE, 0, v_nodes.size()*sizeof(int), &(v_nodes[0]));
 
 	            // Copy neighbors of *sampled* nodes only
@@ -123,6 +105,11 @@ public:
 	            // Copy beta
 	            clContext.queue.enqueueWriteBuffer(clBeta, CL_TRUE, 0, K * sizeof(double), &beta[0]);
 
+	            // Generate and copy Randoms
+	            std::vector<double> randoms(nodes.size());
+	            std::generate(randoms.begin(), randoms.end(), std::bind(&Random::FileReaderRandom::random, Random::random));
+	            clContext.queue.enqueueWriteBuffer(clRandom, CL_TRUE, 0, nodes.size()*sizeof(cl_double), &(randoms[0]));
+
 	            sample_latent_vars_kernel.setArg(0, clGraph);
 	            sample_latent_vars_kernel.setArg(1, clNodes);
 	            sample_latent_vars_kernel.setArg(2, (cl_int)nodes.size());
@@ -131,12 +118,11 @@ public:
 	            sample_latent_vars_kernel.setArg(5, clBeta);
 	            sample_latent_vars_kernel.setArg(6, (cl_double)epsilon);
 	            sample_latent_vars_kernel.setArg(7, clZ);
-#ifdef MCMC_CL_STOCHASTIC_USE_SCRATCH
-	            sample_latent_vars_kernel.setArg(8, clScratchP);
-	            sample_latent_vars_kernel.setArg(9, clScratchBounds);
-#endif
+	            sample_latent_vars_kernel.setArg(8, clRandom);
+	            sample_latent_vars_kernel.setArg(9, clScratchP);
 
-	            clContext.queue.enqueueTask(sample_latent_vars_kernel);
+	            // FIXME: threading granularity
+	            clContext.queue.enqueueNDRangeKernel(sample_latent_vars_kernel, cl::NullRange, cl::NDRange(4), cl::NDRange(1));
 	            clContext.queue.finish();
 
 	            std::unordered_map<int, std::vector<double>> zMap;
@@ -146,18 +132,19 @@ public:
 	            			(*node) * K * sizeof(double),
 	            			K * sizeof(double),
 	            			&(zMap[*node][0]));
+	            	latent_vars[*node] = zMap[*node];
 	            }
 
-#if 1
+#if 0
 	            // execute kernels for all
 	            for (auto node = nodes.begin();
 						node != nodes.end();
 						node++){
 	                // sample latent variables z_ab for each pair of nodes
 	                std::vector<double> z = this->sample_latent_vars(*node, neighbor_nodes[*node], /* FIXME */ false);
-//	                if (!std::equal(z.begin(), z.end(), zMap[*node].begin())) {
-//	                	abort();
-//	                }
+	                if (!std::equal(z.begin(), z.end(), zMap[*node].begin())) {
+	                	abort();
+	                }
 	                // save for a while, in order to update together.
 	                latent_vars[*node] = z;
 				}
@@ -277,10 +264,8 @@ protected:
 	cl::Buffer clPi;
 	cl::Buffer clBeta;
 	cl::Buffer clZ;
-#ifdef MCMC_CL_STOCHASTIC_USE_SCRATCH
+	cl::Buffer clRandom;
 	cl::Buffer clScratchP;
-	cl::Buffer clScratchBounds;
-#endif
 };
 
 }
