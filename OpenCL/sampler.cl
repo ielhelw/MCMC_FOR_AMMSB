@@ -1,5 +1,9 @@
 #include "graph.h"
 
+#ifndef MAX_NODE_ID
+#error "Need definition of MAX_NODE_ID"
+#endif
+
 #ifndef K
 #error "Need definition of K"
 #endif
@@ -10,7 +14,11 @@
 
 #pragma OPENCL EXTENSION cl_khr_fp64: enable
 
-#if 0
+#define NODE_ID_VALID(NID) ((NID) >= 0 && (NID) < MAX_NODE_ID)
+
+#define MCMC_CL_STOCHASTIC_USE_SCRATCH
+
+#if 1
 
 // adapted from sample_latent_vars.pyx
 int sample_z_ab_from_edge(
@@ -42,9 +50,13 @@ int sample_z_ab_from_edge(
 		global double* pi_a,
 		global double *pi_b,
 		global double *beta,
-		double epsilon, int y,
+		double epsilon, int y
+#ifdef MCMC_CL_STOCHASTIC_USE_SCRATCH
+		,
 		global double *p,
-		global double *bounds) {
+		global double *bounds
+#endif
+		) {
 	double location = 0;
 	double bound = pow(beta[0], y) * pow(1-beta[0], 1-y) * pi_a[0] * pi_b[0]
 		+ pow(epsilon, y) * pow(1-epsilon, 1-y) * pi_a[0] * (1-pi_b[0]);
@@ -66,16 +78,27 @@ void sample_latent_vars_of(
 		global double *pi,
 		global double *beta,
 		double epsilon,
-		global double *z /* K elements */,
+		global double *z /* K elements */
+#ifdef MCMC_CL_STOCHASTIC_USE_SCRATCH
+		,
 		global double *p,
-		global double *bounds) {
+		global double *bounds
+#endif
+		) {
 	for (int i = 0; i < K; ++i) z[i] = 0;
 	for (int i = 0; i < NEIGHBOR_SAMPLE_SIZE; ++i) {
 		int neighbor = neighbor_nodes[i];
+
+//		printf("%d: (%d, %d)\n", i, node, neighbor);
+
 		int y_ab = graph_has_peer(g, node, neighbor);
 		int z_ab = sample_z_ab_from_edge(
 				pi + node * K, pi + neighbor * K,
-				beta, epsilon, y_ab, p, bounds);
+				beta, epsilon, y_ab
+#ifdef MCMC_CL_STOCHASTIC_USE_SCRATCH
+				, p, bounds
+#endif
+				);
 		z[z_ab] += 1;
 	}
 }
@@ -88,17 +111,30 @@ kernel void sample_latent_vars(
 		global double *pi,// (#total_nodes, K)
 		global double *beta,// (#K)
 		double epsilon,
-		global double *Z,// (#total_nodes, K)
+		global double *Z /* (#total_nodes, K) */
+#ifdef MCMC_CL_STOCHASTIC_USE_SCRATCH
+		,
 		global double *p,// (#nodes, K)
 		global double *bounds// (#nodes, K)
+#endif
 ) {
 	size_t gid = get_global_id(0);
 	size_t gsize = get_global_size(0);
+#ifdef MCMC_CL_STOCHASTIC_USE_SCRATCH
 	global double *_p = p + gid * K;
 	global double *_b = bounds + gid * K;
+#endif
 
 	for (int i = gid; i < N; i += gsize) {
 		int node = nodes[i];
+		/**/
+		global int* neighbor = neighbor_nodes + node * NEIGHBOR_SAMPLE_SIZE;
+		for (int j = 0; j < NEIGHBOR_SAMPLE_SIZE; ++j) {
+			if (!NODE_ID_VALID(neighbor[j])) {
+				printf("========================================= %d: %d -> %d\n", i, node, neighbor[j]);
+			}
+		}
+		/**/
 		sample_latent_vars_of(
 				node,
 				g,
@@ -106,8 +142,11 @@ kernel void sample_latent_vars(
 				pi,
 				beta,
 				epsilon,
-				Z + nodes[i] * K,
-				_p, _b);
+				Z + nodes[i] * K
+#ifdef MCMC_CL_STOCHASTIC_USE_SCRATCH
+				, _p, _b
+#endif
+				);
 	}
 }
 
