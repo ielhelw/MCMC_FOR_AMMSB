@@ -12,7 +12,7 @@
 
 namespace mcmc {
 
-typedef std::pair<EdgeSet *, float>		EdgeSample;
+typedef std::pair<OrderedEdgeSet *, float>		EdgeSample;
 
 /**
  * Network class represents the whole graph that we read from the
@@ -142,7 +142,7 @@ public:
 	 */
 	EdgeSample random_pair_sampling(::size_t mini_batch_size) const {
 
-		EdgeSet *mini_batch_set = new EdgeSet();
+		OrderedEdgeSet *mini_batch_set = new OrderedEdgeSet();
 
 		// iterate until we get $p$ valid edges.
 		for (::size_t p = mini_batch_size; p > 0; p--) {
@@ -176,7 +176,7 @@ public:
 	 * the node from N nodes, and sample all the edges for that node. h(x) = 1/N
 	 */
 	EdgeSample random_node_sampling() const {
-		EdgeSet *mini_batch_set = new EdgeSet();
+		OrderedEdgeSet *mini_batch_set = new OrderedEdgeSet();
 
 		// randomly select the node ID
 		int nodeId = Random::random->randint(0, N - 1);
@@ -203,15 +203,15 @@ public:
 	EdgeSample stratified_random_pair_sampling(::size_t mini_batch_size) const {
 		int p = (int)mini_batch_size;
 
-		EdgeSet *mini_batch_set = new EdgeSet();
+		OrderedEdgeSet *mini_batch_set = new OrderedEdgeSet();
 
 		int flag = Random::random->randint(0, 1);
 
 		if (flag == 0) {
 			// sample mini-batch from linked edges
-			EdgeSet *sampled_linked_edges = Random::random->sample(linked_edges, mini_batch_size * 2);
-			for (EdgeSet::iterator edge = sampled_linked_edges->begin();
-				 	edge != sampled_linked_edges->end();
+			EdgeList *sampled_linked_edges = Random::random->sampleList(linked_edges, mini_batch_size * 2);
+			for (auto edge = sampled_linked_edges->cbegin();
+				 	edge != sampled_linked_edges->cend();
 					edge++) {
 				if (p < 0) {
 					std::cerr << __func__ << ": Are you sure p < 0 is a good idea?" << std::endl;
@@ -276,7 +276,7 @@ public:
 		// decide to sample links or non-links
 		int flag = Random::random->randint(0, 1);	// flag=0: non-link edges  flag=1: link edges
 
-		EdgeSet *mini_batch_set = new EdgeSet();
+		OrderedEdgeSet *mini_batch_set = new OrderedEdgeSet();
 
 		if (flag == 0) {
 			/* sample non-link edges */
@@ -289,6 +289,7 @@ public:
 			while (p > 0) {
 				// because of the sparsity, when we sample $mini_batch_size*2$ nodes, the list likely
 				// contains at least mini_batch_size valid nodes.
+				std::cerr << "FIXME: horribly inefficient xrange thingy" << std::endl;
 				std::vector<int> *nodeList = Random::random->sample(np::xrange(0, N), mini_batch_size * 2);
 				for (std::vector<int>::iterator neighborId = nodeList->begin();
 					 	neighborId != nodeList->end();
@@ -347,7 +348,7 @@ protected:
 	 */
 	void init_train_link_map() {
 		train_link_map = std::vector<VertexSet>(N);
-		for (EdgeSet::const_iterator edge = linked_edges->begin();
+		for (auto edge = linked_edges->begin();
 			 	edge != linked_edges->end();
 				edge++) {
 			train_link_map[edge->first].insert(edge->second);
@@ -369,8 +370,8 @@ protected:
 							    "please use smaller held out ratio.");
 		}
 
-		EdgeSet *sampled_linked_edges = Random::random->sample(linked_edges, p);
-		for (EdgeSet::iterator edge = sampled_linked_edges->begin();
+		EdgeList *sampled_linked_edges = Random::random->sampleList(linked_edges, p);
+		for (auto edge = sampled_linked_edges->begin();
 			 	edge != sampled_linked_edges->end();
 				edge++) {
 			held_out_map[*edge] = true;
@@ -407,9 +408,10 @@ protected:
 			// Because we already used some of the linked edges for held_out sets,
 			// here we sample twice as much as links, and select among them, which
 			// is likely to contain valid p linked edges.
-			EdgeSet *sampled_linked_edges = Random::random->sample(linked_edges, 2 * p);
-			for (EdgeSet::iterator edge = sampled_linked_edges->begin();
-				 	edge != sampled_linked_edges->end();
+			std::cerr << "FIXME: replace EdgeList w/ (unordered) EdgeSet again" << std::endl;
+			EdgeList *sampled_linked_edges = Random::random->sampleList(linked_edges, 2 * p);
+			for (auto edge = sampled_linked_edges->cbegin();
+				 	edge != sampled_linked_edges->cend();
 					edge++) {
 				if (p < 0) {
 					std::cerr << __func__ << ": Are you sure p < 0 is a good idea?" << std::endl;
@@ -426,6 +428,8 @@ protected:
 				train_link_map[edge->second].erase(edge->first);
 				p--;
 			}
+
+			delete sampled_linked_edges;
 		}
 
 		// sample p non-linked edges from the network

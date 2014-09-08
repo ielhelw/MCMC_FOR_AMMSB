@@ -316,8 +316,6 @@ protected:
 
 	std::vector<std::vector<double> > theta;		// parameterization for \beta
 	std::vector<std::vector<double> > phi;			// parameterization for \pi
-
-	std::vector<std::vector<double> > pi;
 };
 
 }	// namespace learning

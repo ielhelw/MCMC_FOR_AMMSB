@@ -17,7 +17,8 @@
 namespace mcmc {
 namespace learning {
 
-typedef std::unordered_map<Edge, int>	EdgeMapZ;
+// typedef std::unordered_map<Edge, int>	EdgeMapZ;
+typedef std::map<Edge, int>	EdgeMapZ;
 
 class MCMCSamplerStochastic : public Learner {
 public:
@@ -125,6 +126,19 @@ public:
 
     virtual void run() {
         /** run mini-batch based MCMC sampler, based on the sungjin's note */
+
+		if (step_count % 1 == 0) {
+			double ppx_score = cal_perplexity_held_out();
+			std::cout << std::fixed << std::setprecision(15) << "perplexity for hold out set is: " << ppx_score << std::endl;
+			ppxs_held_out.push_back(ppx_score);
+#if 0
+			if (ppx_score < 5.0) {
+				stepsize_switch = true;
+				//print "switching to smaller step size mode!"
+			}
+#endif
+		}
+
         while (step_count < max_iteration && ! is_converged()) {
             //print "step: " + str(self._step_count)
             /**
@@ -134,16 +148,15 @@ public:
 
             // (mini_batch, scale) = self._network.sample_mini_batch(self._mini_batch_size, "stratified-random-node")
 			EdgeSample edgeSample = network.sample_mini_batch(mini_batch_size, strategy::STRATIFIED_RANDOM_NODE);
-			const EdgeSet &mini_batch = *edgeSample.first;
+			const OrderedEdgeSet &mini_batch = *edgeSample.first;
 			double scale = edgeSample.second;
 
-			std::unordered_map<int, std::vector<double> > latent_vars;
+			std::unordered_map<int, std::vector<int> > latent_vars;
 			std::unordered_map<int, ::size_t> size;
 
             // iterate through each node in the mini batch.
 			OrderedVertexSet nodes = nodes_in_batch(mini_batch);
 
-			bool first = true;
             for (auto node = nodes.begin();
 				 	node != nodes.end();
 					node++) {
@@ -151,10 +164,9 @@ public:
                 OrderedVertexSet neighbor_nodes = sample_neighbor_nodes(num_node_sample, *node);
                 size[*node] = neighbor_nodes.size();
                 // sample latent variables z_ab for each pair of nodes
-                std::vector<double> z = this->sample_latent_vars(*node, neighbor_nodes, first);
+                std::vector<int> z = this->sample_latent_vars(*node, neighbor_nodes);
                 // save for a while, in order to update together.
                 latent_vars[*node] = z;
-				first = false;
 			}
 
             // update pi for each node
@@ -256,7 +268,7 @@ protected:
 
 
 	// FIXME lots of code sharing w/ mcmc_sampler_batch
-    void update_beta(const EdgeSet &mini_batch, double scale, const EdgeMapZ &z) {
+    void update_beta(const OrderedEdgeSet &mini_batch, double scale, const EdgeMapZ &z) {
         /**
         update beta for mini_batch.
          */
@@ -310,7 +322,7 @@ protected:
 	}
 
 
-    void update_pi_for_node(int i, const std::vector<double> &z, int n, double scale) {
+    void update_pi_for_node(int i, const std::vector<int> &z, int n, double scale) {
         /**
         update pi for current node i.
          */
@@ -337,7 +349,7 @@ protected:
         for (::size_t k = 0; k < K; k++) {
 			// FIXME replace a**0.5 * b**0.5 with sqrt(a * b)
             phi_star[k] = std::abs(phi[i][k] + eps_t/2 * (alpha - phi[i][k] + \
-														  N/n * grads[k]) +
+														  (N/n) * grads[k]) +
 								   std::pow(eps_t, .5) * std::pow(phi[i][k], .5) * noise[k]);
 		}
 
@@ -352,16 +364,14 @@ protected:
 	}
 
 
-    EdgeMapZ sample_latent_vars2(const EdgeSet &mini_batch) const {
+    EdgeMapZ sample_latent_vars2(const OrderedEdgeSet &mini_batch) const {
         /**
         sample latent variable (z_ab, z_ba) for each pair of nodes. But we only consider 11 different cases,
         since we only need indicator function in the gradient update. More details, please see the comments
         within the sample_z_for_each_edge function.
          */
 		EdgeMapZ z;
-		for (EdgeSet::const_iterator edge = mini_batch.begin();
-			 	edge != mini_batch.end();
-				edge++) {
+		for (auto edge = mini_batch.begin(); edge != mini_batch.end(); edge++) {
             int y_ab = 0;
             if (edge->in(network.get_linked_edges())) {
                 y_ab = 1;
@@ -369,7 +379,6 @@ protected:
 
             z[*edge] = sample_z_for_each_edge(y_ab, pi[edge->first], pi[edge->second], \
 											  beta, K);
-			std::cerr << "z[" << *edge << "] " << z[*edge] << std::endl;
 		}
 
         return z;
@@ -398,7 +407,6 @@ protected:
 		for (::size_t k = 0; k < K; k++) {
             p[k] = std::pow(beta[k], y) * pow(1-beta[k], 1-y) * pi_a[k] * pi_b[k];
 		}
-		// FIXME: this is dead code because p[K] is overwritten anyway:
         // p[K] = 1 - np.sum(p[0:K])
         p[K] = 1.0 - std::accumulate(p.begin(), p.begin() + K, 0.0);
 
@@ -411,7 +419,8 @@ protected:
 		// // std::partial_sum(p.begin(), p.end(), bounds.begin());
 		// FIXME: replace p[K] w/ p[K-1] here. Why? RFHH
         // double location = Random::random->random() * p[K];
-        double location = Random::random->random() * p[K-1];
+        double r = Random::random->random();
+        double location = r * p[K-1];
 
         // get the index of bounds that containing location.
         for (::size_t i = 0; i < K; i++) {
@@ -424,13 +433,13 @@ protected:
 	}
 
 
-    std::vector<double> sample_latent_vars(int node, const OrderedVertexSet &neighbor_nodes, bool verbose) const {
+    std::vector<int> sample_latent_vars(int node, const OrderedVertexSet &neighbor_nodes) const {
         /**
         given a node and its neighbors (either linked or non-linked), return the latent value
         z_ab for each pair (node, neighbor_nodes[i].
          */
-		std::vector<double> z(K, 0.0);
-		std::cerr << "node " << node << " " << neighbor_nodes.size() << std::endl;
+		std::vector<int> z(K, 0);
+		// std::cerr << "node " << node << " " << neighbor_nodes.size() << std::endl;
         for (auto neighbor = neighbor_nodes.begin();
 			 	neighbor != neighbor_nodes.end();
 				neighbor++) {
@@ -440,10 +449,7 @@ protected:
                 y_ab = 1;
 			}
 
-            int z_ab = this->sample_z_ab_from_edge(y_ab, pi[node], pi[*neighbor], beta, epsilon, K, verbose);
-			if (verbose) {
-				std::cerr << *neighbor << " " << z_ab << std::endl;
-			}
+            int z_ab = this->sample_z_ab_from_edge(y_ab, pi[node], pi[*neighbor], beta, epsilon, K, node, *neighbor);
             z[z_ab] += 1;
 		}
 
@@ -516,14 +522,12 @@ protected:
         return neighbor_nodes;
 	}
 
-    OrderedVertexSet nodes_in_batch(const EdgeSet &mini_batch) const {
+    OrderedVertexSet nodes_in_batch(const OrderedEdgeSet &mini_batch) const {
         /**
         Get all the unique nodes in the mini_batch.
          */
         OrderedVertexSet node_set;
-        for (EdgeSet::const_iterator edge = mini_batch.begin();
-			 	edge != mini_batch.end();
-			   	edge++) {
+        for (auto edge = mini_batch.begin(); edge != mini_batch.end(); edge++) {
             node_set.insert(edge->first);
             node_set.insert(edge->second);
 		}
@@ -544,8 +548,7 @@ protected:
 							  const std::vector<double> &pi_a,
 							  const std::vector<double> &pi_b,
 							  const std::vector<double> &beta,
-							  double epsilon, ::size_t K,
-							  bool verbose) const {
+							  double epsilon, ::size_t K, int node, int neighbor) const {
 		std::vector<double> p(K);
 
         for (::size_t i = 0; i < K; i++) {
@@ -557,15 +560,12 @@ protected:
             p[i] = tmp;
 		}
 
-
         for (::size_t k = 1; k < K; k++) {
             p[k] += p[k-1];
 		}
 
-        double location = Random::random->random() * p[K-1];
-		if (verbose) {
-			std::cerr << "location " << location << std::endl;
-		}
+        double r = Random::random->random();
+        double location = r * p[K-1];
         // get the index of bounds that containing location.
         for (::size_t i = 0; i < K; i++) {
             if (location <= p[i]) {
@@ -588,8 +588,6 @@ protected:
 
 	std::vector<std::vector<double> > theta;		// parameterization for \beta
 	std::vector<std::vector<double> > phi;			// parameterization for \pi
-
-	std::vector<std::vector<double> > pi;
 };
 
 }	// namespace learning

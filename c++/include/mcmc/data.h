@@ -16,6 +16,7 @@
 #include <map>
 #include <unordered_map>
 #include <unordered_set>
+#include <list>
 #include <iostream>
 #include <iomanip>
 
@@ -100,16 +101,27 @@ inline std::istream &operator>> (std::istream &s, Edge &e) {
 	return e.get(s);
 }
 
-// typedef std::set<int>				VertexSet;
+#define RANDOM_FOLLOWS_PYTHON
+#ifdef RANDOM_FOLLOWS_PYTHON
 typedef std::unordered_set<int>			VertexSet;
+typedef std::set<int>					OrderedVertexSet;
 
-typedef std::set<int>			OrderedVertexSet;
-
-// typedef std::set<Edge> EdgeSet;
 typedef std::unordered_set<Edge>		EdgeSet;
+typedef std::list<Edge>					EdgeList;
+typedef std::set<Edge> 					OrderedEdgeSet;
 
-// typedef std::map<Edge, bool>			EdgeMap;
 typedef std::unordered_map<Edge, bool>	EdgeMap;
+
+#else	// def RANDOM_FOLLOWS_PYTHON
+typedef std::unordered_set<int>			VertexSet;
+typedef VertexSet						OrderedVertexSet;
+
+typedef std::unordered_set<Edge>		EdgeSet;
+typedef EdgeSet							EdgeList;
+typedef EdgeSet		 					OrderedEdgeSet;
+
+typedef std::unordered_map<Edge, bool>	EdgeMap;
+#endif	// def RANDOM_FOLLOWS_PYTHON
 
 }	// namespace mcmc
 
@@ -125,15 +137,8 @@ public:
 
 namespace mcmc {
 
-
-void dump(const EdgeSet &s) {
-	for (EdgeSet::const_iterator e = s.begin(); e != s.end(); e++) {
-		std::cout << *e << std::endl;
-	}
-}
-
 bool present(const EdgeSet &s, const Edge &edge) {
-	for (EdgeSet::const_iterator e = s.begin(); e != s.end(); e++) {
+	for (auto e = s.cbegin(); e != s.cend(); e++) {
 		if (*e == edge) {
 			return true;
 		}
@@ -144,10 +149,18 @@ bool present(const EdgeSet &s, const Edge &edge) {
 }
 
 void dump(const EdgeMap &s) {
-	for (EdgeMap::const_iterator e = s.begin(); e != s.end(); e++) {
+	for (auto e = s.begin(); e != s.end(); e++) {
 		std::cout << e->first << ": " << e->second << std::endl;
 	}
 }
+
+template <typename EdgeContainer>
+void dump(const EdgeContainer &s) {
+	for (auto e = s.cbegin(); e != s.cend(); e++) {
+		std::cout << *e << std::endl;
+	}
+}
+
 
 /**
  * Data class is an abstraction for the raw data, including vertices and edges.
