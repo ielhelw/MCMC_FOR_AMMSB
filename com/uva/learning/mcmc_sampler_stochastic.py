@@ -348,7 +348,7 @@ class MCMCSamplerStochastic(Learner):
             if (min(node, neighbor), max(node, neighbor)) in self._network.get_linked_edges():
                 y_ab = 1
             
-            z_ab = self.sample_z_ab_from_edge(y_ab, self._pi[node], self._pi[neighbor], self._beta, self._epsilon, self._K, node, neighbor)
+            z_ab = self.sample_z_ab_from_edge(y_ab, self._pi[node], self._pi[neighbor], self._beta, self._epsilon, self._K)
             z[z_ab] += 1
             
         return z
@@ -422,7 +422,7 @@ class MCMCSamplerStochastic(Learner):
         f.close()
         
     
-    def sample_z_ab_from_edge(self, y, pi_a, pi_b, beta, epsilon, K, node, neighbor):
+    def sample_z_ab_from_edge(self, y, pi_a, pi_b, beta, epsilon, K):
         p = np.zeros(K)
    
         tmp = 0.0

@@ -8,6 +8,6 @@ clean:
 	find com -name '*.pyc' -exec rm {} \;
 	rm -f com/uva/sample_latent_vars.c
 	rm -f com/uva/sample_latent_vars.so
-	rm -f com/uva/sample_latent_vars.c
-	rm -f com/uva/sample_latent_vars.so
+	rm -f com/uva/estimate_phi.c
+	rm -f com/uva/estimate_phi.so
 
