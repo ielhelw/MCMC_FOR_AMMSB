@@ -67,88 +67,11 @@ public:
 
 				std::unordered_map<int, std::vector<double> > latent_vars;
 				std::unordered_map<int, ::size_t> size;
-				std::unordered_map<int, OrderedVertexSet> neighbor_nodes;
 
 	            // iterate through each node in the mini batch.
 				OrderedVertexSet nodes = nodes_in_batch(mini_batch);
 
-				// pre-generate neighbors for each node
-	            for (auto node = nodes.begin();
-					 	node != nodes.end();
-						node++) {
-	                // sample a mini-batch of neighbors
-	            	neighbor_nodes[*node] = sample_neighbor_nodes(num_node_sample, *node);
-	                size[*node] = neighbor_nodes[*node].size();
-	            }
-
-	            // Copy sampled node IDs
-	            std::vector<int> v_nodes(nodes.begin(), nodes.end()); // FIXME: replace OrderedVertexSet with vector
-            	clContext.queue.enqueueWriteBuffer(clNodes, CL_TRUE, 0, v_nodes.size()*sizeof(int), &(v_nodes[0]));
-
-	            // Copy neighbors of *sampled* nodes only
-	            for (auto node = nodes.begin(); node != nodes.end(); ++node) {
-	            	std::vector<int> neighbors(neighbor_nodes[*node].begin(), neighbor_nodes[*node].end());
-	            	clContext.queue.enqueueWriteBuffer(clNodesNeighbors, CL_TRUE,
-	            			*node * num_node_sample * sizeof(cl_int),
-	            			num_node_sample * sizeof(cl_int),
-	            			&(neighbors[0]));
-	            }
-
-	            // Copy pi
-	            for (unsigned int i = 0; i < pi.size(); ++i) {
-	            	clContext.queue.enqueueWriteBuffer(clPi, CL_TRUE,
-	            			i * K * sizeof(double),
-	            			K * sizeof(double),
-	            			&(pi[i][0]));
-	            }
-
-	            // Copy beta
-	            clContext.queue.enqueueWriteBuffer(clBeta, CL_TRUE, 0, K * sizeof(double), &beta[0]);
-
-	            // Generate and copy Randoms
-	            std::vector<double> randoms(nodes.size());
-	            std::generate(randoms.begin(), randoms.end(), std::bind(&Random::FileReaderRandom::random, Random::random));
-	            clContext.queue.enqueueWriteBuffer(clRandom, CL_TRUE, 0, nodes.size()*sizeof(cl_double), &(randoms[0]));
-
-	            sample_latent_vars_kernel.setArg(0, clGraph);
-	            sample_latent_vars_kernel.setArg(1, clNodes);
-	            sample_latent_vars_kernel.setArg(2, (cl_int)nodes.size());
-	            sample_latent_vars_kernel.setArg(3, clNodesNeighbors);
-	            sample_latent_vars_kernel.setArg(4, clPi);
-	            sample_latent_vars_kernel.setArg(5, clBeta);
-	            sample_latent_vars_kernel.setArg(6, (cl_double)epsilon);
-	            sample_latent_vars_kernel.setArg(7, clZ);
-	            sample_latent_vars_kernel.setArg(8, clRandom);
-	            sample_latent_vars_kernel.setArg(9, clScratchP);
-
-	            // FIXME: threading granularity
-	            clContext.queue.enqueueNDRangeKernel(sample_latent_vars_kernel, cl::NullRange, cl::NDRange(4), cl::NDRange(1));
-	            clContext.queue.finish();
-
-	            std::unordered_map<int, std::vector<double>> zMap;
-	            for (auto node = nodes.begin(); node != nodes.end(); ++node) {
-	            	zMap[*node] = std::vector<double>(K, 0);
-	            	clContext.queue.enqueueReadBuffer(clZ, CL_TRUE,
-	            			(*node) * K * sizeof(double),
-	            			K * sizeof(double),
-	            			&(zMap[*node][0]));
-	            	latent_vars[*node] = zMap[*node];
-	            }
-
-#if 0
-	            // execute kernels for all
-	            for (auto node = nodes.begin();
-						node != nodes.end();
-						node++){
-	                // sample latent variables z_ab for each pair of nodes
-	                std::vector<double> z = this->sample_latent_vars(*node, neighbor_nodes[*node], /* FIXME */ false);
-	                if (!std::equal(z.begin(), z.end(), zMap[*node].begin())) {
-	                	abort();
-	                }
-	                // save for a while, in order to update together.
-	                latent_vars[*node] = z;
-				}
-#endif
+				sample_latent_vars_stub(nodes, size, latent_vars);
 
 	            // update pi for each node
 	            for (auto node = nodes.begin();
@@ -178,6 +101,73 @@ public:
 
 
 protected:
+
+	void sample_latent_vars_stub(const OrderedVertexSet& nodes,
+			std::unordered_map<int, ::size_t>& size,
+			std::unordered_map<int, std::vector<double> >& latent_vars) {
+
+		std::unordered_map<int, OrderedVertexSet> neighbor_nodes;
+		// pre-generate neighbors for each node
+		for (auto node = nodes.begin();
+				node != nodes.end();
+				node++) {
+			// sample a mini-batch of neighbors
+			neighbor_nodes[*node] = sample_neighbor_nodes(num_node_sample, *node);
+			size[*node] = neighbor_nodes[*node].size();
+		}
+
+		// Copy sampled node IDs
+		std::vector<int> v_nodes(nodes.begin(), nodes.end()); // FIXME: replace OrderedVertexSet with vector
+		clContext.queue.enqueueWriteBuffer(clNodes, CL_TRUE, 0, v_nodes.size()*sizeof(int), &(v_nodes[0]));
+
+		// Copy neighbors of *sampled* nodes only
+		for (auto node = nodes.begin(); node != nodes.end(); ++node) {
+			std::vector<int> neighbors(neighbor_nodes[*node].begin(), neighbor_nodes[*node].end()); // FIXME: replace OrderedVertexSet with vector
+			clContext.queue.enqueueWriteBuffer(clNodesNeighbors, CL_TRUE,
+					*node * num_node_sample * sizeof(cl_int),
+					num_node_sample * sizeof(cl_int),
+					&(neighbors[0]));
+		}
+
+		// Copy pi
+		for (unsigned int i = 0; i < pi.size(); ++i) {
+			clContext.queue.enqueueWriteBuffer(clPi, CL_TRUE,
+					i * K * sizeof(double),
+					K * sizeof(double),
+					&(pi[i][0]));
+		}
+
+		// Copy beta
+		clContext.queue.enqueueWriteBuffer(clBeta, CL_TRUE, 0, K * sizeof(double), &beta[0]);
+
+		// Generate and copy Randoms
+		std::vector<double> randoms(nodes.size());
+		std::generate(randoms.begin(), randoms.end(), std::bind(&Random::FileReaderRandom::random, Random::random));
+		clContext.queue.enqueueWriteBuffer(clRandom, CL_TRUE, 0, nodes.size()*sizeof(cl_double), &(randoms[0]));
+
+		sample_latent_vars_kernel.setArg(0, clGraph);
+		sample_latent_vars_kernel.setArg(1, clNodes);
+		sample_latent_vars_kernel.setArg(2, (cl_int)nodes.size());
+		sample_latent_vars_kernel.setArg(3, clNodesNeighbors);
+		sample_latent_vars_kernel.setArg(4, clPi);
+		sample_latent_vars_kernel.setArg(5, clBeta);
+		sample_latent_vars_kernel.setArg(6, (cl_double)epsilon);
+		sample_latent_vars_kernel.setArg(7, clZ);
+		sample_latent_vars_kernel.setArg(8, clRandom);
+		sample_latent_vars_kernel.setArg(9, clScratchP);
+
+		// FIXME: threading granularity
+		clContext.queue.enqueueNDRangeKernel(sample_latent_vars_kernel, cl::NullRange, cl::NDRange(4), cl::NDRange(1));
+		clContext.queue.finish();
+
+		for (auto node = nodes.begin(); node != nodes.end(); ++node) {
+			latent_vars[*node] = std::vector<double>(K, 0);
+			clContext.queue.enqueueReadBuffer(clZ, CL_TRUE,
+					(*node) * K * sizeof(double),
+					K * sizeof(double),
+					&(latent_vars[*node][0]));
+		}
+	}
 
 	void init_graph() {
 		const int h_edges_size = 2 * network.get_num_linked_edges();

@@ -143,19 +143,7 @@ public:
             // iterate through each node in the mini batch.
 			OrderedVertexSet nodes = nodes_in_batch(mini_batch);
 
-			bool first = true;
-            for (auto node = nodes.begin();
-				 	node != nodes.end();
-					node++) {
-                // sample a mini-batch of neighbors
-                OrderedVertexSet neighbor_nodes = sample_neighbor_nodes(num_node_sample, *node);
-                size[*node] = neighbor_nodes.size();
-                // sample latent variables z_ab for each pair of nodes
-                std::vector<double> z = this->sample_latent_vars(*node, neighbor_nodes, first);
-                // save for a while, in order to update together.
-                latent_vars[*node] = z;
-				first = false;
-			}
+			sample_latent_vars_stub(nodes, size, latent_vars);
 
             // update pi for each node
             for (auto node = nodes.begin();
@@ -200,6 +188,24 @@ public:
 
 
 protected:
+
+    void sample_latent_vars_stub(const OrderedVertexSet& nodes,
+    			std::unordered_map<int, ::size_t>& size,
+    			std::unordered_map<int, std::vector<double> >& latent_vars) {
+    	bool first = true;
+		for (auto node = nodes.begin();
+				node != nodes.end();
+				node++) {
+			// sample a mini-batch of neighbors
+			OrderedVertexSet neighbor_nodes = sample_neighbor_nodes(num_node_sample, *node);
+			size[*node] = neighbor_nodes.size();
+			// sample latent variables z_ab for each pair of nodes
+			std::vector<double> z = this->sample_latent_vars(*node, neighbor_nodes, first);
+			// save for a while, in order to update together.
+			latent_vars[*node] = z;
+			first = false;
+		}
+    }
 
 #if 0
     def __update_pi1(self, mini_batch, scale):

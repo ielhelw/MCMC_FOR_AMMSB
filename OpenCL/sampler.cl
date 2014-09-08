@@ -100,7 +100,7 @@ kernel void sample_latent_vars(
 				pi,
 				beta,
 				epsilon,
-				Z + nodes[i] * K,
+				Z + node * K,
 				random[i],
 				_p);
 	}
