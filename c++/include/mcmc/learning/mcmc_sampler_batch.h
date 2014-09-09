@@ -16,8 +16,6 @@
 namespace mcmc {
 namespace learning {
 
-// typedef std::set<int>	NodeSet;
-typedef std::unordered_set<int>	NodeSet;
 
 template <typename T>
 class MCMCMyOp {
@@ -77,13 +75,15 @@ public:
 	}
 
 
-	// FIXME make NodeSet a result parameter
-    NodeSet sample_neighbor_nodes_batch(int node) const {
-        NodeSet neighbor_nodes;
+	// FIXME make VertexSet a result parameter
+    OrderedVertexSet sample_neighbor_nodes_batch(int node) const {
+        OrderedVertexSet neighbor_nodes;
 		for (int i = 0; i < (int)N; i++) {
 			Edge edge(std::min(node, i), std::max(node, i));
-			if (network.get_held_out_set().find(edge) == network.get_held_out_set().end() &&
-					network.get_test_set().find(edge) == network.get_test_set().end()) {
+			if (! edge.in(network.get_held_out_set()) && ! edge.in(network.get_test_set())) {
+				if (false && i == node) {
+					std::cerr << "Ooppssss.... is a self-cycle OK? " << i << std::endl;
+				}
                 neighbor_nodes.insert(i);
 			}
 		}
@@ -95,7 +95,7 @@ public:
 	/**
 	 * update pi for current node i.
 	 */
-    void update_pi_for_node(::size_t i, const std::vector<double> &z, std::vector<std::vector<double> > *phi_star, ::size_t n) const {
+    void update_pi_for_node(::size_t i, const std::vector<int> &z, std::vector<std::vector<double> > *phi_star, ::size_t n) const {
         // update gamma, only update node in the grad
 		double eps_t;
 
@@ -106,13 +106,13 @@ public:
 		}
 
         double phi_i_sum = np::sum(phi[i]);
-		std::vector<double> noise = Random::random->randn(K);                                 // random noise.
+		std::vector<double> noise = Random::random->randn(K);		// random noise.
 
         // get the gradients
 		// grads = [-n * 1/phi_i_sum * j for j in np.ones(self._K)]
-		std::vector<double> grads(K, -n / phi_i_sum);		// Hard to grasp... RFHH
+		std::vector<double> grads(K, -(int)n / phi_i_sum);		// Hard to grasp... RFHH
         for (::size_t k = 0; k < K; k++) {
-            grads[k] += 1 / phi[i][k] * z[k];
+            grads[k] += 1.0 / phi[i][k] * z[k];
 		}
 
         // update the phi
@@ -218,6 +218,7 @@ public:
 		 * Returns the community index. If it falls into the case that z_ab!=z_ba, then return -1
          */
 		std::vector<double> p(K + 1);
+		// FIXME pow for selecting after y = 0 or 1
 		for (::size_t k = 0; k < K; k++) {
             p[k] = std::pow(beta[k], y) * pow(1-beta[k], 1-y) * pi_a[k] * pi_b[k];
 		}
@@ -242,13 +243,13 @@ public:
 	}
 
 
-	std::vector<double> sample_latent_vars(int node, const NodeSet &neighbor_nodes) const {
+	std::vector<int> sample_latent_vars(int node, const OrderedVertexSet &neighbor_nodes) const {
         /**
 		 * given a node and its neighbors (either linked or non-linked), return the latent value
 		 * z_ab for each pair (node, neighbor_nodes[i].
          */
-		std::vector<double> z(K, 0.0);
-        for (NodeSet::const_iterator neighbor = neighbor_nodes.begin();
+		std::vector<int> z(K, 0);
+        for (auto neighbor = neighbor_nodes.begin();
 			 	neighbor != neighbor_nodes.end();
 				neighbor++) {
             int y_ab = 0;      // observation
@@ -274,7 +275,7 @@ public:
         while (step_count < max_iteration && !is_converged()) {
             //print "step: " + str(self._step_count)
             double ppx_score = cal_perplexity_held_out();
-			std::cout << "Perplexity " << ppx_score << std::endl;
+			std::cout << std::fixed << std::setprecision(12) << "perplexity for held out set: " << ppx_score << std::endl;
             ppxs_held_out.push_back(ppx_score);
 
 			std::vector<std::vector<double> > phi_star(pi);
@@ -282,12 +283,12 @@ public:
             for (::size_t i = 0; i < N; i++) {
                 // update parameter for pi_i
                 //print "updating: " + str(i)
-                NodeSet neighbor_nodes = sample_neighbor_nodes_batch(i);
-				std::vector<double> z = sample_latent_vars(i, neighbor_nodes);
+                auto neighbor_nodes = sample_neighbor_nodes_batch(i);
+				std::vector<int> z = sample_latent_vars(i, neighbor_nodes);
                 update_pi_for_node(i, z, &phi_star, neighbor_nodes.size());
 			}
 
-            phi = phi_star;
+			np::copy(&phi, phi_star);
 			np::row_normalize(&pi, phi);
 
             // update beta

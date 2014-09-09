@@ -57,14 +57,14 @@ def main():
     # data = DataFactory.get_data("relativity")
     network = Network(data, 0.1)
     
-    if False:
+    if True:
 	    print "start MCMC batch"
 	    ppx_mcmc = []
 	    sampler = MCMCSamplerBatch(args, network)
 	    #work_mcmc(sampler, ppx_mcmc)
 	    sampler.run()
         
-    if True:
+    if False:
 	    print "start MCMC stochastic"
 	    ppx_mcmc = []
 	    sampler = MCMCSamplerStochastic(args, network)

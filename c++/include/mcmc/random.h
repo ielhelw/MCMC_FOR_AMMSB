@@ -177,8 +177,8 @@ public:
 			}
 		}
 
+		std::cerr << "Read random.randn[" << K << "]" << std::endl;
 		if (false) {
-			std::cerr << "Read random.randn[" << K << "]" << std::endl;
 			for (::size_t k = 0; k < K; k++) {
 				std::cerr << r[k] << " ";
 			}
