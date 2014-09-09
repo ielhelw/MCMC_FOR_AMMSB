@@ -6,6 +6,7 @@
 #include "mcmc/preprocess/data_factory.h"
 
 #include "mcmc/learning/mcmc_sampler_stochastic.h"
+#include "mcmc/learning/mcmc_clsampler_stochastic.h"
 #include "mcmc/learning/mcmc_sampler_batch.h"
 #include "mcmc/learning/variational_inference_stochastic.h"
 #include "mcmc/learning/variational_inference_batch.h"

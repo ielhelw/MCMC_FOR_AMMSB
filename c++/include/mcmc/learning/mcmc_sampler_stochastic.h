@@ -382,7 +382,7 @@ protected:
 
             z[*edge] = sample_z_for_each_edge(y_ab, pi[edge->first], pi[edge->second], \
 											  beta, K);
-			std::cerr << "z[" << *edge << "] " << z[*edge] << std::endl;
+//			std::cerr << "z[" << *edge << "] " << z[*edge] << std::endl;
 		}
 
         return z;
@@ -443,7 +443,7 @@ protected:
         z_ab for each pair (node, neighbor_nodes[i].
          */
 		std::vector<double> z(K, 0.0);
-		std::cerr << "node " << node << " " << neighbor_nodes.size() << std::endl;
+//		std::cerr << "node " << node << " " << neighbor_nodes.size() << std::endl;
         for (auto neighbor = neighbor_nodes.begin();
 			 	neighbor != neighbor_nodes.end();
 				neighbor++) {
@@ -455,7 +455,7 @@ protected:
 
             int z_ab = this->sample_z_ab_from_edge(y_ab, pi[node], pi[*neighbor], beta, epsilon, K, verbose);
 			if (verbose) {
-				std::cerr << *neighbor << " " << z_ab << std::endl;
+//				std::cerr << *neighbor << " " << z_ab << std::endl;
 			}
             z[z_ab] += 1;
 		}
@@ -505,7 +505,7 @@ protected:
 					neighborId++) {
 				if (p < 0) {
 					if (p != 0) {
-						std::cerr << __func__ << ": Are you sure p < 0 is a good idea?" << std::endl;
+//						std::cerr << __func__ << ": Are you sure p < 0 is a good idea?" << std::endl;
 					}
 					break;
 				}

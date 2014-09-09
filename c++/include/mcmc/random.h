@@ -164,11 +164,11 @@ public:
 		}
 
 		if (K > 2) {
-			std::cerr << "Read random.randn[" << K << "]" << std::endl;
+			// std::cerr << "Read random.randn[" << K << "]" << std::endl;
 			for (::size_t k = 0; k < K; k++) {
-				std::cerr << r[k] << " ";
+				// std::cerr << r[k] << " ";
 			}
-			std::cerr << std::endl;
+			// std::cerr << std::endl;
 		}
 
 		return r;
@@ -176,7 +176,7 @@ public:
 
 
 	std::vector<std::vector<double> > randn(::size_t K, ::size_t N) {
-		std::cerr << "Read random.randn[" << K << "," << N << "]" << std::endl;
+		// std::cerr << "Read random.randn[" << K << "," << N << "]" << std::endl;
 		std::vector<std::vector<double> > r(K);
 		for (::size_t k = 0; k < K; k++) {
 			r[k] = randn(N);
@@ -196,7 +196,7 @@ public:
 			throw IOException("end of line");
 		}
 
-		std::cerr << "Read random.random " << r << std::endl;
+		// std::cerr << "Read random.random " << r << std::endl;
 		return r;
 	}
 
@@ -211,7 +211,7 @@ public:
 			throw IOException("end of line");
 		}
 
-		std::cerr << "Read random.randint " << r << std::endl;
+		// std::cerr << "Read random.randint " << r << std::endl;
 		return r;
 	}
 
@@ -229,7 +229,7 @@ public:
 			result->insert(key);
 		}
 
-		std::cerr << "Read " << count << " random.sample<List> values" << std::endl;
+		// std::cerr << "Read " << count << " random.sample<List> values" << std::endl;
 		return result;
 	}
 
@@ -245,7 +245,7 @@ public:
 		std::string line;
 		getline(sampleReader, line);
 		std::istringstream is(line);
-		// std::cerr << "Read vector<something>[" << count << "] sample; input line '" << is.str() << "'" << std::endl;
+		// // std::cerr << "Read vector<something>[" << count << "] sample; input line '" << is.str() << "'" << std::endl;
 
 		std::vector<Element> *result = new std::vector<Element>();
 
@@ -257,7 +257,7 @@ public:
 			}
 			result->push_back(r);
 		}
-		std::cerr << "Read " << count << " random.sample<vector> values" << std::endl;
+		// std::cerr << "Read " << count << " random.sample<vector> values" << std::endl;
 
 		return result;
 	}
@@ -278,7 +278,7 @@ public:
 				}
 			}
 		}
-		std::cerr << "Read random.gamma[" << n1 << "x" << n2 << "] values" << std::endl;
+		// std::cerr << "Read random.gamma[" << n1 << "x" << n2 << "] values" << std::endl;
 
 		return a;
 	}

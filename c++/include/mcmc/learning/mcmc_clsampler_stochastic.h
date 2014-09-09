@@ -19,7 +19,7 @@ public:
 
 		std::ostringstream opts;
 		opts << "-IOpenCL/include"
-			 << " -DNEIGHBOR_SAMPLE_SIZE=" << num_node_sample
+			 << " -DNEIGHBOR_SAMPLE_SIZE=" << real_num_node_sample()
 			 << " -DK=" << K
 			 << " -DMAX_NODE_ID=" << N;
 		progOpts = opts.str();
@@ -39,7 +39,7 @@ public:
 				// FIXME: better estimate for #nodes in mini batch
 				);
 		clNodesNeighbors = cl::Buffer(clContext.context, CL_MEM_READ_ONLY,
-				N * num_node_sample * sizeof(cl_int) // #total_nodes x #neighbors_per_node
+				N * real_num_node_sample() * sizeof(cl_int) // #total_nodes x #neighbors_per_node
 				// FIXME: we need space for all N elements. Space should be limited to #nodes_in_mini_batch * num_node_sample (DEPENDS ON ABOVE)
 				);
 		clPi = cl::Buffer(clContext.context, CL_MEM_READ_WRITE,
@@ -145,6 +145,10 @@ protected:
 		}
 	}
 
+	::size_t real_num_node_sample() const {
+		return num_node_sample + 1;
+	}
+
 	void sample_latent_vars_stub(const OrderedVertexSet& nodes,
 			std::unordered_map<int, ::size_t>& size,
 			std::unordered_map<int, std::vector<double> >& latent_vars) {
@@ -167,8 +171,8 @@ protected:
 		for (auto node = nodes.begin(); node != nodes.end(); ++node) {
 			std::vector<int> neighbors(neighbor_nodes[*node].begin(), neighbor_nodes[*node].end()); // FIXME: replace OrderedVertexSet with vector
 			clContext.queue.enqueueWriteBuffer(clNodesNeighbors, CL_TRUE,
-					*node * num_node_sample * sizeof(cl_int),
-					num_node_sample * sizeof(cl_int),
+					*node * real_num_node_sample() * sizeof(cl_int),
+					real_num_node_sample() * sizeof(cl_int),
 					&(neighbors[0]));
 		}
 
