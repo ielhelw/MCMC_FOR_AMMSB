@@ -55,7 +55,7 @@ public:
 				N * K * sizeof(cl_int) // #total_nodes x #K
 				);
 		clRandom = cl::Buffer(clContext.context, CL_MEM_READ_WRITE,
-				N * K * sizeof(cl_double) // at most #total_nodes
+				N * std::max(K, real_num_node_sample()) * sizeof(cl_double) // at most #total_nodes
 				);
 		clScratch = cl::Buffer(clContext.context, CL_MEM_READ_WRITE,
 				N * K * sizeof(cl_double) // #total_nodes x #K
@@ -107,7 +107,7 @@ public:
 
 
 protected:
-/*
+#if 0
 	void update_pi_for_node_stub(OrderedVertexSet& nodes,
 			std::unordered_map<int, ::size_t>& size,
 			std::unordered_map<int, std::vector<int> >& latent_vars,
@@ -151,7 +151,7 @@ protected:
 					&(pi[*node][0]));
 		}
 	}
-*/
+#endif
 	::size_t real_num_node_sample() const {
 		return num_node_sample + 1;
 	}
@@ -195,9 +195,9 @@ protected:
 		clContext.queue.enqueueWriteBuffer(clBeta, CL_TRUE, 0, K * sizeof(double), &beta[0]);
 
 		// Generate and copy Randoms
-		std::vector<double> randoms(nodes.size());
+		std::vector<double> randoms(nodes.size() * real_num_node_sample());
 		std::generate(randoms.begin(), randoms.end(), std::bind(&Random::FileReaderRandom::random, Random::random));
-		clContext.queue.enqueueWriteBuffer(clRandom, CL_TRUE, 0, nodes.size()*sizeof(cl_double), &(randoms[0]));
+		clContext.queue.enqueueWriteBuffer(clRandom, CL_TRUE, 0, nodes.size() * real_num_node_sample() * sizeof(cl_double), &(randoms[0]));
 
 		sample_latent_vars_kernel.setArg(0, clGraph);
 		sample_latent_vars_kernel.setArg(1, clNodes);
@@ -211,7 +211,7 @@ protected:
 		sample_latent_vars_kernel.setArg(9, clScratch);
 
 		// FIXME: threading granularity
-		clContext.queue.enqueueNDRangeKernel(sample_latent_vars_kernel, cl::NullRange, cl::NDRange(1), cl::NDRange(1));
+		clContext.queue.enqueueNDRangeKernel(sample_latent_vars_kernel, cl::NullRange, cl::NDRange(4), cl::NDRange(1));
 		clContext.queue.finish();
 
 		for (auto node = nodes.begin(); node != nodes.end(); ++node) {

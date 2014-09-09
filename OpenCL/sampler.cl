@@ -12,7 +12,7 @@
 #error "Need definition of NEIGHBOR_SAMPLE_SIZE"
 #endif
 
-#pragma OPENCL EXTENSION cl_khr_fp64: enable
+#pragma OPENCL EXTENSION cl_khr_fp64 : enable
 
 #define NODE_ID_VALID(NID) ((NID) >= 0 && (NID) < MAX_NODE_ID)
 
@@ -62,7 +62,7 @@ void sample_latent_vars_of(
 		global const double *beta,
 		const double epsilon,
 		global int *z, /* K elements */
-		const double random,
+		global const double *random,
 		global double *p) {
 	for (int i = 0; i < K; ++i) z[i] = 0;
 	for (int i = 0; i < NEIGHBOR_SAMPLE_SIZE; ++i) {
@@ -71,7 +71,7 @@ void sample_latent_vars_of(
 		int y_ab = graph_has_peer(g, node, neighbor);
 		int z_ab = sample_z_ab_from_edge(
 				pi + node * K, pi + neighbor * K,
-				beta, epsilon, y_ab, random, p);
+				beta, epsilon, y_ab, random[i], p);
 		z[z_ab] += 1;
 	}
 }
@@ -102,7 +102,7 @@ kernel void sample_latent_vars(
 				beta,
 				epsilon,
 				Z + node * K,
-				random[i],
+				random + i * NEIGHBOR_SAMPLE_SIZE,
 				_p);
 	}
 }
