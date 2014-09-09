@@ -43,7 +43,7 @@ def main():
     
     # parameters for step size
     parser.add_argument('--a', type=float, default=0.01, required=False)
-    parser.add_argument('--b', type=float, default=1024, required=False)
+    parser.add_argument('--b', type=float, default=1024.0, required=False)
     parser.add_argument('--c', type=float, default=0.55, required=False)
     
     parser.add_argument('--num_updates', type=int, default=1000, required=False)

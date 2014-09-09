@@ -43,67 +43,74 @@ public:
 				// FIXME: we need space for all N elements. Space should be limited to #nodes_in_mini_batch * num_node_sample (DEPENDS ON ABOVE)
 				);
 		clPi = cl::Buffer(clContext.context, CL_MEM_READ_WRITE,
-				N * K * sizeof(double) // #total_nodes x #K
+				N * K * sizeof(cl_double) // #total_nodes x #K
 				);
 		clPhi = cl::Buffer(clContext.context, CL_MEM_READ_WRITE,
-				N * K * sizeof(double) // #total_nodes x #K
+				N * K * sizeof(cl_double) // #total_nodes x #K
 				);
 		clBeta = cl::Buffer(clContext.context, CL_MEM_READ_WRITE,
-				K * sizeof(double) // #total_nodes x #K
+				K * sizeof(cl_double) // #total_nodes x #K
 				);
 		clZ = cl::Buffer(clContext.context, CL_MEM_READ_WRITE,
-				N * K * sizeof(double) // #total_nodes x #K
+				N * K * sizeof(cl_int) // #total_nodes x #K
 				);
 		clRandom = cl::Buffer(clContext.context, CL_MEM_READ_WRITE,
-				N * K * sizeof(double) // at most #total_nodes
+				N * K * sizeof(cl_double) // at most #total_nodes
 				);
 		clScratch = cl::Buffer(clContext.context, CL_MEM_READ_WRITE,
-				N * K * sizeof(double) // #total_nodes x #K
+				N * K * sizeof(cl_double) // #total_nodes x #K
 				);
 	}
 
 	virtual void run() {
 	        /** run mini-batch based MCMC sampler, based on the sungjin's note */
-	        while (step_count < max_iteration && ! is_converged()) {
-				EdgeSample edgeSample = network.sample_mini_batch(mini_batch_size, strategy::STRATIFIED_RANDOM_NODE);
-				const EdgeSet &mini_batch = *edgeSample.first;
-				double scale = edgeSample.second;
 
-				std::unordered_map<int, std::vector<double> > latent_vars;
-				std::unordered_map<int, ::size_t> size;
-
-	            // iterate through each node in the mini batch.
-				OrderedVertexSet nodes = nodes_in_batch(mini_batch);
-
-				sample_latent_vars_stub(nodes, size, latent_vars);
-
-				update_pi_for_node_stub(nodes, size, latent_vars, scale);
-
-	            // sample (z_ab, z_ba) for each edge in the mini_batch.
-	            // z is map structure. i.e  z = {(1,10):3, (2,4):-1}
-				EdgeMapZ z = sample_latent_vars2(mini_batch);
-	            update_beta(mini_batch, scale, z);
-
-
-	            if (step_count % 1 == 0) {
-	                double ppx_score = cal_perplexity_held_out();
-					std::cout << "perplexity for hold out set is: " << ppx_score << std::endl;
-	                ppxs_held_out.push_back(ppx_score);
-				}
-
-				std::cerr << "GC mini_batch->first EdgeSet *" << std::endl;
-				delete edgeSample.first;
-
-	            step_count++;
-			}
+		if (step_count % 1 == 0) {
+			double ppx_score = cal_perplexity_held_out();
+			std::cout << std::fixed << std::setprecision(15) << "perplexity for hold out set is: " << ppx_score << std::endl;
+			ppxs_held_out.push_back(ppx_score);
 		}
+
+		while (step_count < max_iteration && ! is_converged()) {
+			EdgeSample edgeSample = network.sample_mini_batch(mini_batch_size, strategy::STRATIFIED_RANDOM_NODE);
+			const OrderedEdgeSet &mini_batch = *edgeSample.first;
+			double scale = edgeSample.second;
+
+			std::unordered_map<int, std::vector<int> > latent_vars;
+			std::unordered_map<int, ::size_t> size;
+
+			// iterate through each node in the mini batch.
+			OrderedVertexSet nodes = nodes_in_batch(mini_batch);
+
+			sample_latent_vars_stub(nodes, size, latent_vars);
+
+			update_pi_for_node_stub(nodes, size, latent_vars, scale);
+
+			// sample (z_ab, z_ba) for each edge in the mini_batch.
+			// z is map structure. i.e  z = {(1,10):3, (2,4):-1}
+			EdgeMapZ z = sample_latent_vars2(mini_batch);
+			update_beta(mini_batch, scale, z);
+
+
+			if (step_count % 1 == 0) {
+				double ppx_score = cal_perplexity_held_out();
+				std::cout << "perplexity for hold out set is: " << ppx_score << std::endl;
+				ppxs_held_out.push_back(ppx_score);
+			}
+
+			std::cerr << "GC mini_batch->first EdgeSet *" << std::endl;
+			delete edgeSample.first;
+
+			step_count++;
+		}
+	}
 
 
 protected:
-
+/*
 	void update_pi_for_node_stub(OrderedVertexSet& nodes,
 			std::unordered_map<int, ::size_t>& size,
-			std::unordered_map<int, std::vector<double> >& latent_vars,
+			std::unordered_map<int, std::vector<int> >& latent_vars,
 			double scale) {
 		// update pi for each node
 		int i = 0;
@@ -144,14 +151,14 @@ protected:
 					&(pi[*node][0]));
 		}
 	}
-
+*/
 	::size_t real_num_node_sample() const {
 		return num_node_sample + 1;
 	}
 
 	void sample_latent_vars_stub(const OrderedVertexSet& nodes,
 			std::unordered_map<int, ::size_t>& size,
-			std::unordered_map<int, std::vector<double> >& latent_vars) {
+			std::unordered_map<int, std::vector<int> >& latent_vars) {
 
 		std::unordered_map<int, OrderedVertexSet> neighbor_nodes;
 		// pre-generate neighbors for each node
@@ -204,14 +211,14 @@ protected:
 		sample_latent_vars_kernel.setArg(9, clScratch);
 
 		// FIXME: threading granularity
-		clContext.queue.enqueueNDRangeKernel(sample_latent_vars_kernel, cl::NullRange, cl::NDRange(4), cl::NDRange(1));
+		clContext.queue.enqueueNDRangeKernel(sample_latent_vars_kernel, cl::NullRange, cl::NDRange(1), cl::NDRange(1));
 		clContext.queue.finish();
 
 		for (auto node = nodes.begin(); node != nodes.end(); ++node) {
-			latent_vars[*node] = std::vector<double>(K, 0);
+			latent_vars[*node] = std::vector<int>(K, 0);
 			clContext.queue.enqueueReadBuffer(clZ, CL_TRUE,
-					(*node) * K * sizeof(double),
-					K * sizeof(double),
+					(*node) * K * sizeof(cl_int),
+					K * sizeof(cl_int),
 					&(latent_vars[*node][0]));
 		}
 	}

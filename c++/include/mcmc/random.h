@@ -7,6 +7,7 @@
 #include <string>
 #include <unordered_set>
 #include <vector>
+#include <list>
 #include <random>
 #include <sstream>
 #include <iostream>
@@ -94,6 +95,19 @@ public:
 	}
 
 
+	template <class Item, class Container>
+	std::list<Item> *sampleList(const Container &list, ::size_t count) {
+		throw UnimplementedException("random::sampleList");
+		return NULL;
+	}
+
+
+	template <class Item>
+	std::list<Item> *sampleList(const std::unordered_set<Item> *list, ::size_t count) {
+		return sampleList(*list, count);
+	}
+
+
 	std::vector<std::vector<double> > gamma(double p1, double p2, ::size_t n1, ::size_t n2) {
 		// std::vector<std::vector<double> > *a = new std::vector<double>(n1, std::vector<double>(n2, 0.0));
 		std::vector<std::vector<double> > a(n1, std::vector<double>(n2));
@@ -163,8 +177,8 @@ public:
 			}
 		}
 
-		if (K > 2) {
-			// std::cerr << "Read random.randn[" << K << "]" << std::endl;
+		if (false) {
+			std::cerr << "Read random.randn[" << K << "]" << std::endl;
 			for (::size_t k = 0; k < K; k++) {
 				// std::cerr << r[k] << " ";
 			}
@@ -196,7 +210,9 @@ public:
 			throw IOException("end of line");
 		}
 
-		// std::cerr << "Read random.random " << r << std::endl;
+		if (false) {
+			std::cerr << "Read random.random " << r << std::endl;
+		}
 		return r;
 	}
 
@@ -260,6 +276,30 @@ public:
 		// std::cerr << "Read " << count << " random.sample<vector> values" << std::endl;
 
 		return result;
+	}
+
+
+	template <class Item>
+	std::list<Item> *sampleList(const std::unordered_set<Item> &list, ::size_t count) {
+		std::string line;
+		auto *result = new std::list<Item>();
+		getline(sampleReader, line);
+
+		std::istringstream is(line);
+
+		for (::size_t i = 0; i < count; i++) {
+			Item key(is);
+			result->push_back(key);
+		}
+
+		std::cerr << "Read " << count << " random.sampleList<> values" << std::endl;
+		return result;
+	}
+
+
+	template <class Item>
+	std::list<Item> *sampleList(const std::unordered_set<Item> *list, ::size_t count) {
+		return sampleList(*list, count);
 	}
 
 

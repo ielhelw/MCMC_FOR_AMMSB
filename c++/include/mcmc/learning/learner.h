@@ -147,19 +147,32 @@ protected:
 		// std::cerr << std::setprecision(15) << "ratio " << link_ratio << " count: link " << link_count << " " << link_likelihood << " non-link " << non_link_count << " " << non_link_likelihood << std::endl;
 
 		// weight each part proportionally.
-		double avg_likelihood1 = link_ratio * (link_likelihood / link_count) + \
-									 (1.0 - link_ratio) * (non_link_likelihood / non_link_count);
 		// avg_likelihood = self._link_ratio*(link_likelihood/link_count) + \
 		//         (1-self._link_ratio)*(non_link_likelihood/non_link_count)
 
 		// direct calculation.
 		double avg_likelihood = (link_likelihood + non_link_likelihood) / (link_count + non_link_count);
-		std::cerr << std::setprecision(15) << avg_likelihood << " " << (link_likelihood / link_count) << " " << link_count << " " << \
-			(non_link_likelihood / non_link_count) << " " << non_link_count << " " << avg_likelihood1 << std::endl;
-		// std::cerr << "perplexity score is: " << exp(-avg_likelihood) << std::endl;
+		if (false) {
+			double avg_likelihood1 = link_ratio * (link_likelihood / link_count) + \
+										 (1.0 - link_ratio) * (non_link_likelihood / non_link_count);
+			std::cerr << std::setprecision(15) << avg_likelihood << " " << (link_likelihood / link_count) << " " << link_count << " " << \
+				(non_link_likelihood / non_link_count) << " " << non_link_count << " " << avg_likelihood1 << std::endl;
+			std::cerr << "perplexity score is: " << exp(-avg_likelihood) << std::endl;
+		}
 
 		// return std::exp(-avg_likelihood);
 		return (-avg_likelihood);
+	}
+
+
+	template <typename T>
+	static void dump(const std::vector<T> &a, ::size_t n, const std::string &name = "") {
+		n = std::min(n, a.size());
+		std::cerr << name << "[0:" << n << "] ";
+		for (auto i = a.begin(); i < a.begin() + n; i++) {
+			std::cerr << std::setprecision(15) << *i << " ";
+		}
+		std::cerr << std::endl;
 	}
 
 

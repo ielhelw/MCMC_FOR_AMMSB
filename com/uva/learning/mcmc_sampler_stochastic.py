@@ -102,6 +102,12 @@ class MCMCSamplerStochastic(Learner):
             
     def run(self):
         """ run mini-batch based MCMC sampler, based on the sungjin's note """
+            
+        if True and self._step_count % 1 == 0:
+            ppx_score = self._cal_perplexity_held_out()
+            print "perplexity for hold out set is: "  + str(ppx_score)
+            self._ppxs_held_out.append(ppx_score)
+
         while self._step_count < self._max_iteration and not self._is_converged():
            
             (mini_batch, scale) = self._network.sample_mini_batch(self._mini_batch_size, "stratified-random-node")
@@ -112,7 +118,6 @@ class MCMCSamplerStochastic(Learner):
             nodes_in_mini_batch.sort()  # to be able to replay from C++
 
             # iterate through each node in the mini batch. 
-            first = True
             for node in nodes_in_mini_batch:
                 # sample a mini-batch of neighbors
                 neighbor_nodes = self.__sample_neighbor_nodes(self.__num_node_sample, node)                
@@ -120,10 +125,9 @@ class MCMCSamplerStochastic(Learner):
                 neighbor_list.sort()    # to be able to replay from C++
                 size[node] = len(neighbor_list)
                 # sample latent variables z_ab for each pair of nodes
-                z = self.__sample_latent_vars(node, neighbor_list, first)
+                z = self.__sample_latent_vars(node, neighbor_list)
                 # save for a while, in order to update together. 
                 latent_vars[node] = z
-                first = False
                 
             # update pi for each node
             for node in nodes_in_mini_batch:
@@ -213,7 +217,9 @@ class MCMCSamplerStochastic(Learner):
         sums = np.sum(self.__theta,1)                                 
         noise = random.randn(self._K, 2)                          # random noise. 
         
-        for  edge in z.keys():
+        z_keys = list(z.keys())         # to be able to replay from C++
+        z_keys.sort()
+        for  edge in z_keys:
             y_ab = 0
             if edge in self._network.get_linked_edges():
                 y_ab = 1
@@ -247,6 +253,9 @@ class MCMCSamplerStochastic(Learner):
         #if self.stepsize_switch == False:
         #    eps_t = (1024+self._step_count)**(-0.5)
         #else:
+        # FIXME RFHH make SURE self.__b is initialized to a float. As published,
+        # it is an int = 1024, which results in integer step_count / b so
+        # eps_t always equals self.__a.
         eps_t  = self.__a*((1 + self._step_count/self.__b)**-self.__c)                                                                                                                                                                                                                                                                                                                          
     
         phi_star = copy.copy(self.__phi[i])                              # updated \phi
@@ -277,14 +286,15 @@ class MCMCSamplerStochastic(Learner):
         within the sample_z_for_each_edge function. 
         '''
         z = {}  
-        for edge in mini_batch:
+        mini_batch_list = list(mini_batch)  # to be able to replay from C++
+        mini_batch_list.sort()
+        for edge in mini_batch_list:
             y_ab = 0
             if edge in self._network.get_linked_edges():
                 y_ab = 1
             
             z[edge] = self.__sample_z_for_each_edge(y_ab, self._pi[edge[0]], self._pi[edge[1]], \
                                           self._beta, self._K)            
-            print "z[", edge, "]", z[edge]
 
         return z
     
@@ -308,6 +318,7 @@ class MCMCSamplerStochastic(Learner):
         p = np.zeros(K+1)
         for k in range(0,K):
             p[k] = beta[k]**y*(1-beta[k])**(1-y)*pi_a[k]*pi_b[k]
+        # FIXME: why set p[K] if it is overwritten below? RFHH
         p[K] = 1 - np.sum(p[0:K])
          
         # sample community based on probability distribution p.
@@ -316,7 +327,8 @@ class MCMCSamplerStochastic(Learner):
         #bounds = np.cumsum(p)
         # FIXME: replace p[K] w/ p[K-1] here. Why? RFHH
         # location = random.random() * p[K]
-        location = random.random() * p[K-1]
+        r = random.random()
+        location = r * p[K-1]
         
         # get the index of bounds that containing location. 
         for i in range(0, K):
@@ -325,21 +337,18 @@ class MCMCSamplerStochastic(Learner):
         return -1
     
             
-    def __sample_latent_vars(self, node, neighbor_nodes, verbose):
+    def __sample_latent_vars(self, node, neighbor_nodes):
         '''
         given a node and its neighbors (either linked or non-linked), return the latent value
         z_ab for each pair (node, neighbor_nodes[i]. 
         '''
         z = np.zeros(self._K)  
-        print "node", node, " ", len(neighbor_nodes)
         for neighbor in neighbor_nodes:
             y_ab = 0      # observation
             if (min(node, neighbor), max(node, neighbor)) in self._network.get_linked_edges():
                 y_ab = 1
             
-            z_ab = self.sample_z_ab_from_edge(y_ab, self._pi[node], self._pi[neighbor], self._beta, self._epsilon, self._K, verbose)           
-	    if verbose:
-	    	print neighbor, " ", z_ab
+            z_ab = self.sample_z_ab_from_edge(y_ab, self._pi[node], self._pi[neighbor], self._beta, self._epsilon, self._K)
             z[z_ab] += 1
             
         return z
@@ -413,7 +422,7 @@ class MCMCSamplerStochastic(Learner):
         f.close()
         
     
-    def sample_z_ab_from_edge(self, y, pi_a, pi_b, beta, epsilon, K, verbose):
+    def sample_z_ab_from_edge(self, y, pi_a, pi_b, beta, epsilon, K):
         p = np.zeros(K)
    
         tmp = 0.0
@@ -427,9 +436,8 @@ class MCMCSamplerStochastic(Learner):
         for k in range(1,K):
             p[k] += p[k-1]
     
-        location = random.random() * p[K-1]
-        if verbose:
-            print "location ", location
+        r = random.random()
+        location = r * p[K-1]
         # get the index of bounds that containing location. 
         for i in range(0, K):
             if location <= p[i]:

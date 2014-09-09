@@ -44,8 +44,9 @@ inline int sample_z_ab_from_edge(
 		) {
 	p[0] = sample_z_ab_from_edge_expr(0);
 	for (int i = 1; i < K; ++i) {
-		p[i] = sample_z_ab_from_edge_expr(i);
+		p[i] = p[i-1] + sample_z_ab_from_edge_expr(i);
 	}
+
 	double location = random * p[K-1];
 	for (int i = 0; i < K; ++i) {
 		if (location <= p[i]) return i;
@@ -60,7 +61,7 @@ void sample_latent_vars_of(
 		global const double *pi,
 		global const double *beta,
 		const double epsilon,
-		global double *z, /* K elements */
+		global int *z, /* K elements */
 		const double random,
 		global double *p) {
 	for (int i = 0; i < K; ++i) z[i] = 0;
@@ -83,7 +84,7 @@ kernel void sample_latent_vars(
 		global const double *pi,// (#total_nodes, K)
 		global const double *beta,// (#K)
 		const double epsilon,
-		global double *Z, /* (#total_nodes, K) */
+		global int *Z, /* (#total_nodes, K) */
 		global const double *random,
 		global double *p// (#nodes, K)
 ) {
@@ -110,7 +111,7 @@ void update_pi_for_node_(
 		int node,
 		global double *pi,// #K
 		global double *phi,// #K
-		global double *z, // #K
+		global int *z, // #K
 		global double *noise, // #K
 		global double *grad, // #K
 		double alpha,
@@ -144,7 +145,7 @@ kernel void update_pi_for_node(
 		int N, // #nodes
 		global double *pi,// (#total_nodes, K)
 		global double *phi,// (#total_nodes, K)
-		global double *Z, // (#total_nodes, K)
+		global int *Z, // (#total_nodes, K)
 		global double *noise, // (#nodes, K)
 		global double *grad, // (#nodes, K)
 		double alpha,

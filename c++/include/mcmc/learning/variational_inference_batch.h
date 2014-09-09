@@ -293,8 +293,9 @@ protected:
 #endif
 
 protected:
+	// replicated in both variational_inference_*
 	std::vector<std::vector<double> > lamda;	// variational parameters for beta
-	std::vector<std::vector<double> > gamma;			// variational parameters for pi
+	std::vector<std::vector<double> > gamma;	// variational parameters for pi
 	double kappa;
 	double tao;
 

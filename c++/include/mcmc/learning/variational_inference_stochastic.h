@@ -118,7 +118,7 @@ public:
 		while (step_count < max_iteration and !is_converged()) {
 			// (mini_batch, scale) = network.sample_mini_batch(mini_batch_size, "stratified-random-node")
 			EdgeSample edgeSample = network.sample_mini_batch(mini_batch_size, strategy::STRATIFIED_RANDOM_NODE);
-			const EdgeSet &mini_batch = *edgeSample.first;
+			const OrderedEdgeSet &mini_batch = *edgeSample.first;
 			double scale = edgeSample.second;
 
 			/*
@@ -171,13 +171,11 @@ public:
 
 
 protected:
-	void sample_latent_vars_for_edges(PhiMap *phi, const EdgeSet &mini_batch) const {
+	void sample_latent_vars_for_edges(PhiMap *phi, const OrderedEdgeSet &mini_batch) const {
 		if (false) {
 			std::cerr << "Minibatch size " << mini_batch.size() << std::endl;
 		}
-		for (EdgeSet::const_iterator edge = mini_batch.begin();
-				 edge != mini_batch.end();
-				 edge++) {
+		for (auto edge = mini_batch.begin(); edge != mini_batch.end(); edge++) {
 			int a = edge->first;
 			int b = edge->second;
 			//estimate_phi_for_edge(edge, phi)  // this can be done in parallel.
@@ -227,15 +225,13 @@ protected:
 	}
 
 
-	void update_gamma_and_lamda(PhiMap &phi, const EdgeSet &mini_batch, double scale) {
+	void update_gamma_and_lamda(PhiMap &phi, const OrderedEdgeSet &mini_batch, double scale) {
 
 		// calculate the gradient for gamma
 		std::vector<std::vector<double> > grad_lamda(K, std::vector<double>(2, 0.0));
 		std::unordered_map<int, std::vector<double> > grad_gamma(N);	// ie. grad[a] = array[] which is K dimensional vector
 		std::unordered_map<int, ::size_t> counter;	// used for scaling
-		for (EdgeSet::const_iterator edge = mini_batch.begin();
-				 edge != mini_batch.end();
-				 edge++) {
+		for (auto edge = mini_batch.begin(); edge != mini_batch.end(); edge++) {
 			/*
 			 * calculate the gradient for gamma
 			 */
@@ -473,6 +469,7 @@ protected:
 
 
 protected:
+	// replicated in both variational_inference_*
 	std::vector<std::vector<double> > lamda;	// variational parameters for beta
 	std::vector<std::vector<double> > gamma;	// variational parameters for pi
 	double kappa;
