@@ -107,7 +107,7 @@ public:
 
 
 protected:
-#if 0
+
 	void update_pi_for_node_stub(OrderedVertexSet& nodes,
 			std::unordered_map<int, ::size_t>& size,
 			std::unordered_map<int, std::vector<int> >& latent_vars,
@@ -122,6 +122,10 @@ protected:
 					i * K * sizeof(cl_double),
 					K * sizeof(cl_double),
 					&(noise[0]));
+			clContext.queue.enqueueWriteBuffer(clPhi, CL_TRUE,
+					*node * K * sizeof(cl_double),
+					K * sizeof(cl_double),
+					&(phi[*node][0]));
 		}
 		update_pi_kernel.setArg(0, clNodes);
 		update_pi_kernel.setArg(1, (cl_int)nodes.size());
@@ -146,12 +150,16 @@ protected:
 				node != nodes.end();
 				++node) {
 			clContext.queue.enqueueReadBuffer(clPi, CL_TRUE,
-					*node * K * sizeof(double),
-					K * sizeof(double),
+					*node * K * sizeof(cl_double),
+					K * sizeof(cl_double),
 					&(pi[*node][0]));
+			clContext.queue.enqueueReadBuffer(clPhi, CL_TRUE,
+					*node * K * sizeof(cl_double),
+					K * sizeof(cl_double),
+					&(phi[*node][0]));
 		}
 	}
-#endif
+
 	::size_t real_num_node_sample() const {
 		return num_node_sample + 1;
 	}

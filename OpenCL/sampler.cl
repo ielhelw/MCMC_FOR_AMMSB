@@ -155,10 +155,11 @@ kernel void update_pi_for_node(
 	size_t gid = get_global_id(0);
 	size_t gsize = get_global_size(0);
 	for (int i = gid; i < N; i += gsize) {
-		update_pi_for_node_(nodes[i],
-				pi + nodes[i] * K,
-				phi + nodes[i] * K,
-				Z + nodes[i] * K,
+		int node = nodes[i];
+		update_pi_for_node_(node,
+				pi + node * K,
+				phi + node * K,
+				Z + node * K,
 				noise + i * K,
 				grad + i * K,
 				alpha, a, b, c, step_count, total_node_count);
