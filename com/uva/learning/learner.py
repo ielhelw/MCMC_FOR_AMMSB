@@ -1,3 +1,4 @@
+import sys
 import numpy as np
 import abc
 import math
@@ -128,10 +129,12 @@ class Learner(object):
         link_count = 0
         non_link_count = 0
         
-        for edge in data.keys():
+        key_list = list(data.keys())    # for compatibility w/ C++
+        key_list.sort()
+        for edge in key_list:
             edge_likelihood = self.__cal_edge_likelihood(self._pi[edge[0]], self._pi[edge[1]], \
                                                        data[edge], self._beta)
-            # print str(edge) + " in? " + str(edge in self._network.get_linked_edges()) + " -> " + str(edge_likelihood)
+            # sys.stdout.write("%s in? %s -> %.12f\n" % (str(edge), str(edge in self._network.get_linked_edges()), edge_likelihood))
             if edge in self._network.get_linked_edges():
                 link_count += 1
                 link_likelihood += edge_likelihood
@@ -153,6 +156,12 @@ class Learner(object):
         return (-avg_likelihood)            
     
     
+    def dump(self, a, n, name):
+        sys.stdout.write("%s " % name)
+        for k in range(0, n):
+            sys.stdout.write("%.12f " % a[k])
+        sys.stdout.write("\n")
+
     def __cal_edge_likelihood(self, pi_a, pi_b, y, beta):
         """
         calculate the log likelihood of edge :  p(y_ab | pi_a, pi_b, \beta)
