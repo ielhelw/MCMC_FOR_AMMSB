@@ -110,17 +110,26 @@ public:
 
         // get the gradients
 		// grads = [-n * 1/phi_i_sum * j for j in np.ones(self._K)]
-		std::vector<double> grads(K, -(int)n / phi_i_sum);		// Hard to grasp... RFHH
+		// WATCH OUT: if the expression is -n / phi_sum, the unsigned n is converted to something
+		// huge and positive.
+		std::vector<double> grads(K, - (n / phi_i_sum));		// Hard to grasp... RFHH
         for (::size_t k = 0; k < K; k++) {
             grads[k] += 1.0 / phi[i][k] * z[k];
 		}
 
         // update the phi
         for (::size_t k = 0; k < K; k++) {
+#ifdef EFFICIENCY_FOLLOWS_PYTHON
 			// FIXME RFHH a**0.5 * b**0.5 better written as sqrt(a*b) ?
             (*phi_star)[i][k] = std::abs(phi[i][k] + eps_t/2 * (alpha - phi[i][k] +
 																grads[k]) +
 										 std::pow(eps_t, .5) * std::pow(phi[i][k], .5) * noise[k]);
+#else
+			double f = std::sqrt(eps_t * phi[i][k]);
+            (*phi_star)[i][k] = std::abs(phi[i][k] + eps_t/2 * (alpha - phi[i][k] +
+																grads[k]) +
+										 f * noise[k]);
+#endif
 		}
 	}
 
@@ -168,10 +177,17 @@ public:
 		std::vector<std::vector<double> > theta_star = np::clone(theta);
         for (::size_t k = 0; k < K; k++) {
             for (::size_t i = 0; i < 2; i++) {
+#ifdef EFFICIENCY_FOLLOWS_PYTHON
 				// FIXME rewrite a**0.5 * b**0.5 as sqrt(a * b)
 				theta_star[k][i] = std::abs(theta[k][i] + eps_t/2 * (eta[i] - theta[k][i] + \
 																	 grads[k][i]) +
 										   	std::pow(eps_t, .5) * pow(theta[k][i], .5) * noise[k][i]);
+#else
+				double f = std::sqrt(eps_t * theta[k][i]);
+				theta_star[k][i] = std::abs(theta[k][i] + eps_t/2 * (eta[i] - theta[k][i] + \
+																	 grads[k][i]) +
+										   	f * noise[k][i]);
+#endif
 			}
 		}
 
@@ -218,10 +234,22 @@ public:
 		 * Returns the community index. If it falls into the case that z_ab!=z_ba, then return -1
          */
 		std::vector<double> p(K + 1);
+#ifdef EFFICIENCY_FOLLOWS_PYTHON
 		// FIXME pow for selecting after y = 0 or 1
 		for (::size_t k = 0; k < K; k++) {
             p[k] = std::pow(beta[k], y) * pow(1-beta[k], 1-y) * pi_a[k] * pi_b[k];
 		}
+#else
+		if (y == 1) {
+			for (::size_t k = 0; k < K; k++) {
+				p[k] = beta[k] * pi_a[k] * pi_b[k];
+			}
+		} else {
+			for (::size_t k = 0; k < K; k++) {
+				p[k] = (1-beta[k]) * pi_a[k] * pi_b[k];
+			}
+		}
+#endif
         // p[K] = 1 - np.sum(p[0:K])
 		p[K] = 0.0;
         p[K] = 1.0 - np::sum(p);
@@ -278,6 +306,7 @@ public:
 			std::cout << std::fixed << std::setprecision(12) << "perplexity for held out set: " << ppx_score << std::endl;
             ppxs_held_out.push_back(ppx_score);
 
+			// FIXME make sure we don't need a deep copy here:
 			std::vector<std::vector<double> > phi_star(pi);
             // iterate through each node, and update parameters pi_a
             for (::size_t i = 0; i < N; i++) {

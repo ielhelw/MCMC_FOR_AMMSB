@@ -7,6 +7,6 @@ SUBDIRS += test
 include $(PROJECT)/include.mk
 
 $(PROJECT)/config.mk: $(PROJECT)/config.mk.in
-	-diff -u $@.in $@ > $@.patch
 	cp $< $@
-	patch -p0 < $@.patch && rm $@.patch
+	if [ -e $@.patch ] ; then patch -p0 < $@.patch; fi
+	-diff -u $@.in $@ > $@.patch
