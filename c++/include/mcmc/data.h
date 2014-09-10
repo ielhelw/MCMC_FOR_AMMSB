@@ -116,7 +116,7 @@ typedef std::unordered_set<int>			VertexSet;
 typedef VertexSet						OrderedVertexSet;
 
 typedef std::unordered_set<Edge>		EdgeSet;
-typedef EdgeSet							EdgeList;
+typedef std::list<Edge>							EdgeList;
 typedef EdgeSet		 					OrderedEdgeSet;
 
 typedef std::unordered_map<Edge, bool>	EdgeMap;
