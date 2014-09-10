@@ -106,8 +106,8 @@ typedef std::unordered_set<int>			VertexSet;
 typedef std::set<int>					OrderedVertexSet;
 
 typedef std::unordered_set<Edge>		EdgeSet;
-typedef std::list<Edge>					EdgeList;
 typedef std::set<Edge> 					OrderedEdgeSet;
+typedef std::list<Edge>					EdgeList;
 
 typedef std::map<Edge, bool>			EdgeMap;
 
@@ -116,8 +116,8 @@ typedef std::unordered_set<int>			VertexSet;
 typedef VertexSet						OrderedVertexSet;
 
 typedef std::unordered_set<Edge>		EdgeSet;
-typedef std::list<Edge>							EdgeList;
 typedef EdgeSet		 					OrderedEdgeSet;
+typedef std::list<Edge>					EdgeList;
 
 typedef std::unordered_map<Edge, bool>	EdgeMap;
 #endif	// def RANDOM_FOLLOWS_PYTHON

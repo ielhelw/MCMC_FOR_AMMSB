@@ -67,6 +67,8 @@ int sample_z_ab_from_edge(int y, const std::vector<double> &pi_a,
 		}
 	}
 
+	std::cerr << std::fixed << std::setprecision(12) << "Ooppsss... not found: random " << r << " location " << location << " p[K-1] " << p[K - 1] << std::endl;
+
     // failed, should not happen!
     return -1;
 }

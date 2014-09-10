@@ -505,7 +505,12 @@ protected:
         const EdgeMap &test_set = network.get_test_set();
 
         while (p > 0) {
-			std::vector<int> *nodeList = Random::random->sample(np::xrange(0, N), sample_size * 2);
+#ifdef EFFICIENCY_FOLLOWS_PYTHON
+			std::cerr << "FIXME: horribly inefficient xrange thingy" << std::endl;
+			auto nodeList = Random::random->sample(np::xrange(0, N), sample_size * 2);
+#else
+			auto nodeList = Random::random->sampleRange(N, sample_size * 2);
+#endif
             for (std::vector<int>::const_iterator neighborId = nodeList->begin();
 				 	neighborId != nodeList->end();
 					neighborId++) {

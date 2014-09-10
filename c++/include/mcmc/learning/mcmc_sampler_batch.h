@@ -1,6 +1,7 @@
 #ifndef MCMC_LEARNING_MCMC_SAMPLER_BATCH_H__
 #define MCMC_LEARNING_MCMC_SAMPLER_BATCH_H__
 
+#include <cassert>
 #include <cmath>
 
 #include <utility>
@@ -286,6 +287,8 @@ public:
 			}
 
             int z_ab = sample_z_ab_from_edge(y_ab, pi[node], pi[*neighbor], beta, epsilon, K);
+			assert(z_ab >= 0);
+			assert(z_ab < (int)z.size());
             z[z_ab]++;
 		}
 

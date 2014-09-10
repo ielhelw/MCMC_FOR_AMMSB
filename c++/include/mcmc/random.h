@@ -1,6 +1,7 @@
 #ifndef MCMC_RANDOM_H__
 #define MCMC_RANDOM_H__
 
+#include <cassert>
 #include <cstdlib>
 
 #include <fstream>
@@ -20,6 +21,7 @@ namespace Random {
 class Random {
 public:
 	Random(unsigned int seed) {
+		std::cerr << "Random seed " << seed << std::endl;
 		srand(seed);
 	}
 
@@ -31,18 +33,26 @@ public:
 	}
 
 	double random() {
-		return rand();
+		return (1.0 * rand() / RAND_MAX);
 	}
 
 
 	std::vector<double> randn(::size_t K) {
-		throw UnimplementedException("Random.randn");
-		return std::vector<double>(K, 0.0);
+#if __GNUC_MINOR__ >= 5
+		auto r = std::vector<double>(K);
+		for (::size_t i = 0; i < K; i++) {
+			r[i] = normalDistribution(generator);
+		}
+
+		return r;
+
+#else	// if __GNUC_MINOR__ >= 5
+		throw UnimplementedException("random::randn");
+#endif
 	}
 
 
 	std::vector<std::vector<double> > randn(::size_t K, ::size_t N) {
-		// std::cerr << "Read random.randn[" << K << "," << N << "]" << std::endl;
 		std::vector<std::vector<double> > r(K);
 		for (::size_t k = 0; k < K; k++) {
 			r[k] = randn(N);
@@ -53,32 +63,51 @@ public:
 
 
 protected:
-	void sample(std::unordered_set<int> *accu, int from, int upto, ::size_t count) {
+	std::unordered_set<int> sample(int from, int upto, ::size_t count) {
+		assert((int)count <= upto - from);
+
+		std::unordered_set<int> accu;
 		for (::size_t i = 0; i < count; i++) {
 			int r = randint(from, upto);
-			if (accu->find(r) == accu->end()) {
-				accu->insert(r);
+			if (accu.find(r) == accu.end()) {
+				accu.insert(r);
 			} else {
 				i--;
 			}
+		}
+
+		return accu;
+	}
+
+
+	template <class Input, class Result, class Inserter>
+	void sample(Result *result, const Input &input, ::size_t count, Inserter inserter) {
+		std::unordered_set<int> accu = sample(0, (int)input.size(), count);
+
+		::size_t c = 0;
+		for (auto i: input) {
+			if (accu.find(c) != accu.end()) {
+				inserter(*result, i);
+			}
+			c++;
 		}
 	}
 
 
 public:
 	template <class List>
-	List *sample(const List &list, ::size_t count) {
+	List *sample(const List &population, ::size_t count) {
 		List *result = new List();
 
-		std::unordered_set<int> accu;
-		sample(&accu, 0, list.size(), count);
-
-		::size_t c = 0;
-		for (typename List::const_iterator i = list.begin(); i != list.end(); i++) {
-			if (accu.find(c) != accu.end()) {
-				result->insert(*i);
+		struct Inserter {
+			void operator() (List &list, typename List::value_type &item) {
+				list.insert(item);
 			}
-			c++;
+		};
+		sample(result, population, count, Inserter());
+
+		for (auto i : *result) {
+			assert(population.find(i) != population.end());
 		}
 
 		return result;
@@ -86,36 +115,54 @@ public:
 
 
 	template <class List>
-	List *sample(const List *list, ::size_t count) {
-		return sample(*list, count);
+	List *sample(const List *population, ::size_t count) {
+		return sample(*population, count);
 	}
 
 
 	template <class Element>
-	std::vector<Element> *sample(const std::vector<Element> &list, ::size_t count) {
+	std::vector<Element> *sample(const std::vector<Element> &population, ::size_t count) {
 		std::unordered_set<int> accu;
-		sample(&accu, 0, list.size(), count);
-
 		std::vector<Element> *result = new std::vector<Element>(accu.size());
 
-		for (std::unordered_set<int>::const_iterator i = accu.begin(); i != accu.end(); i++) {
-			result->push_back(list[*i]);
+		struct Inserter {
+			void operator() (std::vector<Element> &list, Element &item) {
+				list.push_back(item);
+			}
+		};
+		sample(result, population, count, Inserter());
+
+		return result;
+	}
+
+
+	std::vector<int> *sampleRange(int N, ::size_t count) {
+		auto accu = sample(0, N, count);
+		return new std::vector<int>(accu.begin(), accu.end());
+	}
+
+
+	template <class Element>
+	std::list<Element> *sampleList(const std::unordered_set<Element> &population, ::size_t count) {
+		std::list<Element> *result = new std::list<Element>();
+		struct Inserter {
+			void operator() (std::list<Element> &list, Element &item) {
+				list.push_back(item);
+			}
+		};
+		sample(result, population, count, Inserter());
+
+		for (auto i : *result) {
+			assert(population.find(i) != population.end());
 		}
 
 		return result;
 	}
 
 
-	template <class Item>
-	std::list<Item> *sampleList(const std::unordered_set<Item> &list, ::size_t count) {
-		throw UnimplementedException("random::sampleList");
-		return NULL;
-	}
-
-
-	template <class Item>
-	std::list<Item> *sampleList(const std::unordered_set<Item> *list, ::size_t count) {
-		return sampleList(*list, count);
+	template <class Element>
+	std::list<Element> *sampleList(const std::unordered_set<Element> *population, ::size_t count) {
+		return sampleList(*population, count);
 	}
 
 
@@ -124,12 +171,11 @@ public:
 		std::vector<std::vector<double> > a(n1, std::vector<double>(n2));
 #if __GNUC_MINOR__ >= 5
 
-		std::default_random_engine generator;
-		std::gamma_distribution<double> distribution(p1, p2);
+		std::gamma_distribution<double> gammaDistribution(p1, p2);
 
 		for (::size_t i = 0; i < n1; i++) {
 			for (::size_t j = 0; j < n2; j++) {
-				a[i][j] = distribution(generator);
+				a[i][j] = gammaDistribution(generator);
 			}
 		}
 #else	// if __GNUC_MINOR__ >= 5
@@ -138,6 +184,14 @@ public:
 
 		return a;
 	}
+
+protected:
+#if __GNUC_MINOR__ >= 5
+		std::default_random_engine generator;
+		std::normal_distribution<double> normalDistribution;
+#else	// if __GNUC_MINOR__ >= 5
+		throw UnimplementedException("random::gamma");
+#endif
 };
 
 
@@ -244,7 +298,7 @@ public:
 
 
 	template <class List>
-	List *sample(const List &list, ::size_t count) {
+	List *sample(const List &population, ::size_t count) {
 		std::string line;
 		List *result = new List();
 		getline(sampleReader, line);
@@ -262,19 +316,19 @@ public:
 
 
 	template <class List>
-	List *sample(const List *list, ::size_t count) {
-		return sample(*list, count);
+	List *sample(const List *population, ::size_t count) {
+		return sample(*population, count);
 	}
 
 
 	template <class Element>
-	std::vector<Element> *sample(const std::vector<Element> &list, ::size_t count) {
+	std::vector<Element> *sample(const std::vector<Element> &population, ::size_t count) {
 		std::string line;
 		getline(sampleReader, line);
 		std::istringstream is(line);
 		// // std::cerr << "Read vector<something>[" << count << "] sample; input line '" << is.str() << "'" << std::endl;
 
-		std::vector<Element> *result = new std::vector<Element>();
+		std::vector<Element> *result = new std::vector<Element>(count);
 
 		for (::size_t i = 0; i < count; i++) {
 			int r;
@@ -290,16 +344,23 @@ public:
 	}
 
 
-	template <class Item>
-	std::list<Item> *sampleList(const std::unordered_set<Item> &list, ::size_t count) {
+	std::vector<int> *sampleRange(int N, ::size_t count) {
+		std::vector<int> dummy;
+
+		return sample(dummy, count);
+	}
+
+
+	template <class Element>
+	std::list<Element> *sampleList(const std::unordered_set<Element> &population, ::size_t count) {
 		std::string line;
-		auto *result = new std::list<Item>();
+		auto *result = new std::list<Element>();
 		getline(sampleReader, line);
 
 		std::istringstream is(line);
 
 		for (::size_t i = 0; i < count; i++) {
-			Item key(is);
+			Element key(is);
 			result->push_back(key);
 		}
 
@@ -308,9 +369,9 @@ public:
 	}
 
 
-	template <class Item>
-	std::list<Item> *sampleList(const std::unordered_set<Item> *list, ::size_t count) {
-		return sampleList(*list, count);
+	template <class Element>
+	std::list<Element> *sampleList(const std::unordered_set<Element> *population, ::size_t count) {
+		return sampleList(*population, count);
 	}
 
 

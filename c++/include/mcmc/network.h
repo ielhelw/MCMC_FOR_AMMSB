@@ -209,7 +209,8 @@ public:
 
 		if (flag == 0) {
 			// sample mini-batch from linked edges
-			EdgeList *sampled_linked_edges = Random::random->sampleList(linked_edges, mini_batch_size * 2);
+			std::cerr << "FIXME: replace EdgeList w/ (unordered) EdgeSet again" << std::endl;
+			auto sampled_linked_edges = Random::random->sampleList(linked_edges, mini_batch_size * 2);
 			for (auto edge = sampled_linked_edges->cbegin();
 				 	edge != sampled_linked_edges->cend();
 					edge++) {
@@ -290,7 +291,11 @@ public:
 				// because of the sparsity, when we sample $mini_batch_size*2$ nodes, the list likely
 				// contains at least mini_batch_size valid nodes.
 				std::cerr << "FIXME: horribly inefficient xrange thingy" << std::endl;
-				std::vector<int> *nodeList = Random::random->sample(np::xrange(0, N), mini_batch_size * 2);
+#ifdef EFFICIENCY_FOLLOWS_PYTHON
+				auto nodeList = Random::random->sample(np::xrange(0, N), mini_batch_size * 2);
+#else
+				auto nodeList = Random::random->sampleRange(N, mini_batch_size * 2);
+#endif
 				for (std::vector<int>::iterator neighborId = nodeList->begin();
 					 	neighborId != nodeList->end();
 						neighborId++) {
@@ -370,7 +375,8 @@ protected:
 							    "please use smaller held out ratio.");
 		}
 
-		EdgeList *sampled_linked_edges = Random::random->sampleList(linked_edges, p);
+		std::cerr << "FIXME: replace EdgeList w/ (unordered) EdgeSet again" << std::endl;
+		auto sampled_linked_edges = Random::random->sampleList(linked_edges, p);
 		for (auto edge = sampled_linked_edges->begin();
 			 	edge != sampled_linked_edges->end();
 				edge++) {
@@ -409,7 +415,7 @@ protected:
 			// here we sample twice as much as links, and select among them, which
 			// is likely to contain valid p linked edges.
 			std::cerr << "FIXME: replace EdgeList w/ (unordered) EdgeSet again" << std::endl;
-			EdgeList *sampled_linked_edges = Random::random->sampleList(linked_edges, 2 * p);
+			auto sampled_linked_edges = Random::random->sampleList(linked_edges, 2 * p);
 			for (auto edge = sampled_linked_edges->cbegin();
 				 	edge != sampled_linked_edges->cend();
 					edge++) {
