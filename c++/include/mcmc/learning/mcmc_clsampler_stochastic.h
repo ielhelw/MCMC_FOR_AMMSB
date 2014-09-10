@@ -103,22 +103,25 @@ public:
 			delete edgeSample.first;
 
 			step_count++;
+			l2 = std::chrono::system_clock::now();
+			std::cout << "LOOP  = " << (l2-l1).count() << std::endl;
 		}
+
 	}
 
 
 protected:
 
 	EdgeMapZ sample_latent_vars2(const OrderedEdgeSet &mini_batch) {
-		std::cout << "!!!!!!!!!!!!!!!!!!!!!!!! CALLED" << std::endl;
-		std::vector<cl_int2> edges;
+		std::vector<cl_int2> edges(mini_batch.size());
+		int i = 0;
 		// Copy edges
-		for (auto &e : mini_batch) {
+		std::transform(mini_batch.begin(), mini_batch.end(), edges.begin(), [](const Edge& e) {
 			cl_int2 E;
 			E.s[0] = e.first;
 			E.s[1] = e.second;
-			edges.push_back(E);
-		}
+			return E;
+		});
 		clContext.queue.enqueueWriteBuffer(clNodesNeighbors, CL_TRUE,
 				0, edges.size()*sizeof(cl_int2),
 				&(edges[0]));
@@ -147,7 +150,7 @@ protected:
 				0, edges.size() * sizeof(cl_int),
 				&(zFromCL[0]));
 		EdgeMapZ ezm;
-		int i = 0;
+		i = 0;
 		for (auto &e : mini_batch) {
 			ezm[e] = zFromCL[i];
 			++i;
