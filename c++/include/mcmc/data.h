@@ -101,7 +101,6 @@ inline std::istream &operator>> (std::istream &s, Edge &e) {
 	return e.get(s);
 }
 
-#define RANDOM_FOLLOWS_PYTHON
 #ifdef RANDOM_FOLLOWS_PYTHON
 typedef std::unordered_set<int>			VertexSet;
 typedef std::set<int>					OrderedVertexSet;

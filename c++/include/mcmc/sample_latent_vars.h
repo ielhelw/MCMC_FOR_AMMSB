@@ -14,13 +14,15 @@ namespace mcmc {
  * then we simply sample z_ab based on the distribution p.
  * this runs in O(K)
  */
+// FIXME y must be a bool
 int sample_z_ab_from_edge(int y, const std::vector<double> &pi_a,
 						  const std::vector<double> &pi_b,
 						  const std::vector<double> &beta,
 						  double epsilon, ::size_t K) {
 	std::vector<double> p(K);
-	// UNUSED: std::vector<double> bounds(K, 0.0);
+	// UNUSED: std::vector<double> p(K, 0.0);
 
+#ifdef EFFICIENCY_FOLLOWS_PYTHON
 	// FIXME: selection based on y, done with pow()
 	// FIXME: lift common subexpr in second statement
     for (::size_t i = 0; i < K; i++) {
@@ -28,6 +30,29 @@ int sample_z_ab_from_edge(int y, const std::vector<double> &pi_a,
         tmp += std::pow(epsilon, y) * std::pow(1.0 - epsilon, 1 - y) * pi_a[i] * (1.0 - pi_b[i]);
         p[i] = tmp;
 	}
+
+#else
+	if (y == 1) {
+		for (::size_t i = 0; i < K; i++) {
+			// p_i = b_i * pa_i * pb_i + eps * pa_i * (1 - pb_i)
+			//     = pa_i * pb_i * (b_i - eps) + eps * pa_i
+			//     = pa_i * (pb_i * (b_i - eps) + eps)
+			double tmp = beta[i] * pi_a[i] * pi_b[i];
+			tmp += epsilon * pi_a[i] * (1.0 - pi_b[i]);
+			p[i] = tmp;
+		}
+	} else {
+		for (::size_t i = 0; i < K; i++) {
+			// p_i = (1 - b_i) * pa_i * pb_i + (1 - eps) * pa_i (1 - pb_i)
+			//     = pa_i * pb_i * (1 - b_i - (1 - eps)) + (1 - eps) * pa_i
+			//     = pa_i * (pb_i * (1 - b_i - (1 - eps)) + (1 - eps))
+			//     = pa_i * (pb_i * (eps - b_i) + (1 - eps))
+			double tmp = (1.0 - beta[i]) * pi_a[i] * pi_b[i];
+			tmp += (1.0 - epsilon) * pi_a[i] * (1.0 - pi_b[i]);
+			p[i] = tmp;
+		}
+	}
+#endif
 
     for (::size_t k = 1; k < K; k++) {
         p[k] += p[k - 1];
