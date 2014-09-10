@@ -157,24 +157,9 @@ public:
             // iterate through each node in the mini batch.
 			OrderedVertexSet nodes = nodes_in_batch(mini_batch);
 
-            for (auto node = nodes.begin();
-				 	node != nodes.end();
-					node++) {
-                // sample a mini-batch of neighbors
-                OrderedVertexSet neighbor_nodes = sample_neighbor_nodes(num_node_sample, *node);
-                size[*node] = neighbor_nodes.size();
-                // sample latent variables z_ab for each pair of nodes
-                std::vector<int> z = this->sample_latent_vars(*node, neighbor_nodes);
-                // save for a while, in order to update together.
-                latent_vars[*node] = z;
-			}
+			sample_latent_vars_stub(nodes, size, latent_vars);
 
-            // update pi for each node
-            for (auto node = nodes.begin();
-				 	node != nodes.end();
-					node++) {
-                update_pi_for_node(*node, latent_vars[*node], size[*node], scale);
-			}
+			update_pi_for_node_stub(nodes, size, latent_vars, scale);
 
             // sample (z_ab, z_ba) for each edge in the mini_batch.
             // z is map structure. i.e  z = {(1,10):3, (2,4):-1}
@@ -212,6 +197,34 @@ public:
 
 
 protected:
+
+    void sample_latent_vars_stub(const OrderedVertexSet& nodes,
+    			std::unordered_map<int, ::size_t>& size,
+    			std::unordered_map<int, std::vector<int> >& latent_vars) {
+    	for (auto node = nodes.begin();
+				node != nodes.end();
+				node++) {
+			// sample a mini-batch of neighbors
+			OrderedVertexSet neighbor_nodes = sample_neighbor_nodes(num_node_sample, *node);
+			size[*node] = neighbor_nodes.size();
+			// sample latent variables z_ab for each pair of nodes
+			std::vector<int> z = this->sample_latent_vars(*node, neighbor_nodes);
+			// save for a while, in order to update together.
+			latent_vars[*node] = z;
+		}
+    }
+
+    void update_pi_for_node_stub(const OrderedVertexSet& nodes,
+			std::unordered_map<int, ::size_t>& size,
+			std::unordered_map<int, std::vector<int> >& latent_vars,
+			double scale) {
+    	// update pi for each node
+		for (auto node = nodes.begin();
+				node != nodes.end();
+				node++) {
+			update_pi_for_node(*node, latent_vars[*node], size[*node], scale);
+		}
+    }
 
 #if 0
     def __update_pi1(self, mini_batch, scale):
@@ -498,7 +511,7 @@ protected:
 					neighborId++) {
 				if (p < 0) {
 					if (p != 0) {
-						std::cerr << __func__ << ": Are you sure p < 0 is a good idea?" << std::endl;
+//						std::cerr << __func__ << ": Are you sure p < 0 is a good idea?" << std::endl;
 					}
 					break;
 				}

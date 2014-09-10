@@ -1,5 +1,9 @@
 #include "graph.h"
 
+#ifndef MAX_NODE_ID
+#error "Need definition of MAX_NODE_ID"
+#endif
+
 #ifndef K
 #error "Need definition of K"
 #endif
@@ -8,94 +12,85 @@
 #error "Need definition of NEIGHBOR_SAMPLE_SIZE"
 #endif
 
-#pragma OPENCL EXTENSION cl_khr_fp64: enable
+#pragma OPENCL EXTENSION cl_khr_fp64 : enable
 
-#if 0
+#define NODE_ID_VALID(NID) ((NID) >= 0 && (NID) < MAX_NODE_ID)
 
-// adapted from sample_latent_vars.pyx
-int sample_z_ab_from_edge(
-		global double* pi_a,
-		global double *pi_b,
-		global double *beta,
-		double epsilon, int y,
-		global double *p,
-		global double *bounds) {
-	double location = 0;
-	for (int i = 0; i < K; ++i) {
-		p[i] = pow(beta[i], y) * pow(1-beta[i], 1-y) * pi_a[i] * pi_b[i]
-		+ pow(epsilon, y) * pow(1-epsilon, 1-y) * pi_a[i] * (1-pi_b[i]);
-	}
-	bounds[0] = p[0];
+
+#define sample_z_ab_from_edge_expr_orig(i) \
+(\
+	pow(beta[i], y) * pow(1-beta[i], 1-y) * pi_a[i] * pi_b[i] \
+		+ pow(epsilon, y) * pow(1-epsilon, 1-y) * pi_a[i] * (1-pi_b[i]) \
+)
+
+#define sample_z_ab_from_edge_expr_optimized(i) \
+(	y == 1? \
+		beta[i] * pi_a[i] * pi_b[i] \
+			+ epsilon * pi_a[i] * (1-pi_b[i]) \
+	: \
+		(1-beta[i]) * pi_a[i] * pi_b[i] \
+			+ (1-epsilon) * pi_a[i] * (1-pi_b[i]) \
+)
+
+#define sample_z_ab_from_edge_expr sample_z_ab_from_edge_expr_optimized
+
+inline int sample_z_ab_from_edge(
+		global const double* pi_a,
+		global const double *pi_b,
+		global const double *beta,
+		const double epsilon, const int y,
+		const double random,
+		global double *p
+		) {
+	p[0] = sample_z_ab_from_edge_expr(0);
 	for (int i = 1; i < K; ++i) {
-		bounds[i] = bounds[i-1] + p[i];
+		p[i] = p[i-1] + sample_z_ab_from_edge_expr(i);
 	}
+
+	double location = random * p[K-1];
 	for (int i = 0; i < K; ++i) {
-		if (location <= bounds[i]) return i;
+		if (location <= p[i]) return i;
 	}
 	return -1;
 }
-
-#else
-
-// merged version
-int sample_z_ab_from_edge(
-		global double* pi_a,
-		global double *pi_b,
-		global double *beta,
-		double epsilon, int y,
-		global double *p,
-		global double *bounds) {
-	double location = 0;
-	double bound = pow(beta[0], y) * pow(1-beta[0], 1-y) * pi_a[0] * pi_b[0]
-		+ pow(epsilon, y) * pow(1-epsilon, 1-y) * pi_a[0] * (1-pi_b[0]);
-	if (location <= bound) return 0;
-	for (int i = 1; i < K; ++i) {
-		bound += pow(beta[i], y) * pow(1-beta[i], 1-y) * pi_a[i] * pi_b[i]
-		+ pow(epsilon, y) * pow(1-epsilon, 1-y) * pi_a[i] * (1-pi_b[i]);
-		if (location <= bound) return i;
-	}
-	return -1;
-}
-
-#endif
 
 void sample_latent_vars_of(
-		int node,
-		global Graph *g,
-		global int* neighbor_nodes,
-		global double *pi,
-		global double *beta,
-		double epsilon,
-		global double *z /* K elements */,
-		global double *p,
-		global double *bounds) {
+		const int node,
+		global const Graph *g,
+		global const int* neighbor_nodes,
+		global const double *pi,
+		global const double *beta,
+		const double epsilon,
+		global int *z, /* K elements */
+		global const double *random,
+		global double *p) {
 	for (int i = 0; i < K; ++i) z[i] = 0;
 	for (int i = 0; i < NEIGHBOR_SAMPLE_SIZE; ++i) {
 		int neighbor = neighbor_nodes[i];
+
 		int y_ab = graph_has_peer(g, node, neighbor);
 		int z_ab = sample_z_ab_from_edge(
 				pi + node * K, pi + neighbor * K,
-				beta, epsilon, y_ab, p, bounds);
+				beta, epsilon, y_ab, random[i], p);
 		z[z_ab] += 1;
 	}
 }
 
 kernel void sample_latent_vars(
-		global Graph *g,
-		global int *nodes,
-		int N, // #nodes
-		global int *neighbor_nodes,// (#total_nodes, NEIGHBOR_SAMPLE_SIZE)
-		global double *pi,// (#total_nodes, K)
-		global double *beta,// (#K)
-		double epsilon,
-		global double *Z,// (#total_nodes, K)
-		global double *p,// (#nodes, K)
-		global double *bounds// (#nodes, K)
+		global const Graph *g,
+		global const int *nodes,
+		const int N, // #nodes
+		global const int *neighbor_nodes,// (#total_nodes, NEIGHBOR_SAMPLE_SIZE)
+		global const double *pi,// (#total_nodes, K)
+		global const double *beta,// (#K)
+		const double epsilon,
+		global int *Z, /* (#total_nodes, K) */
+		global const double *random,
+		global double *p// (#nodes, K)
 ) {
 	size_t gid = get_global_id(0);
 	size_t gsize = get_global_size(0);
 	global double *_p = p + gid * K;
-	global double *_b = bounds + gid * K;
 
 	for (int i = gid; i < N; i += gsize) {
 		int node = nodes[i];
@@ -106,8 +101,9 @@ kernel void sample_latent_vars(
 				pi,
 				beta,
 				epsilon,
-				Z + nodes[i] * K,
-				_p, _b);
+				Z + node * K,
+				random + i * NEIGHBOR_SAMPLE_SIZE,
+				_p);
 	}
 }
 
@@ -115,7 +111,7 @@ void update_pi_for_node_(
 		int node,
 		global double *pi,// #K
 		global double *phi,// #K
-		global double *z, // #K
+		global int *z, // #K
 		global double *noise, // #K
 		global double *grad, // #K
 		double alpha,
@@ -133,8 +129,9 @@ void update_pi_for_node_(
 		double phi_star_k = fabs(phi[k] + eps_t/2
 				* (alpha - phi[k] + total_node_count/NEIGHBOR_SAMPLE_SIZE * grad[k])
 				+ pow(eps_t, 0.5) * pow(phi[k], 0.5) * noise[k]);
-		phi[k] = phi_star_k * (1.0/step_count)
-				+ (1-1.0/step_count) * phi[k];
+//		phi[k] = phi_star_k * (1.0/step_count)
+//				+ (1-1.0/step_count) * phi[k];
+		phi[k] = phi_star_k;
 	}
 	double phi_sum = 0;
 	for (int i = 0; i < K; ++i) phi_sum += phi[i];
@@ -148,7 +145,7 @@ kernel void update_pi_for_node(
 		int N, // #nodes
 		global double *pi,// (#total_nodes, K)
 		global double *phi,// (#total_nodes, K)
-		global double *Z, // (#total_nodes, K)
+		global int *Z, // (#total_nodes, K)
 		global double *noise, // (#nodes, K)
 		global double *grad, // (#nodes, K)
 		double alpha,
@@ -158,10 +155,11 @@ kernel void update_pi_for_node(
 	size_t gid = get_global_id(0);
 	size_t gsize = get_global_size(0);
 	for (int i = gid; i < N; i += gsize) {
-		update_pi_for_node_(nodes[i],
-				pi + nodes[i] * K,
-				phi + nodes[i] * K,
-				Z + nodes[i] * K,
+		int node = nodes[i];
+		update_pi_for_node_(node,
+				pi + node * K,
+				phi + node * K,
+				Z + node * K,
 				noise + i * K,
 				grad + i * K,
 				alpha, a, b, c, step_count, total_node_count);
