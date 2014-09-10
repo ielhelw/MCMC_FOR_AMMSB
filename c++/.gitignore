@@ -23,6 +23,7 @@
 # Generated for configure
 config.mk
 config.mk.patch
+config.mk.orig
 config.cache
 Makefile.config
 
