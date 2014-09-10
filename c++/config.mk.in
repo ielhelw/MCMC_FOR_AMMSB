@@ -2,5 +2,12 @@ CONFIG_PROFILE		= 0
 CONFIG_OPTIMIZE		= 1
 CC			= gcc-4.7
 CXX			= g++-4.7
+# Ismail's PC
+# OPENCL_ROOT		= /opt/AMDAPP
+# Rutger's PC
+# OPENCL_ROOT		= /usr/share/amd/AMD-APP-SDK-v2.8-RC-lnx64
+# DAS
+# OPENCL_ROOT		= /cm/shared/package/amd-app-sdk/2.9
+#
 # CXXFLAGS		= -DRANDOM_FOLLOWS_PYTHON -DEFFICIENCY_FOLLOWS_PYTHON
 CXXFLAGS		=
