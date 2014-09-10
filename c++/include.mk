@@ -42,7 +42,7 @@ CXXFLAGS += -Wno-unused-parameter
 CXXFLAGS += -Wno-ignored-qualifiers
 CXXFLAGS += -I$(PROJECT_HOME)/include
 CXXFLAGS += -I$(PROJECT_HOME)/3rdparty/tinyxml2/include
-CXXFLAGS += -I/opt/AMDAPP/include
+CXXFLAGS += -I$(OPENCL_ROOT)/include
 CXXFLAGS += -DPROJECT_HOME=$(PROJECT_HOME)
 ifneq (, $(BOOST_INCLUDE))
 CXXFLAGS += -I$(BOOST_INCLUDE)
@@ -51,7 +51,7 @@ endif
 
 LDFLAGS += -L$(PROJECT_HOME)/lib -l mcmc
 LDFLAGS += -L$(PROJECT_HOME)/3rdparty/tinyxml2/lib -ltinyxml2
-LDFLAGS += -L/opt/AMDAPP/lib -lOpenCL
+LDFLAGS += -L$(OPENCL_ROOT)/lib -L$(OPENCL_ROOT)/lib/x86_64 -lOpenCL
 ifdef USE_MUDFLAP
 LIBS	+= -lmudflapth -rdynamic
 CXXFLAGS += -fmudflap -fmudflapth -funwind-tables

@@ -33,6 +33,7 @@ public:
 		sampler_program = this->clContext.createProgram("OpenCL/sampler.cl", progOpts);
 		sample_latent_vars_kernel = cl::Kernel(sampler_program, "sample_latent_vars");
 		update_pi_kernel = cl::Kernel(sampler_program, "update_pi_for_node");
+		sample_latent_vars2_kernel = cl::Kernel(sampler_program, "sample_latent_vars2");
 
 		clNodes = cl::Buffer(clContext.context, CL_MEM_READ_ONLY,
 				N * sizeof(cl_int) // max: 2 unique nodes per edge in batch
@@ -102,11 +103,60 @@ public:
 			delete edgeSample.first;
 
 			step_count++;
+			l2 = std::chrono::system_clock::now();
+			std::cout << "LOOP  = " << (l2-l1).count() << std::endl;
 		}
+
 	}
 
 
 protected:
+
+	EdgeMapZ sample_latent_vars2(const OrderedEdgeSet &mini_batch) {
+		std::vector<cl_int2> edges(mini_batch.size());
+		int i = 0;
+		// Copy edges
+		std::transform(mini_batch.begin(), mini_batch.end(), edges.begin(), [](const Edge& e) {
+			cl_int2 E;
+			E.s[0] = e.first;
+			E.s[1] = e.second;
+			return E;
+		});
+		clContext.queue.enqueueWriteBuffer(clNodesNeighbors, CL_TRUE,
+				0, edges.size()*sizeof(cl_int2),
+				&(edges[0]));
+
+		// Generate and copy Randoms
+		std::vector<double> randoms(edges.size());
+		std::generate(randoms.begin(), randoms.end(), std::bind(&Random::FileReaderRandom::random, Random::random));
+		clContext.queue.enqueueWriteBuffer(clRandom, CL_TRUE,
+				0, edges.size() * sizeof(cl_double),
+				&(randoms[0]));
+
+		sample_latent_vars2_kernel.setArg(0, clGraph);
+		sample_latent_vars2_kernel.setArg(1, clNodesNeighbors);
+		sample_latent_vars2_kernel.setArg(2, (cl_int)edges.size());
+		sample_latent_vars2_kernel.setArg(3, clPi);
+		sample_latent_vars2_kernel.setArg(4, clBeta);
+		sample_latent_vars2_kernel.setArg(5, clZ);
+		sample_latent_vars2_kernel.setArg(6, clScratch);
+		sample_latent_vars2_kernel.setArg(7, clRandom);
+
+		clContext.queue.enqueueNDRangeKernel(sample_latent_vars2_kernel, cl::NullRange, cl::NDRange(4), cl::NDRange(1));
+		clContext.queue.finish();
+
+		std::vector<int> zFromCL(edges.size());
+		clContext.queue.enqueueReadBuffer(clZ, CL_TRUE,
+				0, edges.size() * sizeof(cl_int),
+				&(zFromCL[0]));
+		EdgeMapZ ezm;
+		i = 0;
+		for (auto &e : mini_batch) {
+			ezm[e] = zFromCL[i];
+			++i;
+		}
+		return ezm;
+	}
 
 	void update_pi_for_node_stub(OrderedVertexSet& nodes,
 			std::unordered_map<int, ::size_t>& size,
@@ -307,6 +357,7 @@ protected:
 	cl::Kernel graph_init_kernel;
 	cl::Kernel sample_latent_vars_kernel;
 	cl::Kernel update_pi_kernel;
+	cl::Kernel sample_latent_vars2_kernel;
 
 	cl::Buffer clGraphEdges;
 	cl::Buffer clGraphNodes;

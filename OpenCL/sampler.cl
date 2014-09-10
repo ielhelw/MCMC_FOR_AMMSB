@@ -166,31 +166,44 @@ kernel void update_pi_for_node(
 	}
 }
 
+#define sample_latent_vars2_orig(k) \
+( \
+	pow(beta[k], y) * pow(1-beta[k], 1-y) * pi_a[k] * pi_b[k] \
+)
+
+#define sample_latent_vars2_optimized(k) \
+( \
+	y == 1? \
+		beta[k] * pi_a[k] * pi_b[k] \
+	: \
+		(1-beta[k]) * pi_a[k] * pi_b[k] \
+)
+
+#define sample_latent_vars2_expr sample_latent_vars2_optimized
+
 int sample_latent_vars2_(
 		int2 edge,
 		global Graph *g,
 		global double *pi,// (#total_nodes, K)
 		global double *beta,// (#K)
 		global double *p,// #K+1
-		global double *bounds,// #K+1
 		double r
 		) {
 	int y = graph_has_peer(g, edge.x, edge.y);
 	global double *pi_a = pi + edge.x * K;
 	global double *pi_b = pi + edge.y * K;
-	double p_sum = 0;
-	for (int k = 0; k < K; ++k) {
-		p[k] = pow(beta[k], y) * pow(1-beta[k], 1-y) * pi_a[k] * pi_b[k];
-		p_sum += p[k];
+
+	p[0] = sample_latent_vars2_expr(0);
+	double p_sum = p[0];
+	for (int k = 1; k < K; ++k) {
+		const double p_k = sample_latent_vars2_expr(k);
+		p[k] = p_k + p[k-1];
+		p_sum += p_k;
 	}
 	p[K] = 1 - p_sum;
-	bounds[0] = p[0];
-	for (int k = 1; k < K+1; ++k) {
-		bounds[k] = bounds[k-1] + p[k];
-	}
-	double location = r * bounds[K];
+	double location = r * p[K-1];
 	for (int i = 0; i < K; ++i) {
-		if (location <= bounds[i]) return i;
+		if (location <= p[i]) return i;
 	}
 	return -1;
 }
@@ -203,7 +216,6 @@ kernel void sample_latent_vars2(
 		global double *beta,// (#K)
 		global int *Z,// #edges
 		global double *p,// (#edges, K+1)
-		global double *bounds,// (#edges, K+1)
 		global double *r
 		) {
 	size_t gid = get_global_id(0);
@@ -214,7 +226,6 @@ kernel void sample_latent_vars2(
 				pi,
 				beta,
 				p + i * (K+1),
-				bounds+ i * (K+1),
 				r[i]);
 	}
 }
