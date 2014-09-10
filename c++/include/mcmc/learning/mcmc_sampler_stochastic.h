@@ -316,7 +316,7 @@ protected:
         //	scale = (N * (N-1)/2)/mini_batch.size();
 		//}
         // update theta
-		std::vector<std::vector<double> > theta_star = np::clone(theta);
+		std::vector<std::vector<double> > theta_star(theta);
         for (::size_t k = 0; k < K; k++) {
             for (::size_t i = 0; i < 2; i++) {
 				// FIXME rewrite a**0.5 * b**0.5 as sqrt(a * b)
@@ -326,7 +326,7 @@ protected:
 			}
 		}
 
-		np::copy(&theta, theta_star);
+		theta = theta_star;
 		// temp = self.__theta/np.sum(self.__theta,1)[:,np.newaxis]
 		// self._beta = temp[:,1]
 		std::vector<std::vector<double> > temp(theta.size(), std::vector<double>(theta[0].size()));

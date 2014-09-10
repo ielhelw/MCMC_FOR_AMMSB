@@ -85,23 +85,6 @@ Type sum_abs(const std::vector<Type> &a, const std::vector<Type> &b) {
 	return diff;
 }
 
-template <typename Type>
-void copy(std::vector<std::vector<Type> > *to, const std::vector<std::vector<Type> > &from) {
-	to->resize(from.size());
-	for (::size_t i = 0; i < from.size(); i++) {
-		(*to)[i] = from[i];
-		assert((*to)[i].size() == from[i].size());
-	}
-}
-
-template <typename Type>
-std::vector<std::vector<Type> > clone(const std::vector<std::vector<Type> > &from) {
-	std::vector<std::vector<Type> > to;
-	copy(&to, from);
-
-	return to;
-}
-
 std::vector<int> xrange(int from, int upto) {
 	std::vector<int> r(upto - from);
 	for (int i = 0; i < upto - from; i++) {

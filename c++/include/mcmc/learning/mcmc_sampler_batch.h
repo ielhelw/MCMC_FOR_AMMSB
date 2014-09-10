@@ -174,7 +174,7 @@ public:
 
         // update theta
 		std::vector<std::vector<double> > noise = Random::random->randn(K, 2);
-		std::vector<std::vector<double> > theta_star = np::clone(theta);
+		std::vector<std::vector<double> > theta_star(theta);
         for (::size_t k = 0; k < K; k++) {
             for (::size_t i = 0; i < 2; i++) {
 #ifdef EFFICIENCY_FOLLOWS_PYTHON
@@ -192,8 +192,7 @@ public:
 		}
 
         if (step_count < 50000) {
-			// np::copy2D(&theta, theta_star);
-			np::copy(&theta, theta_star);
+			theta = theta_star;
 		} else {
 			// self.__theta = theta_star * 1.0/(self._step_count) + (1-1.0/(self._step_count))*self.__theta
 			double inv_step_count = 1.0 / step_count;
@@ -306,7 +305,6 @@ public:
 			std::cout << std::fixed << std::setprecision(12) << "perplexity for held out set: " << ppx_score << std::endl;
             ppxs_held_out.push_back(ppx_score);
 
-			// FIXME make sure we don't need a deep copy here:
 			std::vector<std::vector<double> > phi_star(pi);
             // iterate through each node, and update parameters pi_a
             for (::size_t i = 0; i < N; i++) {
@@ -317,7 +315,7 @@ public:
                 update_pi_for_node(i, z, &phi_star, neighbor_nodes.size());
 			}
 
-			np::copy(&phi, phi_star);
+			phi = phi_star;
 			np::row_normalize(&pi, phi);
 
             // update beta
