@@ -41,6 +41,17 @@ public:
 	}
 
 
+	std::vector<std::vector<double> > randn(::size_t K, ::size_t N) {
+		// std::cerr << "Read random.randn[" << K << "," << N << "]" << std::endl;
+		std::vector<std::vector<double> > r(K);
+		for (::size_t k = 0; k < K; k++) {
+			r[k] = randn(N);
+		}
+
+		return r;
+	}
+
+
 protected:
 	void sample(std::unordered_set<int> *accu, int from, int upto, ::size_t count) {
 		for (::size_t i = 0; i < count; i++) {
@@ -95,8 +106,8 @@ public:
 	}
 
 
-	template <class Item, class Container>
-	std::list<Item> *sampleList(const Container &list, ::size_t count) {
+	template <class Item>
+	std::list<Item> *sampleList(const std::unordered_set<Item> &list, ::size_t count) {
 		throw UnimplementedException("random::sampleList");
 		return NULL;
 	}
@@ -332,7 +343,11 @@ public:
 };
 
 
+#ifdef RANDOM_FOLLOWS_PYTHON
 extern FileReaderRandom *random;
+#else
+extern Random *random;
+#endif
 
 }	// namespace Random
 }	// namespace mcmc

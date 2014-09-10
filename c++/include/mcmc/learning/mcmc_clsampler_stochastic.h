@@ -3,6 +3,7 @@
 
 #include <memory>
 #include <algorithm>
+#include <chrono>
 
 #include "mcmc_sampler_stochastic.h"
 
@@ -73,6 +74,7 @@ public:
 		}
 
 		while (step_count < max_iteration && ! is_converged()) {
+			auto l1 = std::chrono::system_clock::now();
 			EdgeSample edgeSample = network.sample_mini_batch(mini_batch_size, strategy::STRATIFIED_RANDOM_NODE);
 			const OrderedEdgeSet &mini_batch = *edgeSample.first;
 			double scale = edgeSample.second;
@@ -103,7 +105,7 @@ public:
 			delete edgeSample.first;
 
 			step_count++;
-			l2 = std::chrono::system_clock::now();
+			auto l2 = std::chrono::system_clock::now();
 			std::cout << "LOOP  = " << (l2-l1).count() << std::endl;
 		}
 
@@ -128,7 +130,11 @@ protected:
 
 		// Generate and copy Randoms
 		std::vector<double> randoms(edges.size());
+#ifdef RANDOM_FOLLOWS_PYTHON
 		std::generate(randoms.begin(), randoms.end(), std::bind(&Random::FileReaderRandom::random, Random::random));
+#else
+		std::generate(randoms.begin(), randoms.end(), std::bind(&Random::Random::random, Random::random));
+#endif
 		clContext.queue.enqueueWriteBuffer(clRandom, CL_TRUE,
 				0, edges.size() * sizeof(cl_double),
 				&(randoms[0]));
@@ -254,7 +260,11 @@ protected:
 
 		// Generate and copy Randoms
 		std::vector<double> randoms(nodes.size() * real_num_node_sample());
+#ifdef RANDOM_FOLLOWS_PYTHON
 		std::generate(randoms.begin(), randoms.end(), std::bind(&Random::FileReaderRandom::random, Random::random));
+#else
+		std::generate(randoms.begin(), randoms.end(), std::bind(&Random::Random::random, Random::random));
+#endif
 		clContext.queue.enqueueWriteBuffer(clRandom, CL_TRUE, 0, nodes.size() * real_num_node_sample() * sizeof(cl_double), &(randoms[0]));
 
 		sample_latent_vars_kernel.setArg(0, clGraph);
