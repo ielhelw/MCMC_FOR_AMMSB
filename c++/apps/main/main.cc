@@ -13,7 +13,7 @@ int main(int argc, char *argv[]) {
 	const Data *data = df.get_data();
 	Network network(data, 0.1);
 
-	if (false) {
+	if (true) {
 		std::cout << "start MCMC batch" << std::endl;
 		MCMCSamplerBatch mcmcSampler(args, network);
 		mcmcSampler.run();

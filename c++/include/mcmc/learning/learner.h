@@ -134,7 +134,7 @@ protected:
 			const Edge &e = edge->first;
 			double edge_likelihood = cal_edge_likelihood(pi[e.first], pi[e.second],
 														 edge->second, beta);
-			// std::cerr << e << " in? " << (e.in(network.get_linked_edges()) ? "True" : "False") << " -> " << edge_likelihood << std::endl;
+			// std::cerr << std::fixed << std::setprecision(12) << e << " in? " << (e.in(network.get_linked_edges()) ? "True" : "False") << " -> " << edge_likelihood << std::endl;
 			if (e.in(network.get_linked_edges())) {
 				link_count++;
 				link_likelihood += edge_likelihood;
@@ -144,7 +144,7 @@ protected:
 				non_link_likelihood += edge_likelihood;
 			}
 		}
-		// std::cerr << std::setprecision(15) << "ratio " << link_ratio << " count: link " << link_count << " " << link_likelihood << " non-link " << non_link_count << " " << non_link_likelihood << std::endl;
+		// std::cerr << std::setprecision(12) << "ratio " << link_ratio << " count: link " << link_count << " " << link_likelihood << " non-link " << non_link_count << " " << non_link_likelihood << std::endl;
 
 		// weight each part proportionally.
 		// avg_likelihood = self._link_ratio*(link_likelihood/link_count) + \
@@ -152,12 +152,12 @@ protected:
 
 		// direct calculation.
 		double avg_likelihood = (link_likelihood + non_link_likelihood) / (link_count + non_link_count);
-		if (false) {
+		if (true) {
 			double avg_likelihood1 = link_ratio * (link_likelihood / link_count) + \
 										 (1.0 - link_ratio) * (non_link_likelihood / non_link_count);
-			std::cerr << std::setprecision(15) << avg_likelihood << " " << (link_likelihood / link_count) << " " << link_count << " " << \
+			std::cerr << std::setprecision(12) << avg_likelihood << " " << (link_likelihood / link_count) << " " << link_count << " " << \
 				(non_link_likelihood / non_link_count) << " " << non_link_count << " " << avg_likelihood1 << std::endl;
-			std::cerr << "perplexity score is: " << exp(-avg_likelihood) << std::endl;
+			// std::cerr << "perplexity score is: " << exp(-avg_likelihood) << std::endl;
 		}
 
 		// return std::exp(-avg_likelihood);
@@ -168,9 +168,13 @@ protected:
 	template <typename T>
 	static void dump(const std::vector<T> &a, ::size_t n, const std::string &name = "") {
 		n = std::min(n, a.size());
-		std::cerr << name << "[0:" << n << "] ";
+		std::cerr << name;
+		if (n != a.size()) {
+	   		std::cerr << "[0:" << n << "]";
+		}
+		std::cerr << " ";
 		for (auto i = a.begin(); i < a.begin() + n; i++) {
-			std::cerr << std::setprecision(15) << *i << " ";
+			std::cerr << std::setprecision(12) << *i << " ";
 		}
 		std::cerr << std::endl;
 	}
