@@ -64,57 +64,9 @@ public:
 				);
 	}
 
-	virtual void run() {
-	        /** run mini-batch based MCMC sampler, based on the sungjin's note */
-
-		if (step_count % 1 == 0) {
-			double ppx_score = cal_perplexity_held_out();
-			std::cout << std::fixed << std::setprecision(15) << "perplexity for hold out set is: " << ppx_score << std::endl;
-			ppxs_held_out.push_back(ppx_score);
-		}
-
-		while (step_count < max_iteration && ! is_converged()) {
-			auto l1 = std::chrono::system_clock::now();
-			EdgeSample edgeSample = network.sample_mini_batch(mini_batch_size, strategy::STRATIFIED_RANDOM_NODE);
-			const OrderedEdgeSet &mini_batch = *edgeSample.first;
-			double scale = edgeSample.second;
-
-			std::unordered_map<int, std::vector<int> > latent_vars;
-			std::unordered_map<int, ::size_t> size;
-
-			// iterate through each node in the mini batch.
-			OrderedVertexSet nodes = nodes_in_batch(mini_batch);
-
-			sample_latent_vars_stub(nodes, size, latent_vars);
-
-			update_pi_for_node_stub(nodes, size, latent_vars, scale);
-
-			// sample (z_ab, z_ba) for each edge in the mini_batch.
-			// z is map structure. i.e  z = {(1,10):3, (2,4):-1}
-			EdgeMapZ z = sample_latent_vars2(mini_batch);
-			update_beta(mini_batch, scale, z);
-
-
-			if (step_count % 1 == 0) {
-				double ppx_score = cal_perplexity_held_out();
-				std::cout << "perplexity for hold out set is: " << ppx_score << std::endl;
-				ppxs_held_out.push_back(ppx_score);
-			}
-
-			std::cerr << "GC mini_batch->first EdgeSet *" << std::endl;
-			delete edgeSample.first;
-
-			step_count++;
-			auto l2 = std::chrono::system_clock::now();
-			std::cout << "LOOP  = " << (l2-l1).count() << std::endl;
-		}
-
-	}
-
-
 protected:
 
-	EdgeMapZ sample_latent_vars2(const OrderedEdgeSet &mini_batch) {
+	virtual EdgeMapZ sample_latent_vars2(const OrderedEdgeSet &mini_batch) {
 		std::vector<cl_int2> edges(mini_batch.size());
 		int i = 0;
 		// Copy edges
@@ -126,7 +78,7 @@ protected:
 		});
 		clContext.queue.enqueueWriteBuffer(clNodesNeighbors, CL_TRUE,
 				0, edges.size()*sizeof(cl_int2),
-				&(edges[0]));
+				edges.data());
 
 		// Generate and copy Randoms
 		std::vector<double> randoms(edges.size());
@@ -137,7 +89,7 @@ protected:
 #endif
 		clContext.queue.enqueueWriteBuffer(clRandom, CL_TRUE,
 				0, edges.size() * sizeof(cl_double),
-				&(randoms[0]));
+				randoms.data());
 
 		sample_latent_vars2_kernel.setArg(0, clGraph);
 		sample_latent_vars2_kernel.setArg(1, clNodesNeighbors);
@@ -148,13 +100,13 @@ protected:
 		sample_latent_vars2_kernel.setArg(6, clScratch);
 		sample_latent_vars2_kernel.setArg(7, clRandom);
 
-		clContext.queue.enqueueNDRangeKernel(sample_latent_vars2_kernel, cl::NullRange, cl::NDRange(4), cl::NDRange(1));
+		clContext.queue.enqueueNDRangeKernel(sample_latent_vars2_kernel, cl::NullRange, cl::NDRange(1), cl::NDRange(1));
 		clContext.queue.finish();
 
 		std::vector<int> zFromCL(edges.size());
 		clContext.queue.enqueueReadBuffer(clZ, CL_TRUE,
 				0, edges.size() * sizeof(cl_int),
-				&(zFromCL[0]));
+				zFromCL.data());
 		EdgeMapZ ezm;
 		i = 0;
 		for (auto &e : mini_batch) {
@@ -164,7 +116,7 @@ protected:
 		return ezm;
 	}
 
-	void update_pi_for_node_stub(OrderedVertexSet& nodes,
+	virtual void update_pi_for_node_stub(const OrderedVertexSet& nodes,
 			std::unordered_map<int, ::size_t>& size,
 			std::unordered_map<int, std::vector<int> >& latent_vars,
 			double scale) {
@@ -177,11 +129,11 @@ protected:
 			clContext.queue.enqueueWriteBuffer(clRandom, CL_TRUE,
 					i * K * sizeof(cl_double),
 					K * sizeof(cl_double),
-					&(noise[0]));
+					noise.data());
 			clContext.queue.enqueueWriteBuffer(clPhi, CL_TRUE,
 					*node * K * sizeof(cl_double),
 					K * sizeof(cl_double),
-					&(phi[*node][0]));
+					phi[*node].data());
 		}
 		update_pi_kernel.setArg(0, clNodes);
 		update_pi_kernel.setArg(1, (cl_int)nodes.size());
@@ -208,11 +160,11 @@ protected:
 			clContext.queue.enqueueReadBuffer(clPi, CL_TRUE,
 					*node * K * sizeof(cl_double),
 					K * sizeof(cl_double),
-					&(pi[*node][0]));
+					pi[*node].data());
 			clContext.queue.enqueueReadBuffer(clPhi, CL_TRUE,
 					*node * K * sizeof(cl_double),
 					K * sizeof(cl_double),
-					&(phi[*node][0]));
+					phi[*node].data());
 		}
 	}
 
@@ -220,11 +172,12 @@ protected:
 		return num_node_sample + 1;
 	}
 
-	void sample_latent_vars_stub(const OrderedVertexSet& nodes,
+	virtual void sample_latent_vars_stub(const OrderedVertexSet& nodes,
 			std::unordered_map<int, ::size_t>& size,
 			std::unordered_map<int, std::vector<int> >& latent_vars) {
 
 		std::unordered_map<int, OrderedVertexSet> neighbor_nodes;
+		std::vector<double> randoms;
 		// pre-generate neighbors for each node
 		for (auto node = nodes.begin();
 				node != nodes.end();
@@ -232,11 +185,20 @@ protected:
 			// sample a mini-batch of neighbors
 			neighbor_nodes[*node] = sample_neighbor_nodes(num_node_sample, *node);
 			size[*node] = neighbor_nodes[*node].size();
+
+			// Generate Randoms
+			std::vector<double> rs(real_num_node_sample());
+#ifdef RANDOM_FOLLOWS_PYTHON
+			std::generate(rs.begin(), rs.end(), std::bind(&Random::FileReaderRandom::random, Random::random));
+#else
+			std::generate(rs.begin(), rs.end(), std::bind(&Random::Random::random, Random::random));
+#endif
+			randoms.insert(randoms.end(), rs.begin(), rs.end());
 		}
 
 		// Copy sampled node IDs
 		std::vector<int> v_nodes(nodes.begin(), nodes.end()); // FIXME: replace OrderedVertexSet with vector
-		clContext.queue.enqueueWriteBuffer(clNodes, CL_TRUE, 0, v_nodes.size()*sizeof(int), &(v_nodes[0]));
+		clContext.queue.enqueueWriteBuffer(clNodes, CL_TRUE, 0, v_nodes.size()*sizeof(int), v_nodes.data());
 
 		// Copy neighbors of *sampled* nodes only
 		for (auto node = nodes.begin(); node != nodes.end(); ++node) {
@@ -244,7 +206,7 @@ protected:
 			clContext.queue.enqueueWriteBuffer(clNodesNeighbors, CL_TRUE,
 					*node * real_num_node_sample() * sizeof(cl_int),
 					real_num_node_sample() * sizeof(cl_int),
-					&(neighbors[0]));
+					neighbors.data());
 		}
 
 		// Copy pi
@@ -252,20 +214,14 @@ protected:
 			clContext.queue.enqueueWriteBuffer(clPi, CL_TRUE,
 					i * K * sizeof(double),
 					K * sizeof(double),
-					&(pi[i][0]));
+					pi[i].data());
 		}
 
 		// Copy beta
-		clContext.queue.enqueueWriteBuffer(clBeta, CL_TRUE, 0, K * sizeof(double), &beta[0]);
+		clContext.queue.enqueueWriteBuffer(clBeta, CL_TRUE, 0, K * sizeof(double), beta.data());
 
-		// Generate and copy Randoms
-		std::vector<double> randoms(nodes.size() * real_num_node_sample());
-#ifdef RANDOM_FOLLOWS_PYTHON
-		std::generate(randoms.begin(), randoms.end(), std::bind(&Random::FileReaderRandom::random, Random::random));
-#else
-		std::generate(randoms.begin(), randoms.end(), std::bind(&Random::Random::random, Random::random));
-#endif
-		clContext.queue.enqueueWriteBuffer(clRandom, CL_TRUE, 0, nodes.size() * real_num_node_sample() * sizeof(cl_double), &(randoms[0]));
+		// Copy Randoms
+		clContext.queue.enqueueWriteBuffer(clRandom, CL_TRUE, 0, nodes.size() * real_num_node_sample() * sizeof(cl_double), randoms.data());
 
 		sample_latent_vars_kernel.setArg(0, clGraph);
 		sample_latent_vars_kernel.setArg(1, clNodes);
@@ -287,7 +243,7 @@ protected:
 			clContext.queue.enqueueReadBuffer(clZ, CL_TRUE,
 					(*node) * K * sizeof(cl_int),
 					K * sizeof(cl_int),
-					&(latent_vars[*node][0]));
+					latent_vars[*node].data());
 		}
 	}
 
