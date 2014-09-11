@@ -198,7 +198,7 @@ public:
 
 protected:
 
-    void sample_latent_vars_stub(const OrderedVertexSet& nodes,
+    virtual void sample_latent_vars_stub(const OrderedVertexSet& nodes,
     			std::unordered_map<int, ::size_t>& size,
     			std::unordered_map<int, std::vector<int> >& latent_vars) {
     	for (auto node = nodes.begin();
@@ -214,7 +214,7 @@ protected:
 		}
     }
 
-    void update_pi_for_node_stub(const OrderedVertexSet& nodes,
+    virtual void update_pi_for_node_stub(const OrderedVertexSet& nodes,
 			std::unordered_map<int, ::size_t>& size,
 			std::unordered_map<int, std::vector<int> >& latent_vars,
 			double scale) {
@@ -377,7 +377,7 @@ protected:
 	}
 
 
-    EdgeMapZ sample_latent_vars2(const OrderedEdgeSet &mini_batch) {
+    virtual EdgeMapZ sample_latent_vars2(const OrderedEdgeSet &mini_batch) {
         /**
         sample latent variable (z_ab, z_ba) for each pair of nodes. But we only consider 11 different cases,
         since we only need indicator function in the gradient update. More details, please see the comments
