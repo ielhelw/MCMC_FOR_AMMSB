@@ -126,7 +126,7 @@ protected:
 		});
 		clContext.queue.enqueueWriteBuffer(clNodesNeighbors, CL_TRUE,
 				0, edges.size()*sizeof(cl_int2),
-				&(edges[0]));
+				edges.data());
 
 		// Generate and copy Randoms
 		std::vector<double> randoms(edges.size());
@@ -137,7 +137,7 @@ protected:
 #endif
 		clContext.queue.enqueueWriteBuffer(clRandom, CL_TRUE,
 				0, edges.size() * sizeof(cl_double),
-				&(randoms[0]));
+				randoms.data());
 
 		sample_latent_vars2_kernel.setArg(0, clGraph);
 		sample_latent_vars2_kernel.setArg(1, clNodesNeighbors);
@@ -148,13 +148,13 @@ protected:
 		sample_latent_vars2_kernel.setArg(6, clScratch);
 		sample_latent_vars2_kernel.setArg(7, clRandom);
 
-		clContext.queue.enqueueNDRangeKernel(sample_latent_vars2_kernel, cl::NullRange, cl::NDRange(4), cl::NDRange(1));
+		clContext.queue.enqueueNDRangeKernel(sample_latent_vars2_kernel, cl::NullRange, cl::NDRange(1), cl::NDRange(1));
 		clContext.queue.finish();
 
 		std::vector<int> zFromCL(edges.size());
 		clContext.queue.enqueueReadBuffer(clZ, CL_TRUE,
 				0, edges.size() * sizeof(cl_int),
-				&(zFromCL[0]));
+				zFromCL.data());
 		EdgeMapZ ezm;
 		i = 0;
 		for (auto &e : mini_batch) {
@@ -177,11 +177,11 @@ protected:
 			clContext.queue.enqueueWriteBuffer(clRandom, CL_TRUE,
 					i * K * sizeof(cl_double),
 					K * sizeof(cl_double),
-					&(noise[0]));
+					noise.data());
 			clContext.queue.enqueueWriteBuffer(clPhi, CL_TRUE,
 					*node * K * sizeof(cl_double),
 					K * sizeof(cl_double),
-					&(phi[*node][0]));
+					phi[*node].data());
 		}
 		update_pi_kernel.setArg(0, clNodes);
 		update_pi_kernel.setArg(1, (cl_int)nodes.size());
@@ -208,11 +208,11 @@ protected:
 			clContext.queue.enqueueReadBuffer(clPi, CL_TRUE,
 					*node * K * sizeof(cl_double),
 					K * sizeof(cl_double),
-					&(pi[*node][0]));
+					pi[*node].data());
 			clContext.queue.enqueueReadBuffer(clPhi, CL_TRUE,
 					*node * K * sizeof(cl_double),
 					K * sizeof(cl_double),
-					&(phi[*node][0]));
+					phi[*node].data());
 		}
 	}
 
@@ -246,7 +246,7 @@ protected:
 
 		// Copy sampled node IDs
 		std::vector<int> v_nodes(nodes.begin(), nodes.end()); // FIXME: replace OrderedVertexSet with vector
-		clContext.queue.enqueueWriteBuffer(clNodes, CL_TRUE, 0, v_nodes.size()*sizeof(int), &(v_nodes[0]));
+		clContext.queue.enqueueWriteBuffer(clNodes, CL_TRUE, 0, v_nodes.size()*sizeof(int), v_nodes.data());
 
 		// Copy neighbors of *sampled* nodes only
 		for (auto node = nodes.begin(); node != nodes.end(); ++node) {
@@ -254,7 +254,7 @@ protected:
 			clContext.queue.enqueueWriteBuffer(clNodesNeighbors, CL_TRUE,
 					*node * real_num_node_sample() * sizeof(cl_int),
 					real_num_node_sample() * sizeof(cl_int),
-					&(neighbors[0]));
+					neighbors.data());
 		}
 
 		// Copy pi
@@ -262,14 +262,14 @@ protected:
 			clContext.queue.enqueueWriteBuffer(clPi, CL_TRUE,
 					i * K * sizeof(double),
 					K * sizeof(double),
-					&(pi[i][0]));
+					pi[i].data());
 		}
 
 		// Copy beta
-		clContext.queue.enqueueWriteBuffer(clBeta, CL_TRUE, 0, K * sizeof(double), &beta[0]);
+		clContext.queue.enqueueWriteBuffer(clBeta, CL_TRUE, 0, K * sizeof(double), beta.data());
 
 		// Copy Randoms
-		clContext.queue.enqueueWriteBuffer(clRandom, CL_TRUE, 0, nodes.size() * real_num_node_sample() * sizeof(cl_double), &(randoms[0]));
+		clContext.queue.enqueueWriteBuffer(clRandom, CL_TRUE, 0, nodes.size() * real_num_node_sample() * sizeof(cl_double), randoms.data());
 
 		sample_latent_vars_kernel.setArg(0, clGraph);
 		sample_latent_vars_kernel.setArg(1, clNodes);
@@ -291,7 +291,7 @@ protected:
 			clContext.queue.enqueueReadBuffer(clZ, CL_TRUE,
 					(*node) * K * sizeof(cl_int),
 					K * sizeof(cl_int),
-					&(latent_vars[*node][0]));
+					latent_vars[*node].data());
 		}
 	}
 
