@@ -225,6 +225,7 @@ protected:
 			std::unordered_map<int, std::vector<int> >& latent_vars) {
 
 		std::unordered_map<int, OrderedVertexSet> neighbor_nodes;
+		std::vector<double> randoms;
 		// pre-generate neighbors for each node
 		for (auto node = nodes.begin();
 				node != nodes.end();
@@ -232,6 +233,15 @@ protected:
 			// sample a mini-batch of neighbors
 			neighbor_nodes[*node] = sample_neighbor_nodes(num_node_sample, *node);
 			size[*node] = neighbor_nodes[*node].size();
+
+			// Generate Randoms
+			std::vector<double> rs(real_num_node_sample());
+#ifdef RANDOM_FOLLOWS_PYTHON
+			std::generate(rs.begin(), rs.end(), std::bind(&Random::FileReaderRandom::random, Random::random));
+#else
+			std::generate(rs.begin(), rs.end(), std::bind(&Random::Random::random, Random::random));
+#endif
+			randoms.insert(randoms.end(), rs.begin(), rs.end());
 		}
 
 		// Copy sampled node IDs
@@ -258,13 +268,7 @@ protected:
 		// Copy beta
 		clContext.queue.enqueueWriteBuffer(clBeta, CL_TRUE, 0, K * sizeof(double), &beta[0]);
 
-		// Generate and copy Randoms
-		std::vector<double> randoms(nodes.size() * real_num_node_sample());
-#ifdef RANDOM_FOLLOWS_PYTHON
-		std::generate(randoms.begin(), randoms.end(), std::bind(&Random::FileReaderRandom::random, Random::random));
-#else
-		std::generate(randoms.begin(), randoms.end(), std::bind(&Random::Random::random, Random::random));
-#endif
+		// Copy Randoms
 		clContext.queue.enqueueWriteBuffer(clRandom, CL_TRUE, 0, nodes.size() * real_num_node_sample() * sizeof(cl_double), &(randoms[0]));
 
 		sample_latent_vars_kernel.setArg(0, clGraph);
