@@ -12,6 +12,9 @@
 #ifndef MCMC_PREPROCESS_DATASET_H__
 #define MCMC_PREPROCESS_DATASET_H__
 
+#include <iostream>
+#include <string>
+
 #include "mcmc/data.h"
 
 namespace mcmc {
@@ -24,6 +27,7 @@ namespace preprocess {
 class DataSet {
 public:
 	DataSet(const std::string &filename) : filename(filename) {
+		std::cerr << "Handle input dataset from file " << filename << std::endl;
 	}
 
 	virtual ~DataSet() {

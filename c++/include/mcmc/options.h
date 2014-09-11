@@ -211,7 +211,10 @@ public:
 			("output-dir,o", po::value<std::string>(&output_dir)->default_value("."), "output_dir")
 
 			("input-file,f", po::value<std::string>(&filename)->default_value(""), "input file")
-			("class,c", po::value<std::string>(&dataset_class)->default_value("netscience"), "input class");
+			("class,c", po::value<std::string>(&dataset_class)->default_value("netscience"), "input class")
+
+			("platform,p", po::value<std::string>(&openClPlatform), "OpenCL platform")
+			("device,d", po::value<std::string>(&openClDevice), "OpenCL device")
 			;
 
 		po::variables_map vm;
@@ -243,6 +246,9 @@ public:
 
 	std::string filename;
 	std::string dataset_class;
+
+	std::string	openClPlatform;
+	std::string	openClDevice;
 };
 
 };	// namespace mcmc

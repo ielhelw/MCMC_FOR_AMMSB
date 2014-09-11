@@ -1,6 +1,8 @@
 #ifndef MCMC_LEARNING_VARIATIONAL_INFERENCE_BATCH_H__
 #define MCMC_LEARNING_VARIATIONAL_INFERENCE_BATCH_H__
 
+#include <chrono>
+
 #include "mcmc/learning/learner.h"
 #include "mcmc/estimate_phi.h"
 
@@ -87,6 +89,7 @@ public:
         step_count++;
 
 		while (step_count < max_iteration and !is_converged()) {
+			auto l1 = std::chrono::system_clock::now();
             double ppx_score = cal_perplexity_held_out();
 			std::cout << "perplexity for hold out set is: "  << ppx_score << std::endl;
 
@@ -94,6 +97,8 @@ public:
             update_pi_beta();
 
             step_count++;
+			auto l2 = std::chrono::system_clock::now();
+			std::cout << "LOOP  = " << (l2-l1).count() << std::endl;
 		}
 
         // pr.disable()

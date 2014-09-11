@@ -6,6 +6,7 @@
 #include <utility>
 #include <numeric>
 #include <algorithm>	// min, max
+#include <chrono>
 
 #include "mcmc/np.h"
 #include "mcmc/random.h"
@@ -140,6 +141,7 @@ public:
 		}
 
         while (step_count < max_iteration && ! is_converged()) {
+			auto l1 = std::chrono::system_clock::now();
             //print "step: " + str(self._step_count)
             /**
             pr = cProfile.Profile()
@@ -179,10 +181,11 @@ public:
 #endif
 			}
 
-			std::cerr << "GC mini_batch->first EdgeSet *" << std::endl;
 			delete edgeSample.first;
 
             step_count++;
+			auto l2 = std::chrono::system_clock::now();
+			std::cout << "LOOP  = " << (l2-l1).count() << std::endl;
 
             /**
             pr.disable()
@@ -319,10 +322,16 @@ protected:
 		std::vector<std::vector<double> > theta_star(theta);
         for (::size_t k = 0; k < K; k++) {
             for (::size_t i = 0; i < 2; i++) {
+#ifdef EFFICIENCY_FOLLOWS_PYTHON
 				// FIXME rewrite a**0.5 * b**0.5 as sqrt(a * b)
                 theta_star[k][i] = std::abs(theta[k][i] + eps_t * (eta[i] - theta[k][i] + \
 																   scale * grads[k][i]) +
 										   	std::pow(2.0 * eps_t, .5) * std::pow(theta[k][i], .5) * noise[k][i]);
+#else
+                theta_star[k][i] = std::abs(theta[k][i] + eps_t * (eta[i] - theta[k][i] + \
+																   scale * grads[k][i]) +
+										   	sqrt(2.0 * eps_t * theta[k][i]) * noise[k][i]);
+#endif
 			}
 		}
 
@@ -360,10 +369,16 @@ protected:
 
         // update the phi
         for (::size_t k = 0; k < K; k++) {
+#ifdef EFFICIENCY_FOLLOWS_PYTHON
 			// FIXME replace a**0.5 * b**0.5 with sqrt(a * b)
             phi_star[k] = std::abs(phi[i][k] + eps_t/2 * (alpha - phi[i][k] + \
 														  (N/n) * grads[k]) +
 								   std::pow(eps_t, .5) * std::pow(phi[i][k], .5) * noise[k]);
+#else
+            phi_star[k] = std::abs(phi[i][k] + eps_t/2 * (alpha - phi[i][k] + \
+														  (N/n) * grads[k]) +
+								   sqrt(eps_t * phi[i][k]) * noise[k]);
+#endif
 		}
 
         // self.__phi[i] = phi_star
@@ -417,9 +432,21 @@ protected:
 		 * Returns the community index. If it falls into the case that z_ab!=z_ba, then return -1
          */
 		std::vector<double> p(K + 1);
+#ifdef EFFICIENCY_FOLLOWS_PYTHON
 		for (::size_t k = 0; k < K; k++) {
             p[k] = std::pow(beta[k], y) * pow(1-beta[k], 1-y) * pi_a[k] * pi_b[k];
 		}
+#else
+		if (y == 1) {
+			for (::size_t k = 0; k < K; k++) {
+				p[k] = beta[k] * pi_a[k] * pi_b[k];
+			}
+		} else {
+			for (::size_t k = 0; k < K; k++) {
+				p[k] = (1-beta[k]) * pi_a[k] * pi_b[k];
+			}
+		}
+#endif
         // p[K] = 1 - np.sum(p[0:K])
         p[K] = 1.0 - std::accumulate(p.begin(), p.begin() + K, 0.0);
 
@@ -569,6 +596,7 @@ protected:
 							  double epsilon, ::size_t K, int node, int neighbor) const {
 		std::vector<double> p(K);
 
+#ifdef EFFICIENCY_FOLLOWS_PYTHON
         for (::size_t i = 0; i < K; i++) {
 			// FIMXE lift common expressions
             double tmp = std::pow(beta[i], y) * std::pow(1-beta[i], 1-y) * pi_a[i] * pi_b[i];
@@ -577,6 +605,25 @@ protected:
             tmp += fac * pi_a[i] * (1 - pi_b[i]);
             p[i] = tmp;
 		}
+#else
+		if (y == 1) {
+			for (::size_t i = 0; i < K; i++) {
+				// p[i] = beta[i] * pi_a[i] * pi_b[i] + epsilon * pi_a[i] * (1 - pi_b[i])
+				//      = pi_a[i] * (beta[i] * pi_b[i] + epsilon * (1 - pi_b[i]))
+				//      = pi_a[i] * (pi_b[i] * (beta[i] - epsilon) + epsilon)
+				p[i] = pi_a[i] * (pi_b[i] * (beta[i] - epsilon) + epsilon);
+			}
+		} else {
+			double one_eps = 1.0 - epsilon;
+			for (::size_t i = 0; i < K; i++) {
+				// p[i] = (1 - beta[i]) * pi_a[i] * pi_b[i] + (1 - epsilon) * pi_a[i] * (1 - pi_b[i])
+				//      = pi_a[i] * ((1 - beta[i]) * pi_b[i] + (1 - epsilon) * (1 - pi_b[i]))
+				//      = pi_a[i] * (pi_b[i] * (1 - beta[i] - (1 - epsilon)) + (1 - epsilon) * 1)
+				//      = pi_a[i] * (pi_b[i] * (-beta[i] + epsilon) + 1 - epsilon)
+				p[i] = pi_a[i] * (pi_b[i] * (epsilon - beta[i]) + one_eps);
+			}
+		}
+#endif
 
         for (::size_t k = 1; k < K; k++) {
             p[k] += p[k-1];

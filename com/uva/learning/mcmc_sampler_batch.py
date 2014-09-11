@@ -174,7 +174,7 @@ class MCMCSamplerBatch(Learner):
         while self._step_count < self._max_iteration and not self._is_converged():
             #print "step: " + str(self._step_count)
             ppx_score = self._cal_perplexity_held_out()
-            sys.stdout.write("perplexity for held out set: %.12f\n" % ppx_score)
+            sys.stdout.write("perplexity for hold out set: %.12f\n" % ppx_score)
             self._ppxs_held_out.append(ppx_score)
             
             phi_star = copy.copy(self._pi)

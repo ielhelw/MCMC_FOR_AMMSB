@@ -5,23 +5,24 @@ using namespace mcmc::preprocess;
 using namespace mcmc::learning;
 
 int main(int argc, char *argv[]) {
-	cl::ClContext context = cl::ClContext::createOpenCLContext();
-
 	Options args(argc, argv);
+
+	cl::ClContext context = cl::ClContext::createOpenCLContext(args.openClPlatform,
+															   args.openClDevice);
 
 	DataFactory df(args.dataset_class, args.filename);
 	const Data *data = df.get_data();
 	Network network(data, 0.1);
 
 	if (true) {
-		std::cout << "start MCMC batch" << std::endl;
-		MCMCSamplerBatch mcmcSampler(args, network);
+		std::cout << "start MCMC stochastical" << std::endl;
+		MCMCSamplerStochastic mcmcSampler(args, network);
 		mcmcSampler.run();
 	}
 
 	if (false) {
-		std::cout << "start MCMC stochastical" << std::endl;
-		MCMCSamplerStochastic mcmcSampler(args, network);
+		std::cout << "start MCMC batch" << std::endl;
+		MCMCSamplerBatch mcmcSampler(args, network);
 		mcmcSampler.run();
 	}
 
