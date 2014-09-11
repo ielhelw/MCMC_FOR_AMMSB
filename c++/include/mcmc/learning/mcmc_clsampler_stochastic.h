@@ -64,57 +64,9 @@ public:
 				);
 	}
 
-	virtual void run() {
-	        /** run mini-batch based MCMC sampler, based on the sungjin's note */
-
-		if (step_count % 1 == 0) {
-			double ppx_score = cal_perplexity_held_out();
-			std::cout << std::fixed << std::setprecision(15) << "perplexity for hold out set is: " << ppx_score << std::endl;
-			ppxs_held_out.push_back(ppx_score);
-		}
-
-		while (step_count < max_iteration && ! is_converged()) {
-			auto l1 = std::chrono::system_clock::now();
-			EdgeSample edgeSample = network.sample_mini_batch(mini_batch_size, strategy::STRATIFIED_RANDOM_NODE);
-			const OrderedEdgeSet &mini_batch = *edgeSample.first;
-			double scale = edgeSample.second;
-
-			std::unordered_map<int, std::vector<int> > latent_vars;
-			std::unordered_map<int, ::size_t> size;
-
-			// iterate through each node in the mini batch.
-			OrderedVertexSet nodes = nodes_in_batch(mini_batch);
-
-			sample_latent_vars_stub(nodes, size, latent_vars);
-
-			update_pi_for_node_stub(nodes, size, latent_vars, scale);
-
-			// sample (z_ab, z_ba) for each edge in the mini_batch.
-			// z is map structure. i.e  z = {(1,10):3, (2,4):-1}
-			EdgeMapZ z = sample_latent_vars2(mini_batch);
-			update_beta(mini_batch, scale, z);
-
-
-			if (step_count % 1 == 0) {
-				double ppx_score = cal_perplexity_held_out();
-				std::cout << "perplexity for hold out set is: " << ppx_score << std::endl;
-				ppxs_held_out.push_back(ppx_score);
-			}
-
-			std::cerr << "GC mini_batch->first EdgeSet *" << std::endl;
-			delete edgeSample.first;
-
-			step_count++;
-			auto l2 = std::chrono::system_clock::now();
-			std::cout << "LOOP  = " << (l2-l1).count() << std::endl;
-		}
-
-	}
-
-
 protected:
 
-	EdgeMapZ sample_latent_vars2(const OrderedEdgeSet &mini_batch) {
+	virtual EdgeMapZ sample_latent_vars2(const OrderedEdgeSet &mini_batch) {
 		std::vector<cl_int2> edges(mini_batch.size());
 		int i = 0;
 		// Copy edges
@@ -164,7 +116,7 @@ protected:
 		return ezm;
 	}
 
-	void update_pi_for_node_stub(OrderedVertexSet& nodes,
+	virtual void update_pi_for_node_stub(const OrderedVertexSet& nodes,
 			std::unordered_map<int, ::size_t>& size,
 			std::unordered_map<int, std::vector<int> >& latent_vars,
 			double scale) {
@@ -220,7 +172,7 @@ protected:
 		return num_node_sample + 1;
 	}
 
-	void sample_latent_vars_stub(const OrderedVertexSet& nodes,
+	virtual void sample_latent_vars_stub(const OrderedVertexSet& nodes,
 			std::unordered_map<int, ::size_t>& size,
 			std::unordered_map<int, std::vector<int> >& latent_vars) {
 
