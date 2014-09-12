@@ -47,6 +47,9 @@ public:
 		clPi = cl::Buffer(clContext.context, CL_MEM_READ_WRITE,
 				N * K * sizeof(cl_double) // #total_nodes x #K
 				);
+		clPiUpdate = cl::Buffer(clContext.context, CL_MEM_READ_WRITE,
+				N * K * sizeof(cl_double) // #total_nodes x #K
+				);
 		clPhi = cl::Buffer(clContext.context, CL_MEM_READ_WRITE,
 				N * K * sizeof(cl_double) // #total_nodes x #K
 				);
@@ -56,12 +59,21 @@ public:
 		clZ = cl::Buffer(clContext.context, CL_MEM_READ_WRITE,
 				N * K * sizeof(cl_int) // #total_nodes x #K
 				);
-		clRandom = cl::Buffer(clContext.context, CL_MEM_READ_WRITE,
-				N * std::max(K, real_num_node_sample()) * sizeof(cl_double) // at most #total_nodes
+		clRandomNK = cl::Buffer(clContext.context, CL_MEM_READ_WRITE,
+				N * K * sizeof(cl_double) // at most #total_nodes
+				);
+		clRandomNN = cl::Buffer(clContext.context, CL_MEM_READ_WRITE,
+				N * real_num_node_sample() * sizeof(cl_double) // at most #total_nodes
 				);
 		clScratch = cl::Buffer(clContext.context, CL_MEM_READ_WRITE,
 				N * K * sizeof(cl_double) // #total_nodes x #K
 				);
+		for (unsigned i = 0; i < N; ++i) {
+			clContext.queue.enqueueWriteBuffer(clPhi, CL_TRUE,
+					i * K * sizeof(cl_double),
+					K * sizeof(cl_double),
+					phi[i].data());
+		}
 	}
 
 protected:
@@ -87,7 +99,7 @@ protected:
 #else
 		std::generate(randoms.begin(), randoms.end(), std::bind(&Random::Random::random, Random::random));
 #endif
-		clContext.queue.enqueueWriteBuffer(clRandom, CL_TRUE,
+		clContext.queue.enqueueWriteBuffer(clRandomNN, CL_TRUE,
 				0, edges.size() * sizeof(cl_double),
 				randoms.data());
 
@@ -98,7 +110,7 @@ protected:
 		sample_latent_vars2_kernel.setArg(4, clBeta);
 		sample_latent_vars2_kernel.setArg(5, clZ);
 		sample_latent_vars2_kernel.setArg(6, clScratch);
-		sample_latent_vars2_kernel.setArg(7, clRandom);
+		sample_latent_vars2_kernel.setArg(7, clRandomNN);
 
 		clContext.queue.enqueueNDRangeKernel(sample_latent_vars2_kernel, cl::NullRange, cl::NDRange(1), cl::NDRange(1));
 		clContext.queue.finish();
@@ -116,56 +128,10 @@ protected:
 		return ezm;
 	}
 
-	virtual void update_pi_for_node_stub(const OrderedVertexSet& nodes,
-			std::unordered_map<int, ::size_t>& size,
-			std::unordered_map<int, std::vector<int> >& latent_vars,
+	virtual void update_pi_for_node_stub(const OrderedVertexSet& __attribute__((unused)) nodes,
+			std::unordered_map<int, ::size_t>& __attribute__((unused)) size,
+			std::unordered_map<int, std::vector<int> >& __attribute__((unused)) latent_vars,
 			double scale) {
-		// update pi for each node
-		int i = 0;
-		for (auto node = nodes.begin();
-				node != nodes.end();
-				++node, ++i) {
-			std::vector<double> noise = Random::random->randn(K);
-			clContext.queue.enqueueWriteBuffer(clRandom, CL_TRUE,
-					i * K * sizeof(cl_double),
-					K * sizeof(cl_double),
-					noise.data());
-			clContext.queue.enqueueWriteBuffer(clPhi, CL_TRUE,
-					*node * K * sizeof(cl_double),
-					K * sizeof(cl_double),
-					phi[*node].data());
-		}
-		update_pi_kernel.setArg(0, clNodes);
-		update_pi_kernel.setArg(1, (cl_int)nodes.size());
-		update_pi_kernel.setArg(2, clPi);
-		update_pi_kernel.setArg(3, clPhi);
-		update_pi_kernel.setArg(4, clZ);
-		update_pi_kernel.setArg(5, clRandom);
-		update_pi_kernel.setArg(6, clScratch);
-		update_pi_kernel.setArg(7, (cl_double)alpha);
-		update_pi_kernel.setArg(8, (cl_double)a);
-		update_pi_kernel.setArg(9, (cl_double)b);
-		update_pi_kernel.setArg(10, (cl_double)c);
-		update_pi_kernel.setArg(11, (cl_int)step_count);
-		update_pi_kernel.setArg(12, (cl_int)N);
-
-		// FIXME: threading granularity
-		clContext.queue.enqueueNDRangeKernel(update_pi_kernel, cl::NullRange, cl::NDRange(4), cl::NDRange(1));
-		clContext.queue.finish();
-
-		// read Pi again
-		for (auto node = nodes.begin();
-				node != nodes.end();
-				++node) {
-			clContext.queue.enqueueReadBuffer(clPi, CL_TRUE,
-					*node * K * sizeof(cl_double),
-					K * sizeof(cl_double),
-					pi[*node].data());
-			clContext.queue.enqueueReadBuffer(clPhi, CL_TRUE,
-					*node * K * sizeof(cl_double),
-					K * sizeof(cl_double),
-					phi[*node].data());
-		}
 	}
 
 	::size_t real_num_node_sample() const {
@@ -221,7 +187,19 @@ protected:
 		clContext.queue.enqueueWriteBuffer(clBeta, CL_TRUE, 0, K * sizeof(double), beta.data());
 
 		// Copy Randoms
-		clContext.queue.enqueueWriteBuffer(clRandom, CL_TRUE, 0, nodes.size() * real_num_node_sample() * sizeof(cl_double), randoms.data());
+		clContext.queue.enqueueWriteBuffer(clRandomNN, CL_TRUE, 0, nodes.size() * real_num_node_sample() * sizeof(cl_double), randoms.data());
+
+		// Randoms for update pi for each node
+		int i = 0;
+		for (auto node = nodes.begin();
+				node != nodes.end();
+				++node, ++i) {
+			std::vector<double> noise = Random::random->randn(K);
+			clContext.queue.enqueueWriteBuffer(clRandomNK, CL_TRUE,
+					i * K * sizeof(cl_double),
+					K * sizeof(cl_double),
+					noise.data());
+		}
 
 		sample_latent_vars_kernel.setArg(0, clGraph);
 		sample_latent_vars_kernel.setArg(1, clNodes);
@@ -231,20 +209,46 @@ protected:
 		sample_latent_vars_kernel.setArg(5, clBeta);
 		sample_latent_vars_kernel.setArg(6, (cl_double)epsilon);
 		sample_latent_vars_kernel.setArg(7, clZ);
-		sample_latent_vars_kernel.setArg(8, clRandom);
+		sample_latent_vars_kernel.setArg(8, clRandomNN);
 		sample_latent_vars_kernel.setArg(9, clScratch);
 
 		// FIXME: threading granularity
 		clContext.queue.enqueueNDRangeKernel(sample_latent_vars_kernel, cl::NullRange, cl::NDRange(4), cl::NDRange(1));
 		clContext.queue.finish();
 
-		for (auto node = nodes.begin(); node != nodes.end(); ++node) {
-			latent_vars[*node] = std::vector<int>(K, 0);
-			clContext.queue.enqueueReadBuffer(clZ, CL_TRUE,
-					(*node) * K * sizeof(cl_int),
-					K * sizeof(cl_int),
-					latent_vars[*node].data());
+		update_pi_kernel.setArg(0, clNodes);
+		update_pi_kernel.setArg(1, (cl_int)nodes.size());
+		update_pi_kernel.setArg(2, clPi);
+		update_pi_kernel.setArg(3, clPiUpdate);
+		update_pi_kernel.setArg(4, clPhi);
+		update_pi_kernel.setArg(5, clZ);
+		update_pi_kernel.setArg(6, clRandomNK);
+		update_pi_kernel.setArg(7, clScratch);
+		update_pi_kernel.setArg(8, (cl_double)alpha);
+		update_pi_kernel.setArg(9, (cl_double)a);
+		update_pi_kernel.setArg(10, (cl_double)b);
+		update_pi_kernel.setArg(11, (cl_double)c);
+		update_pi_kernel.setArg(12, (cl_int)step_count);
+		update_pi_kernel.setArg(13, (cl_int)N);
+
+		// FIXME: threading granularity
+		clContext.queue.enqueueNDRangeKernel(update_pi_kernel, cl::NullRange, cl::NDRange(4), cl::NDRange(1));
+		clContext.queue.finish();
+
+		// read Pi again
+		for (auto node = nodes.begin();
+				node != nodes.end();
+				++node) {
+			clContext.queue.enqueueReadBuffer(clPiUpdate, CL_TRUE,
+					*node * K * sizeof(cl_double),
+					K * sizeof(cl_double),
+					pi[*node].data());
+			clContext.queue.enqueueCopyBuffer(clPiUpdate, clPi,
+					*node * K * sizeof(cl_double),
+					*node * K * sizeof(cl_double),
+					K * sizeof(cl_double));
 		}
+		clContext.queue.finish();
 	}
 
 	void init_graph() {
@@ -332,10 +336,12 @@ protected:
 	cl::Buffer clNodes;
 	cl::Buffer clNodesNeighbors;
 	cl::Buffer clPi;
+	cl::Buffer clPiUpdate;
 	cl::Buffer clPhi;
 	cl::Buffer clBeta;
 	cl::Buffer clZ;
-	cl::Buffer clRandom;
+	cl::Buffer clRandomNN;
+	cl::Buffer clRandomNK;
 	cl::Buffer clScratch;
 };
 

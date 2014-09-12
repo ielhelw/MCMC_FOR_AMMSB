@@ -110,6 +110,7 @@ kernel void sample_latent_vars(
 void update_pi_for_node_(
 		int node,
 		global double *pi,// #K
+		global double *piUpdate,// #K
 		global double *phi,// #K
 		global int *z, // #K
 		global double *noise, // #K
@@ -136,7 +137,7 @@ void update_pi_for_node_(
 	double phi_sum = 0;
 	for (int i = 0; i < K; ++i) phi_sum += phi[i];
 	for (int i = 0; i < K; ++i) {
-		pi[i] = phi[i]/phi_sum;
+		piUpdate[i] = phi[i]/phi_sum;
 	}
 }
 
@@ -144,6 +145,7 @@ kernel void update_pi_for_node(
 		global int *nodes,
 		int N, // #nodes
 		global double *pi,// (#total_nodes, K)
+		global double *piUpdate,// (#total_nodes, K)
 		global double *phi,// (#total_nodes, K)
 		global int *Z, // (#total_nodes, K)
 		global double *noise, // (#nodes, K)
@@ -158,6 +160,7 @@ kernel void update_pi_for_node(
 		int node = nodes[i];
 		update_pi_for_node_(node,
 				pi + node * K,
+				piUpdate + node * K,
 				phi + node * K,
 				Z + node * K,
 				noise + i * K,
