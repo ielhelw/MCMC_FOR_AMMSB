@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <functional>
 #include <fstream>
+#include <chrono>
 
 #include <boost/math/special_functions/digamma.hpp>
 
@@ -116,6 +117,7 @@ public:
 		step_count++;
 
 		while (step_count < max_iteration and !is_converged()) {
+			auto l1 = std::chrono::system_clock::now();
 			// (mini_batch, scale) = network.sample_mini_batch(mini_batch_size, "stratified-random-node")
 			EdgeSample edgeSample = network.sample_mini_batch(mini_batch_size, strategy::STRATIFIED_RANDOM_NODE);
 			const OrderedEdgeSet &mini_batch = *edgeSample.first;
@@ -155,6 +157,8 @@ public:
 			// std::cerr << "new beta: " << std::setprecision(15) << beta;
 
 			step_count++;
+			auto l2 = std::chrono::system_clock::now();
+			std::cout << "LOOP  = " << (l2-l1).count() << std::endl;
 		}
 
 #if 0

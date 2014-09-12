@@ -290,8 +290,8 @@ public:
 			while (p > 0) {
 				// because of the sparsity, when we sample $mini_batch_size*2$ nodes, the list likely
 				// contains at least mini_batch_size valid nodes.
-				std::cerr << "FIXME: horribly inefficient xrange thingy" << std::endl;
 #ifdef EFFICIENCY_FOLLOWS_PYTHON
+				std::cerr << "FIXME: horribly inefficient xrange thingy" << std::endl;
 				auto nodeList = Random::random->sample(np::xrange(0, N), mini_batch_size * 2);
 #else
 				auto nodeList = Random::random->sampleRange(N, mini_batch_size * 2);

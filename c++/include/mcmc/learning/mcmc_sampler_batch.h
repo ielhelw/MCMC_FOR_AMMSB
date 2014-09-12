@@ -7,6 +7,7 @@
 #include <utility>
 #include <numeric>
 #include <algorithm>	// min, max
+#include <chrono>
 
 #include "mcmc/np.h"
 #include "mcmc/random.h"
@@ -251,8 +252,7 @@ public:
 		}
 #endif
         // p[K] = 1 - np.sum(p[0:K])
-		p[K] = 0.0;
-        p[K] = 1.0 - np::sum(p);
+        p[K] = 1.0 - std::accumulate(p.begin(), p.begin() + K, 0.0);
 
         // sample community based on probability distribution p.
         // bounds = np.cumsum(p)
@@ -303,9 +303,10 @@ public:
         // pr = cProfile.Profile()
         // pr.enable()
         while (step_count < max_iteration && !is_converged()) {
+			auto l1 = std::chrono::system_clock::now();
             //print "step: " + str(self._step_count)
             double ppx_score = cal_perplexity_held_out();
-			std::cout << std::fixed << std::setprecision(12) << "perplexity for held out set: " << ppx_score << std::endl;
+			std::cout << std::fixed << std::setprecision(12) << "perplexity for hold out set: " << ppx_score << std::endl;
             ppxs_held_out.push_back(ppx_score);
 
 			std::vector<std::vector<double> > phi_star(pi);
@@ -325,6 +326,8 @@ public:
             update_beta();
 
             step_count++;
+			auto l2 = std::chrono::system_clock::now();
+			std::cout << "LOOP  = " << (l2-l1).count() << std::endl;
 		}
 
 #if 0
