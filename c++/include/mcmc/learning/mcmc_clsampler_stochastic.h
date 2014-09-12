@@ -32,8 +32,7 @@ public:
 		init_graph();
 
 		sampler_program = this->clContext.createProgram("OpenCL/sampler.cl", progOpts);
-		sample_latent_vars_kernel = cl::Kernel(sampler_program, "sample_latent_vars");
-		update_pi_kernel = cl::Kernel(sampler_program, "update_pi_for_node");
+		sample_latent_vars_and_update_pi_kernel = cl::Kernel(sampler_program, "sample_latent_vars_and_update_pi");
 		sample_latent_vars2_kernel = cl::Kernel(sampler_program, "sample_latent_vars2");
 
 		clNodes = cl::Buffer(clContext.context, CL_MEM_READ_ONLY,
@@ -201,38 +200,27 @@ protected:
 					noise.data());
 		}
 
-		sample_latent_vars_kernel.setArg(0, clGraph);
-		sample_latent_vars_kernel.setArg(1, clNodes);
-		sample_latent_vars_kernel.setArg(2, (cl_int)nodes.size());
-		sample_latent_vars_kernel.setArg(3, clNodesNeighbors);
-		sample_latent_vars_kernel.setArg(4, clPi);
-		sample_latent_vars_kernel.setArg(5, clBeta);
-		sample_latent_vars_kernel.setArg(6, (cl_double)epsilon);
-		sample_latent_vars_kernel.setArg(7, clZ);
-		sample_latent_vars_kernel.setArg(8, clRandomNN);
-		sample_latent_vars_kernel.setArg(9, clScratch);
+		sample_latent_vars_and_update_pi_kernel.setArg(0, clGraph);
+		sample_latent_vars_and_update_pi_kernel.setArg(1, clNodes);
+		sample_latent_vars_and_update_pi_kernel.setArg(2, (cl_int)nodes.size());
+		sample_latent_vars_and_update_pi_kernel.setArg(3, clNodesNeighbors);
+		sample_latent_vars_and_update_pi_kernel.setArg(4, clPi);
+		sample_latent_vars_and_update_pi_kernel.setArg(5, clPiUpdate);
+		sample_latent_vars_and_update_pi_kernel.setArg(6, clPhi);
+		sample_latent_vars_and_update_pi_kernel.setArg(7, clBeta);
+		sample_latent_vars_and_update_pi_kernel.setArg(8, (cl_double)epsilon);
+		sample_latent_vars_and_update_pi_kernel.setArg(9, clZ);
+		sample_latent_vars_and_update_pi_kernel.setArg(10, clRandomNN);
+		sample_latent_vars_and_update_pi_kernel.setArg(11, clRandomNK);
+		sample_latent_vars_and_update_pi_kernel.setArg(12, clScratch);
+		sample_latent_vars_and_update_pi_kernel.setArg(13, (cl_double)alpha);
+		sample_latent_vars_and_update_pi_kernel.setArg(14, (cl_double)a);
+		sample_latent_vars_and_update_pi_kernel.setArg(15, (cl_double)b);
+		sample_latent_vars_and_update_pi_kernel.setArg(16, (cl_double)c);
+		sample_latent_vars_and_update_pi_kernel.setArg(17, (cl_int)step_count);
+		sample_latent_vars_and_update_pi_kernel.setArg(18, (cl_int)N);
 
-		// FIXME: threading granularity
-		clContext.queue.enqueueNDRangeKernel(sample_latent_vars_kernel, cl::NullRange, cl::NDRange(4), cl::NDRange(1));
-		clContext.queue.finish();
-
-		update_pi_kernel.setArg(0, clNodes);
-		update_pi_kernel.setArg(1, (cl_int)nodes.size());
-		update_pi_kernel.setArg(2, clPi);
-		update_pi_kernel.setArg(3, clPiUpdate);
-		update_pi_kernel.setArg(4, clPhi);
-		update_pi_kernel.setArg(5, clZ);
-		update_pi_kernel.setArg(6, clRandomNK);
-		update_pi_kernel.setArg(7, clScratch);
-		update_pi_kernel.setArg(8, (cl_double)alpha);
-		update_pi_kernel.setArg(9, (cl_double)a);
-		update_pi_kernel.setArg(10, (cl_double)b);
-		update_pi_kernel.setArg(11, (cl_double)c);
-		update_pi_kernel.setArg(12, (cl_int)step_count);
-		update_pi_kernel.setArg(13, (cl_int)N);
-
-		// FIXME: threading granularity
-		clContext.queue.enqueueNDRangeKernel(update_pi_kernel, cl::NullRange, cl::NDRange(4), cl::NDRange(1));
+		clContext.queue.enqueueNDRangeKernel(sample_latent_vars_and_update_pi_kernel, cl::NullRange, cl::NDRange(4), cl::NDRange(1));
 		clContext.queue.finish();
 
 		// read Pi again
@@ -325,8 +313,7 @@ protected:
 	cl::Program sampler_program;
 
 	cl::Kernel graph_init_kernel;
-	cl::Kernel sample_latent_vars_kernel;
-	cl::Kernel update_pi_kernel;
+	cl::Kernel sample_latent_vars_and_update_pi_kernel;
 	cl::Kernel sample_latent_vars2_kernel;
 
 	cl::Buffer clGraphEdges;

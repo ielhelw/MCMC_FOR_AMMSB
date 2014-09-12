@@ -54,7 +54,7 @@ inline int sample_z_ab_from_edge(
 	return -1;
 }
 
-void sample_latent_vars_of(
+inline void sample_latent_vars_of(
 		const int node,
 		global const Graph *g,
 		global const int* neighbor_nodes,
@@ -76,40 +76,9 @@ void sample_latent_vars_of(
 	}
 }
 
-kernel void sample_latent_vars(
-		global const Graph *g,
-		global const int *nodes,
-		const int N, // #nodes
-		global const int *neighbor_nodes,// (#total_nodes, NEIGHBOR_SAMPLE_SIZE)
-		global const double *pi,// (#total_nodes, K)
-		global const double *beta,// (#K)
-		const double epsilon,
-		global int *Z, /* (#total_nodes, K) */
-		global const double *random,
-		global double *p// (#nodes, K)
-) {
-	size_t gid = get_global_id(0);
-	size_t gsize = get_global_size(0);
-	global double *_p = p + gid * K;
-
-	for (int i = gid; i < N; i += gsize) {
-		int node = nodes[i];
-		sample_latent_vars_of(
-				node,
-				g,
-				neighbor_nodes + node * NEIGHBOR_SAMPLE_SIZE,
-				pi,
-				beta,
-				epsilon,
-				Z + node * K,
-				random + i * NEIGHBOR_SAMPLE_SIZE,
-				_p);
-	}
-}
-
 void update_pi_for_node_(
 		int node,
-		global double *pi,// #K
+		global const double *pi,// #K
 		global double *piUpdate,// #K
 		global double *phi,// #K
 		global int *z, // #K
@@ -141,30 +110,47 @@ void update_pi_for_node_(
 	}
 }
 
-kernel void update_pi_for_node(
-		global int *nodes,
-		int N, // #nodes
-		global double *pi,// (#total_nodes, K)
+kernel void sample_latent_vars_and_update_pi(
+		global const Graph *g,
+		global const int *nodes,
+		const int N, // #nodes
+		global const int *neighbor_nodes,// (#total_nodes, NEIGHBOR_SAMPLE_SIZE)
+		global const double *pi,// (#total_nodes, K)
 		global double *piUpdate,// (#total_nodes, K)
 		global double *phi,// (#total_nodes, K)
-		global int *Z, // (#total_nodes, K)
-		global double *noise, // (#nodes, K)
-		global double *grad, // (#nodes, K)
+		global const double *beta,// (#K)
+		const double epsilon,
+		global int *Z, /* (#total_nodes, K) */
+		global const double *random,
+		global const double *noise,
+		global double *scratch, // (#nodes, K)
 		double alpha,
 		double a, double b, double c,
 		int step_count, int total_node_count
-		) {
+		){
 	size_t gid = get_global_id(0);
 	size_t gsize = get_global_size(0);
+	global double *_p = scratch + gid * K;
+
 	for (int i = gid; i < N; i += gsize) {
 		int node = nodes[i];
+		sample_latent_vars_of(
+				node,
+				g,
+				neighbor_nodes + node * NEIGHBOR_SAMPLE_SIZE,
+				pi,
+				beta,
+				epsilon,
+				Z + node * K,
+				random + i * NEIGHBOR_SAMPLE_SIZE,
+				_p);
 		update_pi_for_node_(node,
 				pi + node * K,
 				piUpdate + node * K,
 				phi + node * K,
 				Z + node * K,
 				noise + i * K,
-				grad + i * K,
+				scratch + i * K,
 				alpha, a, b, c, step_count, total_node_count);
 	}
 }
