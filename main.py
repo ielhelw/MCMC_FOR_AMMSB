@@ -53,8 +53,8 @@ def main():
 
     random.seed(0)
 
-    data = DataFactory.get_data("netscience")
-    # data = DataFactory.get_data("relativity")
+    # data = DataFactory.get_data("netscience")
+    data = DataFactory.get_data("relativity")
     network = Network(data, 0.1)
     
     if True:
