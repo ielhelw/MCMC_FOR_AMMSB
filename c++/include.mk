@@ -42,7 +42,10 @@ CXXFLAGS += -Wno-unused-parameter
 CXXFLAGS += -Wno-ignored-qualifiers
 CXXFLAGS += -I$(PROJECT_HOME)/include
 CXXFLAGS += -I$(PROJECT_HOME)/3rdparty/tinyxml2/include
+ifneq (, $(OPENCL_ROOT))
 CXXFLAGS += -I$(OPENCL_ROOT)/include
+CXXFLAGS += -DENABLE_OPENCL
+endif
 CXXFLAGS += -DPROJECT_HOME=$(PROJECT_HOME)
 ifneq (, $(BOOST_INCLUDE))
 CXXFLAGS += -I$(BOOST_INCLUDE)
@@ -51,7 +54,9 @@ endif
 
 LDFLAGS += -L$(PROJECT_HOME)/lib -l mcmc
 LDFLAGS += -L$(PROJECT_HOME)/3rdparty/tinyxml2/lib -ltinyxml2
+ifneq (, $(OPENCL_ROOT))
 LDFLAGS += -L$(OPENCL_ROOT)/lib -L$(OPENCL_ROOT)/lib/x86_64 -lOpenCL
+endif
 ifdef USE_MUDFLAP
 LIBS	+= -lmudflapth -rdynamic
 CXXFLAGS += -fmudflap -fmudflapth -funwind-tables

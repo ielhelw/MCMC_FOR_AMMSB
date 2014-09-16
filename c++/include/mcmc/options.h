@@ -213,8 +213,10 @@ public:
 			("input-file,f", po::value<std::string>(&filename)->default_value(""), "input file")
 			("class,c", po::value<std::string>(&dataset_class)->default_value("netscience"), "input class")
 
+#ifdef ENABLE_OPENCL
 			("platform,p", po::value<std::string>(&openClPlatform), "OpenCL platform")
 			("device,d", po::value<std::string>(&openClDevice), "OpenCL device")
+#endif
 			;
 
 		po::variables_map vm;
