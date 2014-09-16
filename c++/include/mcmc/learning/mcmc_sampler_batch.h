@@ -19,21 +19,6 @@ namespace mcmc {
 namespace learning {
 
 
-template <typename T>
-class MCMCMyOp {
-public:
-	MCMCMyOp(T a, T b) : a(a), b(b) {
-	}
-
-	T operator() (const T &x, const T &y) {
-		return x * a + y * b;
-	}
-
-protected:
-	T a;
-	T b;
-};
-
 
 /**
  * MCMC Sampler for batch learning. Every update go through the whole data sets.
@@ -197,9 +182,19 @@ public:
 			theta = theta_star;
 		} else {
 			// self.__theta = theta_star * 1.0/(self._step_count) + (1-1.0/(self._step_count))*self.__theta
-			double inv_step_count = 1.0 / step_count;
-			double one_inv_step_count = 1.0 - inv_step_count;
-			MCMCMyOp<double> myOp(inv_step_count, one_inv_step_count);
+			struct MCMCMyOp {
+				MCMCMyOp(double step_count) : a(1.0 / step_count) {
+				   	b = 1.0 - a;
+				}
+
+				double operator() (const double &x, const double &y) {
+					return x * a + y * b;
+				}
+
+				double a;
+				double b;
+			};
+			MCMCMyOp myOp(step_count);
 			for (::size_t k = 0; k < theta.size(); k++) {
 				std::transform(theta[k].begin(), theta[k].end(),
 							   theta_star[k].begin(),
@@ -258,6 +253,7 @@ public:
         // bounds = np.cumsum(p)
 		std::vector<double> bounds(K + 1);
 		std::partial_sum(p.begin(), p.end(), bounds.begin());
+		// FIXME RFHH here again bounds[K]. Same as in mcmc stochastic?
         double location = Random::random->random() * bounds[K];
 
         // get the index of bounds that containing location.
