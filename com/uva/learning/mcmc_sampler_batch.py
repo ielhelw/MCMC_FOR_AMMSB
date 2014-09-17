@@ -165,7 +165,7 @@ class MCMCSamplerBatch(Learner):
             
         return z
     
-    def update_phi(self,i):
+    def update_phi(self, i, neighbor_nodes):
         eps_t  = self.__a*((1 + self._step_count/self.__b)**-self.__c)   
         """ update phi for node i"""
         sum_phi = np.sum(self.__phi[i])
@@ -173,7 +173,8 @@ class MCMCSamplerBatch(Learner):
         phi_star = np.zeros(self._K)
         noise = random.randn(self._K) 
         
-        for j in range(0, self._N):
+        # for j in range(0, self._N):
+        for j in neighbor_nodes:
             """ for each node j """
             if i == j:
                 continue
@@ -228,8 +229,8 @@ class MCMCSamplerBatch(Learner):
             for i in range(0, self._N):
                 # update parameter for pi_i
                 #print "updating: " + str(i)
-                #neighbor_nodes = self.__sample_neighbor_nodes_batch(i)
-                self.update_phi(i)
+                neighbor_nodes = self.__sample_neighbor_nodes_batch(i)
+                self.update_phi(i, neighbor_nodes)
                 
             self._pi = self.__phi/np.sum(self.__phi,1)[:,np.newaxis]
             # update beta

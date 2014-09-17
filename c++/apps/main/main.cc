@@ -29,7 +29,7 @@ int main(int argc, char *argv[]) {
 	}
 
 #ifdef ENABLE_OPENCL
-	if (true) {
+	if (false) {
 		std::cout << "start MCMC CL stochastical" << std::endl;
 		MCMCClSamplerStochastic mcmcclSampler(args, network, context);
 		mcmcclSampler.run();

@@ -67,7 +67,6 @@ public:
 	}
 
 
-#ifdef UNUSED
 	// FIXME make VertexSet a result parameter
     OrderedVertexSet sample_neighbor_nodes_batch(int node) const {
         OrderedVertexSet neighbor_nodes;
@@ -83,7 +82,6 @@ public:
 
         return neighbor_nodes;
 	}
-#endif
 
 
 #ifdef UNUSED
@@ -374,64 +372,18 @@ public:
 #endif
 
 
-#ifdef INCOMPATIBLE_WITH_PYTHON
 	// wenzhe's version. The version is different from previous one that:
 	// in the previous version, we use gibbs sampler to sample from distribution
 	// but in this version, we actually analytically calculate the probability
-	void update_phi(int node, const OrderedVertexSet &neighbor_nodes){
+	void update_phi(int i, const OrderedVertexSet &neighbor_nodes){
 		double eps_t = a * std::pow(1 + step_count / b, -c);	// step size
-		double phi_i_sum = np::sum(phi[node]);	
+		double phi_i_sum = np::sum(phi[i]);	
 		std::vector<double> grads(K, 0.0);						// gradient for K classes
 		std::vector<double> phi_star(K);			// temp vars
 		std::vector<double> noise = Random::random->randn(K);	// random gaussian noise.
 
-		for (auto neighbor = neighbor_nodes.begin();
-                neighbor != neighbor_nodes.end();
-                neighbor++) {
+		for (auto j: neighbor_nodes) {
 
-	    int y_ab = 0;      // observation
-			Edge edge(std::min(node, *neighbor), std::max(node, *neighbor));
-	    if (edge.in(network.get_linked_edges())) {
-		y_ab = 1;
-			}
-
-			std::vector<char> probs(K);
-			for (::size_t k = 0; k < K; k++){
-				probs[k] = std::pow(beta[k], y_ab) * std::pow(1-beta[k], 1-y_ab) * pi[node][k] * pi[*neighbor][k];
-				probs[k] += std::pow(epsilon, y_ab) * std::pow(1- epsilon, 1-y_ab) * pi[node][k] * (1-pi[*neighbor][k]);
-			}
-
-			double prob_sum = np::sum(probs);
-			for (::size_t k = 0; k < K; k++){
-				grads[k] += (probs[k]/prob_sum)/phi[node][k] - 1.0/phi_i_sum;
-			}
-		}
-
-		// update phi for node node
-		for (::size_t k = 0; k < K; k++){
-#ifdef EFFICIENCY_FOLLOWS_PYTHON
-			phi_star[k] = std::abs(phi[node][k] + eps_t/2 * (alpha - phi[node][k] + grads[k]) + std::pow(eps_t,0.5)*std::pow(phi[node][k],0.5) *noise[k]);
-#else
-			phi_star[k] = std::abs(phi[node][k] + eps_t/2 * (alpha - phi[node][k] + grads[k]) + std::sqrt(eps_t * phi[node][k]) *noise[k]);
-#endif
-		}
-
-		// assign back to phi. 
-		phi[node] = phi_star;
-	}
-
-#else // ifdef INCOMPATIBLE_WITH_PYTHON
-	// wenzhe's version. The version is different from previous one that:
-	// in the previous version, we use gibbs sampler to sample from distribution
-	// but in this version, we actually analytically calculate the probability
-	void update_phi(::size_t i){
-		double eps_t = a * std::pow(1 + step_count / b, -c);	// step size
-		double sum_phi = np::sum(phi[i]);	
-		std::vector<double> grads(K, 0.0);						// gradient for K classes
-		std::vector<double> phi_star(K, 0.0);					// temp vars
-		std::vector<double> noise = Random::random->randn(K);	// random gaussian noise.
-
-		for (::size_t j = 0; j < N; j++) {
 			if (i == j) {
 				continue;
 			}
@@ -445,7 +397,7 @@ public:
 			// FIXME was vector<char> ?
 			std::vector<double> probs(K);
 #ifdef EFFICIENCY_FOLLOWS_PYTHON
-			for (::size_t k = 0; k < K; k++){
+			for (::size_t k = 0; k < K; k++) {
 				probs[k] = std::pow(beta[k], y) * std::pow(1-beta[k], 1-y) * pi[i][k] * pi[j][k];
 				probs[k] += std::pow(epsilon, y) * std::pow(1- epsilon, 1-y) * pi[i][k] * (1-pi[j][k]);
 			}
@@ -468,27 +420,24 @@ public:
 			}
 #endif
 
-			double sum_prob = np::sum(probs);
+			double prob_sum = np::sum(probs);
 			for (::size_t k = 0; k < K; k++){
-				grads[k] += (probs[k]/sum_prob)/phi[i][k] - 1.0/sum_phi;
+				grads[k] += (probs[k]/prob_sum)/phi[i][k] - 1.0/phi_i_sum;
 			}
 		}
 
 		// update phi for node i
 		for (::size_t k = 0; k < K; k++){
 #ifdef EFFICIENCY_FOLLOWS_PYTHON
-			phi_star[k] = std::abs(phi[i][k] + eps_t/2 * (alpha - phi[i][k] + \
-														  grads[k]) + std::pow(eps_t,0.5)*std::pow(phi[i][k],0.5) *noise[k]);
+			phi_star[k] = std::abs(phi[i][k] + eps_t/2 * (alpha - phi[i][k] + grads[k]) + std::pow(eps_t,0.5)*std::pow(phi[i][k],0.5) *noise[k]);
 #else
-			phi_star[k] = std::abs(phi[i][k] + eps_t/2 * (alpha - phi[i][k] + \
-														  grads[k]) + std::sqrt(eps_t * phi[i][k]) *noise[k]);
+			phi_star[k] = std::abs(phi[i][k] + eps_t/2 * (alpha - phi[i][k] + grads[k]) + std::sqrt(eps_t * phi[i][k]) *noise[k]);
 #endif
 		}
 
 		// assign back to phi. 
 		phi[i] = phi_star;
 	}
-#endif // def INCOMPATIBLE_WITH_PYTHON
 
 
 	/**
@@ -527,9 +476,9 @@ public:
 			for (::size_t i = 0; i < N; i++) {
 				// update parameter for pi_i
 				//print "updating: " + str(i)
-				// auto neighbor_nodes = sample_neighbor_nodes_batch(i);
+				auto neighbor_nodes = sample_neighbor_nodes_batch(i);
 
-				update_phi(i);	// update phi for node i
+				update_phi(i, neighbor_nodes);	// update phi for node i
 			}
 			np::row_normalize(&pi, phi);	// update pi from phi. 
 
