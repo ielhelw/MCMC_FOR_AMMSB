@@ -1,5 +1,8 @@
 CONFIG_PROFILE		= 0
 CONFIG_OPTIMIZE		= 1
+# DAS:
+# module load gcc/4.8.1
+# module load boost/1.54.0
 CC			= gcc-4.7
 CXX			= g++-4.7
 # Ismail's PC

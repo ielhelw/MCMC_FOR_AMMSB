@@ -40,6 +40,7 @@ CXXFLAGS += -Wextra
 # CXXFLAGS += -fmessage-length=0
 CXXFLAGS += -Wno-unused-parameter
 CXXFLAGS += -Wno-ignored-qualifiers
+CXXFLAGS += -Wno-unused-local-typedefs	# for boost 1.54.0 on DAS
 CXXFLAGS += -I$(PROJECT_HOME)/include
 CXXFLAGS += -I$(PROJECT_HOME)/3rdparty/tinyxml2/include
 ifneq (, $(OPENCL_ROOT))
