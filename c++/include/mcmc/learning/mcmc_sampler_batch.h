@@ -1,6 +1,8 @@
 #ifndef MCMC_LEARNING_MCMC_SAMPLER_BATCH_H__
 #define MCMC_LEARNING_MCMC_SAMPLER_BATCH_H__
 
+#define USE_SAMPLE_LATENT_VARS	0
+
 #include <cassert>
 #include <cmath>
 
@@ -11,7 +13,10 @@
 
 #include "mcmc/np.h"
 #include "mcmc/random.h"
+#if USE_SAMPLE_LATENT_VARS
 #include "mcmc/sample_latent_vars.h"
+#endif
+#include "mcmc/timer.h"
 
 #include "mcmc/learning/learner.h"
 
@@ -60,6 +65,8 @@ public:
         // self._pi = self.__phi/np.sum(self.__phi,1)[:,np.newaxis]
 		pi.resize(phi.size(), std::vector<double>(phi[0].size()));
 		np::row_normalize(&pi, phi);
+
+		info(std::cout);
 	}
 
 
@@ -84,7 +91,7 @@ public:
 	}
 
 
-#ifdef UNUSED
+#if USE_SAMPLE_LATENT_VARS
 	/**
 	 * update pi for current node i.
 	   could leave this function as it is, but we don't use this for now... [wenzhe]
@@ -129,6 +136,7 @@ public:
 #endif
 
 
+#if ! USE_SAMPLE_LATENT_VARS
 	/*
 		update beta. Instead of sampling, we calculate the probability directly. 
 	*/
@@ -139,16 +147,18 @@ public:
 		std::transform(theta.begin(), theta.end(), sum_theta.begin(), np::sum<double>);
 
         // update gamma, only update node in the grad
-        double eps_t = a * std::pow(1 + step_count / b, -c);
 
-#if 0
+#if USE_SAMPLE_LATENT_VARS
         // wenzhe commented it out....
+		double eps_t;
         if (! stepsize_switch) {
             eps_t = std::pow(1024+step_count, -0.5);
 		} else {
             eps_t = a * std::pow(1 + step_count / b, -c);
 		}
-#endif
+#else 	// if USE_SAMPLE_LATENT_VARS
+        double eps_t = a * std::pow(1 + step_count / b, -c);
+#endif	// if USE_SAMPLE_LATENT_VARS
 
         for (::size_t i = 0; i < N; i++) {
             for (::size_t j = i + 1; j < N; j++) {
@@ -165,6 +175,18 @@ public:
                     y = 1;
 				}
 
+#if USE_SAMPLE_LATENT_VARS
+				/*	wenzhe commented it out... */
+                int z = sample_z_for_each_edge(y, pi[i], pi[j],
+											   beta, K);
+                if (z == -1) {
+                    continue;
+				}
+
+                grads[z][0] += std::abs(1-y) / theta[z][0] - 1.0 / sum_theta[z];
+                grads[z][1] += std::abs(-y) / theta[z][1] - 1.0 / sum_theta[z];
+
+#else 	// if USE_SAMPLE_LATENT_VARS
 				// wenzhe's version
 				std::vector<double> probs(K);
 				double sum_pi = 0.0;
@@ -213,19 +235,7 @@ public:
 					}
 				}
 #endif
-
-
-				/*	wenzhe commented it out... */
-#if 0
-                int z = sample_z_for_each_edge(y, pi[i], pi[j],
-											   beta, K);
-                if (z == -1) {
-                    continue;
-				}
-
-                grads[z][0] += std::abs(1-y) / theta[z][0] - 1/ sums[z];
-                grads[z][1] += std::abs(-y) / theta[z][1] - 1 / sums[z];
-#endif
+#endif 	// USE_SAMPLE_LATENT_VARS
 			}
 		}
 
@@ -247,16 +257,15 @@ public:
 #endif
 			}
 		}
-		theta = theta_star;
-
-#if 0
+#if USE_SAMPLE_LATENT_VARS
 		// wenzhe commented out... don't need...
         if (step_count < 50000) {
 			theta = theta_star;
 		} else {
 			// self.__theta = theta_star * 1.0/(self._step_count) + (1-1.0/(self._step_count))*self.__theta
 			struct MCMCMyOp {
-				MCMCMyOp(double step_count) : a(1.0 / step_count) {
+				MCMCMyOp(double step_count) {
+					a = 1.0 / step_count;
                     b = 1.0 - a;
 				}
 
@@ -275,6 +284,8 @@ public:
 							   myOp);
 			}
 		}
+#else
+		theta = theta_star;
 #endif
 
         //self.__theta = theta_star
@@ -285,9 +296,10 @@ public:
 		np::row_normalize(&temp, theta);
 		std::transform(temp.begin(), temp.end(), beta.begin(), np::SelectColumn<double>(1));
 	}
+#endif
 
 
-#ifdef UNUSED
+#if USE_SAMPLE_LATENT_VARS
 	// could leave this function as it is, but we don't use this for now... [wenzhe]
     int sample_z_for_each_edge(double y, const std::vector<double> &pi_a, const std::vector<double> &pi_b, const std::vector<double> &beta, ::size_t K) const {
         /**
@@ -341,10 +353,8 @@ public:
 
         return -1;
 	}
-#endif
 
 
-#ifdef UNUSED
 	// could leave this function as it is, but we don't use this for now...	 [wenzhe]
 	std::vector<int> sample_latent_vars(int node, const OrderedVertexSet &neighbor_nodes) const {
         /**
@@ -372,6 +382,7 @@ public:
 #endif
 
 
+#if ! USE_SAMPLE_LATENT_VARS
 	// wenzhe's version. The version is different from previous one that:
 	// in the previous version, we use gibbs sampler to sample from distribution
 	// but in this version, we actually analytically calculate the probability
@@ -438,6 +449,7 @@ public:
 		// assign back to phi. 
 		phi[i] = phi_star;
 	}
+#endif
 
 
 	/**
@@ -446,6 +458,15 @@ public:
     virtual void run() {
         // pr = cProfile.Profile()
         // pr.enable()
+		timer::Timer t_sample("  sample_neighbor_nodes");
+#if USE_SAMPLE_LATENT_VARS
+		timer::Timer t_latent_vars("  sample_latent_vars");
+		timer::Timer t_update_pi("  update_pi");
+#else
+		timer::Timer t_update_phi("  update_phi");
+		timer::Timer t_update_beta("  update_beta");
+#endif
+		timer::Timer::setTabular(true);
 
 		std::cerr << "Don't override command-line parameter max_iteration to fixed value 300" << std::endl;
         while (step_count < max_iteration && !is_converged()) {
@@ -455,39 +476,63 @@ public:
 			std::cout << std::fixed << std::setprecision(12) << "perplexity for hold out set: " << ppx_score << std::endl;
             ppxs_held_out.push_back(ppx_score);
 
-#if 0
+#if USE_SAMPLE_LATENT_VARS
 			/*	wenzhe commented this out... */
 			std::vector<std::vector<double> > phi_star(pi);
             // iterate through each node, and update parameters pi_a
             for (::size_t i = 0; i < N; i++) {
                 // update parameter for pi_i
                 //print "updating: " + str(i)
+				t_sample.start();
                 auto neighbor_nodes = sample_neighbor_nodes_batch(i);
+				t_sample.stop();
 
+				t_latent_vars.start();
 				std::vector<int> z = sample_latent_vars(i, neighbor_nodes);
+				t_latent_vars.stop();
+				t_update_pi.start();
                 update_pi_for_node(i, z, &phi_star, neighbor_nodes.size());
+				t_update_pi.stop();
 			}
 
 			phi = phi_star;
-#endif
+			np::row_normalize(&pi, phi);	// update pi from phi. 
+#else
 
 			// wenzhe's version
 			// iterate through each node, and update parameters pi_a
 			for (::size_t i = 0; i < N; i++) {
 				// update parameter for pi_i
 				//print "updating: " + str(i)
+				t_sample.start();
 				auto neighbor_nodes = sample_neighbor_nodes_batch(i);
+				t_sample.stop();
 
+				t_update_phi.start();
 				update_phi(i, neighbor_nodes);	// update phi for node i
+				t_update_phi.stop();
 			}
 			np::row_normalize(&pi, phi);	// update pi from phi. 
 
             // update beta
+			t_update_beta.start();
             update_beta();
+			t_update_beta.stop();
+#endif
 
             step_count++;
 			auto l2 = std::chrono::system_clock::now();
 			std::cout << "LOOP  = " << (l2-l1).count() << std::endl;
+
+			timer::Timer::printHeader(std::cout);
+			std::cout << t_sample << std::endl;
+#if USE_SAMPLE_LATENT_VARS
+			std::cout << t_latent_vars << std::endl;
+			std::cout << t_update_pi << std::endl;
+#else
+			std::cout << t_update_phi << std::endl;
+			std::cout << t_update_beta << std::endl;
+#endif
 		}
 
 #if 0

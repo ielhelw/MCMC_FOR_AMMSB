@@ -76,6 +76,16 @@ public:
 	virtual void run() = 0;
 
 protected:
+	void info(std::ostream &s) {
+		s << "N " << N;
+	   	s << " K " << K;
+		s << " iterations " << max_iteration;
+		s << " minibatch size " << mini_batch_size;
+		s << " link ratio " << link_ratio;
+		s << " convergence " << CONVERGENCE_THRESHOLD;
+		s << std::endl;
+	}
+
 	const std::vector<double> &get_ppxs_held_out() const {
 		return ppxs_held_out;
 	}

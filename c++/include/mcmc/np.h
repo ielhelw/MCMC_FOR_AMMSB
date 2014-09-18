@@ -85,6 +85,7 @@ Type sum_abs(const std::vector<Type> &a, const std::vector<Type> &b) {
 	return diff;
 }
 
+#ifdef EFFICIENCY_FOLLOWS_PYTHON
 std::vector<int> xrange(int from, int upto) {
 	std::vector<int> r(upto - from);
 	for (int i = 0; i < upto - from; i++) {
@@ -92,6 +93,7 @@ std::vector<int> xrange(int from, int upto) {
 	}
 	return r;
 }
+#endif
 
 }	// namespace np
 }	// namespace mcmc

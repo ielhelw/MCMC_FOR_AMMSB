@@ -62,6 +62,8 @@ public:
 		clScratch = cl::Buffer(clContext.context, CL_MEM_READ_WRITE,
 				N * K * sizeof(cl_double) // #total_nodes x #K
 				);
+
+		info(std::cout);
 	}
 
 protected:

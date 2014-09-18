@@ -84,6 +84,8 @@ public:
         // self._pi = self.__phi/np.sum(self.__phi,1)[:,np.newaxis]
 		pi.resize(phi.size(), std::vector<double>(phi[0].size()));
 		np::row_normalize(&pi, phi);
+
+		info(std::cout);
 	}
 
 	virtual ~MCMCSamplerStochastic() {

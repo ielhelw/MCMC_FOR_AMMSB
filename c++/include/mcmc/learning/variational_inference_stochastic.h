@@ -87,6 +87,8 @@ public:
 		// lift
 		log_epsilon = log(epsilon);
 		log_1_epsilon = log(1.0 - epsilon);
+
+		info(std::cout);
 	}
 
 
