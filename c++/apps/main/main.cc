@@ -51,6 +51,10 @@ int main(int argc, char *argv[]) {
 
 		return 0;
 
+	} catch (mcmc::IOException &e) {
+		std::cerr << "IO error: " << e.what() << std::endl;
+		return 33;
+
 	} catch (boost::program_options::error &e) {
 		std::cerr << "Option error: " << e.what() << std::endl;
 		return 33;
