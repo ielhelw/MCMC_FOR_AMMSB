@@ -48,6 +48,7 @@ inline int sample_z_ab_from_edge(
 	}
 
 	double location = random * p[K-1];
+	// FIXME: might use binary search, for sufficiently large K.
 	for (int i = 0; i < K; ++i) {
 		if (location <= p[i]) return i;
 	}
