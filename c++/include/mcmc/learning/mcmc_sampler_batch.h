@@ -43,7 +43,9 @@ public:
         // restrict this is using re-reparameterization techniques, where we
         // introduce another set of variables, and update them first followed by
         // updating \pi and \beta.
-		theta = Random::random->gamma(eta[0], eta[1], K, 2);		// parameterization for \beta
+		// theta = Random::random->gamma(eta[0], eta[1], K, 2);		// parameterization for \beta
+		std::cerr << "Use fixed values (1.0, 100.0) for eta i.s.o. command-line params" << std::endl;
+		theta = Random::random->gamma(1.0, 100.0, K, 2);		// parameterization for \beta
 		phi = Random::random->gamma(1, 1, N, K);					// parameterization for \pi
 
 		// FIXME RFHH -- code sharing with variational_inf*::update_pi_beta()
@@ -123,9 +125,9 @@ public:
 
     void update_beta() {
 		std::vector<std::vector<double> > grads(K, std::vector<double>(2, 0.0));
-        // sums = np.sum(self.__theta,1)
-		std::vector<double> sums(theta.size());
-		std::transform(theta.begin(), theta.end(), sums.begin(), np::sum<double>);
+        // sum_theta = np.sum(self.__theta,1)
+		std::vector<double> sum_theta(theta.size());
+		std::transform(theta.begin(), theta.end(), sum_theta.begin(), np::sum<double>);
 
         // update gamma, only update node in the grad
 		double eps_t;
@@ -139,23 +141,25 @@ public:
             for (::size_t j = i + 1; j < N; j++) {
 				Edge edge(i, j);
 
+#ifdef NOT_IN_PYTHON
 				if (edge.in(network.get_held_out_set()) || edge.in(network.get_test_set())) {
                     continue;
 				}
+#endif
 
-                int y_ab = 0;
+                int y = 0;
                 if (edge.in(network.get_linked_edges())) {
-                    y_ab = 1;
+                    y = 1;
 				}
 
-                int z = sample_z_for_each_edge(y_ab, pi[i], pi[j],
+                int z = sample_z_for_each_edge(y, pi[i], pi[j],
 											   beta, K);
                 if (z == -1) {
                     continue;
 				}
 
-                grads[z][0] += std::abs(1-y_ab) / theta[z][0] - 1/ sums[z];
-                grads[z][1] += std::abs(-y_ab) / theta[z][1] - 1 / sums[z];
+                grads[z][0] += std::abs(1-y) / theta[z][0] - 1.0 / sum_theta[z];
+                grads[z][1] += std::abs(-y) / theta[z][1] - 1.0 / sum_theta[z];
 			}
 		}
 

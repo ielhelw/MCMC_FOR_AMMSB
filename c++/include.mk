@@ -73,10 +73,10 @@ AR_FLAGS	= rc
 ifneq (, $(BOOST_ROOT))
 LDFLAGS += -L$(BOOST_ROOT)/lib
 endif
-LIBS	+= -lboost_system-mt
-LIBS	+= -lboost_thread-mt
-LIBS	+= -lboost_filesystem-mt
-LIBS	+= -lboost_program_options-mt
+LIBS	+= -lboost_system$(BOOST_SUFFIX)
+LIBS	+= -lboost_thread$(BOOST_SUFFIX)
+LIBS	+= -lboost_filesystem$(BOOST_SUFFIX)
+LIBS	+= -lboost_program_options$(BOOST_SUFFIX)
 
 vpath lib%.so	$(LD_LIBRARY_PATH) $(subst -L,,$(LDFLAGS))
 vpath lib%.a	$(LD_LIBRARY_PATH) $(subst -L,,$(LDFLAGS))
