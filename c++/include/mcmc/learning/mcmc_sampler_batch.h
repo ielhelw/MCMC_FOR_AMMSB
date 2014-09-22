@@ -1,7 +1,7 @@
 #ifndef MCMC_LEARNING_MCMC_SAMPLER_BATCH_H__
 #define MCMC_LEARNING_MCMC_SAMPLER_BATCH_H__
 
-#define USE_SAMPLE_LATENT_VARS	0
+#define USE_SAMPLE_LATENT_VARS	1
 
 #include <cassert>
 #include <cmath>
@@ -142,7 +142,6 @@ public:
 #endif
 
 
-#if ! USE_SAMPLE_LATENT_VARS
 	/*
 		update beta. Instead of sampling, we calculate the probability directly. 
 	*/
@@ -302,7 +301,6 @@ public:
 		np::row_normalize(&temp, theta);
 		std::transform(temp.begin(), temp.end(), beta.begin(), np::SelectColumn<double>(1));
 	}
-#endif
 
 
 #if USE_SAMPLE_LATENT_VARS
@@ -470,8 +468,8 @@ public:
 		timer::Timer t_update_pi("  update_pi");
 #else
 		timer::Timer t_update_phi("  update_phi");
-		timer::Timer t_update_beta("  update_beta");
 #endif
+		timer::Timer t_update_beta("  update_beta");
 		timer::Timer::setTabular(true);
 
 		std::cerr << "Don't override command-line parameter max_iteration to fixed value 300" << std::endl;
@@ -537,8 +535,8 @@ public:
 			std::cout << t_update_pi << std::endl;
 #else
 			std::cout << t_update_phi << std::endl;
-			std::cout << t_update_beta << std::endl;
 #endif
+			std::cout << t_update_beta << std::endl;
 		}
 
 #if 0
