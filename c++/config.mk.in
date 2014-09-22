@@ -13,4 +13,6 @@ CXX			= g++-4.7
 # OPENCL_ROOT		= /cm/shared/package/amd-app-sdk/2.9
 #
 # CXXFLAGS		= -DRANDOM_FOLLOWS_PYTHON -DEFFICIENCY_FOLLOWS_PYTHON
+# BOOST_SUFFEX		=
+BOOST_SUFFEX		= -mt
 CXXFLAGS		=
