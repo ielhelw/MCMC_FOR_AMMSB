@@ -50,6 +50,12 @@ public:
         // introduce another set of variables, and update them first followed by
         // updating \pi and \beta.
 		// theta = Random::random->gamma(eta[0], eta[1], K, 2);        // parameterization for \beta - K by 2
+#if USE_SAMPLE_LATENT_VARS
+		std::cerr << "Use latent vars" << std::endl;
+#else
+		std::cerr << "Use closed-form" << std::endl;
+#endif
+
 		std::cerr << "Use fixed values (1.0, 100.0) for eta i.s.o. command-line params" << std::endl;
 		theta = Random::random->gamma(1.0, 100.0, K, 2);        // parameterization for \beta - K by 2
 		// std::cerr << "Use fixed values (100.0, 1.0) for eta i.s.o. command-line params" << std::endl;
@@ -513,12 +519,12 @@ public:
 				t_update_phi.stop();
 			}
 			np::row_normalize(&pi, phi);	// update pi from phi. 
+#endif
 
             // update beta
 			t_update_beta.start();
             update_beta();
 			t_update_beta.stop();
-#endif
 
             step_count++;
 			auto l2 = std::chrono::system_clock::now();
