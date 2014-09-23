@@ -58,34 +58,21 @@ int sample_z_ab_from_edge(int y, const std::vector<double> &pi_a,
 
     double r = Random::random->random();
     double location = r * p[K-1];
-#if 1
-	// FIXME might use binary search? K is rather small...
+#if 0
     // get the index of bounds that containing location.
     for (::size_t i = 0; i < K; i++) {
 		if (location <= p[i]) {
 			return (int)i;
 		}
 	}
-#else
-	::size_t lo = 0;
-	::size_t up = K;
-	while (up - lo > 1) {
-		::size_t m = (lo + up) / 2;
-		if (location < p[m]) {
-			up = m;
-		} else {
-			lo = m;
-		}
-	}
-	assert(location <= p[up]);
-	assert(lo == 0 || location > p[lo]);
-	return up;
-#endif
 
 	std::cerr << std::fixed << std::setprecision(12) << "Ooppsss... not found: random " << r << " location " << location << " p[K-1] " << p[K - 1] << std::endl;
 
     // failed, should not happen!
     return -1;
+#else
+	return np::find_le(p, location);
+#endif
 }
 
 }	// namespace mcmc
