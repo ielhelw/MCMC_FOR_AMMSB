@@ -3,11 +3,12 @@ from com.uva.learning.learner import Learner
 from sets import Set
 import math
 from com.uva.file_random import file_random as random
+# import random
 import numpy as np
 import copy
 from com.uva.sample_latent_vars import sample_z_ab_from_edge
 import cProfile, pstats, StringIO
-
+import time
 
 
 class MCMCSamplerBatch(Learner):
@@ -32,13 +33,18 @@ class MCMCSamplerBatch(Learner):
         # restrict this is using re-reparameterization techniques, where we 
         # introduce another set of variables, and update them first followed by 
         # updating \pi and \beta.  
-        self.__theta = random.gamma(self._eta[0],self._eta[1],(self._K, 2))      # parameterization for \beta
+        print "Use fixed values (1.0, 100.0) for eta i.s.o. command-line params"
+        self.__theta = random.gamma(1,100,(self._K, 2))      # parameterization for \beta
+        # print "Use fixed values (100.0, 1.0) for eta i.s.o. command-line params"
+        # self.__theta = random.gamma(100,1,(self._K, 2))      # parameterization for \beta
         self.__phi = random.gamma(1,1,(self._N, self._K))   # parameterization for \pi
         
         temp = self.__theta/np.sum(self.__theta,1)[:,np.newaxis]
         self._beta = temp[:,1]
         self._pi = self.__phi/np.sum(self.__phi,1)[:,np.newaxis]
-    
+        
+        self._avg_log = []
+        self._timing = []
     
     def __sample_neighbor_nodes_batch(self, node):
         neighbor_nodes = Set()
@@ -74,32 +80,28 @@ class MCMCSamplerBatch(Learner):
     
     def __update_beta(self):
         grads = np.zeros((self._K, 2))
-        sums = np.sum(self.__theta,1)  
+        sum_theta = np.sum(self.__theta,1)  
         
         # update gamma, only update node in the grad
-        if self.stepsize_switch == False:
-            eps_t = (1024+self._step_count)**(-0.5)
-        else:
-            eps_t  = self.__a*((1 + self._step_count/self.__b)**-self.__c)
+        eps_t  = self.__a*((1 + self._step_count/self.__b)**-self.__c)
             
         for i in range(0, self._N):
             for j in range(i+1, self._N):
-                if (i,j) in self._network.get_held_out_set() or (i,j) in self._network.get_test_set():
-                    continue
-            
-                y_ab = 0
+                y = 0
                 if (i,j) in self._network.get_linked_edges():
-                    y_ab = 1
+                    y = 1
+                
+                probs = np.zeros(self._K)
+                sum_pi = 0
+                for k in range(0, self._K):
+                    sum_pi += self._pi[i][k]*self._pi[j][k]
+                    probs[k] = self._beta[k]**y*(1-self._beta[k])**(1-y)*self._pi[i][k]*self._pi[j][k]
+                prob_0 = self._epsilon**y*(1-self._epsilon)**(1-y)*(1-sum_pi)
+                sum_prob = np.sum(probs) + prob_0
+                for k in range(0, self._K):
+                    grads[k,0] += (probs[k]/sum_prob) * (abs(1-y)/self.__theta[k,0]-1/sum_theta[k])
+                    grads[k,1] += (probs[k]/sum_prob) * (abs(-y)/self.__theta[k,1]-1/sum_theta[k])
             
-                z = self.__sample_z_for_each_edge(y_ab, self._pi[i], self._pi[j], \
-                                          self._beta, self._K)   
-                if z == -1:
-                    continue
-            
-                grads[z,0] += abs(1-y_ab)/self.__theta[z,0] - 1/ sums[z]
-                grads[z,1] += abs(-y_ab)/self.__theta[z,1] - 1/sums[z] 
-        
-        
         # update theta 
         noise = random.randn(self._K, 2)   
         theta_star = copy.copy(self.__theta)  
@@ -108,10 +110,7 @@ class MCMCSamplerBatch(Learner):
                 theta_star[k,i] = abs(self.__theta[k,i] + eps_t/2 * (self._eta[i] - self.__theta[k,i] + \
                                       grads[k,i]) + eps_t**.5*self.__theta[k,i] ** .5 * noise[k,i])  
         
-        if  self._step_count < 50000:
-            self.__theta = theta_star 
-        else:
-            self.__theta = theta_star * 1.0/(self._step_count) + (1-1.0/(self._step_count))*self.__theta
+        self.__theta = theta_star
         #self.__theta = theta_star        
         # update beta from theta
         temp = self.__theta/np.sum(self.__theta,1)[:,np.newaxis]
@@ -165,32 +164,77 @@ class MCMCSamplerBatch(Learner):
             z[z_ab] += 1
             
         return z
-        
     
+    def update_phi(self, i, neighbor_nodes):
+        eps_t  = self.__a*((1 + self._step_count/self.__b)**-self.__c)   
+        """ update phi for node i"""
+        sum_phi = np.sum(self.__phi[i])
+        grads = np.zeros(self._K)
+        phi_star = np.zeros(self._K)
+        noise = random.randn(self._K) 
+        
+        # for j in range(0, self._N):
+        for j in neighbor_nodes:
+            """ for each node j """
+            if i == j:
+                continue
+            y = 0
+            if (min(i,j), max(i,j)) in self._network.get_linked_edges():
+                y = 1
+            
+            probs = np.zeros(self._K)
+            for k in range(0, self._K):
+                # p(z_ij = k)
+                probs[k] = self._beta[k]**y * (1-self._beta[k])**(1-y)*self._pi[i][k]*self._pi[j][k]
+                probs[k] += self._epsilon**y *(1-self._epsilon)**(1-y)*self._pi[i][k]*(1-self._pi[j][k])
+            
+            sum_prob = np.sum(probs)
+            for k in range(0, self._K):
+                grads[k] += (probs[k]/sum_prob)/self.__phi[i][k] - 1.0/sum_phi
+        
+        # update phi
+        for k in range(0, self._K):
+            phi_star[k] = abs(self.__phi[i,k] + eps_t/2 * (self._alpha - self.__phi[i,k] + \
+                                grads[k]) + eps_t**.5*self.__phi[i,k]**.5 * noise[k])
+        
+        self.__phi[i] = phi_star  
+        
+    def _save(self):
+        f = open('ppx_mcmc_batch.txt', 'wb')
+        for i in range(0, len(self._avg_log)):
+            f.write(str(math.exp(self._avg_log[i])) + "\t" + str(self._timing[i]) +"\n")
+        f.close()
+        
+        
     def run(self):
         pr = cProfile.Profile()
         pr.enable()
-        """ run mini-batch based MCMC sampler """
+     
+        print "Don't override command-line parameter max_iteration to fixed value 300"
+        # self._max_iteration = 300
+        start = time.time()
         while self._step_count < self._max_iteration and not self._is_converged():
             #print "step: " + str(self._step_count)
             ppx_score = self._cal_perplexity_held_out()
             sys.stdout.write("perplexity for hold out set: %.12f\n" % ppx_score)
             self._ppxs_held_out.append(ppx_score)
             
-            phi_star = copy.copy(self._pi)
-            # iterate through each node, and update parameters pi_a
+            size = len(self._avg_log)
+            self._avg_log.append(ppx_score)
+            self._timing.append(time.time()-start)
+            
+            if self._step_count % 50 == 0:
+                self._save()
+            
             for i in range(0, self._N):
                 # update parameter for pi_i
                 #print "updating: " + str(i)
                 neighbor_nodes = self.__sample_neighbor_nodes_batch(i)
-                z = self.__sample_latent_vars(i, neighbor_nodes)
-                self.__update_pi_for_node(i, z, phi_star, len(neighbor_nodes))
-            
-            self.__phi = phi_star
+                self.update_phi(i, neighbor_nodes)
+                
             self._pi = self.__phi/np.sum(self.__phi,1)[:,np.newaxis]
-            
             # update beta
-            z = self.__update_beta()
+            self.__update_beta()
                                   
             self._step_count += 1
             

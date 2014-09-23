@@ -73,6 +73,8 @@ public:
 					K * sizeof(cl_double),
 					phi[i].data());
 		}
+
+		info(std::cout);
 	}
 
 protected:

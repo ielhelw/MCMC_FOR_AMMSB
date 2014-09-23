@@ -1,5 +1,18 @@
+/*
+ * Copyright notice goes here
+ */
+
+/*
+ * @author Rutger Hofman, VU Amsterdam
+ * @author Wenzhe Li
+ *
+ * @date 2014-08-6
+ */
+
 #ifndef MCMC_PREPROCESS_RELATIVITY_H__
 #define MCMC_PREPROCESS_RELATIVITY_H__
+
+#include <fstream>
 
 #include "mcmc/data.h"
 #include "mcmc/preprocess/dataset.h"
@@ -14,7 +27,7 @@ namespace preprocess {
  */
 class Relativity : public DataSet {
 public:
-    Relativity(const std::string &filename) : DataSet(filename == "" ? "datasets/CA-GrQc.txt" : filename) {
+	Relativity(const std::string &filename) : DataSet(filename == "" ? "datasets/CA-GrQc.txt" : filename) {
 	}
 
 	virtual ~Relativity() {
@@ -36,7 +49,7 @@ public:
 	 * However, the node ID is not increasing by 1 every time. Thus, we re-format
 	 * the node ID first.
 	 */
-    virtual const Data *process() {
+	virtual const Data *process() {
 		std::ifstream infile(filename);
 		if (! infile) {
 			throw mcmc::IOException("Cannot open " + filename);
@@ -88,12 +101,12 @@ public:
 			E->insert(Edge(std::min(node1, node2), std::max(node1, node2)));
 		}
 
-        return new Data(NULL, E, N);
+		return new Data(NULL, E, N);
 	}
 
 };
 
-}	// namespace learning
+}	// namespace preprocess
 }	// namespace mcmc
 
 #endif	// ndef MCMC_PREPROCESS_RELATIVITY_H__

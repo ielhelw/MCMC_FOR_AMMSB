@@ -32,8 +32,8 @@ public:
 
 	/**
 	 * The data is stored in .txt file. The format of data is as follows, the first column
-	 * is line number. Within each line, it is tab separated. 
-	 * 
+	 * is line number. Within each line, it is tab separated.
+	 *
 	 * [1] some texts
 	 * [2] some texts
 	 * [3] some texts
@@ -42,11 +42,11 @@ public:
 	 * [6] 1    103
 	 * [7] 4    400
 	 * [8] ............
-	 * 
+	 *
 	 * However, the node ID is not increasing by 1 every time. Thus, we re-format
-	 * the node ID first. 
+	 * the node ID first.
 	 */
-	virtual const mcmc::Data *process() {
+	virtual const Data *process() {
 		std::ifstream infile(filename);
 		if (! infile) {
 			throw mcmc::IOException("Cannot open " + filename);
@@ -101,7 +101,7 @@ public:
 			E->insert(Edge(std::min(node1, node2), std::max(node1, node2)));
 		}
 
-		return new mcmc::Data(NULL, E, N);
+		return new Data(NULL, E, N);
 	}
 };
 

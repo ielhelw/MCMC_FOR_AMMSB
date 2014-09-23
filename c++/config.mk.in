@@ -1,5 +1,8 @@
 CONFIG_PROFILE		= 0
 CONFIG_OPTIMIZE		= 1
+# DAS:
+# module load gcc/4.8.1
+# module load boost/1.54.0
 CC			= gcc-4.7
 CXX			= g++-4.7
 # Ismail's PC
@@ -10,4 +13,6 @@ CXX			= g++-4.7
 # OPENCL_ROOT		= /cm/shared/package/amd-app-sdk/2.9
 #
 # CXXFLAGS		= -DRANDOM_FOLLOWS_PYTHON -DEFFICIENCY_FOLLOWS_PYTHON
+# BOOST_SUFFEX		=
+BOOST_SUFFEX		= -mt
 CXXFLAGS		=

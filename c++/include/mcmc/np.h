@@ -5,6 +5,7 @@
 #include <cassert>
 
 #include <algorithm>
+#include <limits>
 
 
 namespace mcmc {
@@ -85,6 +86,7 @@ Type sum_abs(const std::vector<Type> &a, const std::vector<Type> &b) {
 	return diff;
 }
 
+#ifdef EFFICIENCY_FOLLOWS_PYTHON
 std::vector<int> xrange(int from, int upto) {
 	std::vector<int> r(upto - from);
 	for (int i = 0; i < upto - from; i++) {
@@ -92,6 +94,50 @@ std::vector<int> xrange(int from, int upto) {
 	}
 	return r;
 }
+#endif
+
+#if 0
+template <typename T>
+static ::ssize_t find_le(const std::vector<T> &p,
+						 T location,
+						 ::size_t up = std::numeric_limits< ::size_t>::max(),
+						 ::size_t lo = 0) {
+#ifdef EFFICIENCY_FOLLOWS_PYTHON
+	static const ::size_t LINEAR_LIMIT = std::numerc_limits< ::size_t>::max();
+#else
+	static const ::size_t LINEAR_LIMIT = 30;
+#endif
+
+	if (up == std::numeric_limits< ::size_t>::max()) {
+		up = p.size();
+	}
+
+	if (location > p[up - 1]) {
+		return -1;
+	}
+
+	if (up - lo < LINEAR_LIMIT) {
+		for (::size_t i = lo; i < up; i++) {
+			if (location <= p[i]) {
+				up = i;
+				break;
+			}
+		}
+	} else {
+		while (up - lo > 1) {
+			::size_t m = (lo + up) / 2;
+			if (location < p[m]) {
+				up = m;
+			} else {
+				lo = m;
+			}
+		}
+	}
+	assert(location <= p[up]);
+	assert(lo == 0 || location > p[lo]);
+	return up;
+}
+#endif
 
 }	// namespace np
 }	// namespace mcmc

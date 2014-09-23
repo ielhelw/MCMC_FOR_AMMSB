@@ -12,7 +12,7 @@
 
 namespace mcmc {
 
-typedef std::pair<OrderedEdgeSet *, float>		EdgeSample;
+typedef std::pair<OrderedEdgeSet *, double>		EdgeSample;
 
 /**
  * Network class represents the whole graph that we read from the
@@ -45,7 +45,7 @@ public:
 	 *     data:   representation of the while graph.
 	 *     vlaidation_ratio:  the percentage of data used for validation and testing.
 	 */
-	Network(const Data *data, float held_out_ratio) {
+	Network(const Data *data, double held_out_ratio) {
 		N = data->N;							// number of nodes in the graph
 		linked_edges = data->E;					// all pair of linked edges.
 		num_total_edges = linked_edges->size(); // number of total edges.
@@ -165,7 +165,7 @@ public:
 			mini_batch_set->insert(edge);
 		}
 
-		float scale = ((N * (N - 1)) / 2) / mini_batch_size;
+		double scale = ((N * (N - 1)) / 2) / mini_batch_size;
 
 		return EdgeSample(mini_batch_set, scale);
 	}
@@ -209,8 +209,12 @@ public:
 
 		if (flag == 0) {
 			// sample mini-batch from linked edges
+#ifdef RANDOM_FOLLOWS_PYTHON
 			std::cerr << "FIXME: replace EdgeList w/ (unordered) EdgeSet again" << std::endl;
 			auto sampled_linked_edges = Random::random->sampleList(linked_edges, mini_batch_size * 2);
+#else
+			auto sampled_linked_edges = Random::random->sample(linked_edges, mini_batch_size * 2);
+#endif
 			for (auto edge = sampled_linked_edges->cbegin();
 				 	edge != sampled_linked_edges->cend();
 					edge++) {
@@ -229,7 +233,7 @@ public:
 
 			delete sampled_linked_edges;
 
-			return EdgeSample(mini_batch_set, linked_edges->size() / (float)mini_batch_size);
+			return EdgeSample(mini_batch_set, linked_edges->size() / (double)mini_batch_size);
 
 		} else {
 			// sample mini-batch from non-linked edges
@@ -255,7 +259,7 @@ public:
 			}
 
 			return EdgeSample(mini_batch_set,
-							  (N * (N - 1)) / 2 - linked_edges->size() / (float)mini_batch_size);
+							  (N * (N - 1)) / 2 - linked_edges->size() / (double)mini_batch_size);
 		}
 	}
 
@@ -375,8 +379,12 @@ protected:
 							    "please use smaller held out ratio.");
 		}
 
+#ifdef RANDOM_FOLLOWS_PYTHON
 		std::cerr << "FIXME: replace EdgeList w/ (unordered) EdgeSet again" << std::endl;
 		auto sampled_linked_edges = Random::random->sampleList(linked_edges, p);
+#else
+		auto sampled_linked_edges = Random::random->sample(linked_edges, p);
+#endif
 		for (auto edge = sampled_linked_edges->begin();
 			 	edge != sampled_linked_edges->end();
 				edge++) {
@@ -414,8 +422,12 @@ protected:
 			// Because we already used some of the linked edges for held_out sets,
 			// here we sample twice as much as links, and select among them, which
 			// is likely to contain valid p linked edges.
+#ifdef RANDOM_FOLLOWS_PYTHON
 			std::cerr << "FIXME: replace EdgeList w/ (unordered) EdgeSet again" << std::endl;
 			auto sampled_linked_edges = Random::random->sampleList(linked_edges, 2 * p);
+#else
+			auto sampled_linked_edges = Random::random->sample(linked_edges, 2 * p);
+#endif
 			for (auto edge = sampled_linked_edges->cbegin();
 				 	edge != sampled_linked_edges->cend();
 					edge++) {
@@ -508,7 +520,7 @@ protected:
 	int			N;					// number of nodes in the graph
 	const EdgeSet *linked_edges;	// all pair of linked edges.
 	::size_t	num_total_edges;	// number of total edges.
-	float		held_out_ratio;		// percentage of held-out data size
+	double		held_out_ratio;		// percentage of held-out data size
 	::size_t	held_out_size;
 
 	// The map stores all the neighboring nodes for each node, within the training

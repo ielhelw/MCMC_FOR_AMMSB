@@ -106,9 +106,11 @@ public:
 		};
 		sample(result, population, count, Inserter());
 
+#ifndef NDEBUG
 		for (auto i : *result) {
 			assert(population.find(i) != population.end());
 		}
+#endif
 
 		return result;
 	}

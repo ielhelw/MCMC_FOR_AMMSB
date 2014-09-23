@@ -196,7 +196,7 @@ public:
 			("eta0", po::value<double>(&eta0)->default_value(1.0), "eta0")
 			("eta1", po::value<double>(&eta1)->default_value(1.0), "eta1")
 
-			("K,k", po::value< ::size_t>(&K)->default_value(300), "K")
+			("K,K", po::value< ::size_t>(&K)->default_value(300), "K")
 			("mini-batch-size,m", po::value< ::size_t>(&mini_batch_size)->default_value(50), "mini_batch_size")
 
 			("epsilon,e", po::value<double>(&epsilon)->default_value(0.05), "epsilon")
@@ -213,8 +213,10 @@ public:
 			("input-file,f", po::value<std::string>(&filename)->default_value(""), "input file")
 			("class,c", po::value<std::string>(&dataset_class)->default_value("netscience"), "input class")
 
+#ifdef ENABLE_OPENCL
 			("platform,p", po::value<std::string>(&openClPlatform), "OpenCL platform")
 			("device,d", po::value<std::string>(&openClDevice), "OpenCL device")
+#endif
 			;
 
 		po::variables_map vm;

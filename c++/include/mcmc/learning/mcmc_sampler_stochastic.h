@@ -121,6 +121,8 @@ public:
         // self._pi = self.__phi/np.sum(self.__phi,1)[:,np.newaxis]
 		pi.resize(phi.size(), std::vector<double>(phi[0].size()));
 		np::row_normalize(&pi, phi);
+
+		info(std::cout);
 	}
 
 	virtual ~MCMCSamplerStochastic() {
@@ -227,7 +229,7 @@ public:
 
             if (step_count % 1 == 0) {
                 double ppx_score = cal_perplexity_held_out();
-				std::cout << "perplexity for hold out set is: " << ppx_score << std::endl;
+				std::cout << std::fixed << std::setprecision(12) << "perplexity for hold out set is: " << ppx_score << std::endl;
                 ppxs_held_out.push_back(ppx_score);
 #if 0
                 if (ppx_score < 5.0) {
@@ -282,7 +284,7 @@ protected:
 			OrderedVertexSet neighbor_nodes = sample_neighbor_nodes(num_node_sample, *node);
 			size[*node] = neighbor_nodes.size();
 			// sample latent variables z_ab for each pair of nodes
-			std::vector<int> z = this->sample_latent_vars(*node, neighbor_nodes);
+			std::vector<int> z = sample_latent_vars(*node, neighbor_nodes);
 			// save for a while, in order to update together.
 			latent_vars[*node] = z;
 		}
@@ -533,6 +535,7 @@ protected:
         double r = Random::random->random();
         double location = r * p[K-1];
 
+#if 1
         // get the index of bounds that containing location.
         for (::size_t i = 0; i < K; i++) {
 			if (location <= p[i]) {
@@ -541,6 +544,9 @@ protected:
 		}
 
         return -1;
+#else
+		return np::find_le(p, location, K);
+#endif
 	}
 
 
@@ -560,7 +566,7 @@ protected:
                 y_ab = 1;
 			}
 
-            int z_ab = this->sample_z_ab_from_edge(y_ab, pi[node], pi[*neighbor], beta, epsilon, K, node, *neighbor);
+            int z_ab = this->sample_z_ab_from_edge(y_ab, pi[node], pi[*neighbor], beta, epsilon, K);
             z[z_ab] += 1;
 		}
 
@@ -664,7 +670,7 @@ protected:
 							  const std::vector<double> &pi_a,
 							  const std::vector<double> &pi_b,
 							  const std::vector<double> &beta,
-							  double epsilon, ::size_t K, int node, int neighbor) const {
+							  double epsilon, ::size_t K) const {
 		std::vector<double> p(K);
 
 #ifdef EFFICIENCY_FOLLOWS_PYTHON
@@ -702,6 +708,7 @@ protected:
 
         double r = Random::random->random();
         double location = r * p[K-1];
+#if 1
         // get the index of bounds that containing location.
         for (::size_t i = 0; i < K; i++) {
             if (location <= p[i]) {
@@ -711,6 +718,9 @@ protected:
 
         // failed, should not happen!
         return -1;
+#else
+		return np::find_le(p, location);
+#endif
 	}
 
 

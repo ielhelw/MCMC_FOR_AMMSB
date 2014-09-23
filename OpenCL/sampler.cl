@@ -25,11 +25,9 @@
 
 #define sample_z_ab_from_edge_expr_optimized(i) \
 (	y == 1? \
-		beta[i] * pi_a[i] * pi_b[i] \
-			+ epsilon * pi_a[i] * (1-pi_b[i]) \
+		pi_a[i] * (pi_b[i] * (beta[i] - epsilon) + epsilon) \
 	: \
-		(1-beta[i]) * pi_a[i] * pi_b[i] \
-			+ (1-epsilon) * pi_a[i] * (1-pi_b[i]) \
+		pi_a[i] * (pi_b[i] * (epsilon - beta[i]) + (1-epsilon)) \
 )
 
 #define sample_z_ab_from_edge_expr sample_z_ab_from_edge_expr_optimized
@@ -48,6 +46,7 @@ inline int sample_z_ab_from_edge(
 	}
 
 	double location = random * p[K-1];
+	// FIXME: might use binary search, for sufficiently large K.
 	for (int i = 0; i < K; ++i) {
 		if (location <= p[i]) return i;
 	}
@@ -97,10 +96,8 @@ void update_pi_for_node_(
 	}
 	for (int k = 0; k < K; ++k) {
 		double phi_star_k = fabs(phi[k] + eps_t/2
-				* (alpha - phi[k] + total_node_count/NEIGHBOR_SAMPLE_SIZE * grad[k])
-				+ pow(eps_t, 0.5) * pow(phi[k], 0.5) * noise[k]);
-//		phi[k] = phi_star_k * (1.0/step_count)
-//				+ (1-1.0/step_count) * phi[k];
+				* (alpha - phi[k] + (total_node_count/NEIGHBOR_SAMPLE_SIZE) * grad[k])
+				+ sqrt(eps_t * phi[k]) * noise[k]);
 		phi[k] = phi_star_k;
 	}
 	double phi_sum = 0;

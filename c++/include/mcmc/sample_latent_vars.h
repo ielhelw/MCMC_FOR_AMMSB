@@ -2,6 +2,7 @@
 #define MCMC_SAMPLE_LATENT_VARS_H__
 
 #include <cmath>
+#include <cassert>
 
 #include "mcmc/exception.h"
 #include "mcmc/random.h"
@@ -57,6 +58,7 @@ int sample_z_ab_from_edge(int y, const std::vector<double> &pi_a,
 
     double r = Random::random->random();
     double location = r * p[K-1];
+#if 1
     // get the index of bounds that containing location.
     for (::size_t i = 0; i < K; i++) {
 		if (location <= p[i]) {
@@ -68,6 +70,9 @@ int sample_z_ab_from_edge(int y, const std::vector<double> &pi_a,
 
     // failed, should not happen!
     return -1;
+#else
+	return np::find_le(p, location);
+#endif
 }
 
 }	// namespace mcmc

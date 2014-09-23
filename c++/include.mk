@@ -11,7 +11,7 @@ LDSHARED = $(CXX)
 CXXFLAGS += -std=c++0x
 CXXFLAGS += -fPIC
 ifeq (1, $(CONFIG_OPTIMIZE))
-	CXXFLAGS += -g3 -O2 -finline-functions
+	CXXFLAGS += -g3 -O3 # -finline-functions
 	CXXFLAGS += -DNDEBUG
 else
 	CXXFLAGS += -g3
@@ -20,7 +20,7 @@ endif
 ifeq (1, $(CONFIG_PROFILE))
 	CXXFLAGS += -pg
 	CXXFLAGS := $(filter-out -finline-functions, $(CXXFLAGS))
-	CXXFLAGS += -fno-inline-functions
+	CXXFLAGS += -fno-inline -fno-inline-functions
 	LDFLAGS += -pg
 	CONFIG_STATIC_LIB	= 1
 	export GMON_OUT_PREFIX=gmon.out	# document: will save to gmon.out.<PID>
@@ -40,9 +40,13 @@ CXXFLAGS += -Wextra
 # CXXFLAGS += -fmessage-length=0
 CXXFLAGS += -Wno-unused-parameter
 CXXFLAGS += -Wno-ignored-qualifiers
+CXXFLAGS += -Wno-unused-local-typedefs	# for boost 1.54.0 on DAS
 CXXFLAGS += -I$(PROJECT_HOME)/include
 CXXFLAGS += -I$(PROJECT_HOME)/3rdparty/tinyxml2/include
+ifneq (, $(OPENCL_ROOT))
 CXXFLAGS += -I$(OPENCL_ROOT)/include
+CXXFLAGS += -DENABLE_OPENCL
+endif
 CXXFLAGS += -DPROJECT_HOME=$(PROJECT_HOME)
 ifneq (, $(BOOST_INCLUDE))
 CXXFLAGS += -I$(BOOST_INCLUDE)
@@ -51,7 +55,9 @@ endif
 
 LDFLAGS += -L$(PROJECT_HOME)/lib -l mcmc
 LDFLAGS += -L$(PROJECT_HOME)/3rdparty/tinyxml2/lib -ltinyxml2
+ifneq (, $(OPENCL_ROOT))
 LDFLAGS += -L$(OPENCL_ROOT)/lib -L$(OPENCL_ROOT)/lib/x86_64 -lOpenCL
+endif
 ifdef USE_MUDFLAP
 LIBS	+= -lmudflapth -rdynamic
 CXXFLAGS += -fmudflap -fmudflapth -funwind-tables
@@ -68,10 +74,10 @@ AR_FLAGS	= rc
 ifneq (, $(BOOST_ROOT))
 LDFLAGS += -L$(BOOST_ROOT)/lib
 endif
-LIBS	+= -lboost_system-mt
-LIBS	+= -lboost_thread-mt
-LIBS	+= -lboost_filesystem-mt
-LIBS	+= -lboost_program_options-mt
+LIBS	+= -lboost_system$(BOOST_SUFFIX)
+LIBS	+= -lboost_thread$(BOOST_SUFFIX)
+LIBS	+= -lboost_filesystem$(BOOST_SUFFIX)
+LIBS	+= -lboost_program_options$(BOOST_SUFFIX)
 
 vpath lib%.so	$(LD_LIBRARY_PATH) $(subst -L,,$(LDFLAGS))
 vpath lib%.a	$(LD_LIBRARY_PATH) $(subst -L,,$(LDFLAGS))
