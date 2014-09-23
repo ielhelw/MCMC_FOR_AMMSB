@@ -11,7 +11,7 @@ LDSHARED = $(CXX)
 CXXFLAGS += -std=c++0x
 CXXFLAGS += -fPIC
 ifeq (1, $(CONFIG_OPTIMIZE))
-	CXXFLAGS += -g3 -O2 -finline-functions
+	CXXFLAGS += -g3 -O3 # -finline-functions
 	CXXFLAGS += -DNDEBUG
 else
 	CXXFLAGS += -g3
@@ -20,7 +20,7 @@ endif
 ifeq (1, $(CONFIG_PROFILE))
 	CXXFLAGS += -pg
 	CXXFLAGS := $(filter-out -finline-functions, $(CXXFLAGS))
-	CXXFLAGS += -fno-inline-functions
+	CXXFLAGS += -fno-inline -fno-inline-functions
 	LDFLAGS += -pg
 	CONFIG_STATIC_LIB	= 1
 	export GMON_OUT_PREFIX=gmon.out	# document: will save to gmon.out.<PID>
