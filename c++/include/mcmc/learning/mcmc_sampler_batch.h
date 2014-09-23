@@ -358,7 +358,7 @@ public:
 
         return -1;
 #else
-		return np::find_le(p, location, K);
+		return np::find_le(bounds, location, K);
 #endif
 	}
 

@@ -98,6 +98,29 @@ std::vector<int> xrange(int from, int upto) {
 
 
 template <typename T>
+static ::ssize_t find_le_linear(const std::vector<T> &p,
+								T location,
+								::size_t up = std::numeric_limits< ::size_t>::max(),
+								::size_t lo = 0) {
+	if (up == std::numeric_limits< ::size_t>::max()) {
+		up = p.size();
+	}
+
+	::size_t i;
+	for (i = lo; i < up; i++) {
+		if (location <= p[i]) {
+			break;
+		}
+	}
+	if (up == i) {
+		return -1;
+	}
+
+	return i;
+}
+
+
+template <typename T>
 static ::ssize_t find_le(const std::vector<T> &p,
 						 T location,
 						 ::size_t up = std::numeric_limits< ::size_t>::max(),
@@ -116,26 +139,32 @@ static ::ssize_t find_le(const std::vector<T> &p,
 		return -1;
 	}
 
+	::ssize_t res;
 	if (up - lo < LINEAR_LIMIT) {
-		for (::size_t i = lo; i < up; i++) {
-			if (location <= p[i]) {
-				up = i;
-				break;
-			}
-		}
+		res = find_le_linear(p, location, up, lo);
 	} else {
+#ifndef NDEBUG
+		::ssize_t lin = find_le_linear(p, location, up, lo);
+#endif
 		while (up - lo > 1) {
 			::size_t m = (lo + up) / 2;
+			assert(m < p.size());
 			if (location < p[m]) {
 				up = m;
 			} else {
 				lo = m;
 			}
 		}
+		if (location > p[lo]) {
+			res = up;
+		} else {
+			res = lo;
+		}
+		assert(lin == res);
 	}
-	assert(location <= p[up]);
-	assert(lo == 0 || location > p[lo]);
-	return up;
+	assert(location <= p[res]);
+	assert(res == 0 || location > p[res - 1]);
+	return res;
 }
 
 }	// namespace np
