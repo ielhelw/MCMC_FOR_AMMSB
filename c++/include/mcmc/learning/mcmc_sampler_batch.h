@@ -348,7 +348,7 @@ public:
 		std::partial_sum(p.begin(), p.end(), bounds.begin());
         double location = Random::random->random() * bounds[K];
 
-#if 1
+#if 0
         // get the index of bounds that containing location.
         for (::size_t i = 0; i < K; i++) {
 			if (location <= bounds[i]) {
@@ -358,7 +358,7 @@ public:
 
         return -1;
 #else
-		return np::find_le(p, location, K);
+		return np::find_le(bounds, location, K);
 #endif
 	}
 

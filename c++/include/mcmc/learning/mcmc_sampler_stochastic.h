@@ -535,7 +535,7 @@ protected:
         double r = Random::random->random();
         double location = r * p[K-1];
 
-#if 1
+#if 0
         // get the index of bounds that containing location.
         for (::size_t i = 0; i < K; i++) {
 			if (location <= p[i]) {
@@ -708,7 +708,7 @@ protected:
 
         double r = Random::random->random();
         double location = r * p[K-1];
-#if 1
+#if 0
         // get the index of bounds that containing location.
         for (::size_t i = 0; i < K; i++) {
             if (location <= p[i]) {
