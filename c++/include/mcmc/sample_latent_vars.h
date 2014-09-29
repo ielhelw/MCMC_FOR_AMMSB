@@ -32,6 +32,17 @@ int sample_z_ab_from_edge(int y, const std::vector<double> &pi_a,
         p[i] = tmp;
 	}
 
+#elif defined GPU_OPTIMIZATION
+	// a^y * b^(1-y) = y a + (1 - y) b for y in {0, 1}
+	// if b == 1-a: a^y b^(1-y) = (2y - 1) a + (1 - y)
+	int y2_1 = 2 * y - 1;
+	int y_1  = 1 - y;
+	double y2_1_eps = y2_1 * epsilon;
+	double on_eps = y2_1_eps + y_1;
+	for (::size_t k = 0; k < K; k++) {
+		p[k] = pi_a[k] * (pi_b[k] * (y2_1 * beta[k] - y2_1_eps) + on_eps);
+	}
+
 #else
 	if (y == 1) {
 		for (::size_t i = 0; i < K; i++) {

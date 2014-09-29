@@ -438,6 +438,14 @@ protected:
 		for (::size_t k = 0; k < K; k++) {
             p[k] = std::pow(beta[k], y) * pow(1-beta[k], 1-y) * pi_a[k] * pi_b[k];
 		}
+#elif defined GPU_OPTIMIZATION
+		// a^y * b^(1-y) = y a + (1 - y) b for y in {0, 1}
+		// if b == 1-a: a^y b^(1-y) = y a + (1 - y) (1 - a) = (2y - 1) a + (1 - y)
+		int y2_1 = 2 * y - 1;
+		int y_1  = 1 - y;
+		for (::size_t k = 0; k < K; k++) {
+			p[k] = (y2_1 * beta[k] + y_1) * pi_a[k] * pi_b[k];
+		}
 #else
 		if (y == 1) {
 			for (::size_t k = 0; k < K; k++) {
@@ -611,6 +619,18 @@ protected:
             tmp += fac * pi_a[i] * (1 - pi_b[i]);
             p[i] = tmp;
 		}
+
+#elif defined GPU_OPTIMIZATION
+		// a^y * b^(1-y) = y a + (1 - y) b for y in {0, 1}
+		// if b == 1-a: a^y b^(1-y) = y a + (1 - y) (1 - a) = (2y - 1) a + (1 - y)
+		int y2_1 = 2 * y - 1;
+		int y_1  = 1 - y;
+		double fac = y2_1 * epsilon - y_1;
+		double y_1_fac = y_1 - fac;
+        for (::size_t i = 0; i < K; i++) {
+			p[i] = pi_a[i] * (pi_b[i] * (y2_1 * beta[i] + y_1_fac) + fac);
+		}
+
 #else
 		if (y == 1) {
 			for (::size_t i = 0; i < K; i++) {

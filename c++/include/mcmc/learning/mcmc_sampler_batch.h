@@ -81,6 +81,9 @@ public:
 
 
 	// FIXME make VertexSet a result parameter
+	// Data dependencies:
+	// 		network.held_out_set
+	// 		network.test_set
     OrderedVertexSet sample_neighbor_nodes_batch(int node) const {
         OrderedVertexSet neighbor_nodes;
 		for (int i = 0; i < (int)N; i++) {
@@ -98,10 +101,16 @@ public:
 
 
 #if USE_SAMPLE_LATENT_VARS
+	// FIXME: misnomer, should be: update_phi_star_for_node
 	/**
 	 * update pi for current node i.
 	   could leave this function as it is, but we don't use this for now... [wenzhe]
 	 */
+	// Data dependencies:
+	// 		z[K] (from sample_z_ab_from_edge)
+	// 		phi[i]
+	// write:
+	// 		phi_star[i][*]
     void update_pi_for_node(::size_t i, const std::vector<int> &z, std::vector<std::vector<double> > *phi_star, ::size_t n) const {
         // update gamma, only update node in the grad
 		double eps_t;
@@ -145,6 +154,16 @@ public:
 	/*
 		update beta. Instead of sampling, we calculate the probability directly. 
 	*/
+	// Data dependencies:
+	//		? network.held_out_set
+	//		? network.test_set
+	//		network.linked_edges
+	// 		beta
+	// 		pi[i]
+	// 		pi[j]
+	// 		theta
+	// #ifdef USE_SAMPLE_LATENT_VARS
+	// #else
     void update_beta() {
 		std::vector<std::vector<double> > grads(K, std::vector<double>(2, 0.0));
         // sum_theta = np.sum(self.__theta,1)
@@ -207,6 +226,29 @@ public:
 					grads[k][0] += (probs[k]/prob_sum) * (std::abs(1-y)/theta[k][0] - 1/sum_theta[k]);
 					grads[k][1] += (probs[k]/prob_sum) * (std::abs(-y)/theta[k][1] - 1/sum_theta[k]);
 				}
+
+#else
+
+#if defined GPU_OPTIMIZATION
+				// a^y * b^(1-y) = y a + (1 - y) b for y in {0, 1}
+				// if b == 1-a: a^y b^(1-y) = y a + (1 - y) (1 - a) = (2y - 1) a + (1 - y)
+				int y2_1 = 2 * y - 1;
+				int y_1  = 1 - y;
+				for (::size_t k = 0; k < K; k++){
+					double p = pi[i][k] * pi[j][k];
+					sum_pi += p;
+					probs[k] = (y2_1 * beta[k] + y_1) * p;
+				}
+
+				double prob_0 = (y2_1 * epsilon + y_1) * (1-sum_pi);
+				double prob_sum = np::sum(probs) + prob_0;
+				for (::size_t k = 0; k < K; k++){
+					double p = probs[k] / prob_sum;
+					double th = -p / sum_theta[k];
+					grads[k][0] += y_1 * p / theta[k][0] + th;
+					grads[k][1] += y * p / theta[k][1] + th;
+				}
+
 #else
 				if (y == 1) {
 					for (::size_t k = 0; k < K; k++){
@@ -239,7 +281,8 @@ public:
 						grads[k][1] += th;
 					}
 				}
-#endif
+#endif	// defined GPU_OPTIMIZATION
+#endif	// EFFICIENCY_FOLLOWS_PYTHON
 #endif 	// USE_SAMPLE_LATENT_VARS
 			}
 		}
@@ -305,7 +348,7 @@ public:
 
 #if USE_SAMPLE_LATENT_VARS
 	// could leave this function as it is, but we don't use this for now... [wenzhe]
-    int sample_z_for_each_edge(double y, const std::vector<double> &pi_a, const std::vector<double> &pi_b, const std::vector<double> &beta, ::size_t K) const {
+    static int sample_z_for_each_edge(double y, const std::vector<double> &pi_a, const std::vector<double> &pi_b, const std::vector<double> &beta, ::size_t K) {
         /**
 		 * sample latent variables z_ab and z_ba
          * but we don't need to consider all of the cases. i.e  (z_ab = j, z_ba = q) for all j and p.
@@ -328,6 +371,16 @@ public:
 		for (::size_t k = 0; k < K; k++) {
             p[k] = std::pow(beta[k], y) * pow(1-beta[k], 1-y) * pi_a[k] * pi_b[k];
 		}
+
+#elif defined GPU_OPTIMIZATION
+		// a^y * b^(1-y) = y a + (1 - y) b for y in {0, 1}
+		// if b == 1-a: a^y b^(1-y) = y a + (1 - y) (1 - a) = (2y - 1) a + (1 - y)
+		int y2_1 = 2 * y - 1;
+		int y_1  = 1 - y;
+		for (::size_t k = 0; k < K; k++) {
+            p[k] = (y2_1 * beta[k] + y_1) * pi_a[k] * pi_b[k];
+		}
+
 #else
 		if (y == 1) {
 			for (::size_t k = 0; k < K; k++) {
@@ -364,6 +417,12 @@ public:
 
 
 	// could leave this function as it is, but we don't use this for now...	 [wenzhe]
+	// Data dependencies:
+	// 		network.linked_edges
+	// 		pi[node]
+	// 		pi[neighbor(node)]
+	// 		beta
+	// 	inherit from sample_z_ab_from_edge (same)
 	std::vector<int> sample_latent_vars(int node, const OrderedVertexSet &neighbor_nodes) const {
         /**
 		 * given a node and its neighbors (either linked or non-linked), return the latent value
@@ -394,6 +453,18 @@ public:
 	// wenzhe's version. The version is different from previous one that:
 	// in the previous version, we use gibbs sampler to sample from distribution
 	// but in this version, we actually analytically calculate the probability
+	// Data dependencies:
+	// 		network.linked_edges
+	// 		pi[node]
+	// 		pi[neighbor(node)]
+	// 		beta
+	// write:
+	// 		phi[i][*] -- phi_star is bypassed outside this function
+	// FIXME QUIESTION RFHH
+	// In this routine, phi[i] is written, and phi[*] is read; that means that within this iteration,
+	// phi is accessed with values from the previous iteration mixed with values for the current
+	// iteration. Should the whole of phi_star be collected, and after the phase of update_phi
+	// be assigned to phi?
 	void update_phi(int i, const OrderedVertexSet &neighbor_nodes){
 		double eps_t = a * std::pow(1 + step_count / b, -c);	// step size
 		double phi_i_sum = np::sum(phi[i]);	
@@ -420,6 +491,18 @@ public:
 				probs[k] = std::pow(beta[k], y) * std::pow(1-beta[k], 1-y) * pi[i][k] * pi[j][k];
 				probs[k] += std::pow(epsilon, y) * std::pow(1- epsilon, 1-y) * pi[i][k] * (1-pi[j][k]);
 			}
+
+#elif defined GPU_OPTIMIZATION
+			// a^y * b^(1-y) = y a + (1 - y) b for y in {0, 1}
+			// if b == 1-a: a^y b^(1-y) = y a + (1 - y) (1 - a) = (2y - 1) a + (1 - y)
+			int y2_1 = 2 * y - 1;
+			int y_1  = 1 - y;
+			double y2_1_eps = y2_1 * epsilon;
+			double on_eps = y2_1_eps + y_1;
+			for (::size_t k = 0; k < K; k++) {
+				probs[k] = pi[i][k] * (pi[j][k] * (y2_1 * beta[k] + y2_1_eps) + on_eps);
+			}
+
 #else
 			if (y == 1) {
 				for (::size_t k = 0; k < K; k++){
@@ -499,6 +582,7 @@ public:
 				std::vector<int> z = sample_latent_vars(i, neighbor_nodes);
 				t_latent_vars.stop();
 				t_update_pi.start();
+				// FIXME: misnomer, should be: update_phi_star_for_node
                 update_pi_for_node(i, z, &phi_star, neighbor_nodes.size());
 				t_update_pi.stop();
 			}
