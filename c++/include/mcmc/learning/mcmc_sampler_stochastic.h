@@ -10,10 +10,10 @@
 
 #include "mcmc/np.h"
 #include "mcmc/random.h"
-// #include "mcmc/sample_latent_vars.h"
+#include "mcmc/sample_latent_vars.h"
 
 #include "mcmc/learning/learner.h"
-#include "mcmc/learning/mcmc_sampler_batch.h"
+#include "mcmc/learning/mcmc_sampler.h"
 
 namespace mcmc {
 namespace learning {
@@ -21,7 +21,7 @@ namespace learning {
 // typedef std::unordered_map<Edge, int>	EdgeMapZ;
 typedef std::map<Edge, int>	EdgeMapZ;
 
-class MCMCSamplerStochastic : public Learner {
+class MCMCSamplerStochastic : virtual public MCMCSampler {
 public:
     /**
     Mini-batch based MCMC sampler for community overlapping problems. Basically, given a
@@ -52,40 +52,7 @@ public:
     This method is great marriage between MCMC and stochastic methods.
     */
     MCMCSamplerStochastic(const Options &args, const Network &graph)
-			: Learner(args, graph) {
-
-        // step size parameters.
-        this->a = args.a;
-        this->b = args.b;
-        this->c = args.c;
-
-        // control parameters for learning
-        // num_node_sample = static_cast< ::size_t>(std::sqrt(network.get_num_nodes()));
-
-		num_node_sample = N / 5;
-
-        // model parameters and re-parameterization
-        // since the model parameter - \pi and \beta should stay in the simplex,
-        // we need to restrict the sum of probability equals to 1.  The way we
-        // restrict this is using re-reparameterization techniques, where we
-        // introduce another set of variables, and update them first followed by
-        // updating \pi and \beta.
-		std::cerr << "Ignore eta[] in random.gamma: use 100.0 and 0.01" << std::endl;
-		// theta = Random::random->gamma(eta[0], eta[1], K, 2);		// parameterization for \beta
-		theta = Random::random->gamma(100.0, 0.01, K, 2);		// parameterization for \beta
-		phi = Random::random->gamma(1, 1, N, K);					// parameterization for \pi
-
-		// FIXME RFHH -- code sharing with variational_inf*::update_pi_beta()
-        // temp = self.__theta/np.sum(self.__theta,1)[:,np.newaxis]
-        // self._beta = temp[:,1]
-		std::vector<std::vector<double> > temp(theta.size(), std::vector<double>(theta[0].size()));
-		np::row_normalize(&temp, theta);
-		std::transform(temp.begin(), temp.end(), beta.begin(), np::SelectColumn<double>(1));
-        // self._pi = self.__phi/np.sum(self.__phi,1)[:,np.newaxis]
-		pi.resize(phi.size(), std::vector<double>(phi[0].size()));
-		np::row_normalize(&pi, phi);
-
-		info(std::cout);
+			: Learner(args, graph), MCMCSampler(args, graph, N / 5, 100.0, 0.1) {
 	}
 
 	virtual ~MCMCSamplerStochastic() {
@@ -227,6 +194,7 @@ protected:
 		for (auto node = nodes.begin();
 				node != nodes.end();
 				node++) {
+			// FIXME: misnomer, should be: update_phi_for_node
 			update_pi_for_node(*node, latent_vars[*node], size[*node], scale);
 		}
     }
@@ -346,6 +314,8 @@ protected:
 	}
 
 
+	// FIXME: misnomer, should be: update_phi_for_node
+	// FIXME: scale is unused
     void update_pi_for_node(int i, const std::vector<int> &z, int n, double scale) {
         /**
         update pi for current node i.
@@ -358,7 +328,9 @@ protected:
             eps_t  = a * std::pow(1 + step_count / b, -c);
 		// }
 
-		std::vector<double> phi_star(phi[i]);					// updated \phi
+		// FIXME: no need to initialize phi_star
+		// std::vector<double> phi_star(phi[i]);					// updated \phi
+		std::vector<double> phi_star(phi[i].size());			// updated \phi
 		double phi_i_sum = np::sum(phi[i]);
 		std::vector<double> noise = Random::random->randn(K);	// random noise.
 
@@ -438,14 +410,6 @@ protected:
 		for (::size_t k = 0; k < K; k++) {
             p[k] = std::pow(beta[k], y) * pow(1-beta[k], 1-y) * pi_a[k] * pi_b[k];
 		}
-#elif defined GPU_OPTIMIZATION
-		// a^y * b^(1-y) = y a + (1 - y) b for y in {0, 1}
-		// if b == 1-a: a^y b^(1-y) = y a + (1 - y) (1 - a) = (2y - 1) a + (1 - y)
-		int y2_1 = 2 * y - 1;
-		int y_1  = 1 - y;
-		for (::size_t k = 0; k < K; k++) {
-			p[k] = (y2_1 * beta[k] + y_1) * pi_a[k] * pi_b[k];
-		}
 #else
 		if (y == 1) {
 			for (::size_t k = 0; k < K; k++) {
@@ -503,7 +467,7 @@ protected:
                 y_ab = 1;
 			}
 
-            int z_ab = this->sample_z_ab_from_edge(y_ab, pi[node], pi[*neighbor], beta, epsilon, K);
+            int z_ab = sample_z_ab_from_edge(y_ab, pi[node], pi[*neighbor], beta, epsilon, K);
             z[z_ab] += 1;
 		}
 
@@ -603,6 +567,7 @@ protected:
 #endif
 
 
+#ifdef SPOT_NO_DIFFERENCE_WITH_COMMON
     int sample_z_ab_from_edge(int y,
 							  const std::vector<double> &pi_a,
 							  const std::vector<double> &pi_b,
@@ -612,25 +577,10 @@ protected:
 
 #ifdef EFFICIENCY_FOLLOWS_PYTHON
         for (::size_t i = 0; i < K; i++) {
-			// FIMXE lift common expressions
             double tmp = std::pow(beta[i], y) * std::pow(1-beta[i], 1-y) * pi_a[i] * pi_b[i];
-            // tmp += std::pow(epsilon, y) * std::pow(1-epsilon, 1-y) * pi_a[i] * (1 - pi_b[i]);
-			double fac = std::pow(epsilon, y) * std::pow(1.0 - epsilon, 1 - y);
-            tmp += fac * pi_a[i] * (1 - pi_b[i]);
+            tmp += std::pow(epsilon, y) * std::pow(1-epsilon, 1-y) * pi_a[i] * (1 - pi_b[i]);
             p[i] = tmp;
 		}
-
-#elif defined GPU_OPTIMIZATION
-		// a^y * b^(1-y) = y a + (1 - y) b for y in {0, 1}
-		// if b == 1-a: a^y b^(1-y) = y a + (1 - y) (1 - a) = (2y - 1) a + (1 - y)
-		int y2_1 = 2 * y - 1;
-		int y_1  = 1 - y;
-		double fac = y2_1 * epsilon - y_1;
-		double y_1_fac = y_1 - fac;
-        for (::size_t i = 0; i < K; i++) {
-			p[i] = pi_a[i] * (pi_b[i] * (y2_1 * beta[i] + y_1_fac) + fac);
-		}
-
 #else
 		if (y == 1) {
 			for (::size_t i = 0; i < K; i++) {
@@ -671,18 +621,7 @@ protected:
 		return np::find_le(p, location);
 #endif
 	}
-
-
-protected:
-	// replicated in both mcmc_sampler_
-	double	a;
-	double	b;
-	double	c;
-
-	::size_t num_node_sample;
-
-	std::vector<std::vector<double> > theta;		// parameterization for \beta
-	std::vector<std::vector<double> > phi;			// parameterization for \pi
+#endif
 };
 
 }	// namespace learning

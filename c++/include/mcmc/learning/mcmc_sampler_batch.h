@@ -27,52 +27,16 @@ namespace learning {
 /**
  * MCMC Sampler for batch learning. Every update go through the whole data sets.
  */
-class MCMCSamplerBatch : public Learner {
+class MCMCSamplerBatch : virtual public MCMCSampler {
 
 public:
     MCMCSamplerBatch(const Options &args, const Network &graph)
-			: Learner(args, graph) {
-
-        // step size parameters. step size = (a*(1+t/b))^(-c), t is the number of steps so far
-        this->a = args.a;
-        this->b = args.b;
-        this->c = args.c;
-
-        // control parameters for learning
-        // TODO need to find the optimal value from experiments. If the value is too small
-        //      then it will add more variance.. if too large, computational complexity....
-        num_node_sample = static_cast< ::size_t>(std::sqrt(network.get_num_nodes()));
-
-        // model parameters and re-parameterization
-        // since the model parameter - \pi and \beta should stay in the simplex,
-        // we need to restrict the sum of probability equals to 1.  The way we
-        // restrict this is using re-reparameterization techniques, where we
-        // introduce another set of variables, and update them first followed by
-        // updating \pi and \beta.
-		// theta = Random::random->gamma(eta[0], eta[1], K, 2);        // parameterization for \beta - K by 2
+			: Learner(args, graph), MCMCSampler(args, graph, 0, 1.0, 100.0) {
 #if USE_SAMPLE_LATENT_VARS
 		std::cerr << "Use sampled latent vars" << std::endl;
 #else
 		std::cerr << "Use closed-form latent vars" << std::endl;
 #endif
-
-		std::cerr << "Use fixed values (1.0, 100.0) for eta i.s.o. command-line params" << std::endl;
-		theta = Random::random->gamma(1.0, 100.0, K, 2);        // parameterization for \beta - K by 2
-		// std::cerr << "Use fixed values (100.0, 1.0) for eta i.s.o. command-line params" << std::endl;
-		// theta = Random::random->gamma(100.0, 1.0, K, 2);        // parameterization for \beta - K by 2
-		phi = Random::random->gamma(1, 1, N, K);                    // parameterization for \pi   - N by K
-
-		// FIXME RFHH -- code sharing with variational_inf*::update_pi_beta()
-        // temp = self.__theta/np.sum(self.__theta,1)[:,np.newaxis]
-        // self._beta = temp[:,1]
-		std::vector<std::vector<double> > temp(theta.size(), std::vector<double>(theta[0].size()));
-		np::row_normalize(&temp, theta);
-		std::transform(temp.begin(), temp.end(), beta.begin(), np::SelectColumn<double>(1));
-        // self._pi = self.__phi/np.sum(self.__phi,1)[:,np.newaxis]
-		pi.resize(phi.size(), std::vector<double>(phi[0].size()));
-		np::row_normalize(&pi, phi);
-
-		info(std::cout);
 	}
 
 
@@ -101,17 +65,16 @@ public:
 
 
 #if USE_SAMPLE_LATENT_VARS
-	// FIXME: misnomer, should be: update_phi_star_for_node
 	/**
 	 * update pi for current node i.
-	   could leave this function as it is, but we don't use this for now... [wenzhe]
 	 */
 	// Data dependencies:
 	// 		z[K] (from sample_z_ab_from_edge)
 	// 		phi[i]
 	// write:
 	// 		phi_star[i][*]
-    void update_pi_for_node(::size_t i, const std::vector<int> &z, std::vector<std::vector<double> > *phi_star, ::size_t n) const {
+	// FIXME: misnomer, should be: update_phi_for_node
+    void update_pi_for_node(::size_t i, const std::vector<int> &z, ::size_t n) {
         // update gamma, only update node in the grad
 		double eps_t;
 
@@ -121,8 +84,10 @@ public:
             eps_t  = a * std::pow(1 + step_count / b, -c);
 		}
 
+		// std::vector<double> phi_star(phi[i]);				// FIXME: No need to initialize?
+		std::vector<double> phi_star(phi[i].size());
         double phi_i_sum = np::sum(phi[i]);
-		std::vector<double> noise = Random::random->randn(K);		// random noise.
+		std::vector<double> noise = Random::random->randn(K);	// random noise.
 
         // get the gradients
 		// grads = [-n * 1/phi_i_sum * j for j in np.ones(self._K)]
@@ -137,23 +102,21 @@ public:
         for (::size_t k = 0; k < K; k++) {
 #ifdef EFFICIENCY_FOLLOWS_PYTHON
 			// FIXME RFHH a**0.5 * b**0.5 better written as sqrt(a*b) ?
-            (*phi_star)[i][k] = std::abs(phi[i][k] + eps_t/2 * (alpha - phi[i][k] +
-																grads[k]) +
-										 std::pow(eps_t, .5) * std::pow(phi[i][k], .5) * noise[k]);
+			phi_star[k] = std::abs(phi[i][k] + eps_t/2 * (alpha - phi[i][k] +
+														  grads[k]) +
+								   std::pow(eps_t, .5) * std::pow(phi[i][k], .5) * noise[k]);
 #else
 			double f = std::sqrt(eps_t * phi[i][k]);
-            (*phi_star)[i][k] = std::abs(phi[i][k] + eps_t/2 * (alpha - phi[i][k] +
-																grads[k]) +
-										 f * noise[k]);
+			phi_star[k] = std::abs(phi[i][k] + eps_t/2 * (alpha - phi[i][k] +
+														  grads[k]) +
+								   f * noise[k]);
 #endif
 		}
+
+		phi[i] = phi_star;
 	}
-#endif
 
 
-	/*
-		update beta. Instead of sampling, we calculate the probability directly. 
-	*/
 	// Data dependencies:
 	//		? network.held_out_set
 	//		? network.test_set
@@ -162,9 +125,7 @@ public:
 	// 		pi[i]
 	// 		pi[j]
 	// 		theta
-	// #ifdef USE_SAMPLE_LATENT_VARS
-	// #else
-    void update_beta() {
+    virtual void update_beta() {
 		std::vector<std::vector<double> > grads(K, std::vector<double>(2, 0.0));
         // sum_theta = np.sum(self.__theta,1)
 		std::vector<double> sum_theta(theta.size());
@@ -172,17 +133,12 @@ public:
 
         // update gamma, only update node in the grad
 
-#if USE_SAMPLE_LATENT_VARS
-        // wenzhe commented it out....
 		double eps_t;
         if (! stepsize_switch) {
             eps_t = std::pow(1024+step_count, -0.5);
 		} else {
             eps_t = a * std::pow(1 + step_count / b, -c);
 		}
-#else 	// if USE_SAMPLE_LATENT_VARS
-        double eps_t = a * std::pow(1 + step_count / b, -c);
-#endif	// if USE_SAMPLE_LATENT_VARS
 
         for (::size_t i = 0; i < N; i++) {
             for (::size_t j = i + 1; j < N; j++) {
@@ -199,8 +155,6 @@ public:
                     y = 1;
 				}
 
-#if USE_SAMPLE_LATENT_VARS
-				/*	wenzhe commented it out... */
                 int z = sample_z_for_each_edge(y, pi[i], pi[j],
 											   beta, K);
                 if (z == -1) {
@@ -209,81 +163,6 @@ public:
 
                 grads[z][0] += std::abs(1-y) / theta[z][0] - 1.0 / sum_theta[z];
                 grads[z][1] += std::abs(-y) / theta[z][1] - 1.0 / sum_theta[z];
-
-#else 	// if USE_SAMPLE_LATENT_VARS
-				// wenzhe's version
-				std::vector<double> probs(K);
-				double sum_pi = 0.0;
-#ifdef EFFICIENCY_FOLLOWS_PYTHON
-				for (::size_t k = 0; k < K; k++){
-					sum_pi += pi[i][k] * pi[j][k];
-					probs[k] = std::pow(beta[k], y) * std::pow(1-beta[k], 1-y) * pi[i][k] * pi[j][k];
-				}
-
-				double prob_0 = std::pow(epsilon, y) * std::pow(1-epsilon, 1-y) * (1-sum_pi);
-				double prob_sum = np::sum(probs) + prob_0;
-				for (::size_t k = 0; k < K; k++){
-					grads[k][0] += (probs[k]/prob_sum) * (std::abs(1-y)/theta[k][0] - 1/sum_theta[k]);
-					grads[k][1] += (probs[k]/prob_sum) * (std::abs(-y)/theta[k][1] - 1/sum_theta[k]);
-				}
-
-#else
-
-#if defined GPU_OPTIMIZATION
-				// a^y * b^(1-y) = y a + (1 - y) b for y in {0, 1}
-				// if b == 1-a: a^y b^(1-y) = y a + (1 - y) (1 - a) = (2y - 1) a + (1 - y)
-				int y2_1 = 2 * y - 1;
-				int y_1  = 1 - y;
-				for (::size_t k = 0; k < K; k++){
-					double p = pi[i][k] * pi[j][k];
-					sum_pi += p;
-					probs[k] = (y2_1 * beta[k] + y_1) * p;
-				}
-
-				double prob_0 = (y2_1 * epsilon + y_1) * (1-sum_pi);
-				double prob_sum = np::sum(probs) + prob_0;
-				for (::size_t k = 0; k < K; k++){
-					double p = probs[k] / prob_sum;
-					double th = -p / sum_theta[k];
-					grads[k][0] += y_1 * p / theta[k][0] + th;
-					grads[k][1] += y * p / theta[k][1] + th;
-				}
-
-#else
-				if (y == 1) {
-					for (::size_t k = 0; k < K; k++){
-						double p = pi[i][k] * pi[j][k];
-						sum_pi += p;
-						probs[k] = beta[k] * p;
-					}
-
-					double prob_0 = epsilon * (1-sum_pi);
-					double prob_sum = np::sum(probs) + prob_0;
-					for (::size_t k = 0; k < K; k++){
-						double p = probs[k] / prob_sum;
-						double th = -p / sum_theta[k];
-						grads[k][0] += th;
-						grads[k][1] += p / theta[k][1] + th;
-					}
-				} else {
-					for (::size_t k = 0; k < K; k++){
-						double p = pi[i][k] * pi[j][k];
-						sum_pi += p;
-						probs[k] = (1.0-beta[k]) * p;
-					}
-
-					double prob_0 = (1.0-epsilon) * (1-sum_pi);
-					double prob_sum = np::sum(probs) + prob_0;
-					for (::size_t k = 0; k < K; k++){
-						double p = probs[k] / prob_sum;
-						double th = -p / sum_theta[k];
-						grads[k][0] += p / theta[k][0] + th;
-						grads[k][1] += th;
-					}
-				}
-#endif	// defined GPU_OPTIMIZATION
-#endif	// EFFICIENCY_FOLLOWS_PYTHON
-#endif 	// USE_SAMPLE_LATENT_VARS
 			}
 		}
 
@@ -305,8 +184,6 @@ public:
 #endif
 			}
 		}
-#if USE_SAMPLE_LATENT_VARS
-		// wenzhe commented out... don't need...
         if (step_count < 50000) {
 			theta = theta_star;
 		} else {
@@ -332,9 +209,6 @@ public:
 							   myOp);
 			}
 		}
-#else
-		theta = theta_star;
-#endif
 
         //self.__theta = theta_star
         // update beta from theta
@@ -346,8 +220,6 @@ public:
 	}
 
 
-#if USE_SAMPLE_LATENT_VARS
-	// could leave this function as it is, but we don't use this for now... [wenzhe]
     static int sample_z_for_each_edge(double y, const std::vector<double> &pi_a, const std::vector<double> &pi_b, const std::vector<double> &beta, ::size_t K) {
         /**
 		 * sample latent variables z_ab and z_ba
@@ -370,15 +242,6 @@ public:
 		// FIXME pow for selecting after y = 0 or 1
 		for (::size_t k = 0; k < K; k++) {
             p[k] = std::pow(beta[k], y) * pow(1-beta[k], 1-y) * pi_a[k] * pi_b[k];
-		}
-
-#elif defined GPU_OPTIMIZATION
-		// a^y * b^(1-y) = y a + (1 - y) b for y in {0, 1}
-		// if b == 1-a: a^y b^(1-y) = y a + (1 - y) (1 - a) = (2y - 1) a + (1 - y)
-		int y2_1 = 2 * y - 1;
-		int y_1  = 1 - y;
-		for (::size_t k = 0; k < K; k++) {
-            p[k] = (y2_1 * beta[k] + y_1) * pi_a[k] * pi_b[k];
 		}
 
 #else
@@ -416,14 +279,14 @@ public:
 	}
 
 
-	// could leave this function as it is, but we don't use this for now...	 [wenzhe]
 	// Data dependencies:
 	// 		network.linked_edges
 	// 		pi[node]
 	// 		pi[neighbor(node)]
 	// 		beta
 	// 	inherit from sample_z_ab_from_edge (same)
-	std::vector<int> sample_latent_vars(int node, const OrderedVertexSet &neighbor_nodes) const {
+	// FIXME: code sharing w/ mcmc sampler stochastic
+	virtual std::vector<int> sample_latent_vars(int node, const OrderedVertexSet &neighbor_nodes) const {
         /**
 		 * given a node and its neighbors (either linked or non-linked), return the latent value
 		 * z_ab for each pair (node, neighbor_nodes[i].
@@ -446,10 +309,127 @@ public:
 
 		return z;
 	}
-#endif
+#endif	// USE_SAMPLE_LATENT_VARS
 
 
 #if ! USE_SAMPLE_LATENT_VARS
+	/*
+		update beta. Instead of sampling, we calculate the probability directly. 
+	*/
+	// Data dependencies:
+	//		? network.held_out_set
+	//		? network.test_set
+	//		network.linked_edges
+	// 		beta
+	// 		pi[i]
+	// 		pi[j]
+	// 		theta
+    virtual void update_beta() {
+		std::vector<std::vector<double> > grads(K, std::vector<double>(2, 0.0));
+        // sum_theta = np.sum(self.__theta,1)
+		std::vector<double> sum_theta(theta.size());
+		std::transform(theta.begin(), theta.end(), sum_theta.begin(), np::sum<double>);
+
+        // update gamma, only update node in the grad
+
+        double eps_t = a * std::pow(1 + step_count / b, -c);
+
+        for (::size_t i = 0; i < N; i++) {
+            for (::size_t j = i + 1; j < N; j++) {
+				Edge edge(i, j);
+
+#ifdef NOT_IN_PYTHON
+				if (edge.in(network.get_held_out_set()) || edge.in(network.get_test_set())) {
+                    continue;
+				}
+#endif
+
+                int y = 0;
+                if (edge.in(network.get_linked_edges())) {
+                    y = 1;
+				}
+
+				std::vector<double> probs(K);
+				double sum_pi = 0.0;
+#ifdef EFFICIENCY_FOLLOWS_PYTHON
+				for (::size_t k = 0; k < K; k++){
+					sum_pi += pi[i][k] * pi[j][k];
+					probs[k] = std::pow(beta[k], y) * std::pow(1-beta[k], 1-y) * pi[i][k] * pi[j][k];
+				}
+
+				double prob_0 = std::pow(epsilon, y) * std::pow(1-epsilon, 1-y) * (1-sum_pi);
+				double prob_sum = np::sum(probs) + prob_0;
+				for (::size_t k = 0; k < K; k++){
+					grads[k][0] += (probs[k]/prob_sum) * (std::abs(1-y)/theta[k][0] - 1/sum_theta[k]);
+					grads[k][1] += (probs[k]/prob_sum) * (std::abs(-y)/theta[k][1] - 1/sum_theta[k]);
+				}
+
+#else	// EFFICIENCY_FOLLOWS_PYTHON
+				if (y == 1) {
+					for (::size_t k = 0; k < K; k++){
+						double p = pi[i][k] * pi[j][k];
+						sum_pi += p;
+						probs[k] = beta[k] * p;
+					}
+
+					double prob_0 = epsilon * (1-sum_pi);
+					double prob_sum = np::sum(probs) + prob_0;
+					for (::size_t k = 0; k < K; k++){
+						double p = probs[k] / prob_sum;
+						double th = -p / sum_theta[k];
+						grads[k][0] += th;
+						grads[k][1] += p / theta[k][1] + th;
+					}
+				} else {
+					for (::size_t k = 0; k < K; k++){
+						double p = pi[i][k] * pi[j][k];
+						sum_pi += p;
+						probs[k] = (1.0-beta[k]) * p;
+					}
+
+					double prob_0 = (1.0-epsilon) * (1-sum_pi);
+					double prob_sum = np::sum(probs) + prob_0;
+					for (::size_t k = 0; k < K; k++){
+						double p = probs[k] / prob_sum;
+						double th = -p / sum_theta[k];
+						grads[k][0] += p / theta[k][0] + th;
+						grads[k][1] += th;
+					}
+				}
+			}
+#endif	// EFFICIENCY_FOLLOWS_PYTHON
+		}
+
+        // update theta
+		std::vector<std::vector<double> > noise = Random::random->randn(K, 2);
+		std::vector<std::vector<double> > theta_star(theta);
+        for (::size_t k = 0; k < K; k++) {
+            for (::size_t i = 0; i < 2; i++) {
+#ifdef EFFICIENCY_FOLLOWS_PYTHON
+				// FIXME rewrite a**0.5 * b**0.5 as sqrt(a * b)
+				theta_star[k][i] = std::abs(theta[k][i] + eps_t/2 * (eta[i] - theta[k][i] + \
+																	 grads[k][i]) +
+										    std::pow(eps_t, .5) * pow(theta[k][i], .5) * noise[k][i]);
+#else
+				double f = std::sqrt(eps_t * theta[k][i]);
+				theta_star[k][i] = std::abs(theta[k][i] + eps_t/2 * (eta[i] - theta[k][i] + \
+																	 grads[k][i]) +
+										    f * noise[k][i]);
+#endif
+			}
+		}
+		theta = theta_star;
+
+        //self.__theta = theta_star
+        // update beta from theta
+        // temp = self.__theta/np.sum(self.__theta,1)[:,np.newaxis]
+        // self._beta = temp[:,1]
+		std::vector<std::vector<double> > temp(theta.size(), std::vector<double>(theta[0].size()));
+		np::row_normalize(&temp, theta);
+		std::transform(temp.begin(), temp.end(), beta.begin(), np::SelectColumn<double>(1));
+	}
+
+
 	// wenzhe's version. The version is different from previous one that:
 	// in the previous version, we use gibbs sampler to sample from distribution
 	// but in this version, we actually analytically calculate the probability
@@ -465,7 +445,7 @@ public:
 	// phi is accessed with values from the previous iteration mixed with values for the current
 	// iteration. Should the whole of phi_star be collected, and after the phase of update_phi
 	// be assigned to phi?
-	void update_phi(int i, const OrderedVertexSet &neighbor_nodes){
+	virtual void update_phi(int i, const OrderedVertexSet &neighbor_nodes){
 		double eps_t = a * std::pow(1 + step_count / b, -c);	// step size
 		double phi_i_sum = np::sum(phi[i]);	
 		std::vector<double> grads(K, 0.0);						// gradient for K classes
@@ -491,18 +471,6 @@ public:
 				probs[k] = std::pow(beta[k], y) * std::pow(1-beta[k], 1-y) * pi[i][k] * pi[j][k];
 				probs[k] += std::pow(epsilon, y) * std::pow(1- epsilon, 1-y) * pi[i][k] * (1-pi[j][k]);
 			}
-
-#elif defined GPU_OPTIMIZATION
-			// a^y * b^(1-y) = y a + (1 - y) b for y in {0, 1}
-			// if b == 1-a: a^y b^(1-y) = y a + (1 - y) (1 - a) = (2y - 1) a + (1 - y)
-			int y2_1 = 2 * y - 1;
-			int y_1  = 1 - y;
-			double y2_1_eps = y2_1 * epsilon;
-			double on_eps = y2_1_eps + y_1;
-			for (::size_t k = 0; k < K; k++) {
-				probs[k] = pi[i][k] * (pi[j][k] * (y2_1 * beta[k] + y2_1_eps) + on_eps);
-			}
-
 #else
 			if (y == 1) {
 				for (::size_t k = 0; k < K; k++){
@@ -540,7 +508,7 @@ public:
 		// assign back to phi. 
 		phi[i] = phi_star;
 	}
-#endif
+#endif	// ! USE_SAMPLE_LATENT_VARS
 
 
 	/**
@@ -552,10 +520,8 @@ public:
 		timer::Timer t_sample("  sample_neighbor_nodes");
 #if USE_SAMPLE_LATENT_VARS
 		timer::Timer t_latent_vars("  sample_latent_vars");
-		timer::Timer t_update_pi("  update_pi");
-#else
-		timer::Timer t_update_phi("  update_phi");
 #endif
+		timer::Timer t_update_phi("  update_phi");
 		timer::Timer t_update_beta("  update_beta");
 		timer::Timer::setTabular(true);
 
@@ -569,7 +535,6 @@ public:
 
 #if USE_SAMPLE_LATENT_VARS
 			/*	wenzhe commented this out... */
-			std::vector<std::vector<double> > phi_star(pi);
             // iterate through each node, and update parameters pi_a
             for (::size_t i = 0; i < N; i++) {
                 // update parameter for pi_i
@@ -581,16 +546,13 @@ public:
 				t_latent_vars.start();
 				std::vector<int> z = sample_latent_vars(i, neighbor_nodes);
 				t_latent_vars.stop();
-				t_update_pi.start();
-				// FIXME: misnomer, should be: update_phi_star_for_node
-                update_pi_for_node(i, z, &phi_star, neighbor_nodes.size());
-				t_update_pi.stop();
+				t_update_phi.start();
+				// FIXME: misnomer, should be: update_phi_for_node
+                update_pi_for_node(i, z, neighbor_nodes.size());
+				t_update_phi.stop();
 			}
 
-			phi = phi_star;
-			np::row_normalize(&pi, phi);	// update pi from phi. 
 #else
-
 			// wenzhe's version
 			// iterate through each node, and update parameters pi_a
 			for (::size_t i = 0; i < N; i++) {
@@ -604,8 +566,9 @@ public:
 				update_phi(i, neighbor_nodes);	// update phi for node i
 				t_update_phi.stop();
 			}
-			np::row_normalize(&pi, phi);	// update pi from phi. 
 #endif
+
+			np::row_normalize(&pi, phi);	// update pi from phi. 
 
             // update beta
 			t_update_beta.start();
@@ -620,10 +583,8 @@ public:
 			std::cout << t_sample << std::endl;
 #if USE_SAMPLE_LATENT_VARS
 			std::cout << t_latent_vars << std::endl;
-			std::cout << t_update_pi << std::endl;
-#else
-			std::cout << t_update_phi << std::endl;
 #endif
+			std::cout << t_update_phi << std::endl;
 			std::cout << t_update_beta << std::endl;
 		}
 
@@ -636,18 +597,6 @@ public:
         print s.getvalue()
 #endif
 	}
-
-
-protected:
-	// replicated in both mcmc_sampler_
-	double	a;
-	double	b;
-	double	c;
-
-	::size_t num_node_sample;						// used for sampling neighborhood nodes
-
-	std::vector<std::vector<double> > theta;		// parameterization for \beta
-	std::vector<std::vector<double> > phi;			// parameterization for \pi
 };
 
 }	// namespace learning
