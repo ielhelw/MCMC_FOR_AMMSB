@@ -34,6 +34,8 @@ public:
 		sampler_program = this->clContext.createProgram("OpenCL/sampler.cl", progOpts);
 		sample_latent_vars_and_update_pi_kernel = cl::Kernel(sampler_program, "sample_latent_vars_and_update_pi");
 		sample_latent_vars2_kernel = cl::Kernel(sampler_program, "sample_latent_vars2");
+		update_beta_calculate_grads_kernel = cl::Kernel(sampler_program, "update_beta_calculate_grads");
+		update_beta_calculate_theta_kernel = cl::Kernel(sampler_program, "update_beta_calculate_theta");
 
 		clNodes = cl::Buffer(clContext.context, CL_MEM_READ_ONLY,
 				N * sizeof(cl_int) // max: 2 unique nodes per edge in batch
@@ -53,7 +55,13 @@ public:
 				N * K * sizeof(cl_double) // #total_nodes x #K
 				);
 		clBeta = cl::Buffer(clContext.context, CL_MEM_READ_WRITE,
-				K * sizeof(cl_double) // #total_nodes x #K
+				K * sizeof(cl_double) // #K
+				);
+		clTheta = cl::Buffer(clContext.context, CL_MEM_READ_WRITE,
+				2 * K * sizeof(cl_double) // 2 x #K
+				);
+		clThetaSum = cl::Buffer(clContext.context, CL_MEM_READ_WRITE,
+				K * sizeof(cl_double) // #K
 				);
 		clZ = cl::Buffer(clContext.context, CL_MEM_READ_WRITE,
 				N * K * sizeof(cl_int) // #total_nodes x #K
@@ -65,7 +73,10 @@ public:
 				N * real_num_node_sample() * sizeof(cl_double) // at most #total_nodes
 				);
 		clScratch = cl::Buffer(clContext.context, CL_MEM_READ_WRITE,
-				N * K * sizeof(cl_double) // #total_nodes x #K
+				std::max(
+						N * K * sizeof(cl_double), // #total_nodes x #K
+						N * K * sizeof(cl_double3)
+					)
 				);
 		for (unsigned i = 0; i < N; ++i) {
 			clContext.queue.enqueueWriteBuffer(clPhi, CL_TRUE,
@@ -78,6 +89,99 @@ public:
 	}
 
 protected:
+
+	virtual void update_beta(const OrderedEdgeSet &mini_batch, double scale, const EdgeMapZ &z) {
+
+		std::vector<cl_int2> edges(mini_batch.size());
+		// Copy edges
+		std::transform(mini_batch.begin(), mini_batch.end(), edges.begin(), [](const Edge& e) {
+			cl_int2 E;
+			E.s[0] = e.first;
+			E.s[1] = e.second;
+			return E;
+		});
+		clContext.queue.enqueueWriteBuffer(clNodesNeighbors, CL_TRUE,
+				0, edges.size()*sizeof(cl_int2),
+				edges.data());
+
+		// copy theta
+		std::vector<cl_double2> vclTheta(theta.size());
+		std::transform(theta.begin(), theta.end(), vclTheta.begin(), [](const std::vector<double>& in){
+			cl_double2 ret;
+			ret.s[0] = in[0];
+			ret.s[1] = in[1];
+			return ret;
+		});
+		clContext.queue.enqueueWriteBuffer(clTheta, CL_TRUE,
+				0, theta.size() * sizeof(cl_double2),
+				vclTheta.data());
+
+		// copy theta_sum
+		std::vector<cl_double> vThetaSum(theta.size());
+		std::transform(theta.begin(), theta.end(), vThetaSum.begin(), np::sum<double>);
+		clContext.queue.enqueueWriteBuffer(clThetaSum, CL_TRUE,
+				0, theta.size() * sizeof(cl_double),
+				vThetaSum.data());
+
+		update_beta_calculate_grads_kernel.setArg(0, clGraph);
+		update_beta_calculate_grads_kernel.setArg(1, clNodesNeighbors);
+		update_beta_calculate_grads_kernel.setArg(2, (cl_int)edges.size());
+		update_beta_calculate_grads_kernel.setArg(3, clZ);
+		update_beta_calculate_grads_kernel.setArg(4, clTheta);
+		update_beta_calculate_grads_kernel.setArg(5, clThetaSum);
+		update_beta_calculate_grads_kernel.setArg(6, clScratch);
+		update_beta_calculate_grads_kernel.setArg(7, (cl_double)scale);
+
+		::size_t countPartialSums = std::min(edges.size(), (::size_t)2);
+
+		clContext.queue.enqueueNDRangeKernel(update_beta_calculate_grads_kernel, cl::NullRange, cl::NDRange(countPartialSums), cl::NDRange(1));
+		clContext.queue.finish();
+
+		double eps_t = a * std::pow(1.0 + step_count / b, -c);
+		cl_double2 clEta;
+		clEta.s[0] = this->eta[0];
+		clEta.s[1] = this->eta[1];
+
+		std::vector<std::vector<double> > noise = Random::random->randn(K, 2);	// random noise.
+		std::vector<cl_double2> clNoise(noise.size());
+		std::transform(noise.begin(), noise.end(), clNoise.begin(), [](const std::vector<double>& n){
+			cl_double2 ret;
+			ret.s[0] = n[0];
+			ret.s[1] = n[1];
+			return ret;
+		});
+
+		clContext.queue.enqueueWriteBuffer(clRandomNK, CL_TRUE,
+				0, clNoise.size()*sizeof(cl_double2),
+				clNoise.data());
+
+		update_beta_calculate_theta_kernel.setArg(0, clTheta);
+		update_beta_calculate_theta_kernel.setArg(1, clRandomNK);
+		update_beta_calculate_theta_kernel.setArg(2, clScratch);
+		update_beta_calculate_theta_kernel.setArg(3, (cl_double)scale);
+		update_beta_calculate_theta_kernel.setArg(4, (cl_double)eps_t);
+		update_beta_calculate_theta_kernel.setArg(5, clEta);
+		update_beta_calculate_theta_kernel.setArg(6, (int)countPartialSums);
+
+		clContext.queue.enqueueTask(update_beta_calculate_theta_kernel);
+		clContext.queue.finish();
+
+
+		// copy theta
+		clContext.queue.enqueueReadBuffer(clTheta, CL_TRUE,
+				0, theta.size() * sizeof(cl_double2),
+				vclTheta.data());
+		std::transform(vclTheta.begin(), vclTheta.end(), theta.begin(), [](const cl_double2 in){
+			std::vector<double> ret(2);
+			ret[0] = in.s[0];
+			ret[1] = in.s[1];
+			return ret;
+		});
+
+		std::vector<std::vector<double> > temp(theta.size(), std::vector<double>(theta[0].size()));
+		np::row_normalize(&temp, theta);
+		std::transform(temp.begin(), temp.end(), beta.begin(), np::SelectColumn<double>(1));
+	}
 
 	virtual EdgeMapZ sample_latent_vars2(const OrderedEdgeSet &mini_batch) {
 		std::vector<cl_int2> edges(mini_batch.size());
@@ -317,6 +421,8 @@ protected:
 	cl::Kernel graph_init_kernel;
 	cl::Kernel sample_latent_vars_and_update_pi_kernel;
 	cl::Kernel sample_latent_vars2_kernel;
+	cl::Kernel update_beta_calculate_grads_kernel;
+	cl::Kernel update_beta_calculate_theta_kernel;
 
 	cl::Buffer clGraphEdges;
 	cl::Buffer clGraphNodes;
@@ -328,6 +434,8 @@ protected:
 	cl::Buffer clPiUpdate;
 	cl::Buffer clPhi;
 	cl::Buffer clBeta;
+	cl::Buffer clTheta;
+	cl::Buffer clThetaSum;
 	cl::Buffer clZ;
 	cl::Buffer clRandomNN;
 	cl::Buffer clRandomNK;

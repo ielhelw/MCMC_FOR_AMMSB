@@ -216,3 +216,63 @@ kernel void sample_latent_vars2(
 	}
 }
 
+kernel void update_beta_calculate_grads(
+		global Graph *g,
+		global const int2 *edges,
+		const int E, // #edges
+		global const int *Z,// #edges
+		global const double2 *theta,// #K
+		global const double *theta_sum,// (#K)
+		global double2 *ggrads,// #K,
+		double scale
+		) {
+	size_t gid = get_global_id(0);
+	size_t gsize = get_global_size(0);
+	global double2 *grads = ggrads + gid * K;
+
+	for (int i = 0; i < K; ++i) {
+		grads[i].x = 0;
+		grads[i].y = 0;
+	}
+	for (int i = gid; i < E; i += gsize) {
+		int y_ab = graph_has_peer(g, edges[i].x, edges[i].y);
+		int k = Z[i];
+		if (k != -1) {
+			grads[k].x += (1-y_ab) / theta[k].x - 1 / theta_sum[k];
+			grads[k].y += y_ab / theta[k].y - 1 / theta_sum[k];
+		}
+	}
+}
+
+kernel void update_beta_calculate_theta(
+		global double2 *theta,// #K
+		global const double2 *noise,// #K
+		global double2 *ggrads,// #K,
+		double scale,
+		double eps_t,
+		double2 eta,
+		int count_partial_sums
+		) {
+	for (int i = 1; i < count_partial_sums; ++i) {
+		global double2 *grads = ggrads + i * K;
+		for (int k = 0; k < K; ++k) {
+			ggrads[k].x += grads[k].x;
+			ggrads[k].y += grads[k].y;
+		}
+	}
+	for (int k = 0; k < K; ++k) {
+		// Ugly: opencl compiler does not recognise the other double2 union fields(.s[i])
+		theta[k].x = fabs(
+				theta[k].x + eps_t
+				* (eta.x - theta[k].x
+						+ scale * ggrads[k].x)
+				+ sqrt(2.0 * eps_t * theta[k].x) * noise[k].x);
+		theta[k].y = fabs(
+				theta[k].y + eps_t
+				* (eta.y - theta[k].y
+						+ scale * ggrads[k].y)
+				+ sqrt(2.0 * eps_t * theta[k].y) * noise[k].y);
+	}
+
+}
+

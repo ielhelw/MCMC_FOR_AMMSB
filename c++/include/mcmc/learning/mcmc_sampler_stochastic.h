@@ -357,7 +357,7 @@ protected:
 
 
 	// FIXME lots of code sharing w/ mcmc_sampler_batch
-    void update_beta(const OrderedEdgeSet &mini_batch, double scale, const EdgeMapZ &z) {
+    virtual void update_beta(const OrderedEdgeSet &mini_batch, double scale, const EdgeMapZ &z) {
         /**
         update beta for mini_batch.
          */
