@@ -92,17 +92,7 @@ protected:
 
 	virtual void update_beta(const OrderedEdgeSet &mini_batch, double scale, const EdgeMapZ &z) {
 
-		std::vector<cl_int2> edges(mini_batch.size());
-		// Copy edges
-		std::transform(mini_batch.begin(), mini_batch.end(), edges.begin(), [](const Edge& e) {
-			cl_int2 E;
-			E.s[0] = e.first;
-			E.s[1] = e.second;
-			return E;
-		});
-		clContext.queue.enqueueWriteBuffer(clNodesNeighbors, CL_TRUE,
-				0, edges.size()*sizeof(cl_int2),
-				edges.data());
+		// copy edges: already done in sample_latent_vars2
 
 		// copy theta
 		std::vector<cl_double2> vclTheta(theta.size());
@@ -125,14 +115,14 @@ protected:
 
 		update_beta_calculate_grads_kernel.setArg(0, clGraph);
 		update_beta_calculate_grads_kernel.setArg(1, clNodesNeighbors);
-		update_beta_calculate_grads_kernel.setArg(2, (cl_int)edges.size());
+		update_beta_calculate_grads_kernel.setArg(2, (cl_int)mini_batch.size());
 		update_beta_calculate_grads_kernel.setArg(3, clZ);
 		update_beta_calculate_grads_kernel.setArg(4, clTheta);
 		update_beta_calculate_grads_kernel.setArg(5, clThetaSum);
 		update_beta_calculate_grads_kernel.setArg(6, clScratch);
 		update_beta_calculate_grads_kernel.setArg(7, (cl_double)scale);
 
-		::size_t countPartialSums = std::min(edges.size(), (::size_t)2);
+		::size_t countPartialSums = std::min(mini_batch.size(), (::size_t)2);
 
 		clContext.queue.enqueueNDRangeKernel(update_beta_calculate_grads_kernel, cl::NullRange, cl::NDRange(countPartialSums), cl::NDRange(1));
 		clContext.queue.finish();
@@ -185,7 +175,6 @@ protected:
 
 	virtual EdgeMapZ sample_latent_vars2(const OrderedEdgeSet &mini_batch) {
 		std::vector<cl_int2> edges(mini_batch.size());
-		int i = 0;
 		// Copy edges
 		std::transform(mini_batch.begin(), mini_batch.end(), edges.begin(), [](const Edge& e) {
 			cl_int2 E;
@@ -220,16 +209,8 @@ protected:
 		clContext.queue.enqueueNDRangeKernel(sample_latent_vars2_kernel, cl::NullRange, cl::NDRange(1), cl::NDRange(1));
 		clContext.queue.finish();
 
-		std::vector<int> zFromCL(edges.size());
-		clContext.queue.enqueueReadBuffer(clZ, CL_TRUE,
-				0, edges.size() * sizeof(cl_int),
-				zFromCL.data());
 		EdgeMapZ ezm;
-		i = 0;
-		for (auto &e : mini_batch) {
-			ezm[e] = zFromCL[i];
-			++i;
-		}
+		// No need to copy Zs back to host space
 		return ezm;
 	}
 
