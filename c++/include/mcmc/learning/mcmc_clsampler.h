@@ -15,8 +15,10 @@ namespace learning {
 
 class MCMCClSampler : virtual public MCMCSampler {
 public:
-	MCMCClSampler(const Options &args, const Network &network, const cl::ClContext clContext)
-		: Learner(args, network), MCMCSampler(args, network), clContext(clContext) {
+	MCMCClSampler(const Options &args, const Network &network,
+				  ::size_t num_node_sampler, double eta0, double eta1,
+				  const cl::ClContext clContext)
+		: Learner(args, network), MCMCSampler(args, network, num_node_sampler, eta0, eta1), clContext(clContext) {
 
 		std::ostringstream opts;
 		opts << "-I" << stringify(PROJECT_HOME) << "/../OpenCL/include"

@@ -16,8 +16,8 @@ namespace learning {
 
 class MCMCClSamplerStochastic : public MCMCSamplerStochastic, public MCMCClSampler {
 public:
-	MCMCClSamplerStochastic(const Options &args, const Network &graph, const cl::ClContext clContext)
-		: Learner(args, graph), MCMCSampler(args, graph), MCMCSamplerStochastic(args, graph), MCMCClSampler(args, graph, clContext) {
+	MCMCClSamplerStochastic(const Options &args, const Network &network, const cl::ClContext clContext)
+		: Learner(args, network), MCMCSampler(args, network, N / 5, 100.0, 0.01), MCMCSamplerStochastic(args, network), MCMCClSampler(args, network, N / 5, 100.0, 0.01, clContext) {
 
 		sampler_program = this->clContext.createProgram(stringify(PROJECT_HOME) "/../OpenCL/mcmc_sampler_stochastic.cl", progOpts);
 		sample_latent_vars_kernel = cl::Kernel(sampler_program, "sample_latent_vars");

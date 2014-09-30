@@ -9,10 +9,10 @@ namespace learning {
 
 class MCMCSampler : virtual public Learner {
 public:
-    MCMCSampler(const Options &args, const Network &graph,
+    MCMCSampler(const Options &args, const Network &network,
 			   	::size_t num_node_sample = 0,
 			   	double eta0 = 0.0, double eta1 = 0.0)
-			: Learner(args, graph) {
+			: Learner(args, network) {
 
         // control parameters for learning
 
@@ -21,6 +21,7 @@ public:
 		} else {
 			this->num_node_sample = num_node_sample;
 		}
+		std::cerr << "num_node_sample " << num_node_sample << std::endl;
 
         // model parameters and re-parameterization
         // since the model parameter - \pi and \beta should stay in the simplex,

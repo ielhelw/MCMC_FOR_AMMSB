@@ -57,7 +57,7 @@ public:
 	 *     network:    representation of the graph.
 	 *     args:       containing priors, control parameters for the model.
 	 */
-	SV(const Options &args, const Network &graph) : Learner(args, graph) {
+	SV(const Options &args, const Network &network) : Learner(args, network) {
 		// variational parameters.
 		lamda = Random::random->gamma(eta[0], eta[1], K, 2);	// variational parameters for beta
 		gamma = Random::random->gamma(1, 1, N, K);			// variational parameters for pi
