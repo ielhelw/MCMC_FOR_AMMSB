@@ -19,7 +19,7 @@ public:
 	MCMCClSamplerStochastic(const Options &args, const Network &graph, const cl::ClContext clContext)
 		: Learner(args, graph), MCMCSampler(args, graph), MCMCSamplerStochastic(args, graph), MCMCClSampler(args, graph, clContext) {
 
-		sampler_program = this->clContext.createProgram(stringify(PROJECT_HOME) "/OpenCL/mcmc_sampler_stochastic.cl", progOpts);
+		sampler_program = this->clContext.createProgram(stringify(PROJECT_HOME) "/../OpenCL/mcmc_sampler_stochastic.cl", progOpts);
 		sample_latent_vars_kernel = cl::Kernel(sampler_program, "sample_latent_vars");
 		update_pi_kernel = cl::Kernel(sampler_program, "update_pi_for_node");
 		sample_latent_vars2_kernel = cl::Kernel(sampler_program, "sample_latent_vars2");

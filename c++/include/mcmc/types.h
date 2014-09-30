@@ -11,7 +11,7 @@ enum strategy {
 	STRATIFIED_RANDOM_NODE,
 };
 
-}	// namespace learner
+}	// namespace strategy
 }	// namespace mcmc
 
 #endif	// ndef MCMC_TYPES_H__

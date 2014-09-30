@@ -43,6 +43,7 @@ inline int sample_z_ab_from_edge(
 		global double *p
 		) {
 	p[0] = sample_z_ab_from_edge_expr(0);
+	// FIXME: lift the test out of the loop
 	for (int i = 1; i < K; ++i) {
 		p[i] = p[i-1] + sample_z_ab_from_edge_expr(i);
 	}

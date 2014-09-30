@@ -14,36 +14,25 @@ namespace mcmc {
  * for each k,  p[k] = p(z_ab=k|*) = \sum_{i}^{} p(z_ab=k, z_ba=i|*)
  * then we simply sample z_ab based on the distribution p.
  * this runs in O(K)
+ * Data dependencies:
+ * read pi_a, pi_b, beta
  */
-// FIXME y must be a bool
 int sample_z_ab_from_edge(int y, const std::vector<double> &pi_a,
 						  const std::vector<double> &pi_b,
 						  const std::vector<double> &beta,
 						  double epsilon, ::size_t K) {
-	std::vector<double> p(K);
-	// UNUSED: std::vector<double> p(K, 0.0);
-
 #ifdef EFFICIENCY_FOLLOWS_PYTHON
-	// FIXME: selection based on y, done with pow()
-	// FIXME: lift common subexpr in second statement
+	std::vector<double> p(K, 0.0);
+
     for (::size_t i = 0; i < K; i++) {
         double tmp = std::pow(beta[i], y) * std::pow(1.0 - beta[i], 1 - y) * pi_a[i] * pi_b[i];
         tmp += std::pow(epsilon, y) * std::pow(1.0 - epsilon, 1 - y) * pi_a[i] * (1.0 - pi_b[i]);
         p[i] = tmp;
 	}
 
-#elif defined GPU_OPTIMIZATION
-	// a^y * b^(1-y) = y a + (1 - y) b for y in {0, 1}
-	// if b == 1-a: a^y b^(1-y) = (2y - 1) a + (1 - y)
-	int y2_1 = 2 * y - 1;
-	int y_1  = 1 - y;
-	double y2_1_eps = y2_1 * epsilon;
-	double on_eps = y2_1_eps + y_1;
-	for (::size_t k = 0; k < K; k++) {
-		p[k] = pi_a[k] * (pi_b[k] * (y2_1 * beta[k] - y2_1_eps) + on_eps);
-	}
-
 #else
+	std::vector<double> p(K);
+
 	if (y == 1) {
 		for (::size_t i = 0; i < K; i++) {
 			// p_i = b_i * pa_i * pb_i + eps * pa_i * (1 - pb_i)

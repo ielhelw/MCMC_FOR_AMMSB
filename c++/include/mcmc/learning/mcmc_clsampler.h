@@ -10,7 +10,8 @@
 namespace mcmc {
 namespace learning {
 
-#define stringify(str)	#str
+#define do_stringify(str)	#str
+#define stringify(str)		do_stringify(str)
 
 class MCMCClSampler : virtual public MCMCSampler {
 public:
@@ -18,7 +19,7 @@ public:
 		: Learner(args, network), MCMCSampler(args, network), clContext(clContext) {
 
 		std::ostringstream opts;
-		opts << "-IOpenCL/include"
+		opts << "-I" << stringify(PROJECT_HOME) << "/../OpenCL/include"
 			 << " -DNEIGHBOR_SAMPLE_SIZE=" << real_num_node_sample()
 			 << " -DK=" << K
 			 << " -DMAX_NODE_ID=" << N;
@@ -95,7 +96,7 @@ protected:
 		clGraphNodes = cl::Buffer(clContext.context, CL_MEM_READ_ONLY|CL_MEM_COPY_HOST_PTR, h_nodes_size*sizeof(cl_int2), h_nodes.get());
 		clGraph = cl::Buffer(clContext.context, CL_MEM_READ_WRITE, 2*64/8 /* 2 pointers, each is at most 64-bits */);
 
-		graph_program = this->clContext.createProgram(stringify(PROJECT_HOME) "/OpenCL/graph.cl", progOpts);
+		graph_program = this->clContext.createProgram(stringify(PROJECT_HOME) "/../OpenCL/graph.cl", progOpts);
 		graph_init_kernel = cl::Kernel(graph_program, "graph_init");
 		graph_init_kernel.setArg(0, clGraph);
 		graph_init_kernel.setArg(1, clGraphEdges);
