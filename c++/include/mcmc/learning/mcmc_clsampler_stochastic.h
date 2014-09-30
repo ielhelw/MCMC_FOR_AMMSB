@@ -91,15 +91,6 @@ public:
 					pi[i].data());
 		}
 
-		info(std::cout);
-	}
-
-protected:
-
-	virtual void update_beta(const OrderedEdgeSet &mini_batch, double scale, const EdgeMapZ &z) {
-
-		// copy edges: already done in sample_latent_vars2
-
 		// copy theta
 		std::vector<cl_double2> vclTheta(theta.size());
 		std::transform(theta.begin(), theta.end(), vclTheta.begin(), [](const std::vector<double>& in){
@@ -111,6 +102,15 @@ protected:
 		clContext.queue.enqueueWriteBuffer(clTheta, CL_TRUE,
 				0, theta.size() * sizeof(cl_double2),
 				vclTheta.data());
+
+		info(std::cout);
+	}
+
+protected:
+
+	virtual void update_beta(const OrderedEdgeSet &mini_batch, double scale, const EdgeMapZ &z) {
+
+		// copy edges: already done in sample_latent_vars2
 
 		// copy theta_sum
 		std::vector<cl_double> vThetaSum(theta.size());
@@ -164,6 +164,7 @@ protected:
 
 
 		// copy theta
+		std::vector<cl_double2> vclTheta(theta.size());
 		clContext.queue.enqueueReadBuffer(clTheta, CL_TRUE,
 				0, theta.size() * sizeof(cl_double2),
 				vclTheta.data());
