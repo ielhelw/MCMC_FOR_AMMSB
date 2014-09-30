@@ -79,10 +79,16 @@ public:
 					)
 				);
 		for (unsigned i = 0; i < N; ++i) {
+			// copy phi
 			clContext.queue.enqueueWriteBuffer(clPhi, CL_TRUE,
 					i * K * sizeof(cl_double),
 					K * sizeof(cl_double),
 					phi[i].data());
+			// Copy pi
+			clContext.queue.enqueueWriteBuffer(clPi, CL_TRUE,
+					i * K * sizeof(double),
+					K * sizeof(double),
+					pi[i].data());
 		}
 
 		info(std::cout);
@@ -261,13 +267,6 @@ protected:
 					neighbors.data());
 		}
 
-		// Copy pi
-		for (unsigned int i = 0; i < pi.size(); ++i) {
-			clContext.queue.enqueueWriteBuffer(clPi, CL_TRUE,
-					i * K * sizeof(double),
-					K * sizeof(double),
-					pi[i].data());
-		}
 
 		// Copy beta
 		clContext.queue.enqueueWriteBuffer(clBeta, CL_TRUE, 0, K * sizeof(double), beta.data());
@@ -345,6 +344,7 @@ protected:
 				h_nodes.get()[i].s[0] = 0;
 				h_nodes.get()[i].s[1] = 0;
 			} else {
+				std::sort(it->second.begin(), it->second.end());
 				h_nodes.get()[i].s[0] = it->second.size();
 				h_nodes.get()[i].s[1] = offset;
 				for (auto viter = it->second.begin();
