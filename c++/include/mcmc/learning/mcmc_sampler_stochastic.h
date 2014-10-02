@@ -51,8 +51,8 @@ public:
     parameters for each iteration, here we only use mini-batch (subset) of the examples.
     This method is great marriage between MCMC and stochastic methods.
     */
-    MCMCSamplerStochastic(const Options &args, const Network &network)
-			: Learner(args, network), MCMCSampler(args, network, N / 5, 100.0, 0.01) {
+    MCMCSamplerStochastic(const Options &args, const Network &network, double eta0 = 100.0, double eta1 = 0.01)
+			: Learner(args, network), MCMCSampler(args, network, N / 5, eta0, eta1) {
 	}
 
 	virtual ~MCMCSamplerStochastic() {

@@ -29,13 +29,11 @@ public:
         // restrict this is using re-reparameterization techniques, where we
         // introduce another set of variables, and update them first followed by
         // updating \pi and \beta.
-		if (eta0 != 0.0 || eta1 != 0.0) {
-			std::cerr << "Ignore eta[] in random.gamma: use " << eta0 << " and " << eta1 << std::endl;
+		if (eta0 == 0.0 && eta1 == 0.0) {
+			eta0 = args.eta0;
+			eta1 = args.eta1;
 		} else {
-			eta0 = eta[0];
-			eta1 = eta[1];
-		}
-		// theta = Random::random->gamma(eta[0], eta[1], K, 2);
+			std::cerr << 
 		theta = Random::random->gamma(eta0, eta1, K, 2);
 		phi = Random::random->gamma(1, 1, N, K);
 
