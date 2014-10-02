@@ -21,19 +21,31 @@ namespace Random {
 class Random {
 public:
 	Random(unsigned int seed) {
+		if (seed == 0) throw NumberFormatException("Random seed value 0 not allowed"); // zero value not allowed
+		xorshift_state[0] = seed;
+		xorshift_state[1] = seed + 1;
 		std::cerr << "Random seed " << seed << std::endl;
-		srand(seed);
 	}
 
 	virtual ~Random() {
 	}
+
+	inline uint64_t xorshift_128plus() {
+		uint64_t s1 = xorshift_state[0];
+		uint64_t s0 = xorshift_state[1];
+		xorshift_state[0] = s0;
+		s1 ^= s1 << 23;
+		return (xorshift_state[1] = (s1 ^ s0 ^ (s1 >> 17) ^ (s0 >> 26))) + s0;
+	}
+
+	inline uint64_t rand() {return xorshift_128plus();}
 
 	int randint(int from, int upto) {
 		return (rand() % (upto - from)) + from;
 	}
 
 	double random() {
-		return (1.0 * rand() / RAND_MAX);
+		return (1.0 * rand() / std::numeric_limits<uint64_t>::max());
 	}
 
 
@@ -190,6 +202,7 @@ public:
 	}
 
 protected:
+	uint64_t xorshift_state[2];
 #if __GNUC_MINOR__ >= 5
 		std::default_random_engine generator;
 		std::normal_distribution<double> normalDistribution;
