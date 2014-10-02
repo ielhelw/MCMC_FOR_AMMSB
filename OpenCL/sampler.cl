@@ -16,6 +16,54 @@
 
 #define NODE_ID_VALID(NID) ((NID) >= 0 && (NID) < MAX_NODE_ID)
 
+inline ulong xorshift_128plus(ulong2 *s) {
+	ulong s1 = (*s).x;
+	ulong s0 = (*s).y;
+	(*s).x = s0;
+	s1 ^= s1 << 23;
+	return ((*s).y = (s1 ^ s0 ^ (s1 >> 17) ^ (s0 >> 26))) + s0;
+}
+
+int find_linear(global int *arr, int item, int up) {
+	for (int i = 0; i < up; ++i) {
+		if (item == arr[i]) return 1;
+	}
+	return 0;
+}
+
+int find_le_linear(global double *arr, double item, int up, int lo) {
+	int i;
+	for (i = lo; i < up; ++i) {
+		if (item <= arr[i]) break;
+	}
+	if (up == i) return -1;
+	return i;
+}
+
+#define LINEAR_LIMIT 30
+
+int find_le(global double *arr, double item, int up, int lo) {
+	if (item > arr[up -1]) return -1;
+	int res;
+	if (up - lo < LINEAR_LIMIT) {
+		res = find_le_linear(arr, item, up, lo);
+	} else {
+		while (up - lo > 1) {
+			int m = (lo + up) / 2;
+			if (item < arr[m]) {
+				up = m;
+			} else {
+				lo = m;
+			}
+		}
+		if (item > arr[lo]) {
+			res = up;
+		} else {
+			res = lo;
+		}
+	}
+	return res;
+}
 
 #define sample_z_ab_from_edge_expr_orig(i) \
 (\
@@ -47,10 +95,11 @@ inline int sample_z_ab_from_edge(
 
 	double location = random * p[K-1];
 	// FIXME: might use binary search, for sufficiently large K.
-	for (int i = 0; i < K; ++i) {
-		if (location <= p[i]) return i;
-	}
-	return -1;
+//	for (int i = 0; i < K; ++i) {
+//		if (location <= p[i]) return i;
+//	}
+//	return -1;
+	return find_le(p, location, K, 0);
 }
 
 inline void sample_latent_vars_of(
@@ -188,10 +237,11 @@ int sample_latent_vars2_(
 	}
 	p[K] = 1 - p_sum;
 	double location = r * p[K-1];
-	for (int i = 0; i < K; ++i) {
-		if (location <= p[i]) return i;
-	}
-	return -1;
+//	for (int i = 0; i < K; ++i) {
+//		if (location <= p[i]) return i;
+//	}
+//	return -1;
+	return find_le(p, location, K, 0);
 }
 
 kernel void sample_latent_vars2(

@@ -9,6 +9,7 @@
 
 #include "opencl/context.h"
 
+#define PARALLELISM 1
 
 namespace mcmc {
 namespace learning {
@@ -128,7 +129,7 @@ protected:
 		update_beta_calculate_grads_kernel.setArg(6, clScratch);
 		update_beta_calculate_grads_kernel.setArg(7, (cl_double)scale);
 
-		::size_t countPartialSums = std::min(mini_batch.size(), (::size_t)2);
+		::size_t countPartialSums = std::min(mini_batch.size(), (::size_t)PARALLELISM);
 
 		clContext.queue.enqueueNDRangeKernel(update_beta_calculate_grads_kernel, cl::NullRange, cl::NDRange(countPartialSums), cl::NDRange(1));
 		clContext.queue.finish();
@@ -213,7 +214,7 @@ protected:
 		sample_latent_vars2_kernel.setArg(6, clScratch);
 		sample_latent_vars2_kernel.setArg(7, clRandomNN);
 
-		clContext.queue.enqueueNDRangeKernel(sample_latent_vars2_kernel, cl::NullRange, cl::NDRange(1), cl::NDRange(1));
+		clContext.queue.enqueueNDRangeKernel(sample_latent_vars2_kernel, cl::NullRange, cl::NDRange(PARALLELISM), cl::NDRange(1));
 		clContext.queue.finish();
 
 		EdgeMapZ ezm;
@@ -307,7 +308,7 @@ protected:
 		sample_latent_vars_and_update_pi_kernel.setArg(17, (cl_int)step_count);
 		sample_latent_vars_and_update_pi_kernel.setArg(18, (cl_int)N);
 
-		clContext.queue.enqueueNDRangeKernel(sample_latent_vars_and_update_pi_kernel, cl::NullRange, cl::NDRange(4), cl::NDRange(1));
+		clContext.queue.enqueueNDRangeKernel(sample_latent_vars_and_update_pi_kernel, cl::NullRange, cl::NDRange(PARALLELISM), cl::NDRange(1));
 		clContext.queue.finish();
 
 		// read Pi again
@@ -326,17 +327,12 @@ protected:
 		clContext.queue.finish();
 	}
 
-	void init_graph() {
+
+	void _prepare_flat_cl_graph(cl::Buffer &edges, cl::Buffer &nodes, cl::Buffer &graph, std::map<int, std::vector<int>> linkedMap) {
 		const int h_edges_size = 2 * network.get_num_linked_edges();
 		std::unique_ptr<cl_int[]> h_edges(new cl_int[h_edges_size]);
 		const int h_nodes_size = network.get_num_nodes();
 		std::unique_ptr<cl_int2[]> h_nodes(new cl_int2[h_nodes_size]);
-
-		std::map<int, std::vector<int>> linkedMap;
-		for (auto e : network.get_linked_edges()) {
-			linkedMap[e.first].push_back(e.second);
-			linkedMap[e.second].push_back(e.first);
-		}
 
 		size_t offset = 0;
 		for (cl_int i = 0; i < network.get_num_nodes(); ++i) {
@@ -356,18 +352,42 @@ protected:
 			}
 		}
 
-		clGraphEdges = cl::Buffer(clContext.context, CL_MEM_READ_ONLY|CL_MEM_COPY_HOST_PTR, h_edges_size*sizeof(cl_int), h_edges.get());
-		clGraphNodes = cl::Buffer(clContext.context, CL_MEM_READ_ONLY|CL_MEM_COPY_HOST_PTR, h_nodes_size*sizeof(cl_int2), h_nodes.get());
-		clGraph = cl::Buffer(clContext.context, CL_MEM_READ_WRITE, 2*64/8 /* 2 pointers, each is at most 64-bits */);
+		edges = cl::Buffer(clContext.context, CL_MEM_READ_ONLY|CL_MEM_COPY_HOST_PTR, h_edges_size*sizeof(cl_int), h_edges.get());
+		nodes = cl::Buffer(clContext.context, CL_MEM_READ_ONLY|CL_MEM_COPY_HOST_PTR, h_nodes_size*sizeof(cl_int2), h_nodes.get());
+		graph = cl::Buffer(clContext.context, CL_MEM_READ_WRITE, 2*64/8 /* 2 pointers, each is at most 64-bits */);
 
-		graph_program = this->clContext.createProgram("OpenCL/graph.cl", progOpts);
-		graph_init_kernel = cl::Kernel(graph_program, "graph_init");
-		graph_init_kernel.setArg(0, clGraph);
-		graph_init_kernel.setArg(1, clGraphEdges);
-		graph_init_kernel.setArg(2, clGraphNodes);
+		graph_init_kernel.setArg(0, graph);
+		graph_init_kernel.setArg(1, edges);
+		graph_init_kernel.setArg(2, nodes);
 
 		clContext.queue.enqueueTask(graph_init_kernel);
 		clContext.queue.finish();
+	}
+
+	void init_graph() {
+		graph_program = this->clContext.createProgram("OpenCL/graph.cl", progOpts);
+		graph_init_kernel = cl::Kernel(graph_program, "graph_init");
+		std::map<int, std::vector<int>> linkedMap;
+
+		for (auto e : network.get_linked_edges()) {
+			linkedMap[e.first].push_back(e.second);
+			linkedMap[e.second].push_back(e.first);
+		}
+		_prepare_flat_cl_graph(clGraphEdges, clGraphNodes, clGraph, linkedMap);
+
+		linkedMap.clear();
+
+		for (auto e : network.get_held_out_set()) {
+			linkedMap[e.first.first].push_back(e.first.second);
+			linkedMap[e.first.second].push_back(e.first.first);
+		}
+		for (auto e : network.get_test_set()) {
+			linkedMap[e.first.first].push_back(e.first.second);
+			linkedMap[e.first.second].push_back(e.first.first);
+		}
+		_prepare_flat_cl_graph(clHeldOutGraphEdges, clHeldOutGraphNodes, clHeldOutGraph, linkedMap);
+
+
 #if MCMC_CL_STOCHASTIC_TEST_GRAPH
 		test_graph();
 #endif
@@ -409,6 +429,10 @@ protected:
 	cl::Buffer clGraphEdges;
 	cl::Buffer clGraphNodes;
 	cl::Buffer clGraph;
+
+	cl::Buffer clHeldOutGraphEdges;
+	cl::Buffer clHeldOutGraphNodes;
+	cl::Buffer clHeldOutGraph;
 
 	cl::Buffer clNodes;
 	cl::Buffer clNodesNeighbors;
