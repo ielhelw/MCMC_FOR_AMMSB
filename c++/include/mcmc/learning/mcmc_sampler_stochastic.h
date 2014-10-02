@@ -89,7 +89,7 @@ public:
     This method is great marriage between MCMC and stochastic methods.
     */
     MCMCSamplerStochastic(const Options &args, const Network &graph)
-			: Learner(args, graph) {
+			: Learner(args, graph), kernelRandom(42) {
 
         // step size parameters.
         this->a = args.a;
@@ -274,14 +274,15 @@ public:
 
 protected:
 
-    virtual void sample_latent_vars_stub(const OrderedVertexSet& nodes,
+    void sample_latent_vars_stub(const OrderedVertexSet& nodes,
     			std::unordered_map<int, ::size_t>& size,
     			std::unordered_map<int, std::vector<int> >& latent_vars) {
+
     	for (auto node = nodes.begin();
 				node != nodes.end();
 				node++) {
 			// sample a mini-batch of neighbors
-			OrderedVertexSet neighbor_nodes = sample_neighbor_nodes(num_node_sample, *node);
+			std::vector<int> neighbor_nodes = sample_neighbor_nodes(num_node_sample, *node);
 			size[*node] = neighbor_nodes.size();
 			// sample latent variables z_ab for each pair of nodes
 			std::vector<int> z = sample_latent_vars(*node, neighbor_nodes);
@@ -290,7 +291,7 @@ protected:
 		}
     }
 
-    virtual void update_pi_for_node_stub(const OrderedVertexSet& nodes,
+    void update_pi_for_node_stub(const OrderedVertexSet& nodes,
 			std::unordered_map<int, ::size_t>& size,
 			std::unordered_map<int, std::vector<int> >& latent_vars,
 			double scale) {
@@ -357,7 +358,7 @@ protected:
 
 
 	// FIXME lots of code sharing w/ mcmc_sampler_batch
-    virtual void update_beta(const OrderedEdgeSet &mini_batch, double scale, const EdgeMapZ &z) {
+    void update_beta(const OrderedEdgeSet &mini_batch, double scale, const EdgeMapZ &z) {
         /**
         update beta for mini_batch.
          */
@@ -465,7 +466,7 @@ protected:
 	}
 
 
-    virtual EdgeMapZ sample_latent_vars2(const OrderedEdgeSet &mini_batch) {
+    EdgeMapZ sample_latent_vars2(const OrderedEdgeSet &mini_batch) {
         /**
         sample latent variable (z_ab, z_ba) for each pair of nodes. But we only consider 11 different cases,
         since we only need indicator function in the gradient update. More details, please see the comments
@@ -487,7 +488,7 @@ protected:
 
 
 	// TODO FIXME shared code w/ mcmc_sampler_batch
-    int sample_z_for_each_edge(int y, const std::vector<double> &pi_a, const std::vector<double> &pi_b, const std::vector<double> &beta, ::size_t K) const {
+    int sample_z_for_each_edge(int y, const std::vector<double> &pi_a, const std::vector<double> &pi_b, const std::vector<double> &beta, ::size_t K) {
         /**
 		 * sample latent variables z_ab and z_ba
          * but we don't need to consider all of the cases. i.e  (z_ab = j, z_ba = q) for all j and p.
@@ -532,7 +533,7 @@ protected:
 		// // std::partial_sum(p.begin(), p.end(), bounds.begin());
 		// FIXME: replace p[K] w/ p[K-1] here. Why? RFHH
         // double location = Random::random->random() * p[K];
-        double r = Random::random->random();
+        double r = kernelRandom.random();
         double location = r * p[K-1];
 
 #if 0
@@ -550,7 +551,7 @@ protected:
 	}
 
 
-    std::vector<int> sample_latent_vars(int node, const OrderedVertexSet &neighbor_nodes) const {
+    std::vector<int> sample_latent_vars(int node, const std::vector<int> &neighbor_nodes) {
         /**
         given a node and its neighbors (either linked or non-linked), return the latent value
         z_ab for each pair (node, neighbor_nodes[i].
@@ -599,22 +600,20 @@ protected:
 #endif
 
 	// TODO FIXME make VertexSet an out parameter
-    OrderedVertexSet sample_neighbor_nodes(::size_t sample_size, int nodeId) {
+    std::vector<int> sample_neighbor_nodes(::size_t sample_size, int nodeId) {
         /**
         Sample subset of neighborhood nodes.
          */
         int p = (int)sample_size;
-        OrderedVertexSet neighbor_nodes;
+        std::vector<int> neighbor_nodes;
         const EdgeMap &held_out_set = network.get_held_out_set();
         const EdgeMap &test_set = network.get_test_set();
 
+        #ifdef EFFICIENCY_FOLLOWS_PYTHON
         while (p > 0) {
-#ifdef EFFICIENCY_FOLLOWS_PYTHON
 			std::cerr << "FIXME: horribly inefficient xrange thingy" << std::endl;
 			auto nodeList = Random::random->sample(np::xrange(0, N), sample_size * 2);
-#else
-			auto nodeList = Random::random->sampleRange(N, sample_size * 2);
-#endif
+
             for (std::vector<int>::const_iterator neighborId = nodeList->begin();
 				 	neighborId != nodeList->end();
 					neighborId++) {
@@ -640,8 +639,21 @@ protected:
 
 			delete nodeList;
 		}
-
-        return neighbor_nodes;
+#else
+        for (int i = 0; i <= p; ++i) {
+			int neighborId;
+			Edge edge(0, 0);
+			do {
+				neighborId = kernelRandom.randint(0, N);
+				edge = Edge(std::min(nodeId, neighborId), std::max(nodeId, neighborId));
+			} while (neighborId == nodeId
+					|| edge.in(held_out_set)
+					|| edge.in(test_set)
+					|| std::find(neighbor_nodes.begin(), neighbor_nodes.end(), neighborId) != neighbor_nodes.end());
+			neighbor_nodes.push_back(neighborId);
+		}
+#endif
+		return neighbor_nodes;
 	}
 
     OrderedVertexSet nodes_in_batch(const OrderedEdgeSet &mini_batch) const {
@@ -670,7 +682,7 @@ protected:
 							  const std::vector<double> &pi_a,
 							  const std::vector<double> &pi_b,
 							  const std::vector<double> &beta,
-							  double epsilon, ::size_t K) const {
+							  double epsilon, ::size_t K) {
 		std::vector<double> p(K);
 
 #ifdef EFFICIENCY_FOLLOWS_PYTHON
@@ -706,7 +718,7 @@ protected:
             p[k] += p[k-1];
 		}
 
-        double r = Random::random->random();
+        double r = kernelRandom.random();
         double location = r * p[K-1];
 #if 0
         // get the index of bounds that containing location.
@@ -734,6 +746,7 @@ protected:
 
 	std::vector<std::vector<double> > theta;		// parameterization for \beta
 	std::vector<std::vector<double> > phi;			// parameterization for \pi
+	Random::Random kernelRandom;
 };
 
 }	// namespace learning

@@ -24,6 +24,18 @@ inline ulong xorshift_128plus(ulong2 *s) {
 	return ((*s).y = (s1 ^ s0 ^ (s1 >> 17) ^ (s0 >> 26))) + s0;
 }
 
+#if ULONG_MAX != RAND_MAX
+#error ULONG_MAX " != " RAND_MAX
+#endif
+
+inline double random(ulong2 *s) {
+	return (1.0 * xorshift_128plus(s) / ULONG_MAX);
+}
+
+inline int randint(ulong2 *s, int from, int upto) {
+	return (xorshift_128plus(s) % (upto - from)) + from;
+}
+
 int find_linear(global int *arr, int item, int up) {
 	for (int i = 0; i < up; ++i) {
 		if (item == arr[i]) return 1;
@@ -94,32 +106,41 @@ inline int sample_z_ab_from_edge(
 	}
 
 	double location = random * p[K-1];
-	// FIXME: might use binary search, for sufficiently large K.
-//	for (int i = 0; i < K; ++i) {
-//		if (location <= p[i]) return i;
-//	}
-//	return -1;
 	return find_le(p, location, K, 0);
 }
 
 inline void sample_latent_vars_of(
 		const int node,
 		global const Graph *g,
-		global const int* neighbor_nodes,
+		global const Graph *hg,
+		global int* neighbor_nodes,
 		global const double *pi,
 		global const double *beta,
 		const double epsilon,
 		global int *z, /* K elements */
-		global const double *random,
+		ulong2* randomSeed,
 		global double *p) {
 	for (int i = 0; i < K; ++i) z[i] = 0;
+
+	for (int i = 0; i < NEIGHBOR_SAMPLE_SIZE; ++i) {
+		int neighborId;
+		do {
+			neighborId = randint(randomSeed, 0, MAX_NODE_ID);
+		} while (neighborId == node
+				|| graph_has_peer(hg, node, neighborId)
+				|| find_linear(neighbor_nodes, neighborId, i));
+		neighbor_nodes[i] = neighborId;
+	}
+
 	for (int i = 0; i < NEIGHBOR_SAMPLE_SIZE; ++i) {
 		int neighbor = neighbor_nodes[i];
 
 		int y_ab = graph_has_peer(g, node, neighbor);
 		int z_ab = sample_z_ab_from_edge(
 				pi + node * K, pi + neighbor * K,
-				beta, epsilon, y_ab, random[i], p);
+				beta, epsilon, y_ab,
+				random(randomSeed),
+				p);
 		z[z_ab] += 1;
 	}
 }
@@ -158,37 +179,39 @@ void update_pi_for_node_(
 
 kernel void sample_latent_vars_and_update_pi(
 		global const Graph *g,
+		global const Graph *hg,
 		global const int *nodes,
 		const int N, // #nodes
-		global const int *neighbor_nodes,// (#total_nodes, NEIGHBOR_SAMPLE_SIZE)
+		global int *neighbor_nodes,// (#total_nodes, NEIGHBOR_SAMPLE_SIZE)
 		global const double *pi,// (#total_nodes, K)
 		global double *piUpdate,// (#total_nodes, K)
 		global double *phi,// (#total_nodes, K)
 		global const double *beta,// (#K)
 		const double epsilon,
 		global int *Z, /* (#total_nodes, K) */
-		global const double *random,
 		global const double *noise,
 		global double *scratch, // (#nodes, K)
 		double alpha,
 		double a, double b, double c,
-		int step_count, int total_node_count
+		int step_count, int total_node_count,
+		global ulong2 *gRandomSeed
 		){
 	size_t gid = get_global_id(0);
 	size_t gsize = get_global_size(0);
 	global double *_p = scratch + gid * K;
+	ulong2 randomSeed = gRandomSeed[gid];
 
 	for (int i = gid; i < N; i += gsize) {
 		int node = nodes[i];
 		sample_latent_vars_of(
 				node,
-				g,
+				g, hg,
 				neighbor_nodes + node * NEIGHBOR_SAMPLE_SIZE,
 				pi,
 				beta,
 				epsilon,
 				Z + node * K,
-				random + i * NEIGHBOR_SAMPLE_SIZE,
+				&randomSeed,
 				_p);
 		update_pi_for_node_(node,
 				pi + node * K,
@@ -199,6 +222,7 @@ kernel void sample_latent_vars_and_update_pi(
 				scratch + i * K,
 				alpha, a, b, c, step_count, total_node_count);
 	}
+	gRandomSeed[gid] = randomSeed;
 }
 
 #define sample_latent_vars2_orig(k) \
@@ -237,10 +261,6 @@ int sample_latent_vars2_(
 	}
 	p[K] = 1 - p_sum;
 	double location = r * p[K-1];
-//	for (int i = 0; i < K; ++i) {
-//		if (location <= p[i]) return i;
-//	}
-//	return -1;
 	return find_le(p, location, K, 0);
 }
 
@@ -252,18 +272,21 @@ kernel void sample_latent_vars2(
 		global double *beta,// (#K)
 		global int *Z,// #edges
 		global double *p,// (#edges, K+1)
-		global double *r
+		global ulong2 *gRandomSeed
 		) {
 	size_t gid = get_global_id(0);
 	size_t gsize = get_global_size(0);
+	ulong2 randomSeed = gRandomSeed[gid];
+
 	for (int i = gid; i < E; i += gsize) {
 		Z[i] = sample_latent_vars2_(edges[i],
 				g,
 				pi,
 				beta,
 				p + i * (K+1),
-				r[i]);
+				random(&randomSeed));
 	}
+	gRandomSeed[gid] = randomSeed;
 }
 
 kernel void update_beta_calculate_grads(

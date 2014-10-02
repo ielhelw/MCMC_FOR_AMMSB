@@ -23,7 +23,8 @@ public:
 		opts << "-IOpenCL/include"
 			 << " -DNEIGHBOR_SAMPLE_SIZE=" << real_num_node_sample()
 			 << " -DK=" << K
-			 << " -DMAX_NODE_ID=" << N;
+			 << " -DMAX_NODE_ID=" << N
+			 << " -DRAND_MAX=" << std::numeric_limits<uint64_t>::max();
 		progOpts = opts.str();
 
 		std::cout << "COMPILE OPTS: " << progOpts << std::endl;
@@ -44,7 +45,11 @@ public:
 				);
 		clNodesNeighbors = cl::Buffer(clContext.context, CL_MEM_READ_ONLY,
 				N * real_num_node_sample() * sizeof(cl_int) // #total_nodes x #neighbors_per_node
-				// FIXME: we need space for all N elements. Space should be limited to #nodes_in_mini_batch * num_node_sample (DEPENDS ON ABOVE)
+				// FIXME: we don't need space for all N elements. Space should be limited to #nodes_in_mini_batch * num_node_sample (DEPENDS ON ABOVE)
+				);
+		clEdges = cl::Buffer(clContext.context, CL_MEM_READ_ONLY,
+				N * sizeof(cl_int2) // #total_nodes x #neighbors_per_node
+				// FIXME: should be multiple of mini_batch_size
 				);
 		clPi = cl::Buffer(clContext.context, CL_MEM_READ_WRITE,
 				N * K * sizeof(cl_double) // #total_nodes x #K
@@ -70,14 +75,14 @@ public:
 		clRandomNK = cl::Buffer(clContext.context, CL_MEM_READ_WRITE,
 				N * K * sizeof(cl_double) // at most #total_nodes
 				);
-		clRandomNN = cl::Buffer(clContext.context, CL_MEM_READ_WRITE,
-				N * real_num_node_sample() * sizeof(cl_double) // at most #total_nodes
-				);
 		clScratch = cl::Buffer(clContext.context, CL_MEM_READ_WRITE,
 				std::max(
 						N * K * sizeof(cl_double), // #total_nodes x #K
 						N * K * sizeof(cl_double3)
 					)
+				);
+		clRandomSeed = cl::Buffer(clContext.context, CL_MEM_READ_WRITE,
+				PARALLELISM * sizeof(cl_ulong2)
 				);
 		for (unsigned i = 0; i < N; ++i) {
 			// copy phi
@@ -104,24 +109,103 @@ public:
 				0, theta.size() * sizeof(cl_double2),
 				vclTheta.data());
 
+		std::vector<cl_ulong2> randomSeed(PARALLELISM);
+		for (unsigned int i = 0; i < randomSeed.size(); ++i) {
+			randomSeed[i].s[0] = 42 + i;
+			randomSeed[i].s[1] = 42 + i + 1;
+		}
+		clContext.queue.enqueueWriteBuffer(clRandomSeed, CL_TRUE,
+				0, randomSeed.size() * sizeof(cl_ulong2),
+				randomSeed.data());
+
 		info(std::cout);
+	}
+
+	virtual void run() {
+		using namespace std::chrono;
+		/** run mini-batch based MCMC sampler, based on the sungjin's note */
+
+		if (step_count % 1 == 0) {
+			double ppx_score = cal_perplexity_held_out();
+			std::cout << std::fixed << std::setprecision(15) << "perplexity for hold out set is: " << ppx_score << std::endl;
+			ppxs_held_out.push_back(ppx_score);
+		}
+
+		STAT g_stat;
+
+		while (step_count < max_iteration && ! is_converged()) {
+			auto l1 = std::chrono::system_clock::now();
+			time_point<system_clock> t1, t2, t3, t4, t5, t6, t7, t8;
+			t1 = system_clock::now();
+
+			// (mini_batch, scale) = self._network.sample_mini_batch(self._mini_batch_size, "stratified-random-node")
+			EdgeSample edgeSample = network.sample_mini_batch(mini_batch_size, strategy::STRATIFIED_RANDOM_NODE);
+			const OrderedEdgeSet &mini_batch = *edgeSample.first;
+			double scale = edgeSample.second;
+
+			t2 = system_clock::now();
+
+			// iterate through each node in the mini batch.
+			OrderedVertexSet nodes = nodes_in_batch(mini_batch);
+
+			t3 = system_clock::now();
+
+			sample_latent_vars_and_update_pi(nodes);
+
+			t4 = system_clock::now();
+
+			// sample (z_ab, z_ba) for each edge in the mini_batch.
+			// z is map structure. i.e  z = {(1,10):3, (2,4):-1}
+			sample_latent_vars2(mini_batch);
+
+			t5 = system_clock::now();
+
+			update_beta(mini_batch, scale);
+
+			t6 = system_clock::now();
+
+
+			if (step_count % 1 == 0) {
+				double ppx_score = cal_perplexity_held_out();
+				std::cout << std::fixed << std::setprecision(12) << "perplexity for hold out set is: " << ppx_score << std::endl;
+				ppxs_held_out.push_back(ppx_score);
+			}
+
+			t7 = system_clock::now();
+
+			delete edgeSample.first;
+
+			step_count++;
+			auto l2 = std::chrono::system_clock::now();
+			std::cout << "LOOP  = " << (l2-l1).count() << std::endl;
+
+			STAT stat = {
+				duration_cast<STAT::tick>(t2-t1),
+				duration_cast<STAT::tick>(t3-t2),
+				duration_cast<STAT::tick>(t4-t3),
+				STAT::tick(0),
+				duration_cast<STAT::tick>(t5-t4),
+				duration_cast<STAT::tick>(t6-t5),
+				duration_cast<STAT::tick>(t7-t6),
+			};
+			std::cout << stat;
+			g_stat += stat;
+		}
+		std::cout << g_stat;
 	}
 
 protected:
 
-	virtual void update_beta(const OrderedEdgeSet &mini_batch, double scale, const EdgeMapZ &z) {
-
-		// copy edges: already done in sample_latent_vars2
-
+	void update_beta(const OrderedEdgeSet &mini_batch, double scale) {
 		// copy theta_sum
 		std::vector<cl_double> vThetaSum(theta.size());
 		std::transform(theta.begin(), theta.end(), vThetaSum.begin(), np::sum<double>);
-		clContext.queue.enqueueWriteBuffer(clThetaSum, CL_TRUE,
+		clContext.queue.enqueueWriteBuffer(clThetaSum, CL_FALSE,
 				0, theta.size() * sizeof(cl_double),
 				vThetaSum.data());
 
 		update_beta_calculate_grads_kernel.setArg(0, clGraph);
-		update_beta_calculate_grads_kernel.setArg(1, clNodesNeighbors);
+		update_beta_calculate_grads_kernel.setArg(1, clEdges);
 		update_beta_calculate_grads_kernel.setArg(2, (cl_int)mini_batch.size());
 		update_beta_calculate_grads_kernel.setArg(3, clZ);
 		update_beta_calculate_grads_kernel.setArg(4, clTheta);
@@ -131,8 +215,12 @@ protected:
 
 		::size_t countPartialSums = std::min(mini_batch.size(), (::size_t)PARALLELISM);
 
-		clContext.queue.enqueueNDRangeKernel(update_beta_calculate_grads_kernel, cl::NullRange, cl::NDRange(countPartialSums), cl::NDRange(1));
-		clContext.queue.finish();
+		clContext.queue.finish(); // Wait for sample_latent_vars2
+
+		cl::Event e_grads_kernel;
+		clContext.queue.enqueueNDRangeKernel(update_beta_calculate_grads_kernel, cl::NullRange,
+				cl::NDRange(countPartialSums), cl::NDRange(1),
+				NULL, &e_grads_kernel);
 
 		double eps_t = a * std::pow(1.0 + step_count / b, -c);
 		cl_double2 clEta;
@@ -151,6 +239,8 @@ protected:
 		clContext.queue.enqueueWriteBuffer(clRandomNK, CL_TRUE,
 				0, clNoise.size()*sizeof(cl_double2),
 				clNoise.data());
+
+		e_grads_kernel.wait();
 
 		update_beta_calculate_theta_kernel.setArg(0, clTheta);
 		update_beta_calculate_theta_kernel.setArg(1, clRandomNK);
@@ -181,7 +271,7 @@ protected:
 		std::transform(temp.begin(), temp.end(), beta.begin(), np::SelectColumn<double>(1));
 	}
 
-	virtual EdgeMapZ sample_latent_vars2(const OrderedEdgeSet &mini_batch) {
+	void sample_latent_vars2(const OrderedEdgeSet &mini_batch) {
 		std::vector<cl_int2> edges(mini_batch.size());
 		// Copy edges
 		std::transform(mini_batch.begin(), mini_batch.end(), edges.begin(), [](const Edge& e) {
@@ -190,132 +280,82 @@ protected:
 			E.s[1] = e.second;
 			return E;
 		});
-		clContext.queue.enqueueWriteBuffer(clNodesNeighbors, CL_TRUE,
+		clContext.queue.enqueueWriteBuffer(clEdges, CL_FALSE,
 				0, edges.size()*sizeof(cl_int2),
 				edges.data());
 
-		// Generate and copy Randoms
-		std::vector<double> randoms(edges.size());
-#ifdef RANDOM_FOLLOWS_PYTHON
-		std::generate(randoms.begin(), randoms.end(), std::bind(&Random::FileReaderRandom::random, Random::random));
-#else
-		std::generate(randoms.begin(), randoms.end(), std::bind(&Random::Random::random, Random::random));
-#endif
-		clContext.queue.enqueueWriteBuffer(clRandomNN, CL_TRUE,
-				0, edges.size() * sizeof(cl_double),
-				randoms.data());
-
 		sample_latent_vars2_kernel.setArg(0, clGraph);
-		sample_latent_vars2_kernel.setArg(1, clNodesNeighbors);
+		sample_latent_vars2_kernel.setArg(1, clEdges);
 		sample_latent_vars2_kernel.setArg(2, (cl_int)edges.size());
 		sample_latent_vars2_kernel.setArg(3, clPi);
 		sample_latent_vars2_kernel.setArg(4, clBeta);
 		sample_latent_vars2_kernel.setArg(5, clZ);
 		sample_latent_vars2_kernel.setArg(6, clScratch);
-		sample_latent_vars2_kernel.setArg(7, clRandomNN);
+		sample_latent_vars2_kernel.setArg(7, clRandomSeed);
+
+		clContext.queue.finish(); // Wait for clEdges and PiUpdates from sample_latent_vars_and_update_pi
 
 		clContext.queue.enqueueNDRangeKernel(sample_latent_vars2_kernel, cl::NullRange, cl::NDRange(PARALLELISM), cl::NDRange(1));
-		clContext.queue.finish();
-
-		EdgeMapZ ezm;
-		// No need to copy Zs back to host space
-		return ezm;
-	}
-
-	virtual void update_pi_for_node_stub(const OrderedVertexSet& __attribute__((unused)) nodes,
-			std::unordered_map<int, ::size_t>& __attribute__((unused)) size,
-			std::unordered_map<int, std::vector<int> >& __attribute__((unused)) latent_vars,
-			double scale) {
 	}
 
 	::size_t real_num_node_sample() const {
 		return num_node_sample + 1;
 	}
 
-	virtual void sample_latent_vars_stub(const OrderedVertexSet& nodes,
-			std::unordered_map<int, ::size_t>& size,
-			std::unordered_map<int, std::vector<int> >& latent_vars) {
-
-		std::unordered_map<int, OrderedVertexSet> neighbor_nodes;
-		std::vector<double> randoms;
-		// pre-generate neighbors for each node
-		for (auto node = nodes.begin();
-				node != nodes.end();
-				node++) {
-			// sample a mini-batch of neighbors
-			neighbor_nodes[*node] = sample_neighbor_nodes(num_node_sample, *node);
-			size[*node] = neighbor_nodes[*node].size();
-
-			// Generate Randoms
-			std::vector<double> rs(real_num_node_sample());
-#ifdef RANDOM_FOLLOWS_PYTHON
-			std::generate(rs.begin(), rs.end(), std::bind(&Random::FileReaderRandom::random, Random::random));
-#else
-			std::generate(rs.begin(), rs.end(), std::bind(&Random::Random::random, Random::random));
-#endif
-			randoms.insert(randoms.end(), rs.begin(), rs.end());
-		}
+	void sample_latent_vars_and_update_pi(const OrderedVertexSet& nodes) {
 
 		// Copy sampled node IDs
 		std::vector<int> v_nodes(nodes.begin(), nodes.end()); // FIXME: replace OrderedVertexSet with vector
-		clContext.queue.enqueueWriteBuffer(clNodes, CL_TRUE, 0, v_nodes.size()*sizeof(int), v_nodes.data());
-
-		// Copy neighbors of *sampled* nodes only
-		for (auto node = nodes.begin(); node != nodes.end(); ++node) {
-			std::vector<int> neighbors(neighbor_nodes[*node].begin(), neighbor_nodes[*node].end()); // FIXME: replace OrderedVertexSet with vector
-			clContext.queue.enqueueWriteBuffer(clNodesNeighbors, CL_TRUE,
-					*node * real_num_node_sample() * sizeof(cl_int),
-					real_num_node_sample() * sizeof(cl_int),
-					neighbors.data());
-		}
-
+		clContext.queue.enqueueWriteBuffer(clNodes, CL_FALSE, 0, v_nodes.size()*sizeof(int), v_nodes.data());
 
 		// Copy beta
-		clContext.queue.enqueueWriteBuffer(clBeta, CL_TRUE, 0, K * sizeof(double), beta.data());
-
-		// Copy Randoms
-		clContext.queue.enqueueWriteBuffer(clRandomNN, CL_TRUE, 0, nodes.size() * real_num_node_sample() * sizeof(cl_double), randoms.data());
+		clContext.queue.enqueueWriteBuffer(clBeta, CL_FALSE, 0, K * sizeof(double), beta.data());
 
 		// Randoms for update pi for each node
+		std::unordered_map<int, std::vector<double>> noise;
 		int i = 0;
 		for (auto node = nodes.begin();
 				node != nodes.end();
 				++node, ++i) {
-			std::vector<double> noise = Random::random->randn(K);
-			clContext.queue.enqueueWriteBuffer(clRandomNK, CL_TRUE,
+			noise[*node] = Random::random->randn(K);
+			clContext.queue.enqueueWriteBuffer(clRandomNK, CL_FALSE,
 					i * K * sizeof(cl_double),
 					K * sizeof(cl_double),
-					noise.data());
+					noise[*node].data());
 		}
 
-		sample_latent_vars_and_update_pi_kernel.setArg(0, clGraph);
-		sample_latent_vars_and_update_pi_kernel.setArg(1, clNodes);
-		sample_latent_vars_and_update_pi_kernel.setArg(2, (cl_int)nodes.size());
-		sample_latent_vars_and_update_pi_kernel.setArg(3, clNodesNeighbors);
-		sample_latent_vars_and_update_pi_kernel.setArg(4, clPi);
-		sample_latent_vars_and_update_pi_kernel.setArg(5, clPiUpdate);
-		sample_latent_vars_and_update_pi_kernel.setArg(6, clPhi);
-		sample_latent_vars_and_update_pi_kernel.setArg(7, clBeta);
-		sample_latent_vars_and_update_pi_kernel.setArg(8, (cl_double)epsilon);
-		sample_latent_vars_and_update_pi_kernel.setArg(9, clZ);
-		sample_latent_vars_and_update_pi_kernel.setArg(10, clRandomNN);
-		sample_latent_vars_and_update_pi_kernel.setArg(11, clRandomNK);
-		sample_latent_vars_and_update_pi_kernel.setArg(12, clScratch);
-		sample_latent_vars_and_update_pi_kernel.setArg(13, (cl_double)alpha);
-		sample_latent_vars_and_update_pi_kernel.setArg(14, (cl_double)a);
-		sample_latent_vars_and_update_pi_kernel.setArg(15, (cl_double)b);
-		sample_latent_vars_and_update_pi_kernel.setArg(16, (cl_double)c);
-		sample_latent_vars_and_update_pi_kernel.setArg(17, (cl_int)step_count);
-		sample_latent_vars_and_update_pi_kernel.setArg(18, (cl_int)N);
+		int Idx = 0;
+		sample_latent_vars_and_update_pi_kernel.setArg(Idx++, clGraph);
+		sample_latent_vars_and_update_pi_kernel.setArg(Idx++, clHeldOutGraph);
+		sample_latent_vars_and_update_pi_kernel.setArg(Idx++, clNodes);
+		sample_latent_vars_and_update_pi_kernel.setArg(Idx++, (cl_int)nodes.size());
+		sample_latent_vars_and_update_pi_kernel.setArg(Idx++, clNodesNeighbors);
+		sample_latent_vars_and_update_pi_kernel.setArg(Idx++, clPi);
+		sample_latent_vars_and_update_pi_kernel.setArg(Idx++, clPiUpdate);
+		sample_latent_vars_and_update_pi_kernel.setArg(Idx++, clPhi);
+		sample_latent_vars_and_update_pi_kernel.setArg(Idx++, clBeta);
+		sample_latent_vars_and_update_pi_kernel.setArg(Idx++, (cl_double)epsilon);
+		sample_latent_vars_and_update_pi_kernel.setArg(Idx++, clZ);
+		sample_latent_vars_and_update_pi_kernel.setArg(Idx++, clRandomNK);
+		sample_latent_vars_and_update_pi_kernel.setArg(Idx++, clScratch);
+		sample_latent_vars_and_update_pi_kernel.setArg(Idx++, (cl_double)alpha);
+		sample_latent_vars_and_update_pi_kernel.setArg(Idx++, (cl_double)a);
+		sample_latent_vars_and_update_pi_kernel.setArg(Idx++, (cl_double)b);
+		sample_latent_vars_and_update_pi_kernel.setArg(Idx++, (cl_double)c);
+		sample_latent_vars_and_update_pi_kernel.setArg(Idx++, (cl_int)step_count);
+		sample_latent_vars_and_update_pi_kernel.setArg(Idx++, (cl_int)N);
+		sample_latent_vars_and_update_pi_kernel.setArg(Idx++, clRandomSeed);
 
+		clContext.queue.finish();
 		clContext.queue.enqueueNDRangeKernel(sample_latent_vars_and_update_pi_kernel, cl::NullRange, cl::NDRange(PARALLELISM), cl::NDRange(1));
+		noise.clear();
 		clContext.queue.finish();
 
 		// read Pi again
 		for (auto node = nodes.begin();
 				node != nodes.end();
 				++node) {
-			clContext.queue.enqueueReadBuffer(clPiUpdate, CL_TRUE,
+			clContext.queue.enqueueReadBuffer(clPiUpdate, CL_FALSE,
 					*node * K * sizeof(cl_double),
 					K * sizeof(cl_double),
 					pi[*node].data());
@@ -324,7 +364,6 @@ protected:
 					*node * K * sizeof(cl_double),
 					K * sizeof(cl_double));
 		}
-		clContext.queue.finish();
 	}
 
 
@@ -436,6 +475,7 @@ protected:
 
 	cl::Buffer clNodes;
 	cl::Buffer clNodesNeighbors;
+	cl::Buffer clEdges;
 	cl::Buffer clPi;
 	cl::Buffer clPiUpdate;
 	cl::Buffer clPhi;
@@ -443,9 +483,9 @@ protected:
 	cl::Buffer clTheta;
 	cl::Buffer clThetaSum;
 	cl::Buffer clZ;
-	cl::Buffer clRandomNN;
 	cl::Buffer clRandomNK;
 	cl::Buffer clScratch;
+	cl::Buffer clRandomSeed;
 };
 
 }
