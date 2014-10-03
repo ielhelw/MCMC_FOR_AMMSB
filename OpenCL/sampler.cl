@@ -16,6 +16,7 @@
 
 #define NODE_ID_VALID(NID) ((NID) >= 0 && (NID) < MAX_NODE_ID)
 
+// PSEUDORANDOM GENERATOR
 inline ulong xorshift_128plus(ulong2 *s) {
 	ulong s1 = (*s).x;
 	ulong s0 = (*s).y;
@@ -36,6 +37,7 @@ inline int randint(ulong2 *s, int from, int upto) {
 	return (xorshift_128plus(s) % (upto - from)) + from;
 }
 
+// LINEAR SEARACH
 int find_linear(global int *arr, int item, int up) {
 	for (int i = 0; i < up; ++i) {
 		if (item == arr[i]) return 1;
@@ -43,6 +45,7 @@ int find_linear(global int *arr, int item, int up) {
 	return 0;
 }
 
+// LTE BINARY SEARCH
 int find_le_linear(global double *arr, double item, int up, int lo) {
 	int i;
 	for (i = lo; i < up; ++i) {
@@ -76,6 +79,49 @@ int find_le(global double *arr, double item, int up, int lo) {
 	}
 	return res;
 }
+
+// HASH TABLE: DOUBLE HASHING
+#define HASH_OK (0)
+#define HASH_EMPTY (-1)
+#define HASH_FOUND (-2)
+#define HASH_FAIL (-3)
+inline int hash1(const int key, const int n_buckets) {
+	return key % n_buckets;
+}
+
+inline int hash2(const int key, const int n_buckets) {
+	// SOME_PRIME must be smaller than NEIGHBOR_SAMPLE_SIZE
+#if NEIGHBOR_SAMPLE_SIZE > 3559
+	const int SOME_PRIME = 3559;
+#elif NEIGHBOR_SAMPLE_SIZE > 1117
+	const int SOME_PRIME = 1117;
+#elif NEIGHBOR_SAMPLE_SIZE > 331
+	const int SOME_PRIME = 331;
+#elif NEIGHBOR_SAMPLE_SIZE > 47
+	const int SOME_PRIME = 47;
+#else
+	const int SOME_PRIME = 3;
+#endif
+	return SOME_PRIME - (key % SOME_PRIME);
+}
+
+inline int hash_put(const int key, global int* buckets, const int n_buckets) {
+	const int h1 = hash1(key, n_buckets);
+	const int h2 = hash2(key, n_buckets);
+	int loc = (h1) % n_buckets;
+
+	for (int i = 0; i < n_buckets; ++i) {
+		if (buckets[loc] == HASH_EMPTY) {
+			buckets[loc] = key;
+			return HASH_OK;
+		} else if (buckets[loc] == key) {
+			return HASH_FOUND;
+		}
+		loc = (loc + h2) % n_buckets;
+	}
+	return HASH_FAIL;
+}
+
 
 #define sample_z_ab_from_edge_expr_orig(i) \
 (\
@@ -124,16 +170,41 @@ inline void sample_latent_vars_of(
 
 	for (int i = 0; i < NEIGHBOR_SAMPLE_SIZE; ++i) {
 		int neighborId;
-		do {
+		for (;;) {
 			neighborId = randint(randomSeed, 0, MAX_NODE_ID);
-		} while (neighborId == node
-				|| graph_has_peer(hg, node, neighborId)
-				|| find_linear(neighbor_nodes, neighborId, i));
-		neighbor_nodes[i] = neighborId;
+			if (neighborId != node
+					&& !graph_has_peer(hg, node, neighborId)) {
+				int ret = hash_put(neighborId, neighbor_nodes, HASH_MULTIPLE*NEIGHBOR_SAMPLE_SIZE);
+				if (ret == HASH_OK) break;
+				if (ret == HASH_FOUND) continue;
+				if (ret == HASH_FAIL) {
+					printf("ERROR: FAILED TO INSERT ITEM IN HASH\n");
+					break;
+				}
+			}
+		}
 	}
+#ifdef ORDER_NEIGHBORS // for verification only
+	for (int i = 0; i < HASH_MULTIPLE*NEIGHBOR_SAMPLE_SIZE - 1; ++i) {
+		for (int j = 0; j < HASH_MULTIPLE*NEIGHBOR_SAMPLE_SIZE - i - 1; ++j) {
+			if (neighbor_nodes[j] > neighbor_nodes[j + 1]) {
+				int tmp = neighbor_nodes[j];
+				neighbor_nodes[j] = neighbor_nodes[j+1];
+				neighbor_nodes[j+1] = tmp;
+			}
+		}
+	}
+#endif
 
-	for (int i = 0; i < NEIGHBOR_SAMPLE_SIZE; ++i) {
+	int found = 0;
+	for (int i = 0; found < NEIGHBOR_SAMPLE_SIZE && i < HASH_MULTIPLE*NEIGHBOR_SAMPLE_SIZE; ++i) {
 		int neighbor = neighbor_nodes[i];
+
+		if (neighbor == HASH_EMPTY) {
+			continue;
+		}
+		++found;
+		neighbor_nodes[i] = HASH_EMPTY;
 
 		int y_ab = graph_has_peer(g, node, neighbor);
 		int z_ab = sample_z_ab_from_edge(
@@ -206,7 +277,7 @@ kernel void sample_latent_vars_and_update_pi(
 		sample_latent_vars_of(
 				node,
 				g, hg,
-				neighbor_nodes + node * NEIGHBOR_SAMPLE_SIZE,
+				neighbor_nodes + node * HASH_MULTIPLE * NEIGHBOR_SAMPLE_SIZE,
 				pi,
 				beta,
 				epsilon,

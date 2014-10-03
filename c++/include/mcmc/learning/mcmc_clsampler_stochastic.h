@@ -19,12 +19,14 @@ public:
 	MCMCClSamplerStochastic(const Options &args, const Network &graph, const cl::ClContext clContext)
 		: MCMCSamplerStochastic(args, graph), clContext(clContext) {
 
+		int hash_table_multiple = 2;
 		std::ostringstream opts;
 		opts << "-IOpenCL/include"
 			 << " -DNEIGHBOR_SAMPLE_SIZE=" << real_num_node_sample()
 			 << " -DK=" << K
 			 << " -DMAX_NODE_ID=" << N
-			 << " -DRAND_MAX=" << std::numeric_limits<uint64_t>::max();
+			 << " -DRAND_MAX=" << std::numeric_limits<uint64_t>::max()
+			 << " -DHASH_MULTIPLE=" << hash_table_multiple;
 		progOpts = opts.str();
 
 		std::cout << "COMPILE OPTS: " << progOpts << std::endl;
@@ -44,7 +46,7 @@ public:
 				// FIXME: better estimate for #nodes in mini batch
 				);
 		clNodesNeighbors = cl::Buffer(clContext.context, CL_MEM_READ_ONLY,
-				N * real_num_node_sample() * sizeof(cl_int) // #total_nodes x #neighbors_per_node
+				N * real_num_node_sample() * hash_table_multiple * sizeof(cl_int) // #total_nodes x #neighbors_per_node
 				// FIXME: we don't need space for all N elements. Space should be limited to #nodes_in_mini_batch * num_node_sample (DEPENDS ON ABOVE)
 				);
 		clEdges = cl::Buffer(clContext.context, CL_MEM_READ_ONLY,
@@ -117,6 +119,8 @@ public:
 		clContext.queue.enqueueWriteBuffer(clRandomSeed, CL_TRUE,
 				0, randomSeed.size() * sizeof(cl_ulong2),
 				randomSeed.data());
+		clContext.queue.enqueueFillBuffer(clNodesNeighbors, (cl_int)-1, 0, clNodesNeighbors.getInfo<CL_MEM_SIZE>());
+		clContext.queue.finish();
 
 		info(std::cout);
 	}

@@ -282,7 +282,7 @@ protected:
 				node != nodes.end();
 				node++) {
 			// sample a mini-batch of neighbors
-			std::vector<int> neighbor_nodes = sample_neighbor_nodes(num_node_sample, *node);
+			OrderedVertexSet neighbor_nodes = sample_neighbor_nodes(num_node_sample, *node);
 			size[*node] = neighbor_nodes.size();
 			// sample latent variables z_ab for each pair of nodes
 			std::vector<int> z = sample_latent_vars(*node, neighbor_nodes);
@@ -551,7 +551,7 @@ protected:
 	}
 
 
-    std::vector<int> sample_latent_vars(int node, const std::vector<int> &neighbor_nodes) {
+    std::vector<int> sample_latent_vars(int node, const OrderedVertexSet &neighbor_nodes) {
         /**
         given a node and its neighbors (either linked or non-linked), return the latent value
         z_ab for each pair (node, neighbor_nodes[i].
@@ -600,12 +600,12 @@ protected:
 #endif
 
 	// TODO FIXME make VertexSet an out parameter
-    std::vector<int> sample_neighbor_nodes(::size_t sample_size, int nodeId) {
+    OrderedVertexSet sample_neighbor_nodes(::size_t sample_size, int nodeId) {
         /**
         Sample subset of neighborhood nodes.
          */
         int p = (int)sample_size;
-        std::vector<int> neighbor_nodes;
+        OrderedVertexSet neighbor_nodes;
         const EdgeMap &held_out_set = network.get_held_out_set();
         const EdgeMap &test_set = network.get_test_set();
 
@@ -649,8 +649,8 @@ protected:
 			} while (neighborId == nodeId
 					|| edge.in(held_out_set)
 					|| edge.in(test_set)
-					|| std::find(neighbor_nodes.begin(), neighbor_nodes.end(), neighborId) != neighbor_nodes.end());
-			neighbor_nodes.push_back(neighborId);
+					|| neighbor_nodes.find(neighborId) != neighbor_nodes.end());
+			neighbor_nodes.insert(neighborId);
 		}
 #endif
 		return neighbor_nodes;
