@@ -40,3 +40,4 @@ test/preprocess/hep_th/main
 test/preprocess/hep_th2/main
 test/preprocess/netscience/main
 test/preprocess/relativity/main
+test/rand-normal/main
