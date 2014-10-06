@@ -33,7 +33,8 @@ public:
 			eta0 = args.eta0;
 			eta1 = args.eta1;
 		} else {
-			std::cerr << 
+			std::cerr << "Override eta: use (" << eta0 << "," << eta1 << ") i.s.o. command line" << std::endl;
+		}
 		theta = Random::random->gamma(eta0, eta1, K, 2);
 		phi = Random::random->gamma(1, 1, N, K);
 
