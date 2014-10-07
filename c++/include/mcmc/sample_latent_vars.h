@@ -17,6 +17,7 @@ namespace mcmc {
  * Data dependencies:
  * read pi_a, pi_b, beta
  */
+// FIXME: used only in mcmc_sampler.h. Why not move it there.
 int sample_z_ab_from_edge(int y, const std::vector<double> &pi_a,
 						  const std::vector<double> &pi_b,
 						  const std::vector<double> &beta,

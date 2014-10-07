@@ -78,6 +78,7 @@ public:
 protected:
 	void info(std::ostream &s) {
 		s << "N " << N;
+	   	s << " edges " << network.get_num_linked_edges();
 	   	s << " K " << K;
 		s << " iterations " << max_iteration;
 		s << " minibatch size " << mini_batch_size;
