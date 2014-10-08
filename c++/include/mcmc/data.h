@@ -102,6 +102,11 @@ inline std::istream &operator>> (std::istream &s, Edge &e) {
 }
 
 #ifdef RANDOM_FOLLOWS_PYTHON
+
+#ifdef RANDOM_FOLLOWS_CPP
+#error "RANDOM_FOLLOWS_CPP is incompatible with RANDOM_FOLLOWS_PYTHON"
+#endif
+
 typedef std::unordered_set<int>			VertexSet;
 typedef std::set<int>					OrderedVertexSet;
 
@@ -113,7 +118,11 @@ typedef std::map<Edge, bool>			EdgeMap;
 
 #else	// def RANDOM_FOLLOWS_PYTHON
 typedef std::unordered_set<int>			VertexSet;
+#ifdef RANDOM_FOLLOWS_CPP
+typedef std::set<int>					OrderedVertexSet;
+#else
 typedef VertexSet						OrderedVertexSet;
+#endif
 
 typedef std::unordered_set<Edge>		EdgeSet;
 typedef EdgeSet		 					OrderedEdgeSet;

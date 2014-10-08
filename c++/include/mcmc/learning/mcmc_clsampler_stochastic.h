@@ -26,6 +26,9 @@ public:
 			 << " -DK=" << K
 			 << " -DMAX_NODE_ID=" << N
 			 << " -DRAND_MAX=" << std::numeric_limits<uint64_t>::max()
+#ifdef RANDOM_FOLLOWS_CPP
+			 << " -DRANDOM_FOLLOWS_CPP"
+#endif
 			 << " -DHASH_MULTIPLE=" << hash_table_multiple;
 		progOpts = opts.str();
 
@@ -73,9 +76,6 @@ public:
 				);
 		clZ = cl::Buffer(clContext.context, CL_MEM_READ_WRITE,
 				N * K * sizeof(cl_int) // #total_nodes x #K
-				);
-		clRandomNK = cl::Buffer(clContext.context, CL_MEM_READ_WRITE,
-				N * K * sizeof(cl_double) // at most #total_nodes
 				);
 		clScratch = cl::Buffer(clContext.context, CL_MEM_READ_WRITE,
 				std::max(
@@ -231,23 +231,10 @@ protected:
 		clEta.s[0] = this->eta[0];
 		clEta.s[1] = this->eta[1];
 
-		std::vector<std::vector<double> > noise = Random::random->randn(K, 2);	// random noise.
-		std::vector<cl_double2> clNoise(noise.size());
-		std::transform(noise.begin(), noise.end(), clNoise.begin(), [](const std::vector<double>& n){
-			cl_double2 ret;
-			ret.s[0] = n[0];
-			ret.s[1] = n[1];
-			return ret;
-		});
-
-		clContext.queue.enqueueWriteBuffer(clRandomNK, CL_TRUE,
-				0, clNoise.size()*sizeof(cl_double2),
-				clNoise.data());
-
 		e_grads_kernel.wait();
 
 		update_beta_calculate_theta_kernel.setArg(0, clTheta);
-		update_beta_calculate_theta_kernel.setArg(1, clRandomNK);
+		update_beta_calculate_theta_kernel.setArg(1, clRandomSeed);
 		update_beta_calculate_theta_kernel.setArg(2, clScratch);
 		update_beta_calculate_theta_kernel.setArg(3, (cl_double)scale);
 		update_beta_calculate_theta_kernel.setArg(4, (cl_double)eps_t);
@@ -315,19 +302,6 @@ protected:
 		// Copy beta
 		clContext.queue.enqueueWriteBuffer(clBeta, CL_FALSE, 0, K * sizeof(double), beta.data());
 
-		// Randoms for update pi for each node
-		std::unordered_map<int, std::vector<double>> noise;
-		int i = 0;
-		for (auto node = nodes.begin();
-				node != nodes.end();
-				++node, ++i) {
-			noise[*node] = Random::random->randn(K);
-			clContext.queue.enqueueWriteBuffer(clRandomNK, CL_FALSE,
-					i * K * sizeof(cl_double),
-					K * sizeof(cl_double),
-					noise[*node].data());
-		}
-
 		int Idx = 0;
 		sample_latent_vars_and_update_pi_kernel.setArg(Idx++, clGraph);
 		sample_latent_vars_and_update_pi_kernel.setArg(Idx++, clHeldOutGraph);
@@ -340,7 +314,6 @@ protected:
 		sample_latent_vars_and_update_pi_kernel.setArg(Idx++, clBeta);
 		sample_latent_vars_and_update_pi_kernel.setArg(Idx++, (cl_double)epsilon);
 		sample_latent_vars_and_update_pi_kernel.setArg(Idx++, clZ);
-		sample_latent_vars_and_update_pi_kernel.setArg(Idx++, clRandomNK);
 		sample_latent_vars_and_update_pi_kernel.setArg(Idx++, clScratch);
 		sample_latent_vars_and_update_pi_kernel.setArg(Idx++, (cl_double)alpha);
 		sample_latent_vars_and_update_pi_kernel.setArg(Idx++, (cl_double)a);
@@ -352,7 +325,6 @@ protected:
 
 		clContext.queue.finish();
 		clContext.queue.enqueueNDRangeKernel(sample_latent_vars_and_update_pi_kernel, cl::NullRange, cl::NDRange(PARALLELISM), cl::NDRange(1));
-		noise.clear();
 		clContext.queue.finish();
 
 		// read Pi again
@@ -487,7 +459,6 @@ protected:
 	cl::Buffer clTheta;
 	cl::Buffer clThetaSum;
 	cl::Buffer clZ;
-	cl::Buffer clRandomNK;
 	cl::Buffer clScratch;
 	cl::Buffer clRandomSeed;
 };
