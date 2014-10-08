@@ -60,7 +60,7 @@ class MCMCSamplerBatch : virtual public MCMCSampler {
 
 public:
     MCMCSamplerBatch(const Options &args, const Network &network)
-			: Learner(args, network), MCMCSampler(args, network, 0, 1.0, 100.0),
+			: MCMCSampler(args, network, 0, 1.0, 100.0),
    			  neighbor_batch_size("neighbor batch size") {
 #if USE_SAMPLE_LATENT_VARS
 		std::cerr << "Use sampled latent vars" << std::endl;

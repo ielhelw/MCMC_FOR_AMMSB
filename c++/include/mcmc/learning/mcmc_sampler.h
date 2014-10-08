@@ -7,12 +7,17 @@
 namespace mcmc {
 namespace learning {
 
-class MCMCSampler : virtual public Learner {
+class MCMCSampler : public Learner {
 public:
     MCMCSampler(const Options &args, const Network &network,
 			   	::size_t num_node_sample = 0,
 			   	double eta0 = 0.0, double eta1 = 0.0)
 			: Learner(args, network) {
+
+        // step size parameters.
+        this->a = args.a;
+        this->b = args.b;
+        this->c = args.c;
 
         // control parameters for learning
 
@@ -48,11 +53,6 @@ public:
 		np::row_normalize(&pi, phi);
 
 		info(std::cout);
-
-        // step size parameters.
-        this->a = args.a;
-        this->b = args.b;
-        this->c = args.c;
 	}
 
 	virtual ~MCMCSampler() {
