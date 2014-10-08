@@ -63,6 +63,12 @@ public:
 	}
 
 
+	// Data dependencies:
+	// 		pi[node][*]
+	// 		beta
+	// 		network::linked_edges
+	// 		inherit from sample_z_ab_from_edge:
+	// 			pi[node] pi[neighbor] beta
     std::vector<int> sample_latent_vars(int node, const OrderedVertexSet &neighbor_nodes) const {
         /**
         given a node and its neighbors (either linked or non-linked), return the latent value

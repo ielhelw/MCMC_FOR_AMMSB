@@ -20,6 +20,8 @@
 
 #include "mcmc/learning/learner.h"
 
+// FIXME stepsize_switch is deprecated. Remove.
+
 namespace mcmc {
 namespace learning {
 
@@ -106,6 +108,7 @@ public:
 	// write:
 	// 		phi_star[i][*]
 	// FIXME: misnomer, should be: update_phi_for_node
+	// FIXME: code sharing w/ mcmc stochastic
     void update_pi_for_node(::size_t i, const std::vector<int> &z, ::size_t n) {
         // update gamma, only update node in the grad
 		double eps_t;
@@ -116,7 +119,8 @@ public:
             eps_t  = a * std::pow(1 + step_count / b, -c);
 		}
 
-		// std::vector<double> phi_star(phi[i]);				// FIXME: No need to initialize?
+		// FIXME: no need to initialize phi_star
+		// std::vector<double> phi_star(phi[i]);
 		std::vector<double> phi_star(phi[i].size());
         double phi_i_sum = np::sum(phi[i]);
 		std::vector<double> noise = Random::random->randn(K);	// random noise.
@@ -138,10 +142,9 @@ public:
 														  grads[k]) +
 								   std::pow(eps_t, .5) * std::pow(phi[i][k], .5) * noise[k]);
 #else
-			double f = std::sqrt(eps_t * phi[i][k]);
 			phi_star[k] = std::abs(phi[i][k] + eps_t/2 * (alpha - phi[i][k] +
 														  grads[k]) +
-								   f * noise[k]);
+								   std::sqrt(eps_t * phi[i][k]) * noise[k]);
 #endif
 		}
 
@@ -162,6 +165,7 @@ public:
         // sum_theta = np.sum(self.__theta,1)
 		std::vector<double> sum_theta(theta.size());
 		std::transform(theta.begin(), theta.end(), sum_theta.begin(), np::sum<double>);
+		std::vector<std::vector<double> > noise = Random::random->randn(K, 2);
 
         // update gamma, only update node in the grad
 
@@ -176,11 +180,9 @@ public:
             for (::size_t j = i + 1; j < N; j++) {
 				Edge edge(i, j);
 
-#ifdef NOT_IN_PYTHON
 				if (edge.in(network.get_held_out_set()) || edge.in(network.get_test_set())) {
                     continue;
 				}
-#endif
 
                 int y = 0;
                 if (edge.in(network.get_linked_edges())) {
@@ -193,13 +195,20 @@ public:
                     continue;
 				}
 
+#ifdef EFFICIENCY_FOLLOWS_PYTHON
                 grads[z][0] += std::abs(1-y) / theta[z][0] - 1.0 / sum_theta[z];
                 grads[z][1] += std::abs(-y) / theta[z][1] - 1.0 / sum_theta[z];
+#else
+				if (y == 0) {
+					grads[z][0] += 1.0 / theta[z][0] - 1.0 / sum_theta[z];
+				} else {
+					grads[z][1] += 1.0 / theta[z][1] - 1.0 / sum_theta[z];
+				}
+#endif
 			}
 		}
 
         // update theta
-		std::vector<std::vector<double> > noise = Random::random->randn(K, 2);
 		std::vector<std::vector<double> > theta_star(theta);
         for (::size_t k = 0; k < K; k++) {
             for (::size_t i = 0; i < 2; i++) {
@@ -440,7 +449,7 @@ public:
 	// 		pi[neighbor(node)]
 	// 		beta
 	// write:
-	// 		phi[i][*] -- phi_star is bypassed outside this function
+	// 		phi[i][*]
 	virtual void update_phi(int i, const OrderedVertexSet &neighbor_nodes){
 		double eps_t = a * std::pow(1 + step_count / b, -c);	// step size
 		double phi_i_sum = np::sum(phi[i]);	
@@ -529,7 +538,7 @@ public:
 			std::cout << std::fixed << std::setprecision(12) << "perplexity for hold out set: " << ppx_score << std::endl;
             ppxs_held_out.push_back(ppx_score);
 
-            // iterate through each node, and update parameters pi_a
+#if USE_SAMPLE_LATENT_VARS
             for (::size_t i = 0; i < N; i++) {
                 // update parameter for pi_i
                 //print "updating: " + str(i)
@@ -537,7 +546,10 @@ public:
                 auto neighbor_nodes = sample_neighbor_nodes_batch(i);
 				t_sample.stop();
 
-#if USE_SAMPLE_LATENT_VARS
+				// FIXME: maybe transform this loop into two loops, one to fully read pi[],
+				// the second to update pi. That makes phi[] fully local to update_pi_for_node.
+				//
+				// iterate through each node, and update parameters pi_a
 				/*	wenzhe commented this out... */
 				t_latent_vars.start();
 				std::vector<int> z = sample_latent_vars(i, neighbor_nodes);
@@ -546,15 +558,23 @@ public:
 				// FIXME: misnomer, should be: update_phi_for_node
                 update_pi_for_node(i, z, neighbor_nodes.size());
 				t_update_phi.stop();
+			}
 #else
+            for (::size_t i = 0; i < N; i++) {
+                // update parameter for pi_i
+                //print "updating: " + str(i)
+				t_sample.start();
+                auto neighbor_nodes = sample_neighbor_nodes_batch(i);
+				t_sample.stop();
+
 				// wenzhe's version
 				t_update_phi.start();
 				update_phi(i, neighbor_nodes);	// update phi for node i
 				t_update_phi.stop();
-#endif
-			}
 
-			np::row_normalize(&pi, phi);	// update pi from phi. 
+				np::row_normalize(&pi, phi);	// update pi from phi. 
+			}
+#endif
 
             // update beta
 			t_update_beta.start();
