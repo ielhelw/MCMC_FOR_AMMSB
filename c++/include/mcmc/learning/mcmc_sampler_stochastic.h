@@ -300,7 +300,7 @@ protected:
         // sums = np.sum(self.__theta,1)
 		std::vector<double> sums(theta.size());
 		std::transform(theta.begin(), theta.end(), sums.begin(), np::sum<double>);
-		std::vector<std::vector<double> > noise = Random::random->randn(K, 2);	// random noise.
+		std::vector<std::vector<double> > noise = kernelRandom.randn(K, 2);	// random noise.
 
         for (EdgeMapZ::const_iterator edge = z.begin();
 			 	edge != z.end();
@@ -364,7 +364,7 @@ protected:
 
 		std::vector<double> phi_star(phi[i]);					// updated \phi
 		double phi_i_sum = np::sum(phi[i]);
-		std::vector<double> noise = Random::random->randn(K);	// random noise.
+		std::vector<double> noise = kernelRandom.randn(K);	// random noise.
 
         // get the gradients
         // grads = [-n * 1/phi_i_sum * j for j in np.ones(self._K)]
