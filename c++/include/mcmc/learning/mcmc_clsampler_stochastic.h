@@ -126,7 +126,6 @@ public:
 	}
 
 	virtual void run() {
-		using namespace std::chrono;
 		/** run mini-batch based MCMC sampler, based on the sungjin's note */
 
 		if (step_count % 1 == 0) {
@@ -135,38 +134,24 @@ public:
 			ppxs_held_out.push_back(ppx_score);
 		}
 
-		STAT g_stat;
-
 		while (step_count < max_iteration && ! is_converged()) {
 			auto l1 = std::chrono::system_clock::now();
-			time_point<system_clock> t1, t2, t3, t4, t5, t6, t7, t8;
-			t1 = system_clock::now();
 
 			// (mini_batch, scale) = self._network.sample_mini_batch(self._mini_batch_size, "stratified-random-node")
 			EdgeSample edgeSample = network.sample_mini_batch(mini_batch_size, strategy::STRATIFIED_RANDOM_NODE);
 			const OrderedEdgeSet &mini_batch = *edgeSample.first;
 			double scale = edgeSample.second;
 
-			t2 = system_clock::now();
-
 			// iterate through each node in the mini batch.
 			OrderedVertexSet nodes = nodes_in_batch(mini_batch);
 
-			t3 = system_clock::now();
-
 			sample_latent_vars_and_update_pi(nodes);
-
-			t4 = system_clock::now();
 
 			// sample (z_ab, z_ba) for each edge in the mini_batch.
 			// z is map structure. i.e  z = {(1,10):3, (2,4):-1}
 			sample_latent_vars2(mini_batch);
 
-			t5 = system_clock::now();
-
 			update_beta(mini_batch, scale);
-
-			t6 = system_clock::now();
 
 
 			if (step_count % 1 == 0) {
@@ -175,27 +160,12 @@ public:
 				ppxs_held_out.push_back(ppx_score);
 			}
 
-			t7 = system_clock::now();
-
 			delete edgeSample.first;
 
 			step_count++;
 			auto l2 = std::chrono::system_clock::now();
 			std::cout << "LOOP  = " << (l2-l1).count() << std::endl;
-
-			STAT stat = {
-				duration_cast<STAT::tick>(t2-t1),
-				duration_cast<STAT::tick>(t3-t2),
-				duration_cast<STAT::tick>(t4-t3),
-				STAT::tick(0),
-				duration_cast<STAT::tick>(t5-t4),
-				duration_cast<STAT::tick>(t6-t5),
-				duration_cast<STAT::tick>(t7-t6),
-			};
-			std::cout << stat;
-			g_stat += stat;
 		}
-		std::cout << g_stat;
 	}
 
 protected:

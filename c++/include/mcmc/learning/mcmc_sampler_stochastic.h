@@ -18,42 +18,6 @@
 namespace mcmc {
 namespace learning {
 
-struct STAT {
-	typedef std::chrono::microseconds tick;
-
-	STAT& operator+=(const STAT& s) {
-		mini_batch += s.mini_batch;
-		nodes_in_batch += s.nodes_in_batch;
-		sample_latent_vars += s.sample_latent_vars;
-		update_pi_for_node += s.update_pi_for_node;
-		sample_latent_vars2 += s.sample_latent_vars2;
-		update_beta += s.update_beta;
-		perplexity += s.perplexity;
-		return *this;
-	}
-
-	tick mini_batch;
-	tick nodes_in_batch;
-	tick sample_latent_vars;
-	tick update_pi_for_node;
-	tick sample_latent_vars2;
-	tick update_beta;
-	tick perplexity;
-};
-
-template<class Stream>
-Stream& operator<<(Stream& out, const STAT& stat) {
-	out << "TIME BREAKDOWN:" << std::endl
-	<< "\t mini_batch          = " << stat.mini_batch.count() << std::endl
-	<< "\t nodes_in_batch      = " << stat.nodes_in_batch.count() << std::endl
-	<< "\t sample_latent_vars  = " << stat.sample_latent_vars.count() << std::endl
-	<< "\t update_pi_for_node  = " << stat.update_pi_for_node.count() << std::endl
-	<< "\t sample_latent_vars2 = " << stat.sample_latent_vars2.count() << std::endl
-	<< "\t update_beta         = " << stat.update_beta.count() << std::endl
-	<< "\t perplexity          = " << stat.perplexity.count() << std::endl;
-	return out;
-}
-
 
 // typedef std::unordered_map<Edge, int>	EdgeMapZ;
 typedef std::map<Edge, int>	EdgeMapZ;
@@ -180,8 +144,6 @@ public:
 #endif
 		}
 
-		STAT g_stat;
-
         while (step_count < max_iteration && ! is_converged()) {
 			auto l1 = std::chrono::system_clock::now();
             //print "step: " + str(self._step_count)
@@ -189,9 +151,6 @@ public:
             pr = cProfile.Profile()
             pr.enable()
              */
-
-        	time_point<system_clock> t1, t2, t3, t4, t5, t6, t7, t8;
-        	t1 = system_clock::now();
 
             // (mini_batch, scale) = self._network.sample_mini_batch(self._mini_batch_size, "stratified-random-node")
 			EdgeSample edgeSample = network.sample_mini_batch(mini_batch_size, strategy::STRATIFIED_RANDOM_NODE);
@@ -201,30 +160,18 @@ public:
 			std::unordered_map<int, std::vector<int> > latent_vars;
 			std::unordered_map<int, ::size_t> size;
 
-			t2 = system_clock::now();
-
             // iterate through each node in the mini batch.
 			OrderedVertexSet nodes = nodes_in_batch(mini_batch);
 
-			t3 = system_clock::now();
-
 			sample_latent_vars_stub(nodes, size, latent_vars);
 
-			t4 = system_clock::now();
-
 			update_pi_for_node_stub(nodes, size, latent_vars, scale);
-
-			t5 = system_clock::now();
 
             // sample (z_ab, z_ba) for each edge in the mini_batch.
             // z is map structure. i.e  z = {(1,10):3, (2,4):-1}
 			EdgeMapZ z = sample_latent_vars2(mini_batch);
 
-			t6 = system_clock::now();
-
             update_beta(mini_batch, scale, z);
-
-            t7 = system_clock::now();
 
 
             if (step_count % 1 == 0) {
@@ -239,25 +186,11 @@ public:
 #endif
 			}
 
-            t8 = system_clock::now();
-
 			delete edgeSample.first;
 
             step_count++;
 			auto l2 = std::chrono::system_clock::now();
 			std::cout << "LOOP  = " << (l2-l1).count() << std::endl;
-
-			STAT stat = {
-				duration_cast<STAT::tick>(t2-t1),
-				duration_cast<STAT::tick>(t3-t2),
-				duration_cast<STAT::tick>(t4-t3),
-				duration_cast<STAT::tick>(t5-t4),
-				duration_cast<STAT::tick>(t6-t5),
-				duration_cast<STAT::tick>(t7-t6),
-				duration_cast<STAT::tick>(t8-t7)
-            };
-			std::cout << stat;
-			g_stat += stat;
 
             /**
             pr.disable()
@@ -268,7 +201,6 @@ public:
             print s.getvalue()
              */
 		}
-        std::cout << g_stat;
 	}
 
 
