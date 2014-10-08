@@ -198,7 +198,6 @@ protected:
 		for (auto node = nodes.begin();
 				node != nodes.end();
 				node++) {
-			// FIXME: misnomer, should be: update_phi_for_node
 			update_pi_for_node(*node, latent_vars[*node], size[*node], scale);
 		}
     }
@@ -258,6 +257,7 @@ protected:
 
 
 	// FIXME lots of code sharing w/ mcmc_sampler_batch
+	// FIXME mini_batch is unused. Correct?
     void update_beta(const OrderedEdgeSet &mini_batch, double scale, const EdgeMapZ &z) {
         /**
         update beta for mini_batch.
@@ -318,8 +318,10 @@ protected:
 	}
 
 
-	// FIXME: misnomer, should be: update_phi_for_node
 	// FIXME: scale is unused
+	// FIXME: code sharing w/ mcmc batch. Identical except for the assignment to pi[i].
+	// That can be fixed by transforming the inner loop in run() in mcmc batch/sampler into a
+	// sequence of two loops.
     void update_pi_for_node(int i, const std::vector<int> &z, int n, double scale) {
         /**
         update pi for current node i.
@@ -333,6 +335,7 @@ protected:
 		// }
 
 		// FIXME: no need to initialize phi_star
+		// FIXME: phi[][] is purely local
 		// std::vector<double> phi_star(phi[i]);					// updated \phi
 		std::vector<double> phi_star(phi[i].size());			// updated \phi
 		double phi_i_sum = np::sum(phi[i]);
