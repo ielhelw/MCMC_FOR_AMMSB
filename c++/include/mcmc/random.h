@@ -257,6 +257,10 @@ static const double wtab[128];
 #define gsl_rng_uniform_int(r, n)	randint(0, n)
 struct gsl_rng;
 
+// #define TICK(x)		do x++; while (0)
+#define TICK(x)
+
+
 double
 gsl_ran_gaussian_ziggurat (const gsl_rng * r, const double sigma)
 {
@@ -269,8 +273,11 @@ gsl_ran_gaussian_ziggurat (const gsl_rng * r, const double sigma)
   const uint64_t range = 0xffffffffUL;
   const uint64_t offset = 0;
 
+  TICK(n_randn);
+
   while (1)
     {
+	  TICK(iters_randn);
       if (range >= 0xFFFFFFFF)
         {
           uint64_t k = gsl_rng_get(r) - offset;
@@ -298,6 +305,7 @@ gsl_ran_gaussian_ziggurat (const gsl_rng * r, const double sigma)
       if (j < this->ktab[i])
         break;
 
+	  TICK(ktab_exceed_randn);
       if (i < 127)
         {
           double y0, y1, U1;
@@ -313,6 +321,7 @@ gsl_ran_gaussian_ziggurat (const gsl_rng * r, const double sigma)
           U2 = gsl_rng_uniform (r);
           x = PARAM_R - log (U1) / PARAM_R;
           y = exp (-PARAM_R * (x - 0.5 * PARAM_R)) * U2;
+		  TICK(log_exp_randn);
         }
 
       if (y < exp (-0.5 * x * x))
@@ -332,6 +341,18 @@ public:
 
 		return r;
 	}
+
+	void report() {
+		if (n_randn > 0) {
+			std::cerr << "randn calls " << n_randn << " iters " << (1.0 * iters_randn / n_randn) << " ktab miss " << (1.0 * ktab_exceed_randn / n_randn) << " log/exp calls " << (1.0 * log_exp_randn / n_randn) << std::endl;
+		}
+	}
+
+protected:
+	::size_t n_randn = 0;
+	::size_t iters_randn = 0;
+	::size_t log_exp_randn = 0;
+	::size_t ktab_exceed_randn = 0;
 
 
 protected:

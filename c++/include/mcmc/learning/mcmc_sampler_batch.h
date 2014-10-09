@@ -1,7 +1,7 @@
 #ifndef MCMC_LEARNING_MCMC_SAMPLER_BATCH_H__
 #define MCMC_LEARNING_MCMC_SAMPLER_BATCH_H__
 
-#define USE_SAMPLE_LATENT_VARS	1
+#define USE_SAMPLE_LATENT_VARS	0
 
 #include <cassert>
 #include <cmath>
@@ -319,10 +319,10 @@ public:
 #endif
 	}
 
-#endif	// USE_SAMPLE_LATENT_VARS
+
+#else	// if USE_SAMPLE_LATENT_VARS
 
 
-#if ! USE_SAMPLE_LATENT_VARS
 	/*
 		update beta. Instead of sampling, we calculate the probability directly. 
 	*/
@@ -348,7 +348,7 @@ public:
             for (::size_t j = i + 1; j < N; j++) {
 				Edge edge(i, j);
 
-#ifdef NOT_IN_PYTHON
+#if (1 || defined NOT_IN_PYTHON)
 				if (edge.in(network.get_held_out_set()) || edge.in(network.get_test_set())) {
                     continue;
 				}
