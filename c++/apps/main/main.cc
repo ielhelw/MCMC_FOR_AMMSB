@@ -23,7 +23,7 @@ int main(int argc, char *argv[]) {
 			mcmcSampler.run();
 		}
 
-		if (true) {
+		if (false) {
 			std::cout << "start MCMC batch" << std::endl;
 			MCMCSamplerBatch mcmcSampler(args, network);
 			mcmcSampler.run();

@@ -18,6 +18,7 @@
 namespace mcmc {
 namespace learning {
 
+
 // typedef std::unordered_map<Edge, int>	EdgeMapZ;
 typedef std::map<Edge, int>	EdgeMapZ;
 
@@ -52,7 +53,7 @@ public:
     This method is great marriage between MCMC and stochastic methods.
     */
     MCMCSamplerStochastic(const Options &args, const Network &graph)
-			: Learner(args, graph) {
+			: Learner(args, graph), kernelRandom(42) {
 
         // step size parameters.
         this->a = args.a;
@@ -129,6 +130,7 @@ public:
 #endif
 
     virtual void run() {
+        using namespace std::chrono;
         /** run mini-batch based MCMC sampler, based on the sungjin's note */
 
 		if (step_count % 1 == 0) {
@@ -169,6 +171,7 @@ public:
             // sample (z_ab, z_ba) for each edge in the mini_batch.
             // z is map structure. i.e  z = {(1,10):3, (2,4):-1}
 			EdgeMapZ z = sample_latent_vars2(mini_batch);
+
             update_beta(mini_batch, scale, z);
 
 
@@ -204,9 +207,10 @@ public:
 
 protected:
 
-    virtual void sample_latent_vars_stub(const OrderedVertexSet& nodes,
+    void sample_latent_vars_stub(const OrderedVertexSet& nodes,
     			std::unordered_map<int, ::size_t>& size,
     			std::unordered_map<int, std::vector<int> >& latent_vars) {
+
     	for (auto node = nodes.begin();
 				node != nodes.end();
 				node++) {
@@ -220,7 +224,7 @@ protected:
 		}
     }
 
-    virtual void update_pi_for_node_stub(const OrderedVertexSet& nodes,
+    void update_pi_for_node_stub(const OrderedVertexSet& nodes,
 			std::unordered_map<int, ::size_t>& size,
 			std::unordered_map<int, std::vector<int> >& latent_vars,
 			double scale) {
@@ -297,7 +301,7 @@ protected:
         // sums = np.sum(self.__theta,1)
 		std::vector<double> sums(theta.size());
 		std::transform(theta.begin(), theta.end(), sums.begin(), np::sum<double>);
-		std::vector<std::vector<double> > noise = Random::random->randn(K, 2);	// random noise.
+		std::vector<std::vector<double> > noise = kernelRandom.randn(K, 2);	// random noise.
 
         for (EdgeMapZ::const_iterator edge = z.begin();
 			 	edge != z.end();
@@ -361,7 +365,7 @@ protected:
 
 		std::vector<double> phi_star(phi[i]);					// updated \phi
 		double phi_i_sum = np::sum(phi[i]);
-		std::vector<double> noise = Random::random->randn(K);	// random noise.
+		std::vector<double> noise = kernelRandom.randn(K);	// random noise.
 
         // get the gradients
         // grads = [-n * 1/phi_i_sum * j for j in np.ones(self._K)]
@@ -395,7 +399,7 @@ protected:
 	}
 
 
-    virtual EdgeMapZ sample_latent_vars2(const OrderedEdgeSet &mini_batch) {
+    EdgeMapZ sample_latent_vars2(const OrderedEdgeSet &mini_batch) {
         /**
         sample latent variable (z_ab, z_ba) for each pair of nodes. But we only consider 11 different cases,
         since we only need indicator function in the gradient update. More details, please see the comments
@@ -417,7 +421,7 @@ protected:
 
 
 	// TODO FIXME shared code w/ mcmc_sampler_batch
-    int sample_z_for_each_edge(int y, const std::vector<double> &pi_a, const std::vector<double> &pi_b, const std::vector<double> &beta, ::size_t K) const {
+    int sample_z_for_each_edge(int y, const std::vector<double> &pi_a, const std::vector<double> &pi_b, const std::vector<double> &beta, ::size_t K) {
         /**
 		 * sample latent variables z_ab and z_ba
          * but we don't need to consider all of the cases. i.e  (z_ab = j, z_ba = q) for all j and p.
@@ -462,7 +466,7 @@ protected:
 		// // std::partial_sum(p.begin(), p.end(), bounds.begin());
 		// FIXME: replace p[K] w/ p[K-1] here. Why? RFHH
         // double location = Random::random->random() * p[K];
-        double r = Random::random->random();
+        double r = kernelRandom.random();
         double location = r * p[K-1];
 
 #if 0
@@ -480,7 +484,7 @@ protected:
 	}
 
 
-    std::vector<int> sample_latent_vars(int node, const OrderedVertexSet &neighbor_nodes) const {
+    std::vector<int> sample_latent_vars(int node, const OrderedVertexSet &neighbor_nodes) {
         /**
         given a node and its neighbors (either linked or non-linked), return the latent value
         z_ab for each pair (node, neighbor_nodes[i].
@@ -538,13 +542,11 @@ protected:
         const EdgeMap &held_out_set = network.get_held_out_set();
         const EdgeMap &test_set = network.get_test_set();
 
+        #ifdef EFFICIENCY_FOLLOWS_PYTHON
         while (p > 0) {
-#ifdef EFFICIENCY_FOLLOWS_PYTHON
 			std::cerr << "FIXME: horribly inefficient xrange thingy" << std::endl;
 			auto nodeList = Random::random->sample(np::xrange(0, N), sample_size * 2);
-#else
-			auto nodeList = Random::random->sampleRange(N, sample_size * 2);
-#endif
+
             for (std::vector<int>::const_iterator neighborId = nodeList->begin();
 				 	neighborId != nodeList->end();
 					neighborId++) {
@@ -570,8 +572,21 @@ protected:
 
 			delete nodeList;
 		}
-
-        return neighbor_nodes;
+#else
+        for (int i = 0; i <= p; ++i) {
+			int neighborId;
+			Edge edge(0, 0);
+			do {
+				neighborId = kernelRandom.randint(0, N);
+				edge = Edge(std::min(nodeId, neighborId), std::max(nodeId, neighborId));
+			} while (neighborId == nodeId
+					|| edge.in(held_out_set)
+					|| edge.in(test_set)
+					|| neighbor_nodes.find(neighborId) != neighbor_nodes.end());
+			neighbor_nodes.insert(neighborId);
+		}
+#endif
+		return neighbor_nodes;
 	}
 
     OrderedVertexSet nodes_in_batch(const OrderedEdgeSet &mini_batch) const {
@@ -600,7 +615,7 @@ protected:
 							  const std::vector<double> &pi_a,
 							  const std::vector<double> &pi_b,
 							  const std::vector<double> &beta,
-							  double epsilon, ::size_t K) const {
+							  double epsilon, ::size_t K) {
 		std::vector<double> p(K);
 
 #ifdef EFFICIENCY_FOLLOWS_PYTHON
@@ -636,7 +651,7 @@ protected:
             p[k] += p[k-1];
 		}
 
-        double r = Random::random->random();
+        double r = kernelRandom.random();
         double location = r * p[K-1];
 #if 0
         // get the index of bounds that containing location.
@@ -664,6 +679,7 @@ protected:
 
 	std::vector<std::vector<double> > theta;		// parameterization for \beta
 	std::vector<std::vector<double> > phi;			// parameterization for \pi
+	Random::Random kernelRandom;
 };
 
 }	// namespace learning
