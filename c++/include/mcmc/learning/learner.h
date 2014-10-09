@@ -209,9 +209,9 @@ protected:
 		} else {
 			double sum = 0.0;
 			for (::size_t k = 0; k < K; k++) {
-				// FIXME share common subexpressions
-				s += pi_a[k] * pi_b[k] * (1.0 - beta[k]);
-				sum += pi_a[k] * pi_b[k];
+				double pi_ab = pi_a[k] * pi_b[k];
+				s += pi_ab * (1.0 - beta[k]);
+				sum += pi_ab;
 			}
 			s += (1.0 - sum) * (1.0 - epsilon);
 		}

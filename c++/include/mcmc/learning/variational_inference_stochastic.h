@@ -160,7 +160,8 @@ public:
 
 			step_count++;
 			auto l2 = std::chrono::system_clock::now();
-			std::cout << "LOOP  = " << (l2-l1).count() << std::endl;
+			auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(l2 - l1);
+			std::cout << "LOOP  = " << ms.count() << "ms" << std::endl;
 		}
 
 #if 0

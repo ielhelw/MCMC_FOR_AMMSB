@@ -22,7 +22,7 @@ namespace learning {
 // typedef std::unordered_map<Edge, int>	EdgeMapZ;
 typedef std::map<Edge, int>	EdgeMapZ;
 
-class MCMCSamplerStochastic : virtual public MCMCSampler {
+class MCMCSamplerStochastic : public MCMCSampler {
 public:
     /**
     Mini-batch based MCMC sampler for community overlapping problems. Basically, given a
@@ -157,7 +157,8 @@ public:
 
             step_count++;
 			auto l2 = std::chrono::system_clock::now();
-			std::cout << "LOOP  = " << (l2-l1).count() << std::endl;
+			auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(l2 - l1);
+			std::cout << "LOOP  = " << ms.count() << "ms" << std::endl;
 
             /**
             pr.disable()
@@ -537,19 +538,6 @@ protected:
 		}
 #endif
 		return neighbor_nodes;
-	}
-
-    OrderedVertexSet nodes_in_batch(const OrderedEdgeSet &mini_batch) const {
-        /**
-        Get all the unique nodes in the mini_batch.
-         */
-        OrderedVertexSet node_set;
-        for (auto edge = mini_batch.begin(); edge != mini_batch.end(); edge++) {
-            node_set.insert(edge->first);
-            node_set.insert(edge->second);
-		}
-
-        return node_set;
 	}
 
 #if 0

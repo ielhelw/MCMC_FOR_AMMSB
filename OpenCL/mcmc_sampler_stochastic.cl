@@ -1,4 +1,5 @@
 #include "graph.h"
+#include "random.h"
 
 #ifndef MAX_NODE_ID
 #error "Need definition of MAX_NODE_ID"
@@ -16,26 +17,9 @@
 
 #define NODE_ID_VALID(NID) ((NID) >= 0 && (NID) < MAX_NODE_ID)
 
-// PSEUDORANDOM GENERATOR
-inline ulong xorshift_128plus(ulong2 *s) {
-	ulong s1 = (*s).x;
-	ulong s0 = (*s).y;
-	(*s).x = s0;
-	s1 ^= s1 << 23;
-	return ((*s).y = (s1 ^ s0 ^ (s1 >> 17) ^ (s0 >> 26))) + s0;
-}
-
 #if ULONG_MAX != RAND_MAX
 #error ULONG_MAX " != " RAND_MAX
 #endif
-
-inline double random(ulong2 *s) {
-	return (1.0 * xorshift_128plus(s) / ULONG_MAX);
-}
-
-inline int randint(ulong2 *s, int from, int upto) {
-	return (xorshift_128plus(s) % (upto - from)) + from;
-}
 
 // LINEAR SEARACH
 int find_linear(global int *arr, int item, int up) {
@@ -185,7 +169,7 @@ inline void sample_latent_vars_of(
 			}
 		}
 	}
-#ifdef ORDER_NEIGHBORS // for verification only
+#ifdef RANDOM_FOLLOWS_CPP // for verification only
 	for (int i = 0; i < HASH_MULTIPLE*NEIGHBOR_SAMPLE_SIZE - 1; ++i) {
 		for (int j = 0; j < HASH_MULTIPLE*NEIGHBOR_SAMPLE_SIZE - i - 1; ++j) {
 			if (neighbor_nodes[j] > neighbor_nodes[j + 1]) {
@@ -223,7 +207,7 @@ void update_pi_for_node_(
 		global double *piUpdate,// #K
 		global double *phi,// #K
 		global int *z, // #K
-		global double *noise, // #K
+		ulong2 *randomSeed,
 		global double *grad, // #K
 		double alpha,
 		double a, double b, double c,
@@ -239,7 +223,7 @@ void update_pi_for_node_(
 	for (int k = 0; k < K; ++k) {
 		double phi_star_k = fabs(phi[k] + eps_t/2
 				* (alpha - phi[k] + (total_node_count/NEIGHBOR_SAMPLE_SIZE) * grad[k])
-				+ sqrt(eps_t * phi[k]) * noise[k]);
+				+ sqrt(eps_t * phi[k]) * randn(randomSeed));
 		phi[k] = phi_star_k;
 	}
 	double phi_sum = 0;
@@ -261,7 +245,6 @@ kernel void sample_latent_vars_and_update_pi(
 		global const double *beta,// (#K)
 		const double epsilon,
 		global int *Z, /* (#total_nodes, K) */
-		global const double *noise,
 		global double *scratch, // (#nodes, K)
 		double alpha,
 		double a, double b, double c,
@@ -285,12 +268,17 @@ kernel void sample_latent_vars_and_update_pi(
 				Z + node * K,
 				&randomSeed,
 				_p);
+#ifdef RANDOM_FOLLOWS_CPP // for verification only
+	}
+	for (int i = gid; i < N; i += gsize) {
+		int node = nodes[i];
+#endif
 		update_pi_for_node_(node,
 				pi + node * K,
 				piUpdate + node * K,
 				phi + node * K,
 				Z + node * K,
-				noise + i * K,
+				&randomSeed,
 				scratch + i * K,
 				alpha, a, b, c, step_count, total_node_count);
 	}
@@ -391,13 +379,15 @@ kernel void update_beta_calculate_grads(
 
 kernel void update_beta_calculate_theta(
 		global double2 *theta,// #K
-		global const double2 *noise,// #K
+		global ulong2 *gRandomSeed,
 		global double2 *ggrads,// #K,
 		double scale,
 		double eps_t,
 		double2 eta,
 		int count_partial_sums
 		) {
+	size_t gid = get_global_id(0);
+	ulong2 randomSeed = gRandomSeed[gid];
 	for (int i = 1; i < count_partial_sums; ++i) {
 		global double2 *grads = ggrads + i * K;
 		for (int k = 0; k < K; ++k) {
@@ -411,13 +401,13 @@ kernel void update_beta_calculate_theta(
 				theta[k].x + eps_t
 				* (eta.x - theta[k].x
 						+ scale * ggrads[k].x)
-				+ sqrt(2.0 * eps_t * theta[k].x) * noise[k].x);
+				+ sqrt(2.0 * eps_t * theta[k].x) * randn(&randomSeed));
 		theta[k].y = fabs(
 				theta[k].y + eps_t
 				* (eta.y - theta[k].y
 						+ scale * ggrads[k].y)
-				+ sqrt(2.0 * eps_t * theta[k].y) * noise[k].y);
+				+ sqrt(2.0 * eps_t * theta[k].y) * randn(&randomSeed));
 	}
-
+	gRandomSeed[gid] = randomSeed;
 }
 

@@ -101,25 +101,37 @@ inline std::istream &operator>> (std::istream &s, Edge &e) {
 	return e.get(s);
 }
 
-#ifdef RANDOM_FOLLOWS_PYTHON
+
 typedef std::unordered_set<int>			VertexSet;
+typedef std::unordered_set<Edge>		EdgeSet;
+typedef std::unordered_set<int>			VertexSet;
+
+#ifdef RANDOM_FOLLOWS_PYTHON
+
+#ifdef RANDOM_FOLLOWS_CPP
+#error "RANDOM_FOLLOWS_CPP is incompatible with RANDOM_FOLLOWS_PYTHON"
+#endif
+
 typedef std::set<int>					OrderedVertexSet;
 
-typedef std::unordered_set<Edge>		EdgeSet;
 typedef std::set<Edge> 					OrderedEdgeSet;
-typedef std::list<Edge>					EdgeList;
 
 typedef std::map<Edge, bool>			EdgeMap;
 
-#else	// def RANDOM_FOLLOWS_PYTHON
-typedef std::unordered_set<int>			VertexSet;
-typedef VertexSet						OrderedVertexSet;
-
-typedef std::unordered_set<Edge>		EdgeSet;
-typedef EdgeSet		 					OrderedEdgeSet;
 typedef std::list<Edge>					EdgeList;
 
+#else	// def RANDOM_FOLLOWS_PYTHON
+
+#ifdef RANDOM_FOLLOWS_CPP
+typedef std::set<int>					OrderedVertexSet;
+#else
+typedef VertexSet						OrderedVertexSet;
+#endif
+
+typedef EdgeSet		 					OrderedEdgeSet;
+
 typedef std::unordered_map<Edge, bool>	EdgeMap;
+
 #endif	// def RANDOM_FOLLOWS_PYTHON
 
 }	// namespace mcmc

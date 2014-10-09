@@ -40,8 +40,8 @@ public:
 		} else {
 			std::cerr << "Override eta: use (" << eta0 << "," << eta1 << ") i.s.o. command line" << std::endl;
 		}
-		theta = Random::random->gamma(eta0, eta1, K, 2);
-		phi = Random::random->gamma(1, 1, N, K);
+		theta = Random::hostRandom->gamma(eta0, eta1, K, 2);
+		phi = Random::hostRandom->gamma(1, 1, N, K);
 
         // temp = self.__theta/np.sum(self.__theta,1)[:,np.newaxis]
         // self._beta = temp[:,1]
@@ -90,6 +90,20 @@ public:
 		}
 
         return z;
+	}
+
+
+    OrderedVertexSet nodes_in_batch(const OrderedEdgeSet &mini_batch) const {
+        /**
+        Get all the unique nodes in the mini_batch.
+         */
+        OrderedVertexSet node_set;
+        for (auto edge = mini_batch.begin(); edge != mini_batch.end(); edge++) {
+            node_set.insert(edge->first);
+            node_set.insert(edge->second);
+		}
+
+        return node_set;
 	}
 
 

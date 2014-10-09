@@ -146,8 +146,8 @@ public:
 
 		// iterate until we get $p$ valid edges.
 		for (::size_t p = mini_batch_size; p > 0; p--) {
-			int firstIdx = Random::random->randint(0, N - 1);
-			int secondIdx = Random::random->randint(0, N - 1);
+			int firstIdx = Random::hostRandom->randint(0, N - 1);
+			int secondIdx = Random::hostRandom->randint(0, N - 1);
 			if (firstIdx == secondIdx) {
 				continue;
 			}
@@ -179,7 +179,7 @@ public:
 		OrderedEdgeSet *mini_batch_set = new OrderedEdgeSet();
 
 		// randomly select the node ID
-		int nodeId = Random::random->randint(0, N - 1);
+		int nodeId = Random::hostRandom->randint(0, N - 1);
 		for (int i = 0; i < N; i++) {
 			// make sure the first index is smaller than the second one, since
 			// we are dealing with undirected graph.
@@ -205,15 +205,14 @@ public:
 
 		OrderedEdgeSet *mini_batch_set = new OrderedEdgeSet();
 
-		int flag = Random::random->randint(0, 1);
+		int flag = Random::hostRandom->randint(0, 1);
 
 		if (flag == 0) {
 			// sample mini-batch from linked edges
 #ifdef RANDOM_FOLLOWS_PYTHON
-			std::cerr << "FIXME: replace EdgeList w/ (unordered) EdgeSet again" << std::endl;
-			auto sampled_linked_edges = Random::random->sampleList(linked_edges, mini_batch_size * 2);
+			auto sampled_linked_edges = Random::hostRandom->sampleList(linked_edges, mini_batch_size * 2);
 #else
-			auto sampled_linked_edges = Random::random->sample(linked_edges, mini_batch_size * 2);
+			auto sampled_linked_edges = Random::hostRandom->sample(linked_edges, mini_batch_size * 2);
 #endif
 			for (auto edge = sampled_linked_edges->cbegin();
 				 	edge != sampled_linked_edges->cend();
@@ -238,8 +237,8 @@ public:
 		} else {
 			// sample mini-batch from non-linked edges
 			while (p > 0) {
-				int firstIdx = Random::random->randint(0, N - 1);
-				int secondIdx = Random::random->randint(0, N - 1);
+				int firstIdx = Random::hostRandom->randint(0, N - 1);
+				int secondIdx = Random::hostRandom->randint(0, N - 1);
 
 				if (firstIdx == secondIdx) {
 					continue;
@@ -277,9 +276,9 @@ public:
 	 */
 	EdgeSample stratified_random_node_sampling(::size_t num_pieces) const {
 		// randomly select the node ID
-		int nodeId = Random::random->randint(0, N - 1);
+		int nodeId = Random::hostRandom->randint(0, N - 1);
 		// decide to sample links or non-links
-		int flag = Random::random->randint(0, 1);	// flag=0: non-link edges  flag=1: link edges
+		int flag = Random::hostRandom->randint(0, 1);	// flag=0: non-link edges  flag=1: link edges
 
 		OrderedEdgeSet *mini_batch_set = new OrderedEdgeSet();
 
@@ -295,9 +294,9 @@ public:
 				// because of the sparsity, when we sample $mini_batch_size*2$ nodes, the list likely
 				// contains at least mini_batch_size valid nodes.
 #ifdef EFFICIENCY_FOLLOWS_PYTHON
-				auto nodeList = Random::random->sample(np::xrange(0, N), mini_batch_size * 2);
+				auto nodeList = Random::hostRandom->sample(np::xrange(0, N), mini_batch_size * 2);
 #else
-				auto nodeList = Random::random->sampleRange(N, mini_batch_size * 2);
+				auto nodeList = Random::hostRandom->sampleRange(N, mini_batch_size * 2);
 #endif
 				for (std::vector<int>::iterator neighborId = nodeList->begin();
 					 	neighborId != nodeList->end();
@@ -379,10 +378,9 @@ protected:
 		}
 
 #ifdef RANDOM_FOLLOWS_PYTHON
-		std::cerr << "FIXME: replace EdgeList w/ (unordered) EdgeSet again" << std::endl;
-		auto sampled_linked_edges = Random::random->sampleList(linked_edges, p);
+		auto sampled_linked_edges = Random::hostRandom->sampleList(linked_edges, p);
 #else
-		auto sampled_linked_edges = Random::random->sample(linked_edges, p);
+		auto sampled_linked_edges = Random::hostRandom->sample(linked_edges, p);
 #endif
 		for (auto edge = sampled_linked_edges->begin();
 			 	edge != sampled_linked_edges->end();
@@ -422,10 +420,9 @@ protected:
 			// here we sample twice as much as links, and select among them, which
 			// is likely to contain valid p linked edges.
 #ifdef RANDOM_FOLLOWS_PYTHON
-			std::cerr << "FIXME: replace EdgeList w/ (unordered) EdgeSet again" << std::endl;
-			auto sampled_linked_edges = Random::random->sampleList(linked_edges, 2 * p);
+			auto sampled_linked_edges = Random::hostRandom->sampleList(linked_edges, 2 * p);
 #else
-			auto sampled_linked_edges = Random::random->sample(linked_edges, 2 * p);
+			auto sampled_linked_edges = Random::hostRandom->sample(linked_edges, 2 * p);
 #endif
 			for (auto edge = sampled_linked_edges->cbegin();
 				 	edge != sampled_linked_edges->cend();
@@ -468,8 +465,8 @@ protected:
 	 */
 	Edge sample_non_link_edge_for_held_out() {
 		while (true) {
-			int firstIdx = Random::random->randint(0, N - 1);
-			int secondIdx = Random::random->randint(0, N - 1);
+			int firstIdx = Random::hostRandom->randint(0, N - 1);
+			int secondIdx = Random::hostRandom->randint(0, N - 1);
 
 			if (firstIdx == secondIdx) {
 				continue;
@@ -495,8 +492,8 @@ protected:
 	 */
 	Edge sample_non_link_edge_for_test() {
 		while (true) {
-			int firstIdx = Random::random->randint(0, N - 1);
-			int secondIdx = Random::random->randint(0, N - 1);
+			int firstIdx = Random::hostRandom->randint(0, N - 1);
+			int secondIdx = Random::hostRandom->randint(0, N - 1);
 
 			if (firstIdx == secondIdx) {
 				continue;
@@ -537,7 +534,6 @@ protected:
 	EdgeMap test_map;				// store all test edges
 
 	::size_t	num_pieces;
-
 };
 
 }; // namespace mcmc

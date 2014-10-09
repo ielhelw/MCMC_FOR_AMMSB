@@ -15,7 +15,7 @@ namespace learning {
 #define do_stringify(str)	#str
 #define stringify(str)		do_stringify(str)
 
-class MCMCClSampler : virtual public MCMCSampler {
+class MCMCClSampler : public MCMCSampler {
 public:
 	MCMCClSampler(const Options &args, const Network &network,
 				  ::size_t num_node_sampler, double eta0, double eta1,
@@ -30,6 +30,9 @@ public:
 			 << " -DK=" << K
 			 << " -DMAX_NODE_ID=" << N
 			 << " -DRAND_MAX=" << std::numeric_limits<uint64_t>::max()
+#ifdef RANDOM_FOLLOWS_CPP
+			 << " -DRANDOM_FOLLOWS_CPP"
+#endif
 			 << " -DHASH_MULTIPLE=" << hash_table_multiple;
 		progOpts = opts.str();
 
@@ -71,9 +74,6 @@ public:
 				);
 		clZ = cl::Buffer(clContext.context, CL_MEM_READ_WRITE,
 				N * K * sizeof(cl_int) // #total_nodes x #K
-				);
-		clRandomNK = cl::Buffer(clContext.context, CL_MEM_READ_WRITE,
-				N * K * sizeof(cl_double) // at most #total_nodes
 				);
 		clScratch = cl::Buffer(clContext.context, CL_MEM_READ_WRITE,
 				std::max(
@@ -238,7 +238,6 @@ protected:
 	cl::Buffer clTheta;
 	cl::Buffer clThetaSum;
 	cl::Buffer clZ;
-	cl::Buffer clRandomNK;
 	cl::Buffer clScratch;
 	cl::Buffer clRandomSeed;
 };

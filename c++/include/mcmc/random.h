@@ -18,9 +18,6 @@
 namespace mcmc {
 namespace Random {
 
-// #define RANDOM_SYSTEM
-// #define USE_TAUS2_RANDOM
-
 class Random {
 public:
 	Random(unsigned int seed) {
@@ -33,6 +30,7 @@ public:
 	virtual ~Random() {
 	}
 
+protected:
 	inline uint64_t xorshift_128plus() {
 		uint64_t s1 = xorshift_state[0];
 		uint64_t s0 = xorshift_state[1];
@@ -41,7 +39,11 @@ public:
 		return (xorshift_state[1] = (s1 ^ s0 ^ (s1 >> 17) ^ (s0 >> 26))) + s0;
 	}
 
-	inline uint64_t rand() {return xorshift_128plus();}
+public:
+	inline uint64_t rand() {
+		auto x = xorshift_128plus();
+		return x;
+	}
 
 	int randint(int from, int upto) {
 		return (rand() % (upto - from)) + from;
@@ -558,6 +560,7 @@ extern FileReaderRandom *random;
 #else
 extern Random *random;
 #endif
+extern Random *hostRandom;
 
 }	// namespace Random
 }	// namespace mcmc

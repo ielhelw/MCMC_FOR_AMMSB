@@ -58,7 +58,7 @@ inline std::ostream &operator<< (std::ostream &s, const Counter &c) {
 /**
  * MCMC Sampler for batch learning. Every update go through the whole data sets.
  */
-class MCMCSamplerBatch : virtual public MCMCSampler {
+class MCMCSamplerBatch : public MCMCSampler {
 
 public:
     MCMCSamplerBatch(const Options &args, const Network &network)
@@ -583,7 +583,8 @@ public:
 
             step_count++;
 			auto l2 = std::chrono::system_clock::now();
-			std::cout << "LOOP  = " << (l2-l1).count() << std::endl;
+			auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(l2 - l1);
+			std::cout << "LOOP  = " << ms.count() << "ms" << std::endl;
 
 			timer::Timer::printHeader(std::cout);
 			std::cout << t_sample << std::endl;

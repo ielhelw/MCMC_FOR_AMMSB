@@ -6,8 +6,10 @@ namespace Random {
 
 #ifdef RANDOM_FOLLOWS_PYTHON
 FileReaderRandom *random = new FileReaderRandom(0);
+Random *hostRandom = random;
 #else
 Random *random = new Random(42);
+Random *hostRandom = new Random(42);
 
 /* tabulated values for the heigt of the Ziggurat levels */
 const double Random::ytab[128] = {

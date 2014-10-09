@@ -15,10 +15,10 @@
 namespace mcmc {
 namespace learning {
 
-class MCMCClSamplerStochastic : public MCMCSamplerStochastic, public MCMCClSampler {
+class MCMCClSamplerStochastic : public MCMCClSampler {
 public:
 	MCMCClSamplerStochastic(const Options &args, const Network &network, const cl::ClContext clContext, double eta0 = 100.0, double eta1 = 0.01)
-		: MCMCSampler(args, network, network.get_num_nodes() / 5, eta0, eta1), MCMCSamplerStochastic(args, network), MCMCClSampler(args, network, network.get_num_nodes() / 5, eta0, eta1, clContext) {
+		: MCMCClSampler(args, network, network.get_num_nodes() / 5, eta0, eta1, clContext) {
 
 		sampler_program = this->clContext.createProgram(stringify(PROJECT_HOME) "/../OpenCL/mcmc_sampler_stochastic.cl", progOpts);
 		sample_latent_vars_and_update_pi_kernel = cl::Kernel(sampler_program, "sample_latent_vars_and_update_pi");
@@ -68,7 +68,8 @@ public:
 
 			step_count++;
 			auto l2 = std::chrono::system_clock::now();
-			std::cout << "LOOP  = " << (l2-l1).count() << std::endl;
+			auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(l2 - l1);
+			std::cout << "LOOP  = " << ms.count() << "ms" << std::endl;
 		}
 	}
 
@@ -105,23 +106,10 @@ protected:
 		clEta.s[0] = this->eta[0];
 		clEta.s[1] = this->eta[1];
 
-		std::vector<std::vector<double> > noise = Random::random->randn(K, 2);	// random noise.
-		std::vector<cl_double2> clNoise(noise.size());
-		std::transform(noise.begin(), noise.end(), clNoise.begin(), [](const std::vector<double>& n){
-			cl_double2 ret;
-			ret.s[0] = n[0];
-			ret.s[1] = n[1];
-			return ret;
-		});
-
-		clContext.queue.enqueueWriteBuffer(clRandomNK, CL_TRUE,
-				0, clNoise.size()*sizeof(cl_double2),
-				clNoise.data());
-
 		e_grads_kernel.wait();
 
 		update_beta_calculate_theta_kernel.setArg(0, clTheta);
-		update_beta_calculate_theta_kernel.setArg(1, clRandomNK);
+		update_beta_calculate_theta_kernel.setArg(1, clRandomSeed);
 		update_beta_calculate_theta_kernel.setArg(2, clScratch);
 		update_beta_calculate_theta_kernel.setArg(3, (cl_double)scale);
 		update_beta_calculate_theta_kernel.setArg(4, (cl_double)eps_t);
@@ -189,19 +177,6 @@ protected:
 		// Copy beta
 		clContext.queue.enqueueWriteBuffer(clBeta, CL_FALSE, 0, K * sizeof(double), beta.data());
 
-		// Randoms for update pi for each node
-		std::unordered_map<int, std::vector<double>> noise;
-		int i = 0;
-		for (auto node = nodes.begin();
-				node != nodes.end();
-				++node, ++i) {
-			noise[*node] = Random::random->randn(K);
-			clContext.queue.enqueueWriteBuffer(clRandomNK, CL_FALSE,
-					i * K * sizeof(cl_double),
-					K * sizeof(cl_double),
-					noise[*node].data());
-		}
-
 		int Idx = 0;
 		sample_latent_vars_and_update_pi_kernel.setArg(Idx++, clGraph);
 		sample_latent_vars_and_update_pi_kernel.setArg(Idx++, clHeldOutGraph);
@@ -214,7 +189,6 @@ protected:
 		sample_latent_vars_and_update_pi_kernel.setArg(Idx++, clBeta);
 		sample_latent_vars_and_update_pi_kernel.setArg(Idx++, (cl_double)epsilon);
 		sample_latent_vars_and_update_pi_kernel.setArg(Idx++, clZ);
-		sample_latent_vars_and_update_pi_kernel.setArg(Idx++, clRandomNK);
 		sample_latent_vars_and_update_pi_kernel.setArg(Idx++, clScratch);
 		sample_latent_vars_and_update_pi_kernel.setArg(Idx++, (cl_double)alpha);
 		sample_latent_vars_and_update_pi_kernel.setArg(Idx++, (cl_double)a);
@@ -226,7 +200,6 @@ protected:
 
 		clContext.queue.finish();
 		clContext.queue.enqueueNDRangeKernel(sample_latent_vars_and_update_pi_kernel, cl::NullRange, cl::NDRange(PARALLELISM), cl::NDRange(1));
-		noise.clear();
 		clContext.queue.finish();
 
 		// read Pi again
