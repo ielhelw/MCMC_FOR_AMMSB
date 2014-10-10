@@ -169,7 +169,7 @@ public:
             for (::size_t j = i + 1; j < N; j++) {
 				Edge edge(i, j);
 
-#ifdef NOT_IN_PYTHON
+#if USE_SAMPLE_LATENT_VARS || (1 || defined NOT_IN_PYTHON)
 				if (edge.in(network.get_held_out_set()) || edge.in(network.get_test_set())) {
                     continue;
 				}

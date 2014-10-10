@@ -64,6 +64,7 @@ public:
         // num_node_sample = static_cast< ::size_t>(std::sqrt(network.get_num_nodes()));
 
 		num_node_sample = N / 5;
+		std::cerr << "num_node_sample " << num_node_sample << std::endl;
 
         // model parameters and re-parameterization
         // since the model parameter - \pi and \beta should stay in the simplex,
