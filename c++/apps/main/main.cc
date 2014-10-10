@@ -32,14 +32,16 @@ int main(int argc, char *argv[]) {
 #ifdef ENABLE_OPENCL
 		if (args.run.mcmc_stochastical_cl) {
 			std::cout << "start MCMC stochastical CL" << std::endl;
-			MCMCSamplerBatch mcmcSampler(args, network);
-			mcmcSampler.run();
-		}
-		if (args.run.mcmc_batch_cl) {
-			std::cout << "start MCMC batch CL" << std::endl;
 			MCMCClSamplerStochastic mcmcclSampler(args, network, context);
 			mcmcclSampler.run();
 		}
+#ifdef IMPLEMENT_MCMC_CL_BATCH
+		if (args.run.mcmc_batch_cl) {
+			std::cout << "start MCMC batch CL" << std::endl;
+			MCMCClSamplerBatch mcmcclSampler(args, network, context);
+			mcmcclSampler.run();
+		}
+#endif
 #endif
 
 		if (false) {
