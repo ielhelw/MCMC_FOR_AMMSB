@@ -162,7 +162,7 @@ protected:
 	}
 
 	void init_graph() {
-		graph_program = this->clContext.createProgram("OpenCL/graph.cl", progOpts);
+		graph_program = this->clContext.createProgram(stringify(PROJECT_HOME) "/../OpenCL/graph.cl", progOpts);
 		graph_init_kernel = cl::Kernel(graph_program, "graph_init");
 		std::map<int, std::vector<int>> linkedMap;
 
@@ -192,7 +192,7 @@ protected:
 
 #if MCMC_CL_STOCHASTIC_TEST_GRAPH // TEST GRAPH ON OPENCL's SIDE
 	void test_graph() {
-		cl::Program program2 = this->clContext.createProgram("OpenCL/test.cl", progOpts);
+		cl::Program program2 = this->clContext.createProgram(stringify(PROJECT_HOME) "/../OpenCL/test.cl", progOpts);
 		cl::Kernel test_print_peers_of_kernel(program2, "test_print_peers_of");
 		test_print_peers_of_kernel.setArg(0, clGraph);
 		test_print_peers_of_kernel.setArg(1, 0);
