@@ -24,6 +24,7 @@ public:
 		if (seed == 0) throw NumberFormatException("Random seed value 0 not allowed"); // zero value not allowed
 		xorshift_state[0] = seed;
 		xorshift_state[1] = seed + 1;
+		srand(seed);
 		std::cerr << "Random seed " << seed << std::endl;
 	}
 
