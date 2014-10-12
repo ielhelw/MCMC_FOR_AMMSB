@@ -6,8 +6,10 @@ SUBDIRS += test
 
 include $(PROJECT)/include.mk
 
+apps test: src
+
 $(PROJECT)/config.mk: $(PROJECT)/config.mk.in
 	-if [ -e $@.orig ]; then diff -u $@.orig $@ > $@.patch || echo "Nothing"; fi
 	-cp $< $@.orig
 	-cp $< $@
-	-if [ -e $@.patch ]; then patch -p0 < $@.patch && rm $@.patch; fi
+	-if [ -e $@.patch ]; then patch < $@.patch && rm $@.patch; fi

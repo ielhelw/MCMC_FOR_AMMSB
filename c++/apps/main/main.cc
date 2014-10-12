@@ -17,7 +17,7 @@ int main(int argc, char *argv[]) {
 		const Data *data = df.get_data();
 		Network network(data, 0.1);
 
-		if (false) {
+		if (true) {
 			std::cout << "start MCMC stochastical" << std::endl;
 			MCMCSamplerStochastic mcmcSampler(args, network);
 			mcmcSampler.run();
@@ -30,7 +30,7 @@ int main(int argc, char *argv[]) {
 		}
 
 #ifdef ENABLE_OPENCL
-		if (false) {
+		if (true) {
 			std::cout << "start MCMC CL stochastical" << std::endl;
 			MCMCClSamplerStochastic mcmcclSampler(args, network, context);
 			mcmcclSampler.run();
