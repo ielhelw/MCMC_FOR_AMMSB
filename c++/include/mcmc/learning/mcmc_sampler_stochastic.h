@@ -13,7 +13,7 @@
 #include "mcmc/sample_latent_vars.h"
 
 #include "mcmc/learning/learner.h"
-#include "mcmc/learning/mcmc_sampler.h"
+#include "mcmc/learning/mcmc_hostsampler.h"
 
 namespace mcmc {
 namespace learning {
@@ -22,7 +22,7 @@ namespace learning {
 // typedef std::unordered_map<Edge, int>	EdgeMapZ;
 typedef std::map<Edge, int>	EdgeMapZ;
 
-class MCMCSamplerStochastic : public MCMCSampler {
+class MCMCSamplerStochastic : public MCMCHostSampler {
 public:
     /**
     Mini-batch based MCMC sampler for community overlapping problems. Basically, given a
@@ -53,7 +53,7 @@ public:
     This method is great marriage between MCMC and stochastic methods.
     */
     MCMCSamplerStochastic(const Options &args, const Network &network, double eta0 = 100.0, double eta1 = 0.01)
-			: MCMCSampler(args, network, network.get_num_nodes() / 5, eta0, eta1) {
+			: MCMCHostSampler(args, network, network.get_num_nodes() / 5, eta0, eta1) {
 	}
 
 	virtual ~MCMCSamplerStochastic() {

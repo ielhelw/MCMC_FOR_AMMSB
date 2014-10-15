@@ -19,6 +19,7 @@
 #include "mcmc/timer.h"
 
 #include "mcmc/learning/learner.h"
+#include "mcmc/learning/mcmc_hostsampler.h"
 
 // FIXME stepsize_switch is deprecated. Remove.
 
@@ -58,11 +59,11 @@ inline std::ostream &operator<< (std::ostream &s, const Counter &c) {
 /**
  * MCMC Sampler for batch learning. Every update go through the whole data sets.
  */
-class MCMCSamplerBatch : public MCMCSampler {
+class MCMCSamplerBatch : public MCMCHostSampler {
 
 public:
     MCMCSamplerBatch(const Options &args, const Network &network)
-			: MCMCSampler(args, network, 0, 1.0, 100.0),
+			: MCMCHostSampler(args, network, 0, 1.0, 100.0),
    			  neighbor_batch_size("neighbor batch size") {
 #if USE_SAMPLE_LATENT_VARS
 		std::cerr << "Use sampled latent vars" << std::endl;
