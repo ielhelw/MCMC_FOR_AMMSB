@@ -5,7 +5,6 @@
 #include <algorithm>
 #include <chrono>
 
-#include "mcmc_sampler_stochastic.h"
 #include "mcmc_clsampler.h"
 
 #include "opencl/context.h"

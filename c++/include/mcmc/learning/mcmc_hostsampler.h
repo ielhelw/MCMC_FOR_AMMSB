@@ -1,6 +1,8 @@
 #ifndef MCMC_LEARNING_MCMC_HOST_SAMPLER_H__
 #define MCMC_LEARNING_MCMC_HOST_SAMPLER_H__
 
+#include "mcmc/sample_latent_vars.h"
+
 #include "mcmc/learning/learner.h"
 #include "mcmc/learning/mcmc_sampler.h"
 

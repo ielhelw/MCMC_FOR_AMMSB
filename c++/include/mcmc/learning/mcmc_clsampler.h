@@ -19,7 +19,7 @@ class MCMCClSampler : public MCMCSampler {
 public:
 	MCMCClSampler(const Options &args, const Network &network,
 				  ::size_t num_node_sampler, double eta0, double eta1,
-				  const cl::ClContext clContext)
+				  const cl::ClContext clContext, const std::string &extraCompileFlags = "")
 		: MCMCSampler(args, network, num_node_sampler, eta0, eta1), clContext(clContext) {
 
 		int hash_table_multiple = 2;
@@ -33,7 +33,8 @@ public:
 #ifdef RANDOM_FOLLOWS_CPP
 			 << " -DRANDOM_FOLLOWS_CPP"
 #endif
-			 << " -DHASH_MULTIPLE=" << hash_table_multiple;
+			 << " -DHASH_MULTIPLE=" << hash_table_multiple
+			 << " " << extraCompileFlags;
 		progOpts = opts.str();
 
 		std::cout << "COMPILE OPTS: " << progOpts << std::endl;

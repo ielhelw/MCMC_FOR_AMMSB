@@ -10,7 +10,6 @@
 
 #include "mcmc/np.h"
 #include "mcmc/random.h"
-#include "mcmc/sample_latent_vars.h"
 
 #include "mcmc/learning/learner.h"
 #include "mcmc/learning/mcmc_hostsampler.h"
@@ -547,63 +546,6 @@ protected:
             f.write(str(math.exp(self._avg_log[i])) + "\t" + str(self._timing[i]) +"\n")
         f.close()
 #endif
-
-
-#ifdef SPOT_NO_DIFFERENCE_WITH_COMMON
-    int sample_z_ab_from_edge(int y,
-							  const std::vector<double> &pi_a,
-							  const std::vector<double> &pi_b,
-							  const std::vector<double> &beta,
-							  double epsilon, ::size_t K) {
-		std::vector<double> p(K);
-
-#ifdef EFFICIENCY_FOLLOWS_PYTHON
-        for (::size_t i = 0; i < K; i++) {
-            double tmp = std::pow(beta[i], y) * std::pow(1-beta[i], 1-y) * pi_a[i] * pi_b[i];
-            tmp += std::pow(epsilon, y) * std::pow(1-epsilon, 1-y) * pi_a[i] * (1 - pi_b[i]);
-            p[i] = tmp;
-		}
-#else
-		if (y == 1) {
-			for (::size_t i = 0; i < K; i++) {
-				// p[i] = beta[i] * pi_a[i] * pi_b[i] + epsilon * pi_a[i] * (1 - pi_b[i])
-				//      = pi_a[i] * (beta[i] * pi_b[i] + epsilon * (1 - pi_b[i]))
-				//      = pi_a[i] * (pi_b[i] * (beta[i] - epsilon) + epsilon)
-				p[i] = pi_a[i] * (pi_b[i] * (beta[i] - epsilon) + epsilon);
-			}
-		} else {
-			double one_eps = 1.0 - epsilon;
-			for (::size_t i = 0; i < K; i++) {
-				// p[i] = (1 - beta[i]) * pi_a[i] * pi_b[i] + (1 - epsilon) * pi_a[i] * (1 - pi_b[i])
-				//      = pi_a[i] * ((1 - beta[i]) * pi_b[i] + (1 - epsilon) * (1 - pi_b[i]))
-				//      = pi_a[i] * (pi_b[i] * (1 - beta[i] - (1 - epsilon)) + (1 - epsilon) * 1)
-				//      = pi_a[i] * (pi_b[i] * (-beta[i] + epsilon) + 1 - epsilon)
-				p[i] = pi_a[i] * (pi_b[i] * (epsilon - beta[i]) + one_eps);
-			}
-		}
-#endif
-
-        for (::size_t k = 1; k < K; k++) {
-            p[k] += p[k-1];
-		}
-
-        double r = Random::random->random();
-        double location = r * p[K-1];
-#if 0
-        // get the index of bounds that containing location.
-        for (::size_t i = 0; i < K; i++) {
-            if (location <= p[i]) {
-                return i;
-			}
-		}
-
-        // failed, should not happen!
-        return -1;
-#else
-		return np::find_le(p, location);
-#endif
-	}
-#endif	// def SPOT_NO_DIFFERENCE_WITH_COMMON
 
 };
 

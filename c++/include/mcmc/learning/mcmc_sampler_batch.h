@@ -1,7 +1,7 @@
 #ifndef MCMC_LEARNING_MCMC_SAMPLER_BATCH_H__
 #define MCMC_LEARNING_MCMC_SAMPLER_BATCH_H__
 
-#define USE_SAMPLE_LATENT_VARS	0
+#define USE_SAMPLE_LATENT_VARS	1
 
 #include <cassert>
 #include <cmath>
@@ -13,9 +13,6 @@
 
 #include "mcmc/np.h"
 #include "mcmc/random.h"
-#if USE_SAMPLE_LATENT_VARS
-#include "mcmc/sample_latent_vars.h"
-#endif
 #include "mcmc/timer.h"
 
 #include "mcmc/learning/learner.h"
@@ -78,11 +75,7 @@ public:
 
 
 	// FIXME make VertexSet a result parameter
-	// Data dependencies:
-	// 		network.held_out_set
-	// 		network.test_set
-    OrderedVertexSet sample_neighbor_nodes_batch(int node) // const
-   			{
+    OrderedVertexSet sample_neighbor_nodes_batch(int node) const {
         OrderedVertexSet neighbor_nodes;
 		for (int i = 0; i < (int)N; i++) {
 			Edge edge(std::min(node, i), std::max(node, i));
@@ -93,7 +86,6 @@ public:
                 neighbor_nodes.insert(i);
 			}
 		}
-		neighbor_batch_size.tick(neighbor_nodes.size());
 
         return neighbor_nodes;
 	}
@@ -103,11 +95,6 @@ public:
 	/**
 	 * update pi for current node i.
 	 */
-	// Data dependencies:
-	// 		z[K] (from sample_z_ab_from_edge)
-	// 		phi[i]
-	// write:
-	// 		phi_star[i][*]
 	// FIXME: misnomer, should be: update_phi_for_node
 	// FIXME: code sharing w/ mcmc stochastic
     void update_pi_for_node(::size_t i, const std::vector<int> &z, ::size_t n) {
@@ -153,14 +140,7 @@ public:
 	}
 
 
-	// Data dependencies:
-	//		? network.held_out_set
-	//		? network.test_set
-	//		network.linked_edges
-	// 		beta
-	// 		pi[i]
-	// 		pi[j]
-	// 		theta
+	// USE_SAMPLE_LATENT_VARS
     void update_beta() {
 		std::vector<std::vector<double> > grads(K, std::vector<double>(2, 0.0));
         // sum_theta = np.sum(self.__theta,1)
@@ -196,16 +176,8 @@ public:
                     continue;
 				}
 
-#ifdef EFFICIENCY_FOLLOWS_PYTHON
                 grads[z][0] += std::abs(1-y) / theta[z][0] - 1.0 / sum_theta[z];
                 grads[z][1] += std::abs(-y) / theta[z][1] - 1.0 / sum_theta[z];
-#else
-				if (y == 0) {
-					grads[z][0] += 1.0 / theta[z][0] - 1.0 / sum_theta[z];
-				} else {
-					grads[z][1] += 1.0 / theta[z][1] - 1.0 / sum_theta[z];
-				}
-#endif
 			}
 		}
 
@@ -327,14 +299,6 @@ public:
 	/*
 		update beta. Instead of sampling, we calculate the probability directly. 
 	*/
-	// Data dependencies:
-	//		? network.held_out_set
-	//		? network.test_set
-	//		network.linked_edges
-	// 		beta
-	// 		pi[i]
-	// 		pi[j]
-	// 		theta
     void update_beta() {
 		std::vector<std::vector<double> > grads(K, std::vector<double>(2, 0.0));
         // sum_theta = np.sum(self.__theta,1)
@@ -453,7 +417,7 @@ public:
 	// 		phi[i][*]
 	virtual void update_phi(int i, const OrderedVertexSet &neighbor_nodes){
 		double eps_t = a * std::pow(1 + step_count / b, -c);	// step size
-		double phi_i_sum = np::sum(phi[i]);	
+		double phi_i_sum = np::sum(phi[i]);
 		std::vector<double> grads(K, 0.0);						// gradient for K classes
 		std::vector<double> phi_star(K);						// temp vars
 		std::vector<double> noise = Random::random->randn(K);	// random gaussian noise.
@@ -539,13 +503,18 @@ public:
 			std::cout << std::fixed << std::setprecision(12) << "perplexity for hold out set: " << ppx_score << std::endl;
             ppxs_held_out.push_back(ppx_score);
 
+			// Trivial parallelization: over N
+			// Suggestion: maybe batch them to save on temporary memory?
 #if USE_SAMPLE_LATENT_VARS
             for (::size_t i = 0; i < N; i++) {
                 // update parameter for pi_i
                 //print "updating: " + str(i)
 				t_sample.start();
+				// reads: network.held_out_set network.test_set
+				// but none of pi phi beta tetha
                 auto neighbor_nodes = sample_neighbor_nodes_batch(i);
 				t_sample.stop();
+				neighbor_batch_size.tick(neighbor_nodes.size());
 
 				// FIXME: maybe transform this loop into two loops, one to fully read pi[],
 				// the second to update pi. That makes phi[] fully local to update_pi_for_node.
@@ -553,13 +522,17 @@ public:
 				// iterate through each node, and update parameters pi_a
 				/*	wenzhe commented this out... */
 				t_latent_vars.start();
+				// reads: pi[i] pi[neighbors(i)] network.linked_edges
 				std::vector<int> z = sample_latent_vars(i, neighbor_nodes);
 				t_latent_vars.stop();
 				t_update_phi.start();
 				// FIXME: misnomer, should be: update_phi_for_node
+				// reads: z[K] phi[i] beta
+				// writes: phi[i] (through phi_star[i])
                 update_pi_for_node(i, z, neighbor_nodes.size());
 				t_update_phi.stop();
 			}
+
 #else
             for (::size_t i = 0; i < N; i++) {
                 // update parameter for pi_i
@@ -567,18 +540,24 @@ public:
 				t_sample.start();
                 auto neighbor_nodes = sample_neighbor_nodes_batch(i);
 				t_sample.stop();
+				neighbor_batch_size.tick(neighbor_nodes.size());
 
 				// wenzhe's version
 				t_update_phi.start();
+				// reads: pi[i] pi[neighbors(i)] beta network.linked_edges
+				// writes: phi[i][*]
 				update_phi(i, neighbor_nodes);	// update phi for node i
 				t_update_phi.stop();
-
-				np::row_normalize(&pi, phi);	// update pi from phi. 
 			}
 #endif
 
+			np::row_normalize(&pi, phi);	// update pi from phi.
+
             // update beta
 			t_update_beta.start();
+			// reads: pi[i] pi[j] beta theta network.linked_edges
+			// reads? network.held_out_set network.test_set
+			// writes: beta theta
             update_beta();
 			t_update_beta.stop();
 
