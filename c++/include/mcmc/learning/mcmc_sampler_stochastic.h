@@ -211,14 +211,21 @@ protected:
     			std::unordered_map<int, ::size_t>& size,
     			std::unordered_map<int, std::vector<int> >& latent_vars) {
 
+    	std::map<int, OrderedVertexSet> ovs;
+    	for (auto node = nodes.begin();
+    					node != nodes.end();
+    					node++) {
+    		ovs[*node] = sample_neighbor_nodes(num_node_sample, *node);
+			size[*node] = ovs[*node].size();
+    	}
+
     	for (auto node = nodes.begin();
 				node != nodes.end();
 				node++) {
 			// sample a mini-batch of neighbors
-			OrderedVertexSet neighbor_nodes = sample_neighbor_nodes(num_node_sample, *node);
-			size[*node] = neighbor_nodes.size();
+
 			// sample latent variables z_ab for each pair of nodes
-			std::vector<int> z = sample_latent_vars(*node, neighbor_nodes);
+			std::vector<int> z = sample_latent_vars(*node, ovs[*node]);
 			// save for a while, in order to update together.
 			latent_vars[*node] = z;
 		}

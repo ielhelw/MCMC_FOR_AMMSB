@@ -106,6 +106,21 @@ inline int hash_put(const int key, global int* buckets, const int n_buckets) {
 	return HASH_FAIL;
 }
 
+inline int hash_clear(const int key, global int* buckets, const int n_buckets) {
+	const int h1 = hash1(key, n_buckets);
+	const int h2 = hash2(key, n_buckets);
+	int loc = (h1) % n_buckets;
+
+	for (int i = 0; i < n_buckets; ++i) {
+		if (buckets[loc] == key) {
+			buckets[loc] = HASH_EMPTY;
+			return HASH_OK;
+		}
+		loc = (loc + h2) % n_buckets;
+	}
+	return HASH_FAIL;
+}
+
 
 #define sample_z_ab_from_edge_expr_orig(i) \
 (\
@@ -139,6 +154,73 @@ inline int sample_z_ab_from_edge(
 	return find_le(p, location, K, 0);
 }
 
+void _sample_neighbors(
+		int node,
+		global const Graph *hg,
+		global int* neighbor_nodes,
+		global int* neighbor_nodes_hash,
+		ulong2* randomSeed) {
+	for (int i = 0; i < NEIGHBOR_SAMPLE_SIZE; ++i) {
+		int neighborId;
+		for (;;) {
+			neighborId = randint(randomSeed, 0, MAX_NODE_ID);
+			if (neighborId != node
+					&& !graph_has_peer(hg, node, neighborId)) {
+				int ret = hash_put(neighborId, neighbor_nodes_hash, HASH_MULTIPLE*NEIGHBOR_SAMPLE_SIZE);
+				if (ret == HASH_OK) break;
+				if (ret == HASH_FOUND) continue;
+				if (ret == HASH_FAIL) {
+					printf("ERROR: FAILED TO INSERT ITEM IN HASH\n");
+					break;
+				}
+			}
+		}
+		neighbor_nodes[i] = neighborId;
+	}
+#ifdef RANDOM_FOLLOWS_CPP // for verification only
+	for (int i = 0; i < NEIGHBOR_SAMPLE_SIZE - 1; ++i) {
+		for (int j = 0; j < NEIGHBOR_SAMPLE_SIZE - i - 1; ++j) {
+			if (neighbor_nodes[j] > neighbor_nodes[j + 1]) {
+				int tmp = neighbor_nodes[j];
+				neighbor_nodes[j] = neighbor_nodes[j+1];
+				neighbor_nodes[j+1] = tmp;
+			}
+		}
+	}
+#endif
+
+	for (int i = 0; i < NEIGHBOR_SAMPLE_SIZE; ++i) {
+		if (hash_clear(neighbor_nodes[i], neighbor_nodes_hash, HASH_MULTIPLE*NEIGHBOR_SAMPLE_SIZE) != HASH_OK) {
+			printf("################################ WE HAVE A PROBLEM\n");
+		}
+	}
+}
+
+kernel void sample_neighbors(
+		global int* nodes,
+		const int N, // #nodes
+		global const Graph *hg,
+		global int* neighbor_nodes,
+		global int* neighbor_nodes_hash,
+		global ulong2* gRandomSeed) {
+
+	size_t gid = get_global_id(0);
+	size_t gsize = get_global_size(0);
+	ulong2 randomSeed = gRandomSeed[gid];
+
+	for (int i = gid; i < N; i += gsize) {
+		int node = nodes[i];
+		_sample_neighbors(
+				node,
+				hg,
+				neighbor_nodes + node * NEIGHBOR_SAMPLE_SIZE,
+				neighbor_nodes_hash + node * HASH_MULTIPLE * NEIGHBOR_SAMPLE_SIZE,
+				&randomSeed);
+	}
+
+	gRandomSeed[gid] = randomSeed;
+}
+
 inline void sample_latent_vars_of(
 		const int node,
 		global const Graph *g,
@@ -153,43 +235,7 @@ inline void sample_latent_vars_of(
 	for (int i = 0; i < K; ++i) z[i] = 0;
 
 	for (int i = 0; i < NEIGHBOR_SAMPLE_SIZE; ++i) {
-		int neighborId;
-		for (;;) {
-			neighborId = randint(randomSeed, 0, MAX_NODE_ID);
-			if (neighborId != node
-					&& !graph_has_peer(hg, node, neighborId)) {
-				int ret = hash_put(neighborId, neighbor_nodes, HASH_MULTIPLE*NEIGHBOR_SAMPLE_SIZE);
-				if (ret == HASH_OK) break;
-				if (ret == HASH_FOUND) continue;
-				if (ret == HASH_FAIL) {
-					printf("ERROR: FAILED TO INSERT ITEM IN HASH\n");
-					break;
-				}
-			}
-		}
-	}
-#ifdef RANDOM_FOLLOWS_CPP // for verification only
-	for (int i = 0; i < HASH_MULTIPLE*NEIGHBOR_SAMPLE_SIZE - 1; ++i) {
-		for (int j = 0; j < HASH_MULTIPLE*NEIGHBOR_SAMPLE_SIZE - i - 1; ++j) {
-			if (neighbor_nodes[j] > neighbor_nodes[j + 1]) {
-				int tmp = neighbor_nodes[j];
-				neighbor_nodes[j] = neighbor_nodes[j+1];
-				neighbor_nodes[j+1] = tmp;
-			}
-		}
-	}
-#endif
-
-	int found = 0;
-	for (int i = 0; found < NEIGHBOR_SAMPLE_SIZE && i < HASH_MULTIPLE*NEIGHBOR_SAMPLE_SIZE; ++i) {
 		int neighbor = neighbor_nodes[i];
-
-		if (neighbor == HASH_EMPTY) {
-			continue;
-		}
-		++found;
-		neighbor_nodes[i] = HASH_EMPTY;
-
 		int y_ab = graph_has_peer(g, node, neighbor);
 		int z_ab = sample_z_ab_from_edge(
 				pi + node * K, pi + neighbor * K,
@@ -254,7 +300,7 @@ kernel void sample_latent_vars(
 		sample_latent_vars_of(
 				node,
 				g, hg,
-				neighbor_nodes + node * HASH_MULTIPLE * NEIGHBOR_SAMPLE_SIZE,
+				neighbor_nodes + node * NEIGHBOR_SAMPLE_SIZE,
 				pi,
 				beta,
 				epsilon,
