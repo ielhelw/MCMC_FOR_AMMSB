@@ -202,8 +202,7 @@ inline void sample_latent_vars_of(
 
 void update_pi_for_node_(
 		int node,
-		global const double *pi,// #K
-		global double *piUpdate,// #K
+		global double *pi,// #K
 		global double *phi,// #K
 		global int *z, // #K
 		ulong2 *randomSeed,
@@ -228,26 +227,21 @@ void update_pi_for_node_(
 	double phi_sum = 0;
 	for (int i = 0; i < K; ++i) phi_sum += phi[i];
 	for (int i = 0; i < K; ++i) {
-		piUpdate[i] = phi[i]/phi_sum;
+		pi[i] = phi[i]/phi_sum;
 	}
 }
 
-kernel void sample_latent_vars_and_update_pi(
+kernel void sample_latent_vars(
 		global const Graph *g,
 		global const Graph *hg,
 		global const int *nodes,
 		const int N, // #nodes
 		global int *neighbor_nodes,// (#total_nodes, NEIGHBOR_SAMPLE_SIZE)
 		global const double *pi,// (#total_nodes, K)
-		global double *piUpdate,// (#total_nodes, K)
-		global double *phi,// (#total_nodes, K)
 		global const double *beta,// (#K)
 		const double epsilon,
 		global int *Z, /* (#total_nodes, K) */
 		global double *scratch, // (#nodes, K)
-		double alpha,
-		double a, double b, double c,
-		int step_count, int total_node_count,
 		global ulong2 *gRandomSeed
 		){
 	size_t gid = get_global_id(0);
@@ -267,14 +261,33 @@ kernel void sample_latent_vars_and_update_pi(
 				Z + node * K,
 				&randomSeed,
 				_p);
-#ifdef RANDOM_FOLLOWS_CPP // for verification only
 	}
+
+	gRandomSeed[gid] = randomSeed;
+}
+
+kernel void update_pi(
+		global const int *nodes,
+		const int N, // #nodes
+		global double *pi,// (#total_nodes, K)
+		global double *phi,// (#total_nodes, K)
+		global int *Z, /* (#total_nodes, K) */
+		global double *scratch, // (#nodes, K)
+		double alpha,
+		double a, double b, double c,
+		int step_count, int total_node_count,
+		global ulong2 *gRandomSeed
+		){
+
+	size_t gid = get_global_id(0);
+	size_t gsize = get_global_size(0);
+	global double *_p = scratch + gid * K;
+	ulong2 randomSeed = gRandomSeed[gid];
+
 	for (int i = gid; i < N; i += gsize) {
 		int node = nodes[i];
-#endif
 		update_pi_for_node_(node,
 				pi + node * K,
-				piUpdate + node * K,
 				phi + node * K,
 				Z + node * K,
 				&randomSeed,
