@@ -4,6 +4,10 @@
 #include <memory>
 #include <algorithm>
 #include <chrono>
+#include <boost/compute/container.hpp>
+#include <boost/compute/algorithm/fill.hpp>
+#include <boost/compute/algorithm/inclusive_scan.hpp>
+namespace bc = boost::compute;
 
 #include "mcmc_sampler_stochastic.h"
 
@@ -40,7 +44,8 @@ public:
 
 		sampler_program = this->clContext.createProgram("OpenCL/sampler.cl", progOpts);
 		sample_neighbors_kernel = cl::Kernel(sampler_program, "sample_neighbors");
-		sample_latent_vars_kernel = cl::Kernel(sampler_program, "sample_latent_vars");
+		sample_latent_vars_node_neighbor_kernel = cl::Kernel(sampler_program, "sample_latent_vars_node_neighbor");
+		sample_latent_vars_node_neighbor_update_z_kernel = cl::Kernel(sampler_program, "sample_latent_vars_node_neighbor_update_z");
 		update_pi_kernel = cl::Kernel(sampler_program, "update_pi");
 		sample_latent_vars2_kernel = cl::Kernel(sampler_program, "sample_latent_vars2");
 		update_beta_calculate_grads_kernel = cl::Kernel(sampler_program, "update_beta_calculate_grads");
@@ -56,6 +61,14 @@ public:
 				);
 		clNodesNeighbors = cl::Buffer(clContext.context, CL_MEM_READ_ONLY,
 				N * real_num_node_sample() * sizeof(cl_int) // #total_nodes x #neighbors_per_node
+				// FIXME: we don't need space for all N elements. Space should be limited to #nodes_in_mini_batch * num_node_sample (DEPENDS ON ABOVE)
+				);
+		clNodesNeighborsY = cl::Buffer(clContext.context, CL_MEM_READ_ONLY,
+				N * real_num_node_sample() * sizeof(cl_int) // #total_nodes x #neighbors_per_node
+				// FIXME: we don't need space for all N elements. Space should be limited to #nodes_in_mini_batch * num_node_sample (DEPENDS ON ABOVE)
+				);
+		clNodesNeighborsR = cl::Buffer(clContext.context, CL_MEM_READ_ONLY,
+				N * real_num_node_sample() * sizeof(cl_double) // #total_nodes x #neighbors_per_node
 				// FIXME: we don't need space for all N elements. Space should be limited to #nodes_in_mini_batch * num_node_sample (DEPENDS ON ABOVE)
 				);
 		clEdges = cl::Buffer(clContext.context, CL_MEM_READ_ONLY,
@@ -80,12 +93,18 @@ public:
 		clZ = cl::Buffer(clContext.context, CL_MEM_READ_WRITE,
 				N * K * sizeof(cl_int) // #total_nodes x #K
 				);
-		clScratch = cl::Buffer(clContext.context, CL_MEM_READ_WRITE,
-				std::max(
-						N * K * sizeof(cl_double), // #total_nodes x #K
-						N * K * sizeof(cl_double3)
-					)
-				);
+//		clScratch = cl::Buffer(clContext.context, CL_MEM_READ_WRITE,
+//					N * K * sizeof(cl_double), // #total_nodes x #K
+//				);
+
+		bcContext = bc::context(clContext.context(), true);
+		bcDevice = bc::device(clContext.device(), true);
+		bcQueue = bc::command_queue(bcContext, bcDevice);
+		bcScratch = bc::vector<bc::double_>(N*K, bcContext);
+
+		clScratch = cl::Buffer(bcScratch.get_buffer().get());
+		clRetainMemObject(clScratch());
+
 		clRandomSeed = cl::Buffer(clContext.context, CL_MEM_READ_WRITE,
 				PARALLELISM * sizeof(cl_ulong2)
 				);
@@ -126,6 +145,7 @@ public:
 		clContext.queue.finish();
 
 		info(std::cout);
+
 	}
 
 	virtual void run() {
@@ -279,29 +299,50 @@ protected:
 
 		sample_neighbors_kernel.setArg(Idx++, clNodes);
 		sample_neighbors_kernel.setArg(Idx++, (cl_int)nodes.size());
+		sample_neighbors_kernel.setArg(Idx++, clGraph);
 		sample_neighbors_kernel.setArg(Idx++, clHeldOutGraph);
 		sample_neighbors_kernel.setArg(Idx++, clNodesNeighbors);
 		sample_neighbors_kernel.setArg(Idx++, clNodesNeighborsHash);
+		sample_neighbors_kernel.setArg(Idx++, clNodesNeighborsY);
+		sample_neighbors_kernel.setArg(Idx++, clNodesNeighborsR);
 		sample_neighbors_kernel.setArg(Idx++, clRandomSeed);
 
 		clContext.queue.finish();
 		clContext.queue.enqueueNDRangeKernel(sample_neighbors_kernel, cl::NullRange, cl::NDRange(PARALLELISM), cl::NDRange(1));
 
-		Idx = 0;
-		sample_latent_vars_kernel.setArg(Idx++, clGraph);
-		sample_latent_vars_kernel.setArg(Idx++, clHeldOutGraph);
-		sample_latent_vars_kernel.setArg(Idx++, clNodes);
-		sample_latent_vars_kernel.setArg(Idx++, (cl_int)nodes.size());
-		sample_latent_vars_kernel.setArg(Idx++, clNodesNeighbors);
-		sample_latent_vars_kernel.setArg(Idx++, clPi);
-		sample_latent_vars_kernel.setArg(Idx++, clBeta);
-		sample_latent_vars_kernel.setArg(Idx++, (cl_double)epsilon);
-		sample_latent_vars_kernel.setArg(Idx++, clZ);
-		sample_latent_vars_kernel.setArg(Idx++, clScratch);
-		sample_latent_vars_kernel.setArg(Idx++, clRandomSeed);
+		for (auto node : nodes) {
+			clContext.queue.enqueueFillBuffer(clZ,
+					(cl_int)0,
+					node * K * sizeof(cl_int),
+					K * sizeof(cl_int));
+			for (unsigned int i = 0; i < real_num_node_sample(); ++i) {
+				Idx = 0;
+				sample_latent_vars_node_neighbor_kernel.setArg(Idx++, (cl_int)node);
+				sample_latent_vars_node_neighbor_kernel.setArg(Idx++, (cl_int)i);
+				sample_latent_vars_node_neighbor_kernel.setArg(Idx++, clNodesNeighbors);
+				sample_latent_vars_node_neighbor_kernel.setArg(Idx++, clNodesNeighborsY);
+				sample_latent_vars_node_neighbor_kernel.setArg(Idx++, clPi);
+				sample_latent_vars_node_neighbor_kernel.setArg(Idx++, clBeta);
+				sample_latent_vars_node_neighbor_kernel.setArg(Idx++, (cl_double)epsilon);
+				sample_latent_vars_node_neighbor_kernel.setArg(Idx++, clScratch);
 
-		clContext.queue.finish();
-		clContext.queue.enqueueNDRangeKernel(sample_latent_vars_kernel, cl::NullRange, cl::NDRange(PARALLELISM), cl::NDRange(1));
+				clContext.queue.finish();
+				clContext.queue.enqueueNDRangeKernel(sample_latent_vars_node_neighbor_kernel, cl::NullRange, cl::NDRange(K), cl::NDRange(1));
+				clContext.queue.finish();
+				bc::inclusive_scan(bcScratch.begin(), (bcScratch.begin()+(int)K), bcScratch.begin(), bcQueue);
+				bcQueue.finish();
+
+				Idx = 0;
+				sample_latent_vars_node_neighbor_update_z_kernel.setArg(Idx++, (cl_int)node);
+				sample_latent_vars_node_neighbor_update_z_kernel.setArg(Idx++, (cl_int)i);
+				sample_latent_vars_node_neighbor_update_z_kernel.setArg(Idx++, clZ);
+				sample_latent_vars_node_neighbor_update_z_kernel.setArg(Idx++, clScratch);
+				sample_latent_vars_node_neighbor_update_z_kernel.setArg(Idx++, clNodesNeighborsR);
+
+				clContext.queue.finish();
+				clContext.queue.enqueueNDRangeKernel(sample_latent_vars_node_neighbor_update_z_kernel, cl::NullRange, cl::NDRange(K), cl::NDRange(1));
+			}
+		}
 
 		Idx = 0;
 		update_pi_kernel.setArg(Idx++, clNodes);
@@ -428,7 +469,8 @@ protected:
 
 	cl::Kernel graph_init_kernel;
 	cl::Kernel sample_neighbors_kernel;
-	cl::Kernel sample_latent_vars_kernel;
+	cl::Kernel sample_latent_vars_node_neighbor_kernel;
+	cl::Kernel sample_latent_vars_node_neighbor_update_z_kernel;
 	cl::Kernel update_pi_kernel;
 	cl::Kernel sample_latent_vars2_kernel;
 	cl::Kernel update_beta_calculate_grads_kernel;
@@ -445,6 +487,8 @@ protected:
 	cl::Buffer clNodes;
 	cl::Buffer clNodesNeighborsHash;
 	cl::Buffer clNodesNeighbors;
+	cl::Buffer clNodesNeighborsY;
+	cl::Buffer clNodesNeighborsR;
 	cl::Buffer clEdges;
 	cl::Buffer clPi;
 	cl::Buffer clPhi;
@@ -454,6 +498,11 @@ protected:
 	cl::Buffer clZ;
 	cl::Buffer clScratch;
 	cl::Buffer clRandomSeed;
+
+	bc::context bcContext;
+	bc::device bcDevice;
+	bc::command_queue bcQueue;
+	bc::vector<bc::double_> bcScratch;
 };
 
 }

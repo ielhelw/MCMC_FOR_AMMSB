@@ -154,11 +154,24 @@ inline int sample_z_ab_from_edge(
 	return find_le(p, location, K, 0);
 }
 
+inline void sample_z_ab_from_edge_k_compute(
+		global const double* pi_a,
+		global const double *pi_b,
+		global const double *beta,
+		const double epsilon, const int y,
+		global double *p
+		) {
+	size_t i = get_global_id(0);
+	p[i] = sample_z_ab_from_edge_expr(i);
+}
+
 void _sample_neighbors(
 		int node,
+		global const Graph *g,
 		global const Graph *hg,
 		global int* neighbor_nodes,
 		global int* neighbor_nodes_hash,
+		global int* neighbor_y,
 		ulong2* randomSeed) {
 	for (int i = 0; i < NEIGHBOR_SAMPLE_SIZE; ++i) {
 		int neighborId;
@@ -190,7 +203,9 @@ void _sample_neighbors(
 #endif
 
 	for (int i = 0; i < NEIGHBOR_SAMPLE_SIZE; ++i) {
-		if (hash_clear(neighbor_nodes[i], neighbor_nodes_hash, HASH_MULTIPLE*NEIGHBOR_SAMPLE_SIZE) != HASH_OK) {
+		int neighbor = neighbor_nodes[i];
+		neighbor_y[i] = graph_has_peer(g, node, neighbor);
+		if (hash_clear(neighbor, neighbor_nodes_hash, HASH_MULTIPLE*NEIGHBOR_SAMPLE_SIZE) != HASH_OK) {
 			printf("################################ WE HAVE A PROBLEM\n");
 		}
 	}
@@ -199,9 +214,12 @@ void _sample_neighbors(
 kernel void sample_neighbors(
 		global int* nodes,
 		const int N, // #nodes
+		global const Graph *g,
 		global const Graph *hg,
 		global int* neighbor_nodes,
 		global int* neighbor_nodes_hash,
+		global int* neighbor_nodes_y,
+		global double* neighbor_nodes_r,
 		global ulong2* gRandomSeed) {
 
 	size_t gid = get_global_id(0);
@@ -212,38 +230,69 @@ kernel void sample_neighbors(
 		int node = nodes[i];
 		_sample_neighbors(
 				node,
+				g,
 				hg,
 				neighbor_nodes + node * NEIGHBOR_SAMPLE_SIZE,
 				neighbor_nodes_hash + node * HASH_MULTIPLE * NEIGHBOR_SAMPLE_SIZE,
+				neighbor_nodes_y + node * NEIGHBOR_SAMPLE_SIZE,
 				&randomSeed);
+	}
+	for (int i = gid; i < N; i += gsize) {
+		global double* r = neighbor_nodes_r + nodes[i] * NEIGHBOR_SAMPLE_SIZE;
+		for (int j = 0; j < NEIGHBOR_SAMPLE_SIZE; ++j) {
+			r[j] = random(&randomSeed);
+		}
 	}
 
 	gRandomSeed[gid] = randomSeed;
 }
 
-inline void sample_latent_vars_of(
+kernel void sample_latent_vars_node_neighbor_update_z(
 		const int node,
-		global const Graph *g,
-		global const Graph *hg,
-		global int* neighbor_nodes,
-		global const double *pi,
-		global const double *beta,
-		const double epsilon,
-		global int *z, /* K elements */
-		ulong2* randomSeed,
-		global double *p) {
-	for (int i = 0; i < K; ++i) z[i] = 0;
+		const int neighborIdx,
+		global int *Z, /* (#total_nodes, K) */
+		global double *p, // (#nodes, K)
+		global double *R) {
+	global int* z = Z + node * K;
+	global double* r = R + node * NEIGHBOR_SAMPLE_SIZE;
+	double location = r[neighborIdx] * p[K-1];
 
-	for (int i = 0; i < NEIGHBOR_SAMPLE_SIZE; ++i) {
-		int neighbor = neighbor_nodes[i];
-		int y_ab = graph_has_peer(g, node, neighbor);
-		int z_ab = sample_z_ab_from_edge(
-				pi + node * K, pi + neighbor * K,
-				beta, epsilon, y_ab,
-				random(randomSeed),
-				p);
-		z[z_ab] += 1;
+	size_t gid = (int)get_global_id(0);
+	size_t limit = min(K/(int)get_global_size(0), 1);
+	size_t lb = gid * limit;
+	size_t ub = min(lb + limit, (size_t)K);
+
+	if (lb < K) {
+		int z_ab = find_le(p, location, ub, lb);
+		if (z_ab == 0
+				|| (z_ab > 0 && location > p[z_ab - 1])) {
+			z[z_ab] += 1;
+		}
 	}
+}
+
+kernel void sample_latent_vars_node_neighbor(
+		const int node,
+		const int neighborIdx,
+		global const int *gneighbor_nodes,// (#total_nodes, NEIGHBOR_SAMPLE_SIZE)
+		global const int *gneighbor_nodes_y,// (#total_nodes, NEIGHBOR_SAMPLE_SIZE)
+		global const double *gpi,// (#total_nodes, K)
+		global const double *beta,// (#K)
+		const double epsilon,
+		global double *p // (#nodes, K)
+		){
+
+	global const int *neighbor_nodes = gneighbor_nodes + node * NEIGHBOR_SAMPLE_SIZE;
+	global const int *neighbor_nodes_y = gneighbor_nodes_y + node * NEIGHBOR_SAMPLE_SIZE;
+
+	int neighbor = neighbor_nodes[neighborIdx];
+	int y = neighbor_nodes_y[neighborIdx];
+
+	global const double *pi_a = gpi + node * K;
+	global const double *pi_b = gpi + neighbor * K;
+
+	size_t gid = get_global_id(0);
+	p[gid] = sample_z_ab_from_edge_expr(gid);
 }
 
 void update_pi_for_node_(
@@ -275,41 +324,6 @@ void update_pi_for_node_(
 	for (int i = 0; i < K; ++i) {
 		pi[i] = phi[i]/phi_sum;
 	}
-}
-
-kernel void sample_latent_vars(
-		global const Graph *g,
-		global const Graph *hg,
-		global const int *nodes,
-		const int N, // #nodes
-		global int *neighbor_nodes,// (#total_nodes, NEIGHBOR_SAMPLE_SIZE)
-		global const double *pi,// (#total_nodes, K)
-		global const double *beta,// (#K)
-		const double epsilon,
-		global int *Z, /* (#total_nodes, K) */
-		global double *scratch, // (#nodes, K)
-		global ulong2 *gRandomSeed
-		){
-	size_t gid = get_global_id(0);
-	size_t gsize = get_global_size(0);
-	global double *_p = scratch + gid * K;
-	ulong2 randomSeed = gRandomSeed[gid];
-
-	for (int i = gid; i < N; i += gsize) {
-		int node = nodes[i];
-		sample_latent_vars_of(
-				node,
-				g, hg,
-				neighbor_nodes + node * NEIGHBOR_SAMPLE_SIZE,
-				pi,
-				beta,
-				epsilon,
-				Z + node * K,
-				&randomSeed,
-				_p);
-	}
-
-	gRandomSeed[gid] = randomSeed;
 }
 
 kernel void update_pi(
