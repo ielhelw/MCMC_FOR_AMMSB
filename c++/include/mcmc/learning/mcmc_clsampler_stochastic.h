@@ -4,10 +4,9 @@
 #include <memory>
 #include <algorithm>
 #include <chrono>
-#include <boost/compute/container.hpp>
-#include <boost/compute/algorithm/fill.hpp>
-#include <boost/compute/algorithm/inclusive_scan.hpp>
-namespace bc = boost::compute;
+
+#include <vexcl/scan.hpp>
+#include <vexcl/external/boost_compute.hpp>
 
 #include "mcmc_sampler_stochastic.h"
 
@@ -93,17 +92,9 @@ public:
 		clZ = cl::Buffer(clContext.context, CL_MEM_READ_WRITE,
 				N * K * sizeof(cl_int) // #total_nodes x #K
 				);
-//		clScratch = cl::Buffer(clContext.context, CL_MEM_READ_WRITE,
-//					N * K * sizeof(cl_double), // #total_nodes x #K
-//				);
 
-		bcContext = bc::context(clContext.context(), true);
-		bcDevice = bc::device(clContext.device(), true);
-		bcQueue = bc::command_queue(bcContext, bcDevice);
-		bcScratch = bc::vector<bc::double_>(N*K, bcContext);
-
-		clScratch = cl::Buffer(bcScratch.get_buffer().get());
-		clRetainMemObject(clScratch());
+		vScratch = vex::vector<double>(*clContext.vContext, N * K);
+		clScratch = cl::Buffer(vScratch().raw_buffer()); // extra handle for custom kernels
 
 		clRandomSeed = cl::Buffer(clContext.context, CL_MEM_READ_WRITE,
 				PARALLELISM * sizeof(cl_ulong2)
@@ -329,8 +320,12 @@ protected:
 				clContext.queue.finish();
 				clContext.queue.enqueueNDRangeKernel(sample_latent_vars_node_neighbor_kernel, cl::NullRange, cl::NDRange(K), cl::NDRange(1));
 				clContext.queue.finish();
-				bc::inclusive_scan(bcScratch.begin(), (bcScratch.begin()+(int)K), bcScratch.begin(), bcQueue);
-				bcQueue.finish();
+				if (clContext.device.getInfo<CL_DEVICE_TYPE>() == CL_DEVICE_TYPE_GPU) {
+					vex::inclusive_scan(vScratch, vScratch);
+				} else {
+					vex::compute::inclusive_scan(vScratch, vScratch);
+				}
+				clContext.vContext->finish();
 
 				Idx = 0;
 				sample_latent_vars_node_neighbor_update_z_kernel.setArg(Idx++, (cl_int)node);
@@ -499,10 +494,7 @@ protected:
 	cl::Buffer clScratch;
 	cl::Buffer clRandomSeed;
 
-	bc::context bcContext;
-	bc::device bcDevice;
-	bc::command_queue bcQueue;
-	bc::vector<bc::double_> bcScratch;
+	vex::vector<double> vScratch;
 };
 
 }

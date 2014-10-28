@@ -6,6 +6,7 @@
 #endif/*__CL_ENABLE_EXCEPTIONS*/
 
 #include <CL/cl.hpp>
+#include <vexcl/devlist.hpp>
 
 namespace cl {
 
@@ -62,10 +63,14 @@ protected:
 	ClContext(const cl::Platform& platform, const cl::Device& device,
 			const cl_command_queue_properties qprops) :
 			device(device), platform(platform) {
-		cl_context_properties props[] = { CL_CONTEXT_PLATFORM,
-				(cl_context_properties) (platform)(), 0 };
-		context = cl::Context(device, props);
-		queue = cl::CommandQueue(context, device, qprops);
+
+		vContext = new vex::Context(
+				vex::Filter::Platform(platform.getInfo<CL_PLATFORM_NAME>())
+				&& vex::Filter::Name(device.getInfo<CL_DEVICE_NAME>()),
+				qprops);
+
+		context = vContext->context(0);
+		queue = vContext->queue(0);
 	}
 
 public:
@@ -73,6 +78,9 @@ public:
 	cl::Platform platform;
 	cl::Context context;
 	cl::CommandQueue queue;
+
+	vex::Context *vContext;
+
 };
 
 }
