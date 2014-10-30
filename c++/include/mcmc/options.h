@@ -192,6 +192,14 @@ public:
 
 		desc.add_options()
 			("help,?", "help")
+
+			("mcmc-st,s", "MCMC Stochastical C++")
+			("mcmc-b,t", "MCMC Batch C++")
+#ifdef ENABLE_OPENCL
+			("mcmc-st-cl,S", "MCMC Stochastical OpenCL")
+			("mcmc-b-cl,T", "MCMC Batch OpenCL")
+#endif
+
 			("alpha", po::value<double>(&alpha)->default_value(0.01), "alpha")
 			("eta0", po::value<double>(&eta0)->default_value(1.0), "eta0")
 			("eta1", po::value<double>(&eta1)->default_value(1.0), "eta1")
@@ -226,6 +234,13 @@ public:
 		if (vm.count("help") > 0) {
 			std::cout << desc << std::endl;
 		}
+
+		run.mcmc_stochastical = vm.count("mcmc-st") > 0;
+		run.mcmc_batch = vm.count("mcmc-b") > 0;
+#ifdef ENABLE_OPENCL
+		run.mcmc_stochastical_cl = vm.count("mcmc-st-cl") > 0;
+		run.mcmc_batch_cl = vm.count("mcmc-b-cl") > 0;
+#endif
 	}
 
 public:
@@ -249,8 +264,19 @@ public:
 	std::string filename;
 	std::string dataset_class;
 
+#ifdef ENABLE_OPENCL
 	std::string	openClPlatform;
 	std::string	openClDevice;
+#endif
+
+	struct {
+		bool	mcmc_stochastical;
+		bool	mcmc_batch;
+#ifdef ENABLE_OPENCL
+		bool	mcmc_stochastical_cl;
+		bool	mcmc_batch_cl;
+#endif
+	} run;
 };
 
 };	// namespace mcmc

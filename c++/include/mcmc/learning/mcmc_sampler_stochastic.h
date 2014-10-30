@@ -348,6 +348,13 @@ protected:
 		std::vector<std::vector<double> > temp(theta.size(), std::vector<double>(theta[0].size()));
 		np::row_normalize(&temp, theta);
 		std::transform(temp.begin(), temp.end(), beta.begin(), np::SelectColumn<double>(1));
+
+		std::cerr << __func__ << std::endl;
+		std::cerr << "beta ";
+		for (::size_t k = 0; k < K; k++) {
+			std::cerr << beta[k] << " ";
+		}
+		std::cerr << std::endl;
 	}
 
 

@@ -138,6 +138,7 @@ protected:
 		::size_t link_count = 0;
 		::size_t non_link_count = 0;
 
+		::size_t i = 0;
 		for (EdgeMap::const_iterator edge = data.begin();
 			 	edge != data.end();
 				edge++) {
@@ -145,7 +146,27 @@ protected:
 			double edge_likelihood = cal_edge_likelihood(pi[e.first], pi[e.second],
 														 edge->second, beta);
 			// std::cerr << std::fixed << std::setprecision(12) << e << " in? " << (e.in(network.get_linked_edges()) ? "True" : "False") << " -> " << edge_likelihood << std::endl;
-			if (e.in(network.get_linked_edges())) {
+			// FIXME FIXME should not test again if we already know
+			assert(edge->second == e.in(network.get_linked_edges()));
+			if (true || edge == data.begin()) {
+				std::cerr << std::fixed << std::setprecision(12) << "el[" << i << "] " << edge_likelihood << " a " << e.first << " b " << e.second << " y " << (edge->second ? 1 : 0) << std::endl;
+				std::cerr << "pi[a] ";
+				for (::size_t k = 0; k < 10; k++) {
+					std::cerr << std::setprecision(12) << pi[e.first][k] << " ";
+				}
+				std::cerr << std::endl;
+				std::cerr << "pi[b] ";
+				for (::size_t k = 0; k < 10; k++) {
+					std::cerr << std::setprecision(12) << pi[e.second][k] << " ";
+				}
+				std::cerr << std::endl;
+				std::cerr << "beta ";
+				for (::size_t k = 0; k < 10; k++) {
+					std::cerr << std::setprecision(12) << beta[k] << " ";
+				}
+				std::cerr << std::endl;
+			}
+			if (edge->second) {
 				link_count++;
 				link_likelihood += edge_likelihood;
 			} else {
@@ -153,6 +174,7 @@ protected:
 				non_link_count++;
 				non_link_likelihood += edge_likelihood;
 			}
+			i++;
 		}
 		// std::cerr << std::setprecision(12) << "ratio " << link_ratio << " count: link " << link_count << " " << link_likelihood << " non-link " << non_link_count << " " << non_link_likelihood << std::endl;
 
@@ -165,7 +187,7 @@ protected:
 		if (true) {
 			double avg_likelihood1 = link_ratio * (link_likelihood / link_count) + \
 										 (1.0 - link_ratio) * (non_link_likelihood / non_link_count);
-			std::cerr << std::setprecision(12) << avg_likelihood << " " << (link_likelihood / link_count) << " " << link_count << " " << \
+			std::cerr << std::fixed << std::setprecision(12) << avg_likelihood << " " << (link_likelihood / link_count) << " " << link_count << " " << \
 				(non_link_likelihood / non_link_count) << " " << non_link_count << " " << avg_likelihood1 << std::endl;
 			// std::cerr << "perplexity score is: " << exp(-avg_likelihood) << std::endl;
 		}
@@ -201,6 +223,7 @@ protected:
 							   bool y,
 							   const std::vector<double> &beta) const {
 		double s = 0.0;
+#ifdef DONT_FOLD_Y
 		if (y) {
 			for (::size_t k = 0; k < K; k++) {
 				s += pi_a[k] * pi_b[k] * beta[k];
@@ -208,12 +231,26 @@ protected:
 		} else {
 			double sum = 0.0;
 			for (::size_t k = 0; k < K; k++) {
-				// FIXME share common subexpressions
-				s += pi_a[k] * pi_b[k] * (1.0 - beta[k]);
-				sum += pi_a[k] * pi_b[k];
+				double f = pi_a[k] * pi_b[k];
+				s += f * (1.0 - beta[k]);
+				sum += f;
 			}
 			s += (1.0 - sum) * (1.0 - epsilon);
 		}
+#else
+		int iy = y ? 1 : 0;
+		int y2_1 = 2 * iy - 1;
+		int y_1 = iy - 1;
+		double sum = 0.0;
+		for (::size_t k = 0; k < K; k++) {
+			double f = pi_a[k] * pi_b[k];
+			sum += f;
+			s += f * (beta[k] * y2_1 - y_1);
+		}
+		if (! y) {
+			s += (1.0 - sum) * (1.0 - epsilon);
+		}
+#endif
 
 		if (s < 1.0e-30) {
 			s = 1.0e-30;

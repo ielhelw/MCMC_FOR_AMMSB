@@ -58,6 +58,22 @@ public:
 		return program;
 	}
 
+	cl::Device &getDevice() {
+		return device;
+	}
+
+	cl::Platform &getPlatform() {
+		return platform;
+	}
+
+	cl::Context &getContext() {
+		return context;
+	}
+
+	cl::CommandQueue &getQueue() {
+		return queue;
+	}
+
 protected:
 	ClContext(const cl::Platform& platform, const cl::Device& device,
 			const cl_command_queue_properties qprops) :

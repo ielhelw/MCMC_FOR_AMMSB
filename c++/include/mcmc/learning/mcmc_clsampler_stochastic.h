@@ -5,23 +5,33 @@
 #include <algorithm>
 #include <chrono>
 
-#include "mcmc_sampler_stochastic.h"
+#include <vexcl/devlist.hpp>
+#include <vexcl/vector.hpp>
+#include <vexcl/reductor.hpp>
 
 #include "opencl/context.h"
+
+#include "mcmc_sampler_stochastic.h"
 
 #define PARALLELISM 1
 
 namespace mcmc {
 namespace learning {
 
+#define do_stringify(str)	#str
+#define stringify(str)		do_stringify(str)
+
 class MCMCClSamplerStochastic : public MCMCSamplerStochastic {
 public:
-	MCMCClSamplerStochastic(const Options &args, const Network &graph, const cl::ClContext clContext)
-		: MCMCSamplerStochastic(args, graph), clContext(clContext) {
+	MCMCClSamplerStochastic(const Options &args, const Network &graph, cl::ClContext clContext)
+		: MCMCSamplerStochastic(args, graph), clContext(clContext),
+		  vexContext(std::vector<cl::Context>(1, clContext.getContext()),
+					 std::vector<cl::CommandQueue>(1, clContext.getQueue())),
+		  csumDouble(vexContext), csumInt(vexContext) {
 
 		int hash_table_multiple = 2;
 		std::ostringstream opts;
-		opts << "-IOpenCL/include"
+		opts << "-I" << stringify(PROJECT_HOME) << "/../OpenCL/include"
 			 << " -DNEIGHBOR_SAMPLE_SIZE=" << real_num_node_sample()
 			 << " -DK=" << K
 			 << " -DMAX_NODE_ID=" << N
@@ -38,11 +48,12 @@ public:
 
 		init_graph();
 
-		sampler_program = this->clContext.createProgram("OpenCL/sampler.cl", progOpts);
+		sampler_program = this->clContext.createProgram(stringify(PROJECT_HOME) "/../OpenCL/sampler.cl", progOpts);
 		sample_latent_vars_and_update_pi_kernel = cl::Kernel(sampler_program, "sample_latent_vars_and_update_pi");
 		sample_latent_vars2_kernel = cl::Kernel(sampler_program, "sample_latent_vars2");
 		update_beta_calculate_grads_kernel = cl::Kernel(sampler_program, "update_beta_calculate_grads");
 		update_beta_calculate_theta_kernel = cl::Kernel(sampler_program, "update_beta_calculate_theta");
+		cal_perplexity_kernel = cl::Kernel(sampler_program, "cal_perplexity");
 
 		clNodes = cl::Buffer(clContext.context, CL_MEM_READ_ONLY,
 				N * sizeof(cl_int) // max: 2 unique nodes per edge in batch
@@ -120,6 +131,12 @@ public:
 				0, randomSeed.size() * sizeof(cl_ulong2),
 				randomSeed.data());
 		clContext.queue.enqueueFillBuffer(clNodesNeighbors, (cl_int)-1, 0, clNodesNeighbors.getInfo<CL_MEM_SIZE>());
+
+		clLinkLikelihood = cl::Buffer(clContext.context, CL_MEM_READ_WRITE, PARALLELISM * sizeof(cl_double));
+		clNonLinkLikelihood = cl::Buffer(clContext.context, CL_MEM_READ_WRITE, PARALLELISM * sizeof(cl_double));
+		clLinkCount = cl::Buffer(clContext.context, CL_MEM_READ_WRITE, PARALLELISM * sizeof(cl_int));
+		clNonLinkCount = cl::Buffer(clContext.context, CL_MEM_READ_WRITE, PARALLELISM * sizeof(cl_int));
+
 		clContext.queue.finish();
 
 		info(std::cout);
@@ -215,6 +232,8 @@ protected:
 		clContext.queue.finish();
 
 
+		// FIXME calculate beta on the device!
+#if 1
 		// copy theta
 		std::vector<cl_double2> vclTheta(theta.size());
 		clContext.queue.enqueueReadBuffer(clTheta, CL_TRUE,
@@ -230,6 +249,17 @@ protected:
 		std::vector<std::vector<double> > temp(theta.size(), std::vector<double>(theta[0].size()));
 		np::row_normalize(&temp, theta);
 		std::transform(temp.begin(), temp.end(), beta.begin(), np::SelectColumn<double>(1));
+
+		std::cerr << __func__ << std::endl;
+		std::cerr << "beta ";
+		for (::size_t k = 0; k < K; k++) {
+			std::cerr << beta[k] << " ";
+		}
+		std::cerr << std::endl;
+
+#else
+		std::cerr << "Calculate beta from theta on the device" << std::cerr;
+#endif
 	}
 
 	void sample_latent_vars2(const OrderedEdgeSet &mini_batch) {
@@ -270,7 +300,15 @@ protected:
 		clContext.queue.enqueueWriteBuffer(clNodes, CL_FALSE, 0, v_nodes.size()*sizeof(int), v_nodes.data());
 
 		// Copy beta
+		std::cerr << "Copy beta to the device, just for now" << std::endl;
 		clContext.queue.enqueueWriteBuffer(clBeta, CL_FALSE, 0, K * sizeof(double), beta.data());
+
+		std::cerr << __func__ << std::endl;
+		std::cerr << "beta ";
+		for (::size_t k = 0; k < K; k++) {
+			std::cerr << beta[k] << " ";
+		}
+		std::cerr << std::endl;
 
 		int Idx = 0;
 		sample_latent_vars_and_update_pi_kernel.setArg(Idx++, clGraph);
@@ -312,6 +350,104 @@ protected:
 		}
 	}
 
+	double deviceSumDouble(cl::Buffer &xBuffer) {
+		vex::backend::opencl::device_vector<double> xDev(xBuffer);
+		vex::vector<double> X(vexContext.queue(0), xDev);
+
+		double y = csumDouble(X);
+
+		return y;
+	}
+
+	int deviceSumInt(cl::Buffer &xBuffer) {
+		vex::backend::opencl::device_vector<int> xDev(xBuffer);
+		vex::vector<int> X(vexContext.queue(0), xDev);
+
+		int y = csumInt(X);
+
+		return y;
+	}
+
+	template <typename T>
+	T deviceSum(cl::Buffer &xBuffer) {
+		vex::backend::opencl::device_vector<T> xDev(xBuffer);
+		vex::vector<T> X(vexContext.queue(0), xDev);
+
+		vex::Reductor<T, vex::SUM_Kahan> csum;
+		T y = csum(X);
+
+		return y;
+	}
+
+	double cal_perplexity_held_out() {
+	/**
+	 * calculate the perplexity for data.
+	 * perplexity defines as exponential of negative average log likelihood. 
+	 * formally:
+	 *     ppx = exp(-1/N * \sum){i}^{N}log p(y))
+	 * 
+	 * we calculate average log likelihood for link and non-link separately, with the 
+	 * purpose of weighting each part proportionally. (the reason is that we sample 
+	 * the equal number of link edges and non-link edges for held out data and test data,
+	 * which is not true representation of actual data set, which is extremely sparse.
+	 */
+		cl_double link_likelihood = 0.0;
+		cl_double non_link_likelihood = 0.0;
+		cl_int link_count = 0;
+		cl_int non_link_count = 0;
+
+		static bool first = true;
+		if (true || first) {
+			// Copy beta
+			std::cerr << "Copy beta to the device, just for now" << std::endl;
+			clContext.queue.enqueueWriteBuffer(clBeta, CL_FALSE, 0, K * sizeof(double), beta.data());
+			std::cerr << __func__ << std::endl;
+			std::cerr << "beta ";
+			for (::size_t k = 0; k < K; k++) {
+				std::cerr << beta[k] << " ";
+			}
+			std::cerr << std::endl;
+
+			first = false;
+		}
+
+		cl_int H = static_cast<cl_int>(network.get_held_out_set().size());
+
+		int arg = 0;
+		cal_perplexity_kernel.setArg(arg++, clIterableHeldOutGraph);
+		cal_perplexity_kernel.setArg(arg++, H);
+		cal_perplexity_kernel.setArg(arg++, clPi);
+		cal_perplexity_kernel.setArg(arg++, clBeta);
+		cal_perplexity_kernel.setArg(arg++, (cl_double)epsilon);
+		cal_perplexity_kernel.setArg(arg++, clLinkLikelihood);
+		cal_perplexity_kernel.setArg(arg++, clNonLinkLikelihood);
+		cal_perplexity_kernel.setArg(arg++, clLinkCount);
+		cal_perplexity_kernel.setArg(arg++, clNonLinkCount);
+
+		clContext.queue.finish();
+		clContext.queue.enqueueNDRangeKernel(cal_perplexity_kernel, cl::NullRange, cl::NDRange(PARALLELISM), cl::NDRange(1));
+		clContext.queue.finish();
+
+		link_likelihood = deviceSum<double>(clLinkLikelihood);
+		non_link_likelihood = deviceSum<double>(clNonLinkLikelihood);
+		link_count = deviceSum<int>(clLinkCount);
+		non_link_count = deviceSum<int>(clNonLinkCount);
+
+		clContext.queue.finish();
+		// direct calculation.
+		double avg_likelihood = (link_likelihood + non_link_likelihood) / (link_count + non_link_count);
+		if (true) {
+			double avg_likelihood1 = link_ratio * (link_likelihood / link_count) + \
+										 (1.0 - link_ratio) * (non_link_likelihood / non_link_count);
+			std::cerr << std::fixed << std::setprecision(12) << avg_likelihood << " " << (link_likelihood / link_count) << " " << link_count << " " << \
+				(non_link_likelihood / non_link_count) << " " << non_link_count << " " << avg_likelihood1 << std::endl;
+			// std::cerr << "perplexity score is: " << exp(-avg_likelihood) << std::endl;
+		}
+
+		// return std::exp(-avg_likelihood);
+		return (-avg_likelihood);
+	}
+
 
 	void _prepare_flat_cl_graph(cl::Buffer &edges, cl::Buffer &nodes, cl::Buffer &graph, std::map<int, std::vector<int>> linkedMap) {
 		const int h_edges_size = 2 * network.get_num_linked_edges();
@@ -349,8 +485,20 @@ protected:
 		clContext.queue.finish();
 	}
 
+	// Why is linkedMap not a ref?
+	void prepare_iterable_cl_graph(cl::Buffer &iterableGraph, const EdgeMap &data) {
+		std::unique_ptr<cl_int3[]> hIterableGraph(new cl_int3[data.size()]);
+		::size_t i = 0;
+		for (auto a: data) {
+			cl_int3 e = { a.first.first, a.first.second, a.second ? 1 : 0 };
+			hIterableGraph.get()[i] = e;
+			i++;
+		}
+		iterableGraph = cl::Buffer(clContext.context, CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR, data.size() * sizeof(cl_int3), hIterableGraph.get());
+	}
+
 	void init_graph() {
-		graph_program = this->clContext.createProgram("OpenCL/graph.cl", progOpts);
+		graph_program = this->clContext.createProgram(stringify(PROJECT_HOME) "/../OpenCL/graph.cl", progOpts);
 		graph_init_kernel = cl::Kernel(graph_program, "graph_init");
 		std::map<int, std::vector<int>> linkedMap;
 
@@ -372,6 +520,7 @@ protected:
 		}
 		_prepare_flat_cl_graph(clHeldOutGraphEdges, clHeldOutGraphNodes, clHeldOutGraph, linkedMap);
 
+		prepare_iterable_cl_graph(clIterableHeldOutGraph, network.get_held_out_set());
 
 #if MCMC_CL_STOCHASTIC_TEST_GRAPH
 		test_graph();
@@ -380,7 +529,7 @@ protected:
 
 #if MCMC_CL_STOCHASTIC_TEST_GRAPH // TEST GRAPH ON OPENCL's SIDE
 	void test_graph() {
-		cl::Program program2 = this->clContext.createProgram("OpenCL/test.cl", progOpts);
+		cl::Program program2 = this->clContext.createProgram(stringify(PROJECT_HOME) "/../OpenCL/test.cl", progOpts);
 		cl::Kernel test_print_peers_of_kernel(program2, "test_print_peers_of");
 		test_print_peers_of_kernel.setArg(0, clGraph);
 		test_print_peers_of_kernel.setArg(1, 0);
@@ -410,6 +559,7 @@ protected:
 	cl::Kernel sample_latent_vars2_kernel;
 	cl::Kernel update_beta_calculate_grads_kernel;
 	cl::Kernel update_beta_calculate_theta_kernel;
+	cl::Kernel cal_perplexity_kernel;
 
 	cl::Buffer clGraphEdges;
 	cl::Buffer clGraphNodes;
@@ -418,6 +568,8 @@ protected:
 	cl::Buffer clHeldOutGraphEdges;
 	cl::Buffer clHeldOutGraphNodes;
 	cl::Buffer clHeldOutGraph;
+
+	cl::Buffer clIterableHeldOutGraph;
 
 	cl::Buffer clNodes;
 	cl::Buffer clNodesNeighbors;
@@ -431,6 +583,15 @@ protected:
 	cl::Buffer clZ;
 	cl::Buffer clScratch;
 	cl::Buffer clRandomSeed;
+
+	vex::Context vexContext;
+	vex::Reductor<double, vex::SUM_Kahan> csumDouble;
+	vex::Reductor<int, vex::SUM_Kahan> csumInt;
+
+	cl::Buffer clLinkLikelihood;
+	cl::Buffer clNonLinkLikelihood;
+	cl::Buffer clLinkCount;
+	cl::Buffer clNonLinkCount;
 };
 
 }
