@@ -455,6 +455,18 @@ kernel void sample_latent_vars2(
 	gRandomSeed[gid] = randomSeed;
 }
 
+kernel void update_beta_calculate_theta_sum(
+		global double2 *theta,		// #K
+		global double *theta_sum	// #K
+		)
+{
+	size_t gid = get_global_id(0);
+	size_t gsize = get_global_size(0);
+	for (int k = gid; k < K; k += gsize) {
+		theta_sum[k] = theta[k].x + theta[k].y;
+	}
+}
+
 kernel void update_beta_calculate_grads(
 		global Graph *g,
 		global const int2 *edges,
@@ -515,4 +527,16 @@ kernel void update_beta_calculate_theta(
 				+ sqrt(2.0 * eps_t * theta[k].y) * randn(&randomSeed));
 	}
 	gRandomSeed[gid] = randomSeed;
+}
+
+kernel void update_beta_calculate_beta(
+		global double2 *theta,		// #K
+		global double *beta			// #K
+		)
+{
+	size_t gid = get_global_id(0);
+	size_t gsize = get_global_size(0);
+	for (int k = gid; k < K; k += gsize) {
+		beta[k] = theta[k].y / (theta[k].x + theta[k].y);
+	}
 }

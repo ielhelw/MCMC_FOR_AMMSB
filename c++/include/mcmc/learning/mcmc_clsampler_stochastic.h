@@ -51,8 +51,10 @@ public:
 		sampler_program = this->clContext.createProgram(stringify(PROJECT_HOME) "/../OpenCL/sampler.cl", progOpts);
 		sample_latent_vars_and_update_pi_kernel = cl::Kernel(sampler_program, "sample_latent_vars_and_update_pi");
 		sample_latent_vars2_kernel = cl::Kernel(sampler_program, "sample_latent_vars2");
+		update_beta_calculate_theta_sum_kernel = cl::Kernel(sampler_program, "update_beta_calculate_theta_sum");
 		update_beta_calculate_grads_kernel = cl::Kernel(sampler_program, "update_beta_calculate_grads");
 		update_beta_calculate_theta_kernel = cl::Kernel(sampler_program, "update_beta_calculate_theta");
+		update_beta_calculate_beta_kernel = cl::Kernel(sampler_program, "update_beta_calculate_beta");
 		cal_perplexity_kernel = cl::Kernel(sampler_program, "cal_perplexity");
 
 		clNodes = cl::Buffer(clContext.context, CL_MEM_READ_ONLY,
@@ -122,6 +124,9 @@ public:
 				0, theta.size() * sizeof(cl_double2),
 				vclTheta.data());
 
+		// copy beta
+		clContext.queue.enqueueWriteBuffer(clBeta, CL_TRUE, 0, K * sizeof(double), beta.data());
+
 		std::vector<cl_ulong2> randomSeed(PARALLELISM);
 		for (unsigned int i = 0; i < randomSeed.size(); ++i) {
 			randomSeed[i].s[0] = 42 + i;
@@ -188,12 +193,16 @@ public:
 protected:
 
 	void update_beta(const OrderedEdgeSet &mini_batch, double scale) {
-		// copy theta_sum
-		std::vector<cl_double> vThetaSum(theta.size());
-		std::transform(theta.begin(), theta.end(), vThetaSum.begin(), np::sum<double>);
-		clContext.queue.enqueueWriteBuffer(clThetaSum, CL_FALSE,
-				0, theta.size() * sizeof(cl_double),
-				vThetaSum.data());
+		::size_t K_workers = std::min(K, static_cast< ::size_t>(PARALLELISM));
+		int arg;
+
+		arg = 0;
+		update_beta_calculate_theta_sum_kernel.setArg(arg++, clTheta);
+		update_beta_calculate_theta_sum_kernel.setArg(arg++, clThetaSum);
+
+		clContext.queue.enqueueNDRangeKernel(update_beta_calculate_theta_sum_kernel,
+											 cl::NullRange, cl::NDRange(K_workers), cl::NDRange(1));
+		clContext.queue.finish();
 
 		update_beta_calculate_grads_kernel.setArg(0, clGraph);
 		update_beta_calculate_grads_kernel.setArg(1, clEdges);
@@ -231,35 +240,22 @@ protected:
 		clContext.queue.enqueueTask(update_beta_calculate_theta_kernel);
 		clContext.queue.finish();
 
+		arg = 0;
+		update_beta_calculate_beta_kernel.setArg(arg++, clTheta);
+		update_beta_calculate_beta_kernel.setArg(arg++, clBeta);
 
-		// FIXME calculate beta on the device!
-#if 1
-		// copy theta
-		std::vector<cl_double2> vclTheta(theta.size());
-		clContext.queue.enqueueReadBuffer(clTheta, CL_TRUE,
-				0, theta.size() * sizeof(cl_double2),
-				vclTheta.data());
-		std::transform(vclTheta.begin(), vclTheta.end(), theta.begin(), [](const cl_double2 in){
-			std::vector<double> ret(2);
-			ret[0] = in.s[0];
-			ret[1] = in.s[1];
-			return ret;
-		});
+		clContext.queue.enqueueNDRangeKernel(update_beta_calculate_beta_kernel, cl::NullRange, cl::NDRange(K_workers), cl::NDRange(1));
+		clContext.queue.finish();
 
-		std::vector<std::vector<double> > temp(theta.size(), std::vector<double>(theta[0].size()));
-		np::row_normalize(&temp, theta);
-		std::transform(temp.begin(), temp.end(), beta.begin(), np::SelectColumn<double>(1));
-
-		std::cerr << __func__ << std::endl;
-		std::cerr << "beta ";
-		for (::size_t k = 0; k < K; k++) {
-			std::cerr << beta[k] << " ";
+		if (true) {
+			clContext.queue.enqueueReadBuffer(clBeta, CL_FALSE, 0, K * sizeof(double), beta.data());
+			std::cerr << __func__ << std::endl;
+			std::cerr << "beta ";
+			for (::size_t k = 0; k < K; k++) {
+				std::cerr << beta[k] << " ";
+			}
+			std::cerr << std::endl;
 		}
-		std::cerr << std::endl;
-
-#else
-		std::cerr << "Calculate beta from theta on the device" << std::cerr;
-#endif
 	}
 
 	void sample_latent_vars2(const OrderedEdgeSet &mini_batch) {
@@ -299,16 +295,15 @@ protected:
 		std::vector<int> v_nodes(nodes.begin(), nodes.end()); // FIXME: replace OrderedVertexSet with vector
 		clContext.queue.enqueueWriteBuffer(clNodes, CL_FALSE, 0, v_nodes.size()*sizeof(int), v_nodes.data());
 
-		// Copy beta
-		std::cerr << "Copy beta to the device, just for now" << std::endl;
-		clContext.queue.enqueueWriteBuffer(clBeta, CL_FALSE, 0, K * sizeof(double), beta.data());
-
-		std::cerr << __func__ << std::endl;
-		std::cerr << "beta ";
-		for (::size_t k = 0; k < K; k++) {
-			std::cerr << beta[k] << " ";
+		if (false) {
+			clContext.queue.enqueueReadBuffer(clBeta, CL_FALSE, 0, K * sizeof(double), beta.data());
+			std::cerr << __func__ << std::endl;
+			std::cerr << "beta ";
+			for (::size_t k = 0; k < K; k++) {
+				std::cerr << beta[k] << " ";
+			}
+			std::cerr << std::endl;
 		}
-		std::cerr << std::endl;
 
 		int Idx = 0;
 		sample_latent_vars_and_update_pi_kernel.setArg(Idx++, clGraph);
@@ -395,21 +390,6 @@ protected:
 		cl_double non_link_likelihood = 0.0;
 		cl_int link_count = 0;
 		cl_int non_link_count = 0;
-
-		static bool first = true;
-		if (true || first) {
-			// Copy beta
-			std::cerr << "Copy beta to the device, just for now" << std::endl;
-			clContext.queue.enqueueWriteBuffer(clBeta, CL_FALSE, 0, K * sizeof(double), beta.data());
-			std::cerr << __func__ << std::endl;
-			std::cerr << "beta ";
-			for (::size_t k = 0; k < K; k++) {
-				std::cerr << beta[k] << " ";
-			}
-			std::cerr << std::endl;
-
-			first = false;
-		}
 
 		cl_int H = static_cast<cl_int>(network.get_held_out_set().size());
 
@@ -557,8 +537,10 @@ protected:
 	cl::Kernel graph_init_kernel;
 	cl::Kernel sample_latent_vars_and_update_pi_kernel;
 	cl::Kernel sample_latent_vars2_kernel;
+	cl::Kernel update_beta_calculate_theta_sum_kernel;
 	cl::Kernel update_beta_calculate_grads_kernel;
 	cl::Kernel update_beta_calculate_theta_kernel;
+	cl::Kernel update_beta_calculate_beta_kernel;
 	cl::Kernel cal_perplexity_kernel;
 
 	cl::Buffer clGraphEdges;

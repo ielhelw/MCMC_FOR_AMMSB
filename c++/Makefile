@@ -1,5 +1,6 @@
 PROJECT = $(shell cd .; pwd)
 
+SUBDIRS += 3rdparty
 SUBDIRS += src
 SUBDIRS += apps
 SUBDIRS += test
@@ -7,6 +8,7 @@ SUBDIRS += test
 include $(PROJECT)/include.mk
 
 apps test: src
+src: 3rdparty
 
 $(PROJECT)/config.mk: $(PROJECT)/config.mk.in
 	-if [ -e $@.orig ]; then diff -u $@.orig $@ > $@.patch || echo "Nothing"; fi
