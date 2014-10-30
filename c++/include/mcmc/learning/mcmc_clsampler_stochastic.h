@@ -39,7 +39,8 @@ public:
 		init_graph();
 
 		sampler_program = this->clContext.createProgram("OpenCL/sampler.cl", progOpts);
-		sample_latent_vars_and_update_pi_kernel = cl::Kernel(sampler_program, "sample_latent_vars_and_update_pi");
+		sample_latent_vars_kernel = cl::Kernel(sampler_program, "sample_latent_vars");
+		update_pi_kernel = cl::Kernel(sampler_program, "update_pi");
 		sample_latent_vars2_kernel = cl::Kernel(sampler_program, "sample_latent_vars2");
 		update_beta_calculate_grads_kernel = cl::Kernel(sampler_program, "update_beta_calculate_grads");
 		update_beta_calculate_theta_kernel = cl::Kernel(sampler_program, "update_beta_calculate_theta");
@@ -59,9 +60,6 @@ public:
 				// FIXME: should be multiple of mini_batch_size
 				);
 		clPi = cl::Buffer(clContext.context, CL_MEM_READ_WRITE,
-				N * K * sizeof(cl_double) // #total_nodes x #K
-				);
-		clPiUpdate = cl::Buffer(clContext.context, CL_MEM_READ_WRITE,
 				N * K * sizeof(cl_double) // #total_nodes x #K
 				);
 		clPhi = cl::Buffer(clContext.context, CL_MEM_READ_WRITE,
@@ -97,7 +95,6 @@ public:
 		init_buffers_kernel.setArg(Idx++, clNodesNeighbors);
 		init_buffers_kernel.setArg(Idx++, clEdges);
 		init_buffers_kernel.setArg(Idx++, clPi);
-		init_buffers_kernel.setArg(Idx++, clPiUpdate);
 		init_buffers_kernel.setArg(Idx++, clPhi);
 		init_buffers_kernel.setArg(Idx++, clBeta);
 		init_buffers_kernel.setArg(Idx++, clTheta);
@@ -282,32 +279,35 @@ protected:
 		clContext.queue.enqueueWriteBuffer(clBeta, CL_FALSE, 0, K * sizeof(double), beta.data());
 
 		int Idx = 0;
-		sample_latent_vars_and_update_pi_kernel.setArg(Idx++, clBuffers);
-		sample_latent_vars_and_update_pi_kernel.setArg(Idx++, (cl_int)nodes.size());
-		sample_latent_vars_and_update_pi_kernel.setArg(Idx++, (cl_double)epsilon);
-		sample_latent_vars_and_update_pi_kernel.setArg(Idx++, (cl_double)alpha);
-		sample_latent_vars_and_update_pi_kernel.setArg(Idx++, (cl_double)a);
-		sample_latent_vars_and_update_pi_kernel.setArg(Idx++, (cl_double)b);
-		sample_latent_vars_and_update_pi_kernel.setArg(Idx++, (cl_double)c);
-		sample_latent_vars_and_update_pi_kernel.setArg(Idx++, (cl_int)step_count);
-		sample_latent_vars_and_update_pi_kernel.setArg(Idx++, (cl_int)N);
+		sample_latent_vars_kernel.setArg(Idx++, clBuffers);
+		sample_latent_vars_kernel.setArg(Idx++, (cl_int)nodes.size());
+		sample_latent_vars_kernel.setArg(Idx++, (cl_double)epsilon);
 
 		clContext.queue.finish();
-		clContext.queue.enqueueNDRangeKernel(sample_latent_vars_and_update_pi_kernel, cl::NullRange, cl::NDRange(PARALLELISM), cl::NDRange(1));
-		clContext.queue.finish();
+		clContext.queue.enqueueNDRangeKernel(sample_latent_vars_kernel, cl::NullRange, cl::NDRange(PARALLELISM), cl::NDRange(1));
 
+		Idx = 0;
+		update_pi_kernel.setArg(Idx++, clBuffers);
+		update_pi_kernel.setArg(Idx++, (cl_int)nodes.size());
+		update_pi_kernel.setArg(Idx++, (cl_double)alpha);
+		update_pi_kernel.setArg(Idx++, (cl_double)a);
+		update_pi_kernel.setArg(Idx++, (cl_double)b);
+		update_pi_kernel.setArg(Idx++, (cl_double)c);
+		update_pi_kernel.setArg(Idx++, (cl_int)step_count);
+		update_pi_kernel.setArg(Idx++, (cl_int)N);
+
+		clContext.queue.finish();
+		clContext.queue.enqueueNDRangeKernel(update_pi_kernel, cl::NullRange, cl::NDRange(PARALLELISM), cl::NDRange(1));
+
+		clContext.queue.finish();
 		// read Pi again
 		for (auto node = nodes.begin();
 				node != nodes.end();
 				++node) {
-			clContext.queue.enqueueReadBuffer(clPiUpdate, CL_FALSE,
+			clContext.queue.enqueueReadBuffer(clPi, CL_FALSE,
 					*node * K * sizeof(cl_double),
 					K * sizeof(cl_double),
 					pi[*node].data());
-			clContext.queue.enqueueCopyBuffer(clPiUpdate, clPi,
-					*node * K * sizeof(cl_double),
-					*node * K * sizeof(cl_double),
-					K * sizeof(cl_double));
 		}
 	}
 
@@ -405,7 +405,8 @@ protected:
 	cl::Program sampler_program;
 
 	cl::Kernel graph_init_kernel;
-	cl::Kernel sample_latent_vars_and_update_pi_kernel;
+	cl::Kernel sample_latent_vars_kernel;
+	cl::Kernel update_pi_kernel;
 	cl::Kernel sample_latent_vars2_kernel;
 	cl::Kernel update_beta_calculate_grads_kernel;
 	cl::Kernel update_beta_calculate_theta_kernel;
@@ -425,7 +426,6 @@ protected:
 	cl::Buffer clNodesNeighbors;
 	cl::Buffer clEdges;
 	cl::Buffer clPi;
-	cl::Buffer clPiUpdate;
 	cl::Buffer clPhi;
 	cl::Buffer clBeta;
 	cl::Buffer clTheta;

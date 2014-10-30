@@ -30,7 +30,6 @@ typedef struct {
 		global int  *NodesNeighbors;
 		global int2 *Edges;
 		global double *Pi;
-		global double *PiUpdate;
 		global double *Phi;
 		global double *Beta;
 		global double2 *Theta;
@@ -49,7 +48,6 @@ kernel void init_buffers(
 		global int  *NodesNeighbors,
 		global int2 *Edges,
 		global double *Pi,
-		global double *PiUpdate,
 		global double *Phi,
 		global double *Beta,
 		global double2 *Theta,
@@ -63,7 +61,6 @@ kernel void init_buffers(
 	bufs->bufs.NodesNeighbors = NodesNeighbors;
 	bufs->bufs.Edges = Edges;
 	bufs->bufs.Pi = Pi;
-	bufs->bufs.PiUpdate = PiUpdate;
 	bufs->bufs.Phi = Phi;
 	bufs->bufs.Beta = Beta;
 	bufs->bufs.Theta = Theta;
@@ -255,8 +252,7 @@ inline void sample_latent_vars_of(
 
 void update_pi_for_node_(
 		int node,
-		global const double *pi,// #K
-		global double *piUpdate,// #K
+		global double *pi,// #K
 		global double *phi,// #K
 		global int *z, // #K
 		ulong2 *randomSeed,
@@ -281,17 +277,14 @@ void update_pi_for_node_(
 	double phi_sum = 0;
 	for (int i = 0; i < K; ++i) phi_sum += phi[i];
 	for (int i = 0; i < K; ++i) {
-		piUpdate[i] = phi[i]/phi_sum;
+		pi[i] = phi[i]/phi_sum;
 	}
 }
 
-kernel void sample_latent_vars_and_update_pi(
+kernel void sample_latent_vars(
 		global Buffers *bufs,
 		const int N, // #nodes
-		const double epsilon,
-		double alpha,
-		double a, double b, double c,
-		int step_count, int total_node_count
+		const double epsilon
 		){
 	size_t gid = get_global_id(0);
 	size_t gsize = get_global_size(0);
@@ -310,14 +303,25 @@ kernel void sample_latent_vars_and_update_pi(
 				bufs->bufs.Z + node * K,
 				&randomSeed,
 				_p);
-#ifdef RANDOM_FOLLOWS_CPP // for verification only
 	}
+	bufs->bufs.RandomSeed[gid] = randomSeed;
+}
+
+kernel void update_pi(
+		global Buffers *bufs,
+		const int N, // #nodes
+		double alpha,
+		double a, double b, double c,
+		int step_count, int total_node_count
+		){
+	size_t gid = get_global_id(0);
+	size_t gsize = get_global_size(0);
+	global double *_p = bufs->bufs.Scratch + gid * K;
+	ulong2 randomSeed = bufs->bufs.RandomSeed[gid];
 	for (int i = gid; i < N; i += gsize) {
 		int node = bufs->bufs.Nodes[i];
-#endif
 		update_pi_for_node_(node,
 				bufs->bufs.Pi + node * K,
-				bufs->bufs.PiUpdate + node * K,
 				bufs->bufs.Phi + node * K,
 				bufs->bufs.Z + node * K,
 				&randomSeed,
