@@ -173,21 +173,21 @@ kernel void cal_perplexity(
 										epsilon);
 		if (1 || i == 0) {
 			printf((__constant char *)"el[%d] %.12lf a %d b %d y %d\n", i, el, (*edge).x, (*edge).y, (*edge).z);
-			printf("pi[a] ");
+			printf((__constant char *)"pi[a] ");
 			for (size_t k = 0; k < 10; k++) {
-				printf("%.12f ", (pi + (*edge).x * K)[k]);
+				printf((__constant char *)"%.12f ", (pi + (*edge).x * K)[k]);
 			}
-			printf("\n");
-			printf("pi[b] ");
+			printf((__constant char *)"\n");
+			printf((__constant char *)"pi[b] ");
 			for (size_t k = 0; k < 10; k++) {
-				printf("%.12f ", (pi + (*edge).y * K)[k]);
+				printf((__constant char *)"%.12f ", (pi + (*edge).y * K)[k]);
 			}
-			printf("\n");
-			printf("beta ");
+			printf((__constant char *)"\n");
+			printf((__constant char *)"beta ");
 			for (size_t k = 0; k < 10; k++) {
-				printf("%.12f ", beta[k]);
+				printf((__constant char *)"%.12f ", beta[k]);
 			}
-			printf("\n");
+			printf((__constant char *)"\n");
 		}
 		if ((*edge).z == 1) {
 			l0 += el;
@@ -221,6 +221,10 @@ kernel void cal_perplexity(
 		pi_a[i] * (pi_b[i] * (epsilon - beta[i]) + (1-epsilon)) \
 )
 
+#define sample_z_ab_from_edge_expr_y_lifted(i) \
+		(pi_a[i] * (pi_b[i] * y2_1 * ((beta[i] - epsilon) + epsilon) - y_1))
+
+// #define sample_z_ab_from_edge_expr sample_z_ab_from_edge_expr_y_lifted
 #define sample_z_ab_from_edge_expr sample_z_ab_from_edge_expr_optimized
 
 inline int sample_z_ab_from_edge(
@@ -231,16 +235,11 @@ inline int sample_z_ab_from_edge(
 		const double random,
 		global double *p
 		) {
-	int iy = y ? 1 : 0;
-	int y_1 = iy - 1;
-	int y_1_2 = 2 * y_1;
-	int y2_1 = y_1 + iy;
-	const double eps_2y_1 = epsilon * y2_1 - y_1;
+	int y_1 = y - 1;
+	int y2_1 = y + y_1;
 	p[0] = sample_z_ab_from_edge_expr(0);
 	for (int i = 1; i < K; ++i) {
-		// p[i] = p[i-1] + sample_z_ab_from_edge_expr(i);
-		const double f = pi_a[i] * pi_b[i];
-		p[i] = p[i - 1] + f * ((beta[i] + epsilon) * y2_1 - y_1_2) - pi_a[i] * eps_2y_1;
+		p[i] = p[i-1] + sample_z_ab_from_edge_expr(i);
 	}
 
 	double location = random * p[K-1];
@@ -270,7 +269,7 @@ inline void sample_latent_vars_of(
 				if (ret == HASH_OK) break;
 				if (ret == HASH_FOUND) continue;
 				if (ret == HASH_FAIL) {
-					printf("ERROR: FAILED TO INSERT ITEM IN HASH\n");
+					printf((__constant char *)"ERROR: FAILED TO INSERT ITEM IN HASH\n");
 					break;
 				}
 			}
