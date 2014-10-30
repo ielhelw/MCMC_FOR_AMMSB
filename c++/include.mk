@@ -53,6 +53,9 @@ CXXFLAGS += -I$(BOOST_INCLUDE)
 BOOST_ROOT = $(dir $(BOOST_INCLUDE))
 endif
 
+VEXCL		= $(PROJECT)/3rdparty/vexcl
+CXXFLAGS	+= -I$(VEXCL)
+
 LDFLAGS += -L$(PROJECT_HOME)/lib -l mcmc
 LDFLAGS += -L$(PROJECT_HOME)/3rdparty/tinyxml2/lib -ltinyxml2
 ifneq (, $(OPENCL_ROOT))
