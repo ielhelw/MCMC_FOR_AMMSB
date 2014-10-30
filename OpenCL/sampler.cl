@@ -158,8 +158,6 @@ kernel void cal_perplexity(
 	size_t gid = get_global_id(0);
 	size_t gsize = get_global_size(0);
 
-	printf((__constant char *)"In cal_perplexity: me %zd H %d gsize %zd\n", gid, H, gsize);
-
 	double l0 = 0.0;
 	double l1 = 0.0;
 	int c0 = 0;
@@ -171,24 +169,6 @@ kernel void cal_perplexity(
 										(*edge).z,
 										beta,
 										epsilon);
-		if (1 || i == 0) {
-			printf((__constant char *)"el[%d] %.12lf a %d b %d y %d\n", i, el, (*edge).x, (*edge).y, (*edge).z);
-			printf((__constant char *)"pi[a] ");
-			for (size_t k = 0; k < 10; k++) {
-				printf((__constant char *)"%.12f ", (pi + (*edge).x * K)[k]);
-			}
-			printf((__constant char *)"\n");
-			printf((__constant char *)"pi[b] ");
-			for (size_t k = 0; k < 10; k++) {
-				printf((__constant char *)"%.12f ", (pi + (*edge).y * K)[k]);
-			}
-			printf((__constant char *)"\n");
-			printf((__constant char *)"beta ");
-			for (size_t k = 0; k < 10; k++) {
-				printf((__constant char *)"%.12f ", beta[k]);
-			}
-			printf((__constant char *)"\n");
-		}
 		if ((*edge).z == 1) {
 			l0 += el;
 			c0++;
@@ -202,8 +182,6 @@ kernel void cal_perplexity(
 	linkCount[gid] = c0;
 	nonLinkLikelihood[gid] = l1;
 	nonLinkCount[gid] = c1;
-
-	printf((__constant char *)"Done cal_perplexity: me %zd\n", gid);
 
 	// and perform a scan over scratch.{likelihood,count} + a scan over scratch'.{likelihood,count}
 }

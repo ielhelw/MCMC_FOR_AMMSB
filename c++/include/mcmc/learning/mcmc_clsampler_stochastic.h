@@ -247,7 +247,7 @@ protected:
 		clContext.queue.enqueueNDRangeKernel(update_beta_calculate_beta_kernel, cl::NullRange, cl::NDRange(K_workers), cl::NDRange(1));
 		clContext.queue.finish();
 
-		if (true) {
+		if (false) {
 			clContext.queue.enqueueReadBuffer(clBeta, CL_FALSE, 0, K * sizeof(double), beta.data());
 			std::cerr << __func__ << std::endl;
 			std::cerr << "beta ";

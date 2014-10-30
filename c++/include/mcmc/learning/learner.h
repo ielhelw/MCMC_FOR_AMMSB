@@ -148,24 +148,6 @@ protected:
 			// std::cerr << std::fixed << std::setprecision(12) << e << " in? " << (e.in(network.get_linked_edges()) ? "True" : "False") << " -> " << edge_likelihood << std::endl;
 			// FIXME FIXME should not test again if we already know
 			assert(edge->second == e.in(network.get_linked_edges()));
-			if (true || edge == data.begin()) {
-				std::cerr << std::fixed << std::setprecision(12) << "el[" << i << "] " << edge_likelihood << " a " << e.first << " b " << e.second << " y " << (edge->second ? 1 : 0) << std::endl;
-				std::cerr << "pi[a] ";
-				for (::size_t k = 0; k < 10; k++) {
-					std::cerr << std::setprecision(12) << pi[e.first][k] << " ";
-				}
-				std::cerr << std::endl;
-				std::cerr << "pi[b] ";
-				for (::size_t k = 0; k < 10; k++) {
-					std::cerr << std::setprecision(12) << pi[e.second][k] << " ";
-				}
-				std::cerr << std::endl;
-				std::cerr << "beta ";
-				for (::size_t k = 0; k < 10; k++) {
-					std::cerr << std::setprecision(12) << beta[k] << " ";
-				}
-				std::cerr << std::endl;
-			}
 			if (edge->second) {
 				link_count++;
 				link_likelihood += edge_likelihood;
@@ -206,7 +188,7 @@ protected:
 		}
 		std::cerr << " ";
 		for (auto i = a.begin(); i < a.begin() + n; i++) {
-			std::cerr << std::setprecision(12) << *i << " ";
+			std::cerr << std::fixed << std::setprecision(12) << *i << " ";
 		}
 		std::cerr << std::endl;
 	}
