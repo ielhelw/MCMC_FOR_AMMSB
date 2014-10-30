@@ -21,6 +21,56 @@
 #error ULONG_MAX " != " RAND_MAX
 #endif
 
+
+typedef struct {
+	struct {
+		global Graph *G;
+		global Graph *HG;
+		global int  *Nodes;
+		global int  *NodesNeighbors;
+		global int2 *Edges;
+		global double *Pi;
+		global double *Phi;
+		global double *Beta;
+		global double2 *Theta;
+		global double *ThetaSum;
+		global int *Z;
+		global double *Scratch;
+		global ulong2 *RandomSeed;
+	} bufs;
+} Buffers;
+
+kernel void init_buffers(
+		global Buffers *bufs,
+		global Graph *G,
+		global Graph *HG,
+		global int  *Nodes,
+		global int  *NodesNeighbors,
+		global int2 *Edges,
+		global double *Pi,
+		global double *Phi,
+		global double *Beta,
+		global double2 *Theta,
+		global double *ThetaSum,
+		global int *Z,
+		global double *Scratch,
+		global ulong2 *RandomSeed) {
+	bufs->bufs.G = G;
+	bufs->bufs.HG = HG;
+	bufs->bufs.Nodes = Nodes;
+	bufs->bufs.NodesNeighbors = NodesNeighbors;
+	bufs->bufs.Edges = Edges;
+	bufs->bufs.Pi = Pi;
+	bufs->bufs.Phi = Phi;
+	bufs->bufs.Beta = Beta;
+	bufs->bufs.Theta = Theta;
+	bufs->bufs.ThetaSum = ThetaSum;
+	bufs->bufs.Z = Z;
+	bufs->bufs.Scratch = Scratch;
+	bufs->bufs.RandomSeed = RandomSeed;
+}
+
+
 // LINEAR SEARACH
 int find_linear(global int *arr, int item, int up) {
 	for (int i = 0; i < up; ++i) {
@@ -287,8 +337,7 @@ inline void sample_latent_vars_of(
 
 void update_pi_for_node_(
 		int node,
-		global const double *pi,// #K
-		global double *piUpdate,// #K
+		global double *pi,// #K
 		global double *phi,// #K
 		global int *z, // #K
 		ulong2 *randomSeed,
@@ -313,60 +362,58 @@ void update_pi_for_node_(
 	double phi_sum = 0;
 	for (int i = 0; i < K; ++i) phi_sum += phi[i];
 	for (int i = 0; i < K; ++i) {
-		piUpdate[i] = phi[i]/phi_sum;
+		pi[i] = phi[i]/phi_sum;
 	}
 }
 
-kernel void sample_latent_vars_and_update_pi(
-		global const Graph *g,
-		global const Graph *hg,
-		global const int *nodes,
+kernel void sample_latent_vars(
+		global Buffers *bufs,
 		const int N, // #nodes
-		global int *neighbor_nodes,// (#total_nodes, NEIGHBOR_SAMPLE_SIZE)
-		global const double *pi,// (#total_nodes, K)
-		global double *piUpdate,// (#total_nodes, K)
-		global double *phi,// (#total_nodes, K)
-		global const double *beta,// (#K)
-		const double epsilon,
-		global int *Z, /* (#total_nodes, K) */
-		global double *scratch, // (#nodes, K)
-		double alpha,
-		double a, double b, double c,
-		int step_count, int total_node_count,
-		global ulong2 *gRandomSeed
+		const double epsilon
 		){
 	size_t gid = get_global_id(0);
 	size_t gsize = get_global_size(0);
-	global double *_p = scratch + gid * K;
-	ulong2 randomSeed = gRandomSeed[gid];
+	global double *_p = bufs->bufs.Scratch + gid * K;
+	ulong2 randomSeed = bufs->bufs.RandomSeed[gid];
 
 	for (int i = gid; i < N; i += gsize) {
-		int node = nodes[i];
+		int node = bufs->bufs.Nodes[i];
 		sample_latent_vars_of(
 				node,
-				g, hg,
-				neighbor_nodes + node * HASH_MULTIPLE * NEIGHBOR_SAMPLE_SIZE,
-				pi,
-				beta,
+				bufs->bufs.G, bufs->bufs.HG,
+				bufs->bufs.NodesNeighbors + node * HASH_MULTIPLE * NEIGHBOR_SAMPLE_SIZE,
+				bufs->bufs.Pi,
+				bufs->bufs.Beta,
 				epsilon,
-				Z + node * K,
+				bufs->bufs.Z + node * K,
 				&randomSeed,
 				_p);
-#ifdef RANDOM_FOLLOWS_CPP // for verification only
 	}
+	bufs->bufs.RandomSeed[gid] = randomSeed;
+}
+
+kernel void update_pi(
+		global Buffers *bufs,
+		const int N, // #nodes
+		double alpha,
+		double a, double b, double c,
+		int step_count, int total_node_count
+		){
+	size_t gid = get_global_id(0);
+	size_t gsize = get_global_size(0);
+	global double *_p = bufs->bufs.Scratch + gid * K;
+	ulong2 randomSeed = bufs->bufs.RandomSeed[gid];
 	for (int i = gid; i < N; i += gsize) {
-		int node = nodes[i];
-#endif
+		int node = bufs->bufs.Nodes[i];
 		update_pi_for_node_(node,
-				pi + node * K,
-				piUpdate + node * K,
-				phi + node * K,
-				Z + node * K,
+				bufs->bufs.Pi + node * K,
+				bufs->bufs.Phi + node * K,
+				bufs->bufs.Z + node * K,
 				&randomSeed,
-				scratch + i * K,
+				bufs->bufs.Scratch + i * K,
 				alpha, a, b, c, step_count, total_node_count);
 	}
-	gRandomSeed[gid] = randomSeed;
+	bufs->bufs.RandomSeed[gid] = randomSeed;
 }
 
 #define sample_latent_vars2_orig(k) \
@@ -409,28 +456,23 @@ int sample_latent_vars2_(
 }
 
 kernel void sample_latent_vars2(
-		global Graph *g,
-		global int2 *edges,
-		int E, // #edges
-		global double *pi,// (#total_nodes, K)
-		global double *beta,// (#K)
-		global int *Z,// #edges
-		global double *p,// (#edges, K+1)
-		global ulong2 *gRandomSeed
+		global Buffers *bufs,
+		int E // #edges
 		) {
 	size_t gid = get_global_id(0);
 	size_t gsize = get_global_size(0);
-	ulong2 randomSeed = gRandomSeed[gid];
+	ulong2 randomSeed = bufs->bufs.RandomSeed[gid];
 
 	for (int i = gid; i < E; i += gsize) {
-		Z[i] = sample_latent_vars2_(edges[i],
-				g,
-				pi,
-				beta,
-				p + i * (K+1),
+		bufs->bufs.Z[i] = sample_latent_vars2_(
+				bufs->bufs.Edges[i],
+				bufs->bufs.G,
+				bufs->bufs.Pi,
+				bufs->bufs.Beta,
+				bufs->bufs.Scratch + i * (K+1),
 				random(&randomSeed));
 	}
-	gRandomSeed[gid] = randomSeed;
+	bufs->bufs.RandomSeed[gid] = randomSeed;
 }
 
 kernel void update_beta_calculate_theta_sum(
@@ -446,46 +488,40 @@ kernel void update_beta_calculate_theta_sum(
 }
 
 kernel void update_beta_calculate_grads(
-		global Graph *g,
-		global const int2 *edges,
+		global Buffers *bufs,
 		const int E, // #edges
-		global const int *Z,// #edges
-		global const double2 *theta,// #K
-		global const double *theta_sum,// (#K)
-		global double2 *ggrads,// #K,
 		double scale
 		) {
 	size_t gid = get_global_id(0);
 	size_t gsize = get_global_size(0);
-	global double2 *grads = ggrads + gid * K;
+	global double2 *grads = bufs->bufs.Scratch + gid * K;
 
 	for (int i = 0; i < K; ++i) {
 		grads[i].x = 0;
 		grads[i].y = 0;
 	}
 	for (int i = gid; i < E; i += gsize) {
-		int y_ab = graph_has_peer(g, edges[i].x, edges[i].y);
-		int k = Z[i];
+		int y_ab = graph_has_peer(bufs->bufs.G, bufs->bufs.Edges[i].x, bufs->bufs.Edges[i].y);
+		int k = bufs->bufs.Z[i];
 		if (k != -1) {
-			grads[k].x += (1-y_ab) / theta[k].x - 1 / theta_sum[k];
-			grads[k].y += y_ab / theta[k].y - 1 / theta_sum[k];
+			grads[k].x += (1-y_ab) / bufs->bufs.Theta[k].x - 1 / bufs->bufs.ThetaSum[k];
+			grads[k].y += y_ab / bufs->bufs.Theta[k].y - 1 / bufs->bufs.ThetaSum[k];
 		}
 	}
 }
 
 kernel void update_beta_calculate_theta(
-		global double2 *theta,// #K
-		global ulong2 *gRandomSeed,
-		global double2 *ggrads,// #K,
+		global Buffers *bufs,
 		double scale,
 		double eps_t,
 		double2 eta,
 		int count_partial_sums
 		) {
 	size_t gid = get_global_id(0);
-	ulong2 randomSeed = gRandomSeed[gid];
+	ulong2 randomSeed = bufs->bufs.RandomSeed[gid];
+	global double2 *ggrads = bufs->bufs.Scratch;
 	for (int i = 1; i < count_partial_sums; ++i) {
-		global double2 *grads = ggrads + i * K;
+		global double2 *grads = bufs->bufs.Scratch + i * K;
 		for (int k = 0; k < K; ++k) {
 			ggrads[k].x += grads[k].x;
 			ggrads[k].y += grads[k].y;
@@ -493,18 +529,18 @@ kernel void update_beta_calculate_theta(
 	}
 	for (int k = 0; k < K; ++k) {
 		// Ugly: opencl compiler does not recognise the other double2 union fields(.s[i])
-		theta[k].x = fabs(
-				theta[k].x + eps_t
-				* (eta.x - theta[k].x
+		bufs->bufs.Theta[k].x = fabs(
+				bufs->bufs.Theta[k].x + eps_t
+				* (eta.x - bufs->bufs.Theta[k].x
 						+ scale * ggrads[k].x)
-				+ sqrt(2.0 * eps_t * theta[k].x) * randn(&randomSeed));
-		theta[k].y = fabs(
-				theta[k].y + eps_t
-				* (eta.y - theta[k].y
+				+ sqrt(2.0 * eps_t * bufs->bufs.Theta[k].x) * randn(&randomSeed));
+		bufs->bufs.Theta[k].y = fabs(
+				bufs->bufs.Theta[k].y + eps_t
+				* (eta.y - bufs->bufs.Theta[k].y
 						+ scale * ggrads[k].y)
-				+ sqrt(2.0 * eps_t * theta[k].y) * randn(&randomSeed));
+				+ sqrt(2.0 * eps_t * bufs->bufs.Theta[k].y) * randn(&randomSeed));
 	}
-	gRandomSeed[gid] = randomSeed;
+	bufs->bufs.RandomSeed[gid] = randomSeed;
 }
 
 kernel void update_beta_calculate_beta(
