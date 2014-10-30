@@ -43,7 +43,9 @@ public:
 		sample_latent_vars2_kernel = cl::Kernel(sampler_program, "sample_latent_vars2");
 		update_beta_calculate_grads_kernel = cl::Kernel(sampler_program, "update_beta_calculate_grads");
 		update_beta_calculate_theta_kernel = cl::Kernel(sampler_program, "update_beta_calculate_theta");
+		init_buffers_kernel = cl::Kernel(sampler_program, "init_buffers");
 
+		clBuffers = cl::Buffer(clContext.context, CL_MEM_READ_WRITE, 64 * 100); // enough space for 100 pointers
 		clNodes = cl::Buffer(clContext.context, CL_MEM_READ_ONLY,
 				N * sizeof(cl_int) // max: 2 unique nodes per edge in batch
 				// FIXME: better estimate for #nodes in mini batch
@@ -86,6 +88,26 @@ public:
 		clRandomSeed = cl::Buffer(clContext.context, CL_MEM_READ_WRITE,
 				PARALLELISM * sizeof(cl_ulong2)
 				);
+
+		int Idx = 0;
+		init_buffers_kernel.setArg(Idx++, clBuffers);
+		init_buffers_kernel.setArg(Idx++, clGraph);
+		init_buffers_kernel.setArg(Idx++, clHeldOutGraph);
+		init_buffers_kernel.setArg(Idx++, clNodes);
+		init_buffers_kernel.setArg(Idx++, clNodesNeighbors);
+		init_buffers_kernel.setArg(Idx++, clEdges);
+		init_buffers_kernel.setArg(Idx++, clPi);
+		init_buffers_kernel.setArg(Idx++, clPiUpdate);
+		init_buffers_kernel.setArg(Idx++, clPhi);
+		init_buffers_kernel.setArg(Idx++, clBeta);
+		init_buffers_kernel.setArg(Idx++, clTheta);
+		init_buffers_kernel.setArg(Idx++, clThetaSum);
+		init_buffers_kernel.setArg(Idx++, clZ);
+		init_buffers_kernel.setArg(Idx++, clScratch);
+		init_buffers_kernel.setArg(Idx++, clRandomSeed);
+		clContext.queue.enqueueTask(init_buffers_kernel);
+
+
 		for (unsigned i = 0; i < N; ++i) {
 			// copy phi
 			clContext.queue.enqueueWriteBuffer(clPhi, CL_TRUE,
@@ -178,14 +200,9 @@ protected:
 				0, theta.size() * sizeof(cl_double),
 				vThetaSum.data());
 
-		update_beta_calculate_grads_kernel.setArg(0, clGraph);
-		update_beta_calculate_grads_kernel.setArg(1, clEdges);
-		update_beta_calculate_grads_kernel.setArg(2, (cl_int)mini_batch.size());
-		update_beta_calculate_grads_kernel.setArg(3, clZ);
-		update_beta_calculate_grads_kernel.setArg(4, clTheta);
-		update_beta_calculate_grads_kernel.setArg(5, clThetaSum);
-		update_beta_calculate_grads_kernel.setArg(6, clScratch);
-		update_beta_calculate_grads_kernel.setArg(7, (cl_double)scale);
+		update_beta_calculate_grads_kernel.setArg(0, clBuffers);
+		update_beta_calculate_grads_kernel.setArg(1, (cl_int)mini_batch.size());
+		update_beta_calculate_grads_kernel.setArg(2, (cl_double)scale);
 
 		::size_t countPartialSums = std::min(mini_batch.size(), (::size_t)PARALLELISM);
 
@@ -203,13 +220,11 @@ protected:
 
 		e_grads_kernel.wait();
 
-		update_beta_calculate_theta_kernel.setArg(0, clTheta);
-		update_beta_calculate_theta_kernel.setArg(1, clRandomSeed);
-		update_beta_calculate_theta_kernel.setArg(2, clScratch);
-		update_beta_calculate_theta_kernel.setArg(3, (cl_double)scale);
-		update_beta_calculate_theta_kernel.setArg(4, (cl_double)eps_t);
-		update_beta_calculate_theta_kernel.setArg(5, clEta);
-		update_beta_calculate_theta_kernel.setArg(6, (int)countPartialSums);
+		update_beta_calculate_theta_kernel.setArg(0, clBuffers);
+		update_beta_calculate_theta_kernel.setArg(1, (cl_double)scale);
+		update_beta_calculate_theta_kernel.setArg(2, (cl_double)eps_t);
+		update_beta_calculate_theta_kernel.setArg(3, clEta);
+		update_beta_calculate_theta_kernel.setArg(4, (int)countPartialSums);
 
 		clContext.queue.enqueueTask(update_beta_calculate_theta_kernel);
 		clContext.queue.finish();
@@ -245,14 +260,8 @@ protected:
 				0, edges.size()*sizeof(cl_int2),
 				edges.data());
 
-		sample_latent_vars2_kernel.setArg(0, clGraph);
-		sample_latent_vars2_kernel.setArg(1, clEdges);
-		sample_latent_vars2_kernel.setArg(2, (cl_int)edges.size());
-		sample_latent_vars2_kernel.setArg(3, clPi);
-		sample_latent_vars2_kernel.setArg(4, clBeta);
-		sample_latent_vars2_kernel.setArg(5, clZ);
-		sample_latent_vars2_kernel.setArg(6, clScratch);
-		sample_latent_vars2_kernel.setArg(7, clRandomSeed);
+		sample_latent_vars2_kernel.setArg(0, clBuffers);
+		sample_latent_vars2_kernel.setArg(1, (cl_int)edges.size());
 
 		clContext.queue.finish(); // Wait for clEdges and PiUpdates from sample_latent_vars_and_update_pi
 
@@ -273,25 +282,15 @@ protected:
 		clContext.queue.enqueueWriteBuffer(clBeta, CL_FALSE, 0, K * sizeof(double), beta.data());
 
 		int Idx = 0;
-		sample_latent_vars_and_update_pi_kernel.setArg(Idx++, clGraph);
-		sample_latent_vars_and_update_pi_kernel.setArg(Idx++, clHeldOutGraph);
-		sample_latent_vars_and_update_pi_kernel.setArg(Idx++, clNodes);
+		sample_latent_vars_and_update_pi_kernel.setArg(Idx++, clBuffers);
 		sample_latent_vars_and_update_pi_kernel.setArg(Idx++, (cl_int)nodes.size());
-		sample_latent_vars_and_update_pi_kernel.setArg(Idx++, clNodesNeighbors);
-		sample_latent_vars_and_update_pi_kernel.setArg(Idx++, clPi);
-		sample_latent_vars_and_update_pi_kernel.setArg(Idx++, clPiUpdate);
-		sample_latent_vars_and_update_pi_kernel.setArg(Idx++, clPhi);
-		sample_latent_vars_and_update_pi_kernel.setArg(Idx++, clBeta);
 		sample_latent_vars_and_update_pi_kernel.setArg(Idx++, (cl_double)epsilon);
-		sample_latent_vars_and_update_pi_kernel.setArg(Idx++, clZ);
-		sample_latent_vars_and_update_pi_kernel.setArg(Idx++, clScratch);
 		sample_latent_vars_and_update_pi_kernel.setArg(Idx++, (cl_double)alpha);
 		sample_latent_vars_and_update_pi_kernel.setArg(Idx++, (cl_double)a);
 		sample_latent_vars_and_update_pi_kernel.setArg(Idx++, (cl_double)b);
 		sample_latent_vars_and_update_pi_kernel.setArg(Idx++, (cl_double)c);
 		sample_latent_vars_and_update_pi_kernel.setArg(Idx++, (cl_int)step_count);
 		sample_latent_vars_and_update_pi_kernel.setArg(Idx++, (cl_int)N);
-		sample_latent_vars_and_update_pi_kernel.setArg(Idx++, clRandomSeed);
 
 		clContext.queue.finish();
 		clContext.queue.enqueueNDRangeKernel(sample_latent_vars_and_update_pi_kernel, cl::NullRange, cl::NDRange(PARALLELISM), cl::NDRange(1));
@@ -410,6 +409,9 @@ protected:
 	cl::Kernel sample_latent_vars2_kernel;
 	cl::Kernel update_beta_calculate_grads_kernel;
 	cl::Kernel update_beta_calculate_theta_kernel;
+	cl::Kernel init_buffers_kernel;
+
+	cl::Buffer clBuffers;
 
 	cl::Buffer clGraphEdges;
 	cl::Buffer clGraphNodes;
