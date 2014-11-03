@@ -159,7 +159,10 @@ public:
 		clContext.queue.enqueueWriteBuffer(clRandomSeed, CL_TRUE,
 				0, randomSeed.size() * sizeof(cl_ulong2),
 				randomSeed.data());
-		clContext.queue.enqueueFillBuffer(clNodesNeighborsHash, (cl_int)-1, 0, clNodesNeighborsHash.getInfo<CL_MEM_SIZE>());
+		// fill Hash with EMPTY (-1) values
+		vex::backend::opencl::device_vector<cl_int> vexDeviceHash(clNodesNeighborsHash);
+		vex::vector<cl_int> vexHash(vexContext.queue(0), vexDeviceHash);
+		vexHash = (cl_int) -1;
 
 		clLinkLikelihood = cl::Buffer(clContext.context, CL_MEM_READ_WRITE, PARALLELISM * sizeof(cl_double));
 		clNonLinkLikelihood = cl::Buffer(clContext.context, CL_MEM_READ_WRITE, PARALLELISM * sizeof(cl_double));
