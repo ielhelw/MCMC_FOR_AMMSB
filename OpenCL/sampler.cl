@@ -1,3 +1,5 @@
+#pragma OPENCL EXTENSION cl_khr_fp64 : enable
+
 #include "graph.h"
 #include "random.h"
 
@@ -13,8 +15,6 @@
 #error "Need definition of NEIGHBOR_SAMPLE_SIZE"
 #endif
 
-#pragma OPENCL EXTENSION cl_khr_fp64 : enable
-
 #define NODE_ID_VALID(NID) ((NID) >= 0 && (NID) < MAX_NODE_ID)
 
 #if ULONG_MAX != RAND_MAX
@@ -28,6 +28,7 @@ typedef struct {
 		global Graph *HG;
 		global int  *Nodes;
 		global int  *NodesNeighbors;
+		global int  *NodesNeighborsHash;
 		global int2 *Edges;
 		global double *Pi;
 		global double *Phi;
@@ -46,6 +47,7 @@ kernel void init_buffers(
 		global Graph *HG,
 		global int  *Nodes,
 		global int  *NodesNeighbors,
+		global int  *NodesNeighborsHash,
 		global int2 *Edges,
 		global double *Pi,
 		global double *Phi,
@@ -59,6 +61,7 @@ kernel void init_buffers(
 	bufs->bufs.HG = HG;
 	bufs->bufs.Nodes = Nodes;
 	bufs->bufs.NodesNeighbors = NodesNeighbors;
+	bufs->bufs.NodesNeighborsHash = NodesNeighborsHash;
 	bufs->bufs.Edges = Edges;
 	bufs->bufs.Pi = Pi;
 	bufs->bufs.Phi = Phi;
@@ -115,7 +118,7 @@ int find_le(global double *arr, double item, int up, int lo) {
 }
 
 // HASH TABLE: DOUBLE HASHING
-#define HASH_OK (0)
+#define HASH_OK(val) ( val >= 0)
 #define HASH_EMPTY (-1)
 #define HASH_FOUND (-2)
 #define HASH_FAIL (-3)
@@ -147,7 +150,7 @@ inline int hash_put(const int key, global int* buckets, const int n_buckets) {
 	for (int i = 0; i < n_buckets; ++i) {
 		if (buckets[loc] == HASH_EMPTY) {
 			buckets[loc] = key;
-			return HASH_OK;
+			return loc;
 		} else if (buckets[loc] == key) {
 			return HASH_FOUND;
 		}
@@ -279,6 +282,7 @@ inline void sample_latent_vars_of(
 		global const Graph *g,
 		global const Graph *hg,
 		global int* neighbor_nodes,
+		global int* neighbor_nodes_hash,
 		global const double *pi,
 		global const double *beta,
 		const double epsilon,
@@ -289,12 +293,16 @@ inline void sample_latent_vars_of(
 
 	for (int i = 0; i < NEIGHBOR_SAMPLE_SIZE; ++i) {
 		int neighborId;
+		int ret;
 		for (;;) {
 			neighborId = randint(randomSeed, 0, MAX_NODE_ID);
 			if (neighborId != node
 					&& !graph_has_peer(hg, node, neighborId)) {
-				int ret = hash_put(neighborId, neighbor_nodes, HASH_MULTIPLE*NEIGHBOR_SAMPLE_SIZE);
-				if (ret == HASH_OK) break;
+				ret = hash_put(neighborId, neighbor_nodes_hash, HASH_MULTIPLE*NEIGHBOR_SAMPLE_SIZE);
+				if (HASH_OK(ret)) {
+					neighbor_nodes[i] = ret;
+					break;
+				}
 				if (ret == HASH_FOUND) continue;
 				if (ret == HASH_FAIL) {
 					printf((__constant char *)"ERROR: FAILED TO INSERT ITEM IN HASH\n");
@@ -304,26 +312,23 @@ inline void sample_latent_vars_of(
 		}
 	}
 #ifdef RANDOM_FOLLOWS_CPP // for verification only
-	for (int i = 0; i < HASH_MULTIPLE*NEIGHBOR_SAMPLE_SIZE - 1; ++i) {
-		for (int j = 0; j < HASH_MULTIPLE*NEIGHBOR_SAMPLE_SIZE - i - 1; ++j) {
-			if (neighbor_nodes[j] > neighbor_nodes[j + 1]) {
-				int tmp = neighbor_nodes[j];
-				neighbor_nodes[j] = neighbor_nodes[j+1];
-				neighbor_nodes[j+1] = tmp;
+	for (int i = 0; i < NEIGHBOR_SAMPLE_SIZE - 1; ++i) {
+		for (int j = 0; j < NEIGHBOR_SAMPLE_SIZE - i - 1; ++j) {
+			int loc1 = neighbor_nodes[j];
+			int loc2 = neighbor_nodes[j + 1];
+			if (neighbor_nodes_hash[loc1] > neighbor_nodes_hash[loc2]) {
+				int tmp = neighbor_nodes_hash[loc1];
+				neighbor_nodes_hash[loc1] = neighbor_nodes_hash[loc2];
+				neighbor_nodes_hash[loc2] = tmp;
 			}
 		}
 	}
 #endif
 
-	int found = 0;
-	for (int i = 0; found < NEIGHBOR_SAMPLE_SIZE && i < HASH_MULTIPLE*NEIGHBOR_SAMPLE_SIZE; ++i) {
-		int neighbor = neighbor_nodes[i];
-
-		if (neighbor == HASH_EMPTY) {
-			continue;
-		}
-		++found;
-		neighbor_nodes[i] = HASH_EMPTY;
+	for (int i = 0; i < NEIGHBOR_SAMPLE_SIZE; ++i) {
+		int neighborLoc = neighbor_nodes[i];
+		int neighbor = neighbor_nodes_hash[neighborLoc];
+		neighbor_nodes_hash[neighborLoc] = HASH_EMPTY; // reset the hash bucket to empty
 
 		int y_ab = graph_has_peer(g, node, neighbor);
 		int z_ab = sample_z_ab_from_edge(
@@ -381,7 +386,8 @@ kernel void sample_latent_vars(
 		sample_latent_vars_of(
 				node,
 				bufs->bufs.G, bufs->bufs.HG,
-				bufs->bufs.NodesNeighbors + node * HASH_MULTIPLE * NEIGHBOR_SAMPLE_SIZE,
+				bufs->bufs.NodesNeighbors + node * NEIGHBOR_SAMPLE_SIZE,
+				bufs->bufs.NodesNeighborsHash + node * HASH_MULTIPLE * NEIGHBOR_SAMPLE_SIZE,
 				bufs->bufs.Pi,
 				bufs->bufs.Beta,
 				epsilon,

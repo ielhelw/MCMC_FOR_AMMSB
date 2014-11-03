@@ -29,7 +29,7 @@ public:
 					 std::vector<cl::CommandQueue>(1, clContext.getQueue())),
 		  csumDouble(vexContext), csumInt(vexContext) {
 
-		int hash_table_multiple = 2;
+		int hash_table_multiple = 4;
 		std::ostringstream opts;
 		opts << "-I" << stringify(PROJECT_HOME) << "/../OpenCL/include"
 			 << " -DNEIGHBOR_SAMPLE_SIZE=" << real_num_node_sample()
@@ -65,6 +65,10 @@ public:
 				// FIXME: better estimate for #nodes in mini batch
 				);
 		clNodesNeighbors = cl::Buffer(clContext.context, CL_MEM_READ_ONLY,
+				N * real_num_node_sample() * sizeof(cl_int) // #total_nodes x #neighbors_per_node
+				// FIXME: we don't need space for all N elements. Space should be limited to #nodes_in_mini_batch * num_node_sample (DEPENDS ON ABOVE)
+				);
+		clNodesNeighborsHash = cl::Buffer(clContext.context, CL_MEM_READ_ONLY,
 				N * real_num_node_sample() * hash_table_multiple * sizeof(cl_int) // #total_nodes x #neighbors_per_node
 				// FIXME: we don't need space for all N elements. Space should be limited to #nodes_in_mini_batch * num_node_sample (DEPENDS ON ABOVE)
 				);
@@ -106,6 +110,7 @@ public:
 		init_buffers_kernel.setArg(Idx++, clHeldOutGraph);
 		init_buffers_kernel.setArg(Idx++, clNodes);
 		init_buffers_kernel.setArg(Idx++, clNodesNeighbors);
+		init_buffers_kernel.setArg(Idx++, clNodesNeighborsHash);
 		init_buffers_kernel.setArg(Idx++, clEdges);
 		init_buffers_kernel.setArg(Idx++, clPi);
 		init_buffers_kernel.setArg(Idx++, clPhi);
@@ -154,7 +159,7 @@ public:
 		clContext.queue.enqueueWriteBuffer(clRandomSeed, CL_TRUE,
 				0, randomSeed.size() * sizeof(cl_ulong2),
 				randomSeed.data());
-		clContext.queue.enqueueFillBuffer(clNodesNeighbors, (cl_int)-1, 0, clNodesNeighbors.getInfo<CL_MEM_SIZE>());
+		clContext.queue.enqueueFillBuffer(clNodesNeighborsHash, (cl_int)-1, 0, clNodesNeighborsHash.getInfo<CL_MEM_SIZE>());
 
 		clLinkLikelihood = cl::Buffer(clContext.context, CL_MEM_READ_WRITE, PARALLELISM * sizeof(cl_double));
 		clNonLinkLikelihood = cl::Buffer(clContext.context, CL_MEM_READ_WRITE, PARALLELISM * sizeof(cl_double));
@@ -469,7 +474,10 @@ protected:
 		std::unique_ptr<cl_int3[]> hIterableGraph(new cl_int3[data.size()]);
 		::size_t i = 0;
 		for (auto a: data) {
-			cl_int3 e = { a.first.first, a.first.second, a.second ? 1 : 0 };
+			cl_int3 e;
+			e.s[0] = a.first.first;
+			e.s[1] = a.first.second;
+			e.s[2] = a.second ? 1 : 0;
 			hIterableGraph.get()[i] = e;
 			i++;
 		}
@@ -558,6 +566,7 @@ protected:
 
 	cl::Buffer clNodes;
 	cl::Buffer clNodesNeighbors;
+	cl::Buffer clNodesNeighborsHash;
 	cl::Buffer clEdges;
 	cl::Buffer clPi;
 	cl::Buffer clPhi;
