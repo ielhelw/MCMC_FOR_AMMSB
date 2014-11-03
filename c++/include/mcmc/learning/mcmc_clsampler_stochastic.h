@@ -13,8 +13,6 @@
 
 #include "mcmc_sampler_stochastic.h"
 
-#define PARALLELISM 1
-
 namespace mcmc {
 namespace learning {
 
@@ -28,7 +26,9 @@ public:
 		: MCMCSamplerStochastic(args, graph), clContext(clContext),
 		  vexContext(std::vector<cl::Context>(1, clContext.getContext()),
 					 std::vector<cl::CommandQueue>(1, clContext.getQueue())),
-		  csumDouble(vexContext), csumInt(vexContext) {
+		  csumDouble(vexContext), csumInt(vexContext),
+		  groupSize(args.openclGroupSize), numGroups(args.openclNumGroups),
+		  globalThreads(groupSize * numGroups) {
 
 		int hash_table_multiple = 4;
 		std::ostringstream opts;
@@ -99,7 +99,7 @@ public:
 				N * K * sizeof(cl_double) // #total_nodes x #K
 				);
 		clRandomSeed = cl::Buffer(clContext.context, CL_MEM_READ_WRITE,
-				PARALLELISM * sizeof(cl_ulong2)
+				globalThreads * sizeof(cl_ulong2)
 				);
 		clErrorCtrl = cl::Buffer(clContext.context, CL_MEM_READ_WRITE,
 				sizeof(cl_int16)
@@ -157,7 +157,7 @@ public:
 		// copy beta
 		clContext.queue.enqueueWriteBuffer(clBeta, CL_TRUE, 0, K * sizeof(double), beta.data());
 
-		std::vector<cl_ulong2> randomSeed(PARALLELISM);
+		std::vector<cl_ulong2> randomSeed(globalThreads);
 		for (unsigned int i = 0; i < randomSeed.size(); ++i) {
 			randomSeed[i].s[0] = 42 + i;
 			randomSeed[i].s[1] = 42 + i + 1;
@@ -176,10 +176,10 @@ public:
 
 		errMsg = new char[ERROR_MESSAGE_LENGTH];
 
-		clLinkLikelihood = cl::Buffer(clContext.context, CL_MEM_READ_WRITE, PARALLELISM * sizeof(cl_double));
-		clNonLinkLikelihood = cl::Buffer(clContext.context, CL_MEM_READ_WRITE, PARALLELISM * sizeof(cl_double));
-		clLinkCount = cl::Buffer(clContext.context, CL_MEM_READ_WRITE, PARALLELISM * sizeof(cl_int));
-		clNonLinkCount = cl::Buffer(clContext.context, CL_MEM_READ_WRITE, PARALLELISM * sizeof(cl_int));
+		clLinkLikelihood = cl::Buffer(clContext.context, CL_MEM_READ_WRITE, globalThreads * sizeof(cl_double));
+		clNonLinkLikelihood = cl::Buffer(clContext.context, CL_MEM_READ_WRITE, globalThreads * sizeof(cl_double));
+		clLinkCount = cl::Buffer(clContext.context, CL_MEM_READ_WRITE, globalThreads * sizeof(cl_int));
+		clNonLinkCount = cl::Buffer(clContext.context, CL_MEM_READ_WRITE, globalThreads * sizeof(cl_int));
 
 		clContext.queue.finish();
 
@@ -232,7 +232,7 @@ public:
 protected:
 
 	void update_beta(const OrderedEdgeSet &mini_batch, double scale) {
-		::size_t K_workers = std::min(K, static_cast< ::size_t>(PARALLELISM));
+		::size_t K_workers = std::min(K, static_cast< ::size_t>(1));
 		int arg;
 
 		arg = 0;
@@ -247,7 +247,7 @@ protected:
 		update_beta_calculate_grads_kernel.setArg(1, (cl_int)mini_batch.size());
 		update_beta_calculate_grads_kernel.setArg(2, (cl_double)scale);
 
-		::size_t countPartialSums = std::min(mini_batch.size(), (::size_t)PARALLELISM);
+		::size_t countPartialSums = std::min(mini_batch.size(), (::size_t)1);
 
 		clContext.queue.finish(); // Wait for sample_latent_vars2
 
@@ -308,7 +308,7 @@ protected:
 
 		clContext.queue.finish(); // Wait for clEdges and PiUpdates from sample_latent_vars_and_update_pi
 
-		clContext.queue.enqueueNDRangeKernel(sample_latent_vars2_kernel, cl::NullRange, cl::NDRange(PARALLELISM), cl::NDRange(1));
+		clContext.queue.enqueueNDRangeKernel(sample_latent_vars2_kernel, cl::NullRange, cl::NDRange(globalThreads), cl::NDRange(groupSize));
 	}
 
 	::size_t real_num_node_sample() const {
@@ -337,7 +337,7 @@ protected:
 		sample_latent_vars_kernel.setArg(Idx++, (cl_double)epsilon);
 
 		clContext.queue.finish();
-		clContext.queue.enqueueNDRangeKernel(sample_latent_vars_kernel, cl::NullRange, cl::NDRange(PARALLELISM), cl::NDRange(1));
+		clContext.queue.enqueueNDRangeKernel(sample_latent_vars_kernel, cl::NullRange, cl::NDRange(globalThreads), cl::NDRange(groupSize));
 
 		Idx = 0;
 		update_pi_kernel.setArg(Idx++, clBuffers);
@@ -351,7 +351,7 @@ protected:
 
 		clContext.queue.finish();
 		check_for_kernel_errors(); // sample_latent_vars
-		clContext.queue.enqueueNDRangeKernel(update_pi_kernel, cl::NullRange, cl::NDRange(PARALLELISM), cl::NDRange(1));
+		clContext.queue.enqueueNDRangeKernel(update_pi_kernel, cl::NullRange, cl::NDRange(globalThreads), cl::NDRange(groupSize));
 		clContext.queue.finish();
 		// read Pi again
 		for (auto node = nodes.begin();
@@ -424,7 +424,7 @@ protected:
 		cal_perplexity_kernel.setArg(arg++, clNonLinkCount);
 
 		clContext.queue.finish();
-		clContext.queue.enqueueNDRangeKernel(cal_perplexity_kernel, cl::NullRange, cl::NDRange(PARALLELISM), cl::NDRange(1));
+		clContext.queue.enqueueNDRangeKernel(cal_perplexity_kernel, cl::NullRange, cl::NDRange(globalThreads), cl::NDRange(groupSize));
 		clContext.queue.finish();
 
 		link_likelihood = deviceSum<double>(clLinkLikelihood);
@@ -612,6 +612,10 @@ protected:
 	cl::Buffer clNonLinkLikelihood;
 	cl::Buffer clLinkCount;
 	cl::Buffer clNonLinkCount;
+
+	const ::size_t groupSize;
+	const ::size_t numGroups;
+	const ::size_t globalThreads;
 
 	char *errMsg;
 };
