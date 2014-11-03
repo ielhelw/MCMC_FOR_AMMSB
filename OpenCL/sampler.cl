@@ -38,6 +38,8 @@ typedef struct {
 		global int *Z;
 		global double *Scratch;
 		global ulong2 *RandomSeed;
+		global int *errCtrl;
+		global char *errMsg;
 	} bufs;
 } Buffers;
 
@@ -56,7 +58,10 @@ kernel void init_buffers(
 		global double *ThetaSum,
 		global int *Z,
 		global double *Scratch,
-		global ulong2 *RandomSeed) {
+		global ulong2 *RandomSeed,
+		global int *errCtrl,
+		global char *errMsg
+		) {
 	bufs->bufs.G = G;
 	bufs->bufs.HG = HG;
 	bufs->bufs.Nodes = Nodes;
@@ -71,8 +76,20 @@ kernel void init_buffers(
 	bufs->bufs.Z = Z;
 	bufs->bufs.Scratch = Scratch;
 	bufs->bufs.RandomSeed = RandomSeed;
+	bufs->bufs.errCtrl = errCtrl;
+	bufs->bufs.errMsg = errMsg;
 }
 
+void report_first_error(global Buffers *bufs, constant char *msg) {
+	if (atomic_cmpxchg(bufs->bufs.errCtrl, 0, 1) == 0) {
+		// first error report
+		global char* dst = bufs->bufs.errMsg;
+		while (*msg != 0) {
+			*dst++ = *msg++;
+		}
+		*dst = 0;
+	}
+}
 
 // LINEAR SEARACH
 int find_linear(global int *arr, int item, int up) {
@@ -277,7 +294,8 @@ inline int sample_z_ab_from_edge(
 	return find_le(p, location, K, 0);
 }
 
-inline void sample_latent_vars_of(
+inline int sample_latent_vars_of(
+		global Buffers *bufs,
 		const int node,
 		global const Graph *g,
 		global const Graph *hg,
@@ -305,8 +323,8 @@ inline void sample_latent_vars_of(
 				}
 				if (ret == HASH_FOUND) continue;
 				if (ret == HASH_FAIL) {
-					printf((__constant char *)"ERROR: FAILED TO INSERT ITEM IN HASH\n");
-					break;
+					report_first_error(bufs,( constant char* ) "ERROR: FAILED TO INSERT ITEM IN HASH\n");
+					return -1;
 				}
 			}
 		}
@@ -338,6 +356,7 @@ inline void sample_latent_vars_of(
 				p);
 		z[z_ab] += 1;
 	}
+	return 0;
 }
 
 void update_pi_for_node_(
@@ -383,7 +402,8 @@ kernel void sample_latent_vars(
 
 	for (int i = gid; i < N; i += gsize) {
 		int node = bufs->bufs.Nodes[i];
-		sample_latent_vars_of(
+		int ret = sample_latent_vars_of(
+				bufs,
 				node,
 				bufs->bufs.G, bufs->bufs.HG,
 				bufs->bufs.NodesNeighbors + node * NEIGHBOR_SAMPLE_SIZE,
@@ -394,6 +414,7 @@ kernel void sample_latent_vars(
 				bufs->bufs.Z + node * K,
 				&randomSeed,
 				_p);
+		if (ret) break;
 	}
 	bufs->bufs.RandomSeed[gid] = randomSeed;
 }

@@ -58,6 +58,9 @@ int main(int argc, char *argv[]) {
 
 		return 0;
 
+	} catch (cl::Error &e) {
+		std::cerr << "OpenCL error [code=" << e.err() << "]: " << e.what() << std::endl;
+		return 33;
 	} catch (mcmc::IOException &e) {
 		std::cerr << "IO error: " << e.what() << std::endl;
 		return 33;

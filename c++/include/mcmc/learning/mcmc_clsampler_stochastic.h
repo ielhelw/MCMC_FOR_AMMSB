@@ -20,6 +20,7 @@ namespace learning {
 
 #define do_stringify(str)	#str
 #define stringify(str)		do_stringify(str)
+#define ERROR_MESSAGE_LENGTH (4 * 1024)
 
 class MCMCClSamplerStochastic : public MCMCSamplerStochastic {
 public:
@@ -95,13 +96,16 @@ public:
 				N * K * sizeof(cl_int) // #total_nodes x #K
 				);
 		clScratch = cl::Buffer(clContext.context, CL_MEM_READ_WRITE,
-				std::max(
-						N * K * sizeof(cl_double), // #total_nodes x #K
-						N * K * sizeof(cl_double3)
-					)
+				N * K * sizeof(cl_double) // #total_nodes x #K
 				);
 		clRandomSeed = cl::Buffer(clContext.context, CL_MEM_READ_WRITE,
 				PARALLELISM * sizeof(cl_ulong2)
+				);
+		clErrorCtrl = cl::Buffer(clContext.context, CL_MEM_READ_WRITE,
+				sizeof(cl_int16)
+				);
+		clErrorMsg = cl::Buffer(clContext.context, CL_MEM_READ_WRITE,
+				ERROR_MESSAGE_LENGTH
 				);
 
 		int Idx = 0;
@@ -120,6 +124,8 @@ public:
 		init_buffers_kernel.setArg(Idx++, clZ);
 		init_buffers_kernel.setArg(Idx++, clScratch);
 		init_buffers_kernel.setArg(Idx++, clRandomSeed);
+		init_buffers_kernel.setArg(Idx++, clErrorCtrl);
+		init_buffers_kernel.setArg(Idx++, clErrorMsg);
 		clContext.queue.enqueueTask(init_buffers_kernel);
 
 
@@ -163,6 +169,12 @@ public:
 		vex::backend::opencl::device_vector<cl_int> vexDeviceHash(clNodesNeighborsHash);
 		vex::vector<cl_int> vexHash(vexContext.queue(0), vexDeviceHash);
 		vexHash = (cl_int) -1;
+
+		vex::backend::opencl::device_vector<cl_int> vexDeviceErr(clErrorCtrl);
+		vex::vector<cl_int> vexErr(vexContext.queue(0), vexDeviceErr);
+		vexErr = 0;
+
+		errMsg = new char[ERROR_MESSAGE_LENGTH];
 
 		clLinkLikelihood = cl::Buffer(clContext.context, CL_MEM_READ_WRITE, PARALLELISM * sizeof(cl_double));
 		clNonLinkLikelihood = cl::Buffer(clContext.context, CL_MEM_READ_WRITE, PARALLELISM * sizeof(cl_double));
@@ -338,8 +350,8 @@ protected:
 		update_pi_kernel.setArg(Idx++, (cl_int)N);
 
 		clContext.queue.finish();
+		check_for_kernel_errors(); // sample_latent_vars
 		clContext.queue.enqueueNDRangeKernel(update_pi_kernel, cl::NullRange, cl::NDRange(PARALLELISM), cl::NDRange(1));
-
 		clContext.queue.finish();
 		// read Pi again
 		for (auto node = nodes.begin();
@@ -537,6 +549,16 @@ protected:
 	}
 #endif
 
+	void check_for_kernel_errors() {
+		cl_int err = 0;
+		clContext.queue.enqueueReadBuffer(clErrorCtrl, CL_TRUE, 0, sizeof(cl_int), &err);
+		if (err) {
+			clContext.queue.enqueueReadBuffer(clErrorMsg, CL_TRUE, 0, ERROR_MESSAGE_LENGTH, errMsg);
+			std::cerr << errMsg << std::endl;
+			abort();
+		}
+	}
+
 	std::string progOpts;
 
 	cl::ClContext clContext;
@@ -579,6 +601,8 @@ protected:
 	cl::Buffer clZ;
 	cl::Buffer clScratch;
 	cl::Buffer clRandomSeed;
+	cl::Buffer clErrorCtrl;
+	cl::Buffer clErrorMsg;
 
 	vex::Context vexContext;
 	vex::Reductor<double, vex::SUM_Kahan> csumDouble;
@@ -588,6 +612,8 @@ protected:
 	cl::Buffer clNonLinkLikelihood;
 	cl::Buffer clLinkCount;
 	cl::Buffer clNonLinkCount;
+
+	char *errMsg;
 };
 
 }
