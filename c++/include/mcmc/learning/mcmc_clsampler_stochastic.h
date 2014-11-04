@@ -31,7 +31,7 @@ public:
 		  globalThreads(groupSize * numGroups),
 			kRoundedThreads(round_up_to_multiples(K, groupSize)) {
 
-		int hash_table_multiple = 4;
+		int hash_table_multiple = 2;
 		std::ostringstream opts;
 		opts << "-I" << stringify(PROJECT_HOME) << "/../OpenCL/include"
 			 << " -DNEIGHBOR_SAMPLE_SIZE=" << real_num_node_sample()

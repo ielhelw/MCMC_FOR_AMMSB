@@ -156,22 +156,25 @@ inline int hash2(const int key, const int n_buckets) {
 #else
 	const int SOME_PRIME = 3;
 #endif
-	return SOME_PRIME - (key % SOME_PRIME);
+	return (key % SOME_PRIME) + 1;
 }
 
 inline int hash_put(const int key, global int* buckets, const int n_buckets) {
 	const int h1 = hash1(key, n_buckets);
 	const int h2 = hash2(key, n_buckets);
-	int loc = (h1) % n_buckets;
 
 	for (int i = 0; i < n_buckets; ++i) {
+		// mix quadratic probing with double hashing
+		// for 2 keys to have the exact probing sequence,
+		// both must have equal h1/h2 values which is highly unlikely
+		int loc = (h1 + i*i*h2) % n_buckets;
+
 		if (buckets[loc] == HASH_EMPTY) {
 			buckets[loc] = key;
 			return loc;
 		} else if (buckets[loc] == key) {
 			return HASH_FOUND;
 		}
-		loc = (loc + h2) % n_buckets;
 	}
 	return HASH_FAIL;
 }
