@@ -314,8 +314,10 @@ inline int sample_latent_vars_of(
 		int ret;
 		for (;;) {
 			neighborId = randint(randomSeed, 0, MAX_NODE_ID);
-			if (neighborId != node
-					&& !graph_has_peer(hg, node, neighborId)) {
+			const bool cond1 = neighborId != node;
+			const bool cond2 = !graph_has_peer(g, node, neighborId);
+			const bool cond = cond1 && cond2;
+			if (cond) {
 				ret = hash_put(neighborId, neighbor_nodes_hash, HASH_MULTIPLE*NEIGHBOR_SAMPLE_SIZE);
 				if (HASH_OK(ret)) {
 					neighbor_nodes[i] = ret;
