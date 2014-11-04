@@ -208,7 +208,7 @@ public:
 
 namespace std {
 ::size_t hash<mcmc::Edge>::operator()(const mcmc::Edge &x) const {
-	::size_t h = std::hash<int>()(x.first) ^ std::hash<int>()(x.second);
+	::size_t h = ((size_t)x.first * (size_t)x.second) ^ ((size_t)x.first + (size_t)x.second);
 	return h;
 }
 }
