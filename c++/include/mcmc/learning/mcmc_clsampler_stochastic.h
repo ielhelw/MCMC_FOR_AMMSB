@@ -61,52 +61,52 @@ public:
 		cal_perplexity_kernel = cl::Kernel(sampler_program, "cal_perplexity");
 		init_buffers_kernel = cl::Kernel(sampler_program, "init_buffers");
 
-		clBuffers = createBuffer(CL_MEM_READ_WRITE, 64 * 100); // enough space for 100 pointers
+		clBuffers = createBuffer("clBuffers", CL_MEM_READ_WRITE, 64 * 100); // enough space for 100 pointers
 
 		// BASED ON STRATIFIED RANDOM NODE SAMPLING STRATEGY
 		::size_t num_edges_in_batch = N/10 + 1;
 		::size_t num_nodes_in_batch = num_edges_in_batch + 1;
 
-		clNodes = createBuffer(CL_MEM_READ_ONLY,
+		clNodes = createBuffer("clNodes", CL_MEM_READ_ONLY,
 				num_nodes_in_batch * sizeof(cl_int)
 				);
-		clNodesNeighbors = createBuffer(CL_MEM_READ_ONLY,
+		clNodesNeighbors = createBuffer("clNodesNeighbors", CL_MEM_READ_ONLY,
 				std::min(num_nodes_in_batch, globalThreads) * real_num_node_sample() * sizeof(cl_int)
 				);
-		clNodesNeighborsHash = createBuffer(CL_MEM_READ_ONLY,
+		clNodesNeighborsHash = createBuffer("clNodesNeighborsHash", CL_MEM_READ_ONLY,
 				std::min(num_nodes_in_batch, globalThreads) * real_num_node_sample() * hash_table_multiple * sizeof(cl_int)
 				);
-		clEdges = createBuffer(CL_MEM_READ_ONLY,
+		clEdges = createBuffer("clEdges", CL_MEM_READ_ONLY,
 				num_edges_in_batch * sizeof(cl_int2)
 				);
-		clPi = createBuffer(CL_MEM_READ_WRITE,
+		clPi = createBuffer("clPi", CL_MEM_READ_WRITE,
 				N * K * sizeof(cl_double) // #total_nodes x #K
 				);
-		clPhi = createBuffer(CL_MEM_READ_WRITE,
+		clPhi = createBuffer("clPhi", CL_MEM_READ_WRITE,
 				N * K * sizeof(cl_double) // #total_nodes x #K
 				);
-		clBeta = createBuffer(CL_MEM_READ_WRITE,
+		clBeta = createBuffer("clBeta", CL_MEM_READ_WRITE,
 				K * sizeof(cl_double) // #K
 				);
-		clTheta = createBuffer(CL_MEM_READ_WRITE,
+		clTheta = createBuffer("clTheta", CL_MEM_READ_WRITE,
 				2 * K * sizeof(cl_double) // 2 x #K
 				);
-		clThetaSum = createBuffer(CL_MEM_READ_WRITE,
+		clThetaSum = createBuffer("clThetaSum", CL_MEM_READ_WRITE,
 				K * sizeof(cl_double) // #K
 				);
-		clZ = createBuffer(CL_MEM_READ_WRITE,
+		clZ = createBuffer("clZ", CL_MEM_READ_WRITE,
 				num_nodes_in_batch * K * sizeof(cl_int)
 				);
-		clScratch = createBuffer(CL_MEM_READ_WRITE,
+		clScratch = createBuffer("clScratch", CL_MEM_READ_WRITE,
 				std::min(num_nodes_in_batch, globalThreads) * K * sizeof(cl_double)
 				);
-		clRandomSeed = createBuffer(CL_MEM_READ_WRITE,
+		clRandomSeed = createBuffer("clRandomSeed", CL_MEM_READ_WRITE,
 				globalThreads * sizeof(cl_ulong2)
 				);
-		clErrorCtrl = createBuffer(CL_MEM_READ_WRITE,
+		clErrorCtrl = createBuffer("clErrorCtrl", CL_MEM_READ_WRITE,
 				sizeof(cl_int16)
 				);
-		clErrorMsg = createBuffer(CL_MEM_READ_WRITE,
+		clErrorMsg = createBuffer("clErrorMsg", CL_MEM_READ_WRITE,
 				ERROR_MESSAGE_LENGTH
 				);
 
@@ -133,8 +133,8 @@ public:
 		} catch (cl::Error &e) {
 			if (e.err() == CL_MEM_OBJECT_ALLOCATION_FAILURE) {
 				std::cerr << "Failed to allocate CL buffers (sum = " << (double)totalAllocedClBufers/(1024*1024) << " MB)" << std::endl;
-				for (::size_t size : clBufAllocSizes) {
-					std::cerr << "Buffer size = " << (double)size/(1024*1024) << " MB" << std::endl;
+				for (auto b : clBufAllocSizes) {
+					std::cerr << "Buffer: " << b.first << " = " << (double)b.second/(1024*1024) << " MB" << std::endl;
 				}
 			}
 			throw e;
@@ -188,10 +188,10 @@ public:
 
 		errMsg = new char[ERROR_MESSAGE_LENGTH];
 
-		clLinkLikelihood = createBuffer(CL_MEM_READ_WRITE, globalThreads * sizeof(cl_double));
-		clNonLinkLikelihood = createBuffer(CL_MEM_READ_WRITE, globalThreads * sizeof(cl_double));
-		clLinkCount = createBuffer(CL_MEM_READ_WRITE, globalThreads * sizeof(cl_int));
-		clNonLinkCount = createBuffer(CL_MEM_READ_WRITE, globalThreads * sizeof(cl_int));
+		clLinkLikelihood = createBuffer("clLinkLikelihood", CL_MEM_READ_WRITE, globalThreads * sizeof(cl_double));
+		clNonLinkLikelihood = createBuffer("clNonLinkLikelihood", CL_MEM_READ_WRITE, globalThreads * sizeof(cl_double));
+		clLinkCount = createBuffer("clLinkCount", CL_MEM_READ_WRITE, globalThreads * sizeof(cl_int));
+		clNonLinkCount = createBuffer("clNonLinkCount", CL_MEM_READ_WRITE, globalThreads * sizeof(cl_int));
 
 		clContext.queue.finish();
 
@@ -485,9 +485,9 @@ protected:
 			}
 		}
 
-		edges = createBuffer(CL_MEM_READ_ONLY|CL_MEM_COPY_HOST_PTR, h_edges_size*sizeof(cl_int), h_edges.get());
-		nodes = createBuffer(CL_MEM_READ_ONLY|CL_MEM_COPY_HOST_PTR, h_nodes_size*sizeof(cl_int2), h_nodes.get());
-		graph = createBuffer(CL_MEM_READ_WRITE, 2*64/8 /* 2 pointers, each is at most 64-bits */);
+		edges = createBuffer("graph edges", CL_MEM_READ_ONLY|CL_MEM_COPY_HOST_PTR, h_edges_size*sizeof(cl_int), h_edges.get());
+		nodes = createBuffer("graph nodes", CL_MEM_READ_ONLY|CL_MEM_COPY_HOST_PTR, h_nodes_size*sizeof(cl_int2), h_nodes.get());
+		graph = createBuffer("graph", CL_MEM_READ_WRITE, 2*64/8 /* 2 pointers, each is at most 64-bits */);
 
 		graph_init_kernel.setArg(0, graph);
 		graph_init_kernel.setArg(1, edges);
@@ -509,7 +509,7 @@ protected:
 			hIterableGraph.get()[i] = e;
 			i++;
 		}
-		iterableGraph = createBuffer(CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR, data.size() * sizeof(cl_int3), hIterableGraph.get());
+		iterableGraph = createBuffer("iterableGraph", CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR, data.size() * sizeof(cl_int3), hIterableGraph.get());
 	}
 
 	void init_graph() {
@@ -583,15 +583,15 @@ protected:
 		return numGroups * groupSize;
 	}
 
-	cl::Buffer createBuffer(cl_mem_flags flags, ::size_t size, void *ptr = NULL) {
+	cl::Buffer createBuffer(std::string name, cl_mem_flags flags, ::size_t size, void *ptr = NULL) {
 		if (size > clContext.device.getInfo<CL_DEVICE_MAX_MEM_ALLOC_SIZE>()) {
 			std::stringstream s;
-			s << "Cannot allocate buffer of size " << size << " > " << clContext.device.getInfo<CL_DEVICE_MAX_MEM_ALLOC_SIZE>();
+			s << "Cannot allocate buffer " << name << " of size " << size << " > " << clContext.device.getInfo<CL_DEVICE_MAX_MEM_ALLOC_SIZE>();
 			throw MCMCException(s.str());
 		}
 		cl::Buffer buf = cl::Buffer(clContext.context, flags, size, ptr);
 		totalAllocedClBufers += size;
-		clBufAllocSizes.push_back(size);
+		clBufAllocSizes.push_back(std::make_pair(name, size));
 		return buf;
 	}
 
@@ -655,7 +655,7 @@ protected:
 	const ::size_t kRoundedThreads;
 
 	::size_t totalAllocedClBufers;
-	std::vector< ::size_t> clBufAllocSizes;
+	std::vector<std::pair<std::string, ::size_t> > clBufAllocSizes;
 
 	char *errMsg;
 };
