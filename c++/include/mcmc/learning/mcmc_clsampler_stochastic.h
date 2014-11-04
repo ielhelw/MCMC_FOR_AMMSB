@@ -61,53 +61,52 @@ public:
 		cal_perplexity_kernel = cl::Kernel(sampler_program, "cal_perplexity");
 		init_buffers_kernel = cl::Kernel(sampler_program, "init_buffers");
 
-		clBuffers = cl::Buffer(clContext.context, CL_MEM_READ_WRITE, 64 * 100); // enough space for 100 pointers
-		clNodes = cl::Buffer(clContext.context, CL_MEM_READ_ONLY,
-				N * sizeof(cl_int) // max: 2 unique nodes per edge in batch
-				// FIXME: better estimate for #nodes in mini batch
-				);
+		clBuffers = createBuffer(CL_MEM_READ_WRITE, 64 * 100); // enough space for 100 pointers
 
 		// BASED ON STRATIFIED RANDOM NODE SAMPLING STRATEGY
 		::size_t num_edges_in_batch = N/10 + 1;
 		::size_t num_nodes_in_batch = num_edges_in_batch + 1;
 
-		clNodesNeighbors = cl::Buffer(clContext.context, CL_MEM_READ_ONLY,
+		clNodes = createBuffer(CL_MEM_READ_ONLY,
+				num_nodes_in_batch * sizeof(cl_int)
+				);
+		clNodesNeighbors = createBuffer(CL_MEM_READ_ONLY,
 				std::min(num_nodes_in_batch, globalThreads) * real_num_node_sample() * sizeof(cl_int)
 				);
-		clNodesNeighborsHash = cl::Buffer(clContext.context, CL_MEM_READ_ONLY,
+		clNodesNeighborsHash = createBuffer(CL_MEM_READ_ONLY,
 				std::min(num_nodes_in_batch, globalThreads) * real_num_node_sample() * hash_table_multiple * sizeof(cl_int)
 				);
-		clEdges = cl::Buffer(clContext.context, CL_MEM_READ_ONLY,
-				num_edges_in_batch * sizeof(cl_int2) // #total_nodes x #neighbors_per_node
+		clEdges = createBuffer(CL_MEM_READ_ONLY,
+				num_edges_in_batch * sizeof(cl_int2)
 				);
-		clPi = cl::Buffer(clContext.context, CL_MEM_READ_WRITE,
+		clPi = createBuffer(CL_MEM_READ_WRITE,
 				N * K * sizeof(cl_double) // #total_nodes x #K
 				);
-		clPhi = cl::Buffer(clContext.context, CL_MEM_READ_WRITE,
+		clPhi = createBuffer(CL_MEM_READ_WRITE,
 				N * K * sizeof(cl_double) // #total_nodes x #K
 				);
-		clBeta = cl::Buffer(clContext.context, CL_MEM_READ_WRITE,
+		clBeta = createBuffer(CL_MEM_READ_WRITE,
 				K * sizeof(cl_double) // #K
 				);
-		clTheta = cl::Buffer(clContext.context, CL_MEM_READ_WRITE,
+		clTheta = createBuffer(CL_MEM_READ_WRITE,
 				2 * K * sizeof(cl_double) // 2 x #K
 				);
-		clThetaSum = cl::Buffer(clContext.context, CL_MEM_READ_WRITE,
+		clThetaSum = createBuffer(CL_MEM_READ_WRITE,
 				K * sizeof(cl_double) // #K
 				);
-		clZ = cl::Buffer(clContext.context, CL_MEM_READ_WRITE,
-				N * K * sizeof(cl_int) // #total_nodes x #K
+		clZ = createBuffer(CL_MEM_READ_WRITE,
+				num_nodes_in_batch * K * sizeof(cl_int)
 				);
-		clScratch = cl::Buffer(clContext.context, CL_MEM_READ_WRITE,
-				N * K * sizeof(cl_double) // #total_nodes x #K
+		clScratch = createBuffer(CL_MEM_READ_WRITE,
+				std::min(num_nodes_in_batch, globalThreads) * K * sizeof(cl_double)
 				);
-		clRandomSeed = cl::Buffer(clContext.context, CL_MEM_READ_WRITE,
+		clRandomSeed = createBuffer(CL_MEM_READ_WRITE,
 				globalThreads * sizeof(cl_ulong2)
 				);
-		clErrorCtrl = cl::Buffer(clContext.context, CL_MEM_READ_WRITE,
+		clErrorCtrl = createBuffer(CL_MEM_READ_WRITE,
 				sizeof(cl_int16)
 				);
-		clErrorMsg = cl::Buffer(clContext.context, CL_MEM_READ_WRITE,
+		clErrorMsg = createBuffer(CL_MEM_READ_WRITE,
 				ERROR_MESSAGE_LENGTH
 				);
 
@@ -179,10 +178,10 @@ public:
 
 		errMsg = new char[ERROR_MESSAGE_LENGTH];
 
-		clLinkLikelihood = cl::Buffer(clContext.context, CL_MEM_READ_WRITE, globalThreads * sizeof(cl_double));
-		clNonLinkLikelihood = cl::Buffer(clContext.context, CL_MEM_READ_WRITE, globalThreads * sizeof(cl_double));
-		clLinkCount = cl::Buffer(clContext.context, CL_MEM_READ_WRITE, globalThreads * sizeof(cl_int));
-		clNonLinkCount = cl::Buffer(clContext.context, CL_MEM_READ_WRITE, globalThreads * sizeof(cl_int));
+		clLinkLikelihood = createBuffer(CL_MEM_READ_WRITE, globalThreads * sizeof(cl_double));
+		clNonLinkLikelihood = createBuffer(CL_MEM_READ_WRITE, globalThreads * sizeof(cl_double));
+		clLinkCount = createBuffer(CL_MEM_READ_WRITE, globalThreads * sizeof(cl_int));
+		clNonLinkCount = createBuffer(CL_MEM_READ_WRITE, globalThreads * sizeof(cl_int));
 
 		clContext.queue.finish();
 
@@ -476,9 +475,9 @@ protected:
 			}
 		}
 
-		edges = cl::Buffer(clContext.context, CL_MEM_READ_ONLY|CL_MEM_COPY_HOST_PTR, h_edges_size*sizeof(cl_int), h_edges.get());
-		nodes = cl::Buffer(clContext.context, CL_MEM_READ_ONLY|CL_MEM_COPY_HOST_PTR, h_nodes_size*sizeof(cl_int2), h_nodes.get());
-		graph = cl::Buffer(clContext.context, CL_MEM_READ_WRITE, 2*64/8 /* 2 pointers, each is at most 64-bits */);
+		edges = createBuffer(CL_MEM_READ_ONLY|CL_MEM_COPY_HOST_PTR, h_edges_size*sizeof(cl_int), h_edges.get());
+		nodes = createBuffer(CL_MEM_READ_ONLY|CL_MEM_COPY_HOST_PTR, h_nodes_size*sizeof(cl_int2), h_nodes.get());
+		graph = createBuffer(CL_MEM_READ_WRITE, 2*64/8 /* 2 pointers, each is at most 64-bits */);
 
 		graph_init_kernel.setArg(0, graph);
 		graph_init_kernel.setArg(1, edges);
@@ -500,7 +499,7 @@ protected:
 			hIterableGraph.get()[i] = e;
 			i++;
 		}
-		iterableGraph = cl::Buffer(clContext.context, CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR, data.size() * sizeof(cl_int3), hIterableGraph.get());
+		iterableGraph = createBuffer(CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR, data.size() * sizeof(cl_int3), hIterableGraph.get());
 	}
 
 	void init_graph() {
@@ -572,6 +571,11 @@ protected:
 			numGroups += 1;
 		}
 		return numGroups * groupSize;
+	}
+
+	cl::Buffer createBuffer(cl_mem_flags flags, ::size_t size, void *ptr = NULL) {
+		cl::Buffer buf = cl::Buffer(clContext.context, flags, size, ptr);
+		return buf;
 	}
 
 	std::string progOpts;

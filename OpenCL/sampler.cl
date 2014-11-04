@@ -417,7 +417,7 @@ kernel void sample_latent_vars(
 				bufs->bufs.Pi,
 				bufs->bufs.Beta,
 				epsilon,
-				bufs->bufs.Z + node * K,
+				bufs->bufs.Z + i * K,
 				&randomSeed,
 				_p);
 		if (ret) break;
@@ -441,9 +441,9 @@ kernel void update_pi(
 		update_pi_for_node_(node,
 				bufs->bufs.Pi + node * K,
 				bufs->bufs.Phi + node * K,
-				bufs->bufs.Z + node * K,
+				bufs->bufs.Z + i * K,
 				&randomSeed,
-				bufs->bufs.Scratch + i * K,
+				_p,
 				alpha, a, b, c, step_count, total_node_count);
 	}
 	bufs->bufs.RandomSeed[gid] = randomSeed;
@@ -502,7 +502,7 @@ kernel void sample_latent_vars2(
 				bufs->bufs.G,
 				bufs->bufs.Pi,
 				bufs->bufs.Beta,
-				bufs->bufs.Scratch + i * (K+1),
+				bufs->bufs.Scratch + gid * (K+1),
 				random(&randomSeed));
 	}
 	bufs->bufs.RandomSeed[gid] = randomSeed;
