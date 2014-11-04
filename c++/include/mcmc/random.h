@@ -12,6 +12,7 @@
 #include <random>
 #include <sstream>
 #include <iostream>
+#include <iomanip>
 
 #include "mcmc/exception.h"
 
@@ -174,6 +175,7 @@ public:
 	std::vector<std::vector<double> > gamma(double p1, double p2, ::size_t n1, ::size_t n2) {
 		// std::vector<std::vector<double> > *a = new std::vector<double>(n1, std::vector<double>(n2, 0.0));
 		std::vector<std::vector<double> > a(n1, std::vector<double>(n2));
+#ifdef GAMMA_IMPLEMENTATION_STD
 #if __GNUC_MINOR__ >= 5
 
 		std::gamma_distribution<double> gammaDistribution(p1, p2);
@@ -186,7 +188,13 @@ public:
 #else	// if __GNUC_MINOR__ >= 5
 		throw UnimplementedException("random::gamma");
 #endif
-
+#else
+		for (::size_t i = 0; i < n1; i++) {
+			for (::size_t j = 0; j < n2; j++) {
+				a[i][j] = gsl_ran_gamma (NULL, p1, p2);
+			}
+		}
+#endif
 		return a;
 	}
 
@@ -352,6 +360,124 @@ protected:
 	::size_t iters_randn = 0;
 	::size_t log_exp_randn = 0;
 	::size_t ktab_exceed_randn = 0;
+
+
+protected:
+/* rng/gsl_rng.h
+ * 
+ * Copyright (C) 1996, 1997, 1998, 1999, 2000, 2004, 2007 James Theiler, Brian Gough
+ * 
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 3 of the License, or (at
+ * your option) any later version.
+ * 
+ * This program is distributed in the hope that it will be useful, but
+ * WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * General Public License for more details.
+ * 
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, write to the Free Software
+ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
+ */
+
+inline double
+gsl_rng_uniform_pos (const gsl_rng * r)
+{
+	double x ;
+	do
+	{
+		x = gsl_rng_uniform (r) ;
+	}
+	while (x == 0) ;
+
+	return x ;
+}
+
+protected:
+/* randist/gamma.c
+ * 
+ * Copyright (C) 1996, 1997, 1998, 1999, 2000, 2007 James Theiler, Brian Gough
+ * 
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 3 of the License, or (at
+ * your option) any later version.
+ * 
+ * This program is distributed in the hope that it will be useful, but
+ * WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * General Public License for more details.
+ * 
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, write to the Free Software
+ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
+ */
+
+/* New version based on Marsaglia and Tsang, "A Simple Method for
+ * generating gamma variables", ACM Transactions on Mathematical
+ * Software, Vol 26, No 3 (2000), p363-372.
+ *
+ * Implemented by J.D.Lamb@btinternet.com, minor modifications for GSL
+ * by Brian Gough
+ */
+
+#ifdef UNUSED
+double
+gsl_ran_gamma_mt (const gsl_rng * r, const double a, const double b)
+{
+  return gsl_ran_gamma (r, a, b);
+}
+#endif
+
+double
+gsl_ran_gamma (const gsl_rng * r, double a, double b)
+{
+  /* assume a > 0 */
+
+	double f = 1.0;
+#ifdef SUPPORT_RECURSION
+  if (a < 1)
+    {
+      double u = gsl_rng_uniform_pos (r);
+      return gsl_ran_gamma (r, 1.0 + a, b) * pow (u, 1.0 / a);
+    }
+#else
+  while (a < 1) {
+      double u = gsl_rng_uniform_pos (r);
+	  f = f * pow (u, 1.0 / a);
+      a = 1.0 + a;
+  }
+#endif
+
+  {
+    double x, v, u;
+    double d = a - 1.0 / 3.0;
+    double c = (1.0 / 3.0) / sqrt (d);
+
+    while (1)
+      {
+        do
+          {
+            x = gsl_ran_gaussian_ziggurat (r, 1.0);
+            v = 1.0 + c * x;
+          }
+        while (v <= 0);
+
+        v = v * v * v;
+        u = gsl_rng_uniform_pos (r);
+
+        if (u < 1 - 0.0331 * x * x * x * x) 
+          break;
+
+        if (log (u) < 0.5 * x * x + d * (1 - v + log (v)))
+          break;
+      }
+    
+    return f * b * d * v;
+  }
+}
 
 
 protected:

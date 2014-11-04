@@ -220,10 +220,10 @@ protected:
 		 * 		temp = gamma/t :: double[K,2]; temp[i,j] = lamda[i,j] / s[i]
 		 */
 		// pi = gamma/np.sum(gamma,1)[:,np.newaxis];
-		// temp = lamda/np.sum(lamda,1)[:,np.newaxis];
-		// beta = temp[:,1];
 		np::row_normalize(&pi, gamma);
 
+		// temp = lamda/np.sum(lamda,1)[:,np.newaxis];
+		// beta = temp[:,1];
 		std::vector<std::vector<double> > temp(lamda.size(), std::vector<double>(lamda[0].size()));
 		np::row_normalize(&temp, lamda);
 		// std::transform(temp.begin(), temp.end(), beta.begin(), np::SelectColumn<double>(1));

@@ -11,7 +11,9 @@
 
 #include "opencl/context.h"
 
-#include "mcmc_sampler_stochastic.h"
+#include "mcmc/np.h"
+#include "mcmc/random.h"
+#include "mcmc/learning/learner.h"
 
 #define PARALLELISM 1
 
@@ -21,13 +23,25 @@ namespace learning {
 #define do_stringify(str)	#str
 #define stringify(str)		do_stringify(str)
 
-class MCMCClSamplerStochastic : public MCMCSamplerStochastic {
+class MCMCClSamplerStochastic : public Learner {
 public:
 	MCMCClSamplerStochastic(const Options &args, const Network &graph, cl::ClContext clContext)
-		: MCMCSamplerStochastic(args, graph), clContext(clContext),
+		: Learner(args, graph), clContext(clContext),
 		  vexContext(std::vector<cl::Context>(1, clContext.getContext()),
 					 std::vector<cl::CommandQueue>(1, clContext.getQueue())),
-		  csumDouble(vexContext), csumInt(vexContext) {
+		  csumDouble(vexContext), csumInt(vexContext),
+   		  kernelRandom(42) {
+
+        // step size parameters.
+        this->a = args.a;
+        this->b = args.b;
+        this->c = args.c;
+
+        // control parameters for learning
+        // num_node_sample = static_cast< ::size_t>(std::sqrt(network.get_num_nodes()));
+
+		num_node_sample = N / 5;
+		std::cerr << "num_node_sample " << num_node_sample << std::endl;
 
 		int hash_table_multiple = 2;
 		std::ostringstream opts;
@@ -35,7 +49,7 @@ public:
 			 << " -DNEIGHBOR_SAMPLE_SIZE=" << real_num_node_sample()
 			 << " -DK=" << K
 			 << " -DMAX_NODE_ID=" << N
-			 << " -DRAND_MAX=" << std::numeric_limits<uint64_t>::max()
+			 << " -DRAND_MAX=" << std::numeric_limits<uint64_t>::max() << "ULL"
 #ifdef RANDOM_FOLLOWS_CPP
 			 << " -DRANDOM_FOLLOWS_CPP"
 #endif
@@ -49,6 +63,8 @@ public:
 		init_graph();
 
 		sampler_program = this->clContext.createProgram(stringify(PROJECT_HOME) "/../OpenCL/sampler.cl", progOpts);
+		random_gamma_kernel = cl::Kernel(sampler_program, "random_gamma");
+		row_normalize_kernel = cl::Kernel(sampler_program, "row_normalize");
 		sample_latent_vars_kernel = cl::Kernel(sampler_program, "sample_latent_vars");
 		update_pi_kernel = cl::Kernel(sampler_program, "update_pi");
 		sample_latent_vars2_kernel = cl::Kernel(sampler_program, "sample_latent_vars2");
@@ -117,7 +133,51 @@ public:
 		init_buffers_kernel.setArg(Idx++, clRandomSeed);
 		clContext.queue.enqueueTask(init_buffers_kernel);
 
+		std::vector<cl_ulong2> randomSeed(PARALLELISM);
+		for (unsigned int i = 0; i < randomSeed.size(); ++i) {
+			randomSeed[i].s[0] = 42 + i;
+			randomSeed[i].s[1] = 42 + i + 1;
+		}
+		clContext.queue.enqueueWriteBuffer(clRandomSeed, CL_TRUE,
+				0, randomSeed.size() * sizeof(cl_ulong2),
+				randomSeed.data());
+		clContext.queue.enqueueFillBuffer(clNodesNeighbors, (cl_int)-1, 0, clNodesNeighbors.getInfo<CL_MEM_SIZE>());
 
+		// // theta = Random::random->gamma(eta[0], eta[1], K, 2);		// parameterization for \beta
+		// theta = Random::random->gamma(100.0, 0.01, K, 2);		// parameterization for \beta
+		std::cerr << "Ignore eta[] in random.gamma: use 100.0 and 0.01" << std::endl;
+		::size_t K_workers = std::min(K, static_cast< ::size_t>(PARALLELISM));
+		Idx = 0;
+		random_gamma_kernel.setArg(Idx++, clBuffers);
+		random_gamma_kernel.setArg(Idx++, clTheta);
+		random_gamma_kernel.setArg(Idx++, (double)100.0);
+		random_gamma_kernel.setArg(Idx++, (double)0.01);
+		random_gamma_kernel.setArg(Idx++, (int)K);
+		random_gamma_kernel.setArg(Idx++, 2);
+		clContext.queue.enqueueNDRangeKernel(random_gamma_kernel, cl::NullRange, cl::NDRange(K_workers), cl::NDRange(1));
+
+        // model parameters and re-parameterization
+        // since the model parameter - \pi and \beta should stay in the simplex,
+        // we need to restrict the sum of probability equals to 1.  The way we
+        // restrict this is using re-reparameterization techniques, where we
+        // introduce another set of variables, and update them first followed by
+        // updating \pi and \beta.
+		// phi = Random::random->gamma(1, 1, N, K);					// parameterization for \pi
+		Idx = 0;
+		random_gamma_kernel.setArg(Idx++, clBuffers);
+		random_gamma_kernel.setArg(Idx++, clPhi);
+		random_gamma_kernel.setArg(Idx++, (double)1.0);
+		random_gamma_kernel.setArg(Idx++, (double)1.0);
+		random_gamma_kernel.setArg(Idx++, (int)N);
+		random_gamma_kernel.setArg(Idx++, (int)K);
+		clContext.queue.enqueueNDRangeKernel(random_gamma_kernel, cl::NullRange, cl::NDRange(PARALLELISM), cl::NDRange(1));
+
+		// pi.resize(phi.size(), std::vector<double>(phi[0].size()));
+        // self._pi = self.__phi/np.sum(self.__phi,1)[:,np.newaxis]
+		device_row_normalize(clPi, clPhi, N, K);
+		// np::row_normalize(&pi, phi);
+
+#if 0
 		for (unsigned i = 0; i < N; ++i) {
 			// copy phi
 			clContext.queue.enqueueWriteBuffer(clPhi, CL_TRUE,
@@ -130,7 +190,54 @@ public:
 					K * sizeof(double),
 					pi[i].data());
 		}
+#endif
+		if (false) {
+			std::vector<std::vector<double> > pi(N, std::vector<double>(K));			// parameterization for \pi
+			std::vector<std::vector<double> > phi(N, std::vector<double>(K));			// parameterization for \pi
+			for (unsigned i = 0; i < N; ++i) {
+				// copy phi
+				clContext.queue.enqueueReadBuffer(clPhi, CL_TRUE,
+												  i * K * sizeof(cl_double),
+												  K * sizeof(cl_double),
+												  phi[i].data());
+				// Copy pi
+				clContext.queue.enqueueReadBuffer(clPi, CL_TRUE,
+												  i * K * sizeof(double),
+												  K * sizeof(double),
+												  pi[i].data());
+			}
 
+			for (::size_t i = 0; i < 10; i++) {
+				std::cerr << "phi[" << i << "]: ";
+				for (::size_t k = 0; k < 10; k++) {
+					std::cerr << std::fixed << std::setprecision(12) << phi[i][k] << " ";
+				}
+				std::cerr << std::endl;
+			}
+
+			for (::size_t i = 0; i < 10; i++) {
+				std::cerr << "pi[" << i << "]: ";
+				for (::size_t k = 0; k < 10; k++) {
+					std::cerr << std::fixed << std::setprecision(12) << pi[i][k] << " ";
+				}
+				std::cerr << std::endl;
+			}
+		}
+
+        // // temp = self.__theta/np.sum(self.__theta,1)[:,np.newaxis]
+        // // self._beta = temp[:,1]
+		// std::vector<std::vector<double> > temp(theta.size(), std::vector<double>(theta[0].size()));
+		// np::row_normalize(&temp, theta);
+		// std::transform(temp.begin(), temp.end(), beta.begin(), np::SelectColumn<double>(1));
+
+		Idx = 0;
+		update_beta_calculate_beta_kernel.setArg(Idx++, clTheta);
+		update_beta_calculate_beta_kernel.setArg(Idx++, clBeta);
+		clContext.queue.enqueueNDRangeKernel(update_beta_calculate_beta_kernel, cl::NullRange, cl::NDRange(K_workers), cl::NDRange(1));
+
+		clContext.queue.finish();
+
+#if 0
 		// copy theta
 		std::vector<cl_double2> vclTheta(theta.size());
 		std::transform(theta.begin(), theta.end(), vclTheta.begin(), [](const std::vector<double>& in){
@@ -145,16 +252,7 @@ public:
 
 		// copy beta
 		clContext.queue.enqueueWriteBuffer(clBeta, CL_TRUE, 0, K * sizeof(double), beta.data());
-
-		std::vector<cl_ulong2> randomSeed(PARALLELISM);
-		for (unsigned int i = 0; i < randomSeed.size(); ++i) {
-			randomSeed[i].s[0] = 42 + i;
-			randomSeed[i].s[1] = 42 + i + 1;
-		}
-		clContext.queue.enqueueWriteBuffer(clRandomSeed, CL_TRUE,
-				0, randomSeed.size() * sizeof(cl_ulong2),
-				randomSeed.data());
-		clContext.queue.enqueueFillBuffer(clNodesNeighbors, (cl_int)-1, 0, clNodesNeighbors.getInfo<CL_MEM_SIZE>());
+#endif
 
 		clLinkLikelihood = cl::Buffer(clContext.context, CL_MEM_READ_WRITE, PARALLELISM * sizeof(cl_double));
 		clNonLinkLikelihood = cl::Buffer(clContext.context, CL_MEM_READ_WRITE, PARALLELISM * sizeof(cl_double));
@@ -210,6 +308,27 @@ public:
 	}
 
 protected:
+
+	void device_row_normalize(cl::Buffer &clPi, cl::Buffer &clPhi, ::size_t N, ::size_t K) {
+		// pi.resize(phi.size(), std::vector<double>(phi[0].size()));
+        // self._pi = self.__phi/np.sum(self.__phi,1)[:,np.newaxis]
+		// pi[N,K] = row_normalize(phi[N,K])
+		// s[i] = sum_j phi[i,j]
+		// pi[i,j] = phi[i,j] / s[i]
+		int arg;
+
+		arg = 0;
+		row_normalize_kernel.setArg(arg++, clPhi);
+		row_normalize_kernel.setArg(arg++, clPi);
+		row_normalize_kernel.setArg(arg++, (cl_int)N);
+		row_normalize_kernel.setArg(arg++, (cl_int)K);
+
+		clContext.queue.enqueueNDRangeKernel(row_normalize_kernel,
+											 cl::NullRange,
+											 cl::NDRange(PARALLELISM),
+											 cl::NDRange(1));
+		clContext.queue.finish();
+	}
 
 	void update_beta(const OrderedEdgeSet &mini_batch, double scale) {
 		::size_t K_workers = std::min(K, static_cast< ::size_t>(PARALLELISM));
@@ -333,6 +452,7 @@ protected:
 		clContext.queue.enqueueNDRangeKernel(update_pi_kernel, cl::NullRange, cl::NDRange(PARALLELISM), cl::NDRange(1));
 
 		clContext.queue.finish();
+#if 0	// pi stays on the device
 		// read Pi again
 		for (auto node = nodes.begin();
 				node != nodes.end();
@@ -342,6 +462,20 @@ protected:
 					K * sizeof(cl_double),
 					pi[*node].data());
 		}
+#endif
+	}
+
+    OrderedVertexSet nodes_in_batch(const OrderedEdgeSet &mini_batch) const {
+        /**
+        Get all the unique nodes in the mini_batch.
+         */
+        OrderedVertexSet node_set;
+        for (auto edge = mini_batch.begin(); edge != mini_batch.end(); edge++) {
+            node_set.insert(edge->first);
+            node_set.insert(edge->second);
+		}
+
+        return node_set;
 	}
 
 	double deviceSumDouble(cl::Buffer &xBuffer) {
@@ -428,6 +562,7 @@ protected:
 	}
 
 
+	// FIXME: Why is linkedMap not a ref?
 	void _prepare_flat_cl_graph(cl::Buffer &edges, cl::Buffer &nodes, cl::Buffer &graph, std::map<int, std::vector<int>> linkedMap) {
 		const int h_edges_size = 2 * network.get_num_linked_edges();
 		std::unique_ptr<cl_int[]> h_edges(new cl_int[h_edges_size]);
@@ -464,7 +599,6 @@ protected:
 		clContext.queue.finish();
 	}
 
-	// Why is linkedMap not a ref?
 	void prepare_iterable_cl_graph(cl::Buffer &iterableGraph, const EdgeMap &data) {
 		std::unique_ptr<cl_int3[]> hIterableGraph(new cl_int3[data.size()]);
 		::size_t i = 0;
@@ -534,6 +668,8 @@ protected:
 	cl::Program sampler_program;
 
 	cl::Kernel graph_init_kernel;
+	cl::Kernel random_gamma_kernel;
+	cl::Kernel row_normalize_kernel;
 	cl::Kernel sample_latent_vars_kernel;
 	cl::Kernel update_pi_kernel;
 	cl::Kernel sample_latent_vars2_kernel;
@@ -576,6 +712,20 @@ protected:
 	cl::Buffer clNonLinkLikelihood;
 	cl::Buffer clLinkCount;
 	cl::Buffer clNonLinkCount;
+
+protected:
+	// replicated in both mcmc_sampler_
+	double	a;
+	double	b;
+	double	c;
+
+	::size_t num_node_sample;
+
+	// To be deprecated:
+	// std::vector<std::vector<double> > theta;		// parameterization for \beta
+	// To be deprecated:
+	// std::vector<std::vector<double> > phi;			// parameterization for \pi
+	Random::Random kernelRandom;
 };
 
 }
