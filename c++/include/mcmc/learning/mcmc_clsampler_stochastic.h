@@ -29,7 +29,7 @@ public:
 		  csumDouble(vexContext), csumInt(vexContext),
 		  groupSize(args.openclGroupSize), numGroups(args.openclNumGroups),
 		  globalThreads(groupSize * numGroups),
-			kRoundedThreads(round_up_to_multiples(K, groupSize)) {
+			kRoundedThreads(round_up_to_multiples(K, groupSize)), totalAllocedClBufers(0) {
 
 		int hash_table_multiple = 2;
 		std::ostringstream opts;
@@ -128,7 +128,17 @@ public:
 		init_buffers_kernel.setArg(Idx++, clRandomSeed);
 		init_buffers_kernel.setArg(Idx++, clErrorCtrl);
 		init_buffers_kernel.setArg(Idx++, clErrorMsg);
-		clContext.queue.enqueueTask(init_buffers_kernel);
+		try {
+			clContext.queue.enqueueTask(init_buffers_kernel);
+		} catch (cl::Error &e) {
+			if (e.err() == CL_MEM_OBJECT_ALLOCATION_FAILURE) {
+				std::cerr << "Failed to allocate CL buffers (sum = " << (double)totalAllocedClBufers/(1024*1024) << " MB)" << std::endl;
+				for (::size_t size : clBufAllocSizes) {
+					std::cerr << "Buffer size = " << (double)size/(1024*1024) << " MB" << std::endl;
+				}
+			}
+			throw e;
+		}
 
 
 		for (unsigned i = 0; i < N; ++i) {
@@ -574,7 +584,14 @@ protected:
 	}
 
 	cl::Buffer createBuffer(cl_mem_flags flags, ::size_t size, void *ptr = NULL) {
+		if (size > clContext.device.getInfo<CL_DEVICE_MAX_MEM_ALLOC_SIZE>()) {
+			std::stringstream s;
+			s << "Cannot allocate buffer of size " << size << " > " << clContext.device.getInfo<CL_DEVICE_MAX_MEM_ALLOC_SIZE>();
+			throw MCMCException(s.str());
+		}
 		cl::Buffer buf = cl::Buffer(clContext.context, flags, size, ptr);
+		totalAllocedClBufers += size;
+		clBufAllocSizes.push_back(size);
 		return buf;
 	}
 
@@ -636,6 +653,9 @@ protected:
 	const ::size_t numGroups;
 	const ::size_t globalThreads;
 	const ::size_t kRoundedThreads;
+
+	::size_t totalAllocedClBufers;
+	std::vector< ::size_t> clBufAllocSizes;
 
 	char *errMsg;
 };
