@@ -28,7 +28,8 @@ public:
 					 std::vector<cl::CommandQueue>(1, clContext.getQueue())),
 		  csumDouble(vexContext), csumInt(vexContext),
 		  groupSize(args.openclGroupSize), numGroups(args.openclNumGroups),
-		  globalThreads(groupSize * numGroups) {
+		  globalThreads(groupSize * numGroups),
+			kRoundedThreads(round_up_to_multiples(K, groupSize)) {
 
 		int hash_table_multiple = 4;
 		std::ostringstream opts;
@@ -232,7 +233,6 @@ public:
 protected:
 
 	void update_beta(const OrderedEdgeSet &mini_batch, double scale) {
-		::size_t K_workers = std::min(K, static_cast< ::size_t>(1));
 		int arg;
 
 		arg = 0;
@@ -240,20 +240,22 @@ protected:
 		update_beta_calculate_theta_sum_kernel.setArg(arg++, clThetaSum);
 
 		clContext.queue.enqueueNDRangeKernel(update_beta_calculate_theta_sum_kernel,
-											 cl::NullRange, cl::NDRange(K_workers), cl::NDRange(1));
+											 cl::NullRange, cl::NDRange(kRoundedThreads), cl::NDRange(groupSize));
 		clContext.queue.finish();
+
+		::size_t countPartialSums = std::min(mini_batch.size(), globalThreads);
+		::size_t calcGradsThreads = round_up_to_multiples(countPartialSums, groupSize);
 
 		update_beta_calculate_grads_kernel.setArg(0, clBuffers);
 		update_beta_calculate_grads_kernel.setArg(1, (cl_int)mini_batch.size());
 		update_beta_calculate_grads_kernel.setArg(2, (cl_double)scale);
-
-		::size_t countPartialSums = std::min(mini_batch.size(), (::size_t)1);
+		update_beta_calculate_grads_kernel.setArg(3, (cl_int)countPartialSums);
 
 		clContext.queue.finish(); // Wait for sample_latent_vars2
 
 		cl::Event e_grads_kernel;
 		clContext.queue.enqueueNDRangeKernel(update_beta_calculate_grads_kernel, cl::NullRange,
-				cl::NDRange(countPartialSums), cl::NDRange(1),
+				cl::NDRange(calcGradsThreads), cl::NDRange(groupSize),
 				NULL, &e_grads_kernel);
 
 		double eps_t = a * std::pow(1.0 + step_count / b, -c);
@@ -276,7 +278,7 @@ protected:
 		update_beta_calculate_beta_kernel.setArg(arg++, clTheta);
 		update_beta_calculate_beta_kernel.setArg(arg++, clBeta);
 
-		clContext.queue.enqueueNDRangeKernel(update_beta_calculate_beta_kernel, cl::NullRange, cl::NDRange(K_workers), cl::NDRange(1));
+		clContext.queue.enqueueNDRangeKernel(update_beta_calculate_beta_kernel, cl::NullRange, cl::NDRange(kRoundedThreads), cl::NDRange(groupSize));
 		clContext.queue.finish();
 
 		if (false) {
@@ -396,12 +398,12 @@ protected:
 	double cal_perplexity_held_out() {
 	/**
 	 * calculate the perplexity for data.
-	 * perplexity defines as exponential of negative average log likelihood. 
+	 * perplexity defines as exponential of negative average log likelihood.
 	 * formally:
 	 *     ppx = exp(-1/N * \sum){i}^{N}log p(y))
-	 * 
-	 * we calculate average log likelihood for link and non-link separately, with the 
-	 * purpose of weighting each part proportionally. (the reason is that we sample 
+	 *
+	 * we calculate average log likelihood for link and non-link separately, with the
+	 * purpose of weighting each part proportionally. (the reason is that we sample
 	 * the equal number of link edges and non-link edges for held out data and test data,
 	 * which is not true representation of actual data set, which is extremely sparse.
 	 */
@@ -559,6 +561,17 @@ protected:
 		}
 	}
 
+	/**
+	 * returns the smallest #threads; #threads >= minRequired && #threads % groupSize == 0
+	 */
+	static inline ::size_t round_up_to_multiples(::size_t minRequired, ::size_t groupSize) {
+		int numGroups = minRequired / groupSize;
+		if (numGroups*groupSize < minRequired) {
+			numGroups += 1;
+		}
+		return numGroups * groupSize;
+	}
+
 	std::string progOpts;
 
 	cl::ClContext clContext;
@@ -616,6 +629,7 @@ protected:
 	const ::size_t groupSize;
 	const ::size_t numGroups;
 	const ::size_t globalThreads;
+	const ::size_t kRoundedThreads;
 
 	char *errMsg;
 };

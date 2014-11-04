@@ -517,22 +517,25 @@ kernel void update_beta_calculate_theta_sum(
 kernel void update_beta_calculate_grads(
 		global Buffers *bufs,
 		const int E, // #edges
-		double scale
+		double scale,
+		const int count_partial_sums
 		) {
 	size_t gid = get_global_id(0);
-	size_t gsize = get_global_size(0);
-	global double2 *grads = bufs->bufs.Scratch + gid * K;
+	if (gid < count_partial_sums) {
+		size_t gsize = get_global_size(0);
+		global double2 *grads = bufs->bufs.Scratch + gid * K;
 
-	for (int i = 0; i < K; ++i) {
-		grads[i].x = 0;
-		grads[i].y = 0;
-	}
-	for (int i = gid; i < E; i += gsize) {
-		int y_ab = graph_has_peer(bufs->bufs.G, bufs->bufs.Edges[i].x, bufs->bufs.Edges[i].y);
-		int k = bufs->bufs.Z[i];
-		if (k != -1) {
-			grads[k].x += (1-y_ab) / bufs->bufs.Theta[k].x - 1 / bufs->bufs.ThetaSum[k];
-			grads[k].y += y_ab / bufs->bufs.Theta[k].y - 1 / bufs->bufs.ThetaSum[k];
+		for (int i = 0; i < K; ++i) {
+			grads[i].x = 0;
+			grads[i].y = 0;
+		}
+		for (int i = gid; i < E; i += gsize) {
+			int y_ab = graph_has_peer(bufs->bufs.G, bufs->bufs.Edges[i].x, bufs->bufs.Edges[i].y);
+			int k = bufs->bufs.Z[i];
+			if (k != -1) {
+				grads[k].x += (1-y_ab) / bufs->bufs.Theta[k].x - 1 / bufs->bufs.ThetaSum[k];
+				grads[k].y += y_ab / bufs->bufs.Theta[k].y - 1 / bufs->bufs.ThetaSum[k];
+			}
 		}
 	}
 }
