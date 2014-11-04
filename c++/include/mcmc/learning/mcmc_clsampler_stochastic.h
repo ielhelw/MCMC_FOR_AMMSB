@@ -66,17 +66,19 @@ public:
 				N * sizeof(cl_int) // max: 2 unique nodes per edge in batch
 				// FIXME: better estimate for #nodes in mini batch
 				);
+
+		// BASED ON STRATIFIED RANDOM NODE SAMPLING STRATEGY
+		::size_t num_edges_in_batch = N/10 + 1;
+		::size_t num_nodes_in_batch = num_edges_in_batch + 1;
+
 		clNodesNeighbors = cl::Buffer(clContext.context, CL_MEM_READ_ONLY,
-				N * real_num_node_sample() * sizeof(cl_int) // #total_nodes x #neighbors_per_node
-				// FIXME: we don't need space for all N elements. Space should be limited to #nodes_in_mini_batch * num_node_sample (DEPENDS ON ABOVE)
+				std::min(num_nodes_in_batch, globalThreads) * real_num_node_sample() * sizeof(cl_int)
 				);
 		clNodesNeighborsHash = cl::Buffer(clContext.context, CL_MEM_READ_ONLY,
-				N * real_num_node_sample() * hash_table_multiple * sizeof(cl_int) // #total_nodes x #neighbors_per_node
-				// FIXME: we don't need space for all N elements. Space should be limited to #nodes_in_mini_batch * num_node_sample (DEPENDS ON ABOVE)
+				std::min(num_nodes_in_batch, globalThreads) * real_num_node_sample() * hash_table_multiple * sizeof(cl_int)
 				);
 		clEdges = cl::Buffer(clContext.context, CL_MEM_READ_ONLY,
-				N * sizeof(cl_int2) // #total_nodes x #neighbors_per_node
-				// FIXME: should be multiple of mini_batch_size
+				num_edges_in_batch * sizeof(cl_int2) // #total_nodes x #neighbors_per_node
 				);
 		clPi = cl::Buffer(clContext.context, CL_MEM_READ_WRITE,
 				N * K * sizeof(cl_double) // #total_nodes x #K

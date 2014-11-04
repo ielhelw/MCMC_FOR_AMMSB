@@ -411,8 +411,9 @@ kernel void sample_latent_vars(
 				bufs,
 				node,
 				bufs->bufs.G, bufs->bufs.HG,
-				bufs->bufs.NodesNeighbors + node * NEIGHBOR_SAMPLE_SIZE,
-				bufs->bufs.NodesNeighborsHash + node * HASH_MULTIPLE * NEIGHBOR_SAMPLE_SIZE,
+				// index by gid
+				bufs->bufs.NodesNeighbors + gid * NEIGHBOR_SAMPLE_SIZE,
+				bufs->bufs.NodesNeighborsHash + gid * HASH_MULTIPLE * NEIGHBOR_SAMPLE_SIZE,
 				bufs->bufs.Pi,
 				bufs->bufs.Beta,
 				epsilon,
