@@ -168,7 +168,6 @@ public:
 		clContext.queue.enqueueWriteBuffer(clRandomSeed, CL_TRUE,
 				0, randomSeed.size() * sizeof(cl_ulong2),
 				randomSeed.data());
-		clContext.queue.enqueueFillBuffer(clNodesNeighbors, (cl_int)-1, 0, clNodesNeighbors.getInfo<CL_MEM_SIZE>());
 
 		// // theta = Random::random->gamma(eta[0], eta[1], K, 2);		// parameterization for \beta
 		// theta = Random::random->gamma(100.0, 0.01, K, 2);		// parameterization for \beta
