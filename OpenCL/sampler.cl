@@ -156,7 +156,7 @@ inline int hash2(const int key, const int n_buckets) {
 #else
 	const int SOME_PRIME = 3;
 #endif
-	return (key % SOME_PRIME) + 1;
+	return (key % SOME_PRIME) | 1; // must be odd
 }
 
 inline int hash_put(const int key, global int* buckets, const int n_buckets) {
@@ -164,10 +164,7 @@ inline int hash_put(const int key, global int* buckets, const int n_buckets) {
 	const int h2 = hash2(key, n_buckets);
 
 	for (int i = 0; i < n_buckets; ++i) {
-		// mix quadratic probing with double hashing
-		// for 2 keys to have the exact probing sequence,
-		// both must have equal h1/h2 values which is highly unlikely
-		int loc = (h1 + i*i*h2) % n_buckets;
+		int loc = (h1 + i*h2) % n_buckets;
 
 		if (buckets[loc] == HASH_EMPTY) {
 			buckets[loc] = key;
@@ -367,7 +364,7 @@ inline int sample_latent_vars_of(
 			const bool cond2 = !graph_has_peer(hg, node, neighborId);
 			const bool cond = cond1 && cond2;
 			if (cond) {
-				ret = hash_put(neighborId, neighbor_nodes_hash, HASH_MULTIPLE*NEIGHBOR_SAMPLE_SIZE);
+				ret = hash_put(neighborId, neighbor_nodes_hash, HASH_SIZE);
 				if (HASH_OK(ret)) {
 					neighbor_nodes[i] = ret;
 					break;
@@ -459,7 +456,7 @@ kernel void sample_latent_vars(
 				bufs->bufs.G, bufs->bufs.HG,
 				// index by gid
 				bufs->bufs.NodesNeighbors + gid * NEIGHBOR_SAMPLE_SIZE,
-				bufs->bufs.NodesNeighborsHash + gid * HASH_MULTIPLE * NEIGHBOR_SAMPLE_SIZE,
+				bufs->bufs.NodesNeighborsHash + gid * HASH_SIZE,
 				bufs->bufs.Pi,
 				bufs->bufs.Beta,
 				epsilon,
