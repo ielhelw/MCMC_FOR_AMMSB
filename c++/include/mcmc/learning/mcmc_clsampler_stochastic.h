@@ -31,7 +31,11 @@ public:
 		  globalThreads(groupSize * numGroups),
 			kRoundedThreads(round_up_to_multiples(K, groupSize)), totalAllocedClBufers(0) {
 
-		int hash_table_multiple = 2;
+		::size_t hash_table_size = round_next_power_2(real_num_node_sample());
+		if ((double)hash_table_size / real_num_node_sample() < 1.8) {
+			hash_table_size *= 2;
+		}
+
 		std::ostringstream opts;
 		opts << "-I" << stringify(PROJECT_HOME) << "/../OpenCL/include"
 			 << " -DNEIGHBOR_SAMPLE_SIZE=" << real_num_node_sample()
@@ -41,7 +45,7 @@ public:
 #ifdef RANDOM_FOLLOWS_CPP
 			 << " -DRANDOM_FOLLOWS_CPP"
 #endif
-			 << " -DHASH_MULTIPLE=" << hash_table_multiple;
+			 << " -DHASH_SIZE=" << hash_table_size;
 		progOpts = opts.str();
 
 		std::cout << "COMPILE OPTS: " << progOpts << std::endl;
@@ -74,7 +78,7 @@ public:
 				std::min(num_nodes_in_batch, globalThreads) * real_num_node_sample() * sizeof(cl_int)
 				);
 		clNodesNeighborsHash = createBuffer("clNodesNeighborsHash", CL_MEM_READ_ONLY,
-				std::min(num_nodes_in_batch, globalThreads) * real_num_node_sample() * hash_table_multiple * sizeof(cl_int)
+				std::min(num_nodes_in_batch, globalThreads) * hash_table_size * sizeof(cl_int)
 				);
 		clEdges = createBuffer("clEdges", CL_MEM_READ_ONLY,
 				num_edges_in_batch * sizeof(cl_int2)
@@ -593,6 +597,17 @@ protected:
 		totalAllocedClBufers += size;
 		clBufAllocSizes.push_back(std::make_pair(name, size));
 		return buf;
+	}
+
+	static ::size_t round_next_power_2(::size_t v) {
+		v -= 1;
+		v |= v >> 1;
+		v |= v >> 2;
+		v |= v >> 4;
+		v |= v >> 8;
+		v |= v >> 16;
+		v += 1;
+		return v;
 	}
 
 	std::string progOpts;
