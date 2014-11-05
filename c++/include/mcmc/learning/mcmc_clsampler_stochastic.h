@@ -65,7 +65,7 @@ public:
 		cal_perplexity_kernel = cl::Kernel(sampler_program, "cal_perplexity");
 		init_buffers_kernel = cl::Kernel(sampler_program, "init_buffers");
 
-		clBuffers = createBuffer("clBuffers", CL_MEM_READ_WRITE, 64 * 100); // enough space for 100 pointers
+		clBuffers = createBuffer("clBuffers", CL_MEM_READ_WRITE, 64 * 100); // enough space for 100 * 8 pointers
 
 		// BASED ON STRATIFIED RANDOM NODE SAMPLING STRATEGY
 		::size_t num_edges_in_batch = N/10 + 1;
@@ -102,7 +102,7 @@ public:
 				num_nodes_in_batch * K * sizeof(cl_int)
 				);
 		clScratch = createBuffer("clScratch", CL_MEM_READ_WRITE,
-				std::min(num_nodes_in_batch, globalThreads) * K * sizeof(cl_double)
+				std::max(num_nodes_in_batch, globalThreads) * K * sizeof(cl_double)
 				);
 		clRandomSeed = createBuffer("clRandomSeed", CL_MEM_READ_WRITE,
 				globalThreads * sizeof(cl_ulong2)
