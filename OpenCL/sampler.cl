@@ -28,7 +28,6 @@ typedef struct {
 		global Graph *HG;
 		global int  *Nodes;
 		global int  *NodesNeighbors;
-		global int  *NodesNeighborsHash;
 		global int2 *Edges;
 		global double *Pi;
 		global double *Phi;
@@ -49,7 +48,6 @@ kernel void init_buffers(
 		global Graph *HG,
 		global int  *Nodes,
 		global int  *NodesNeighbors,
-		global int  *NodesNeighborsHash,
 		global int2 *Edges,
 		global double *Pi,
 		global double *Phi,
@@ -66,7 +64,6 @@ kernel void init_buffers(
 	bufs->bufs.HG = HG;
 	bufs->bufs.Nodes = Nodes;
 	bufs->bufs.NodesNeighbors = NodesNeighbors;
-	bufs->bufs.NodesNeighborsHash = NodesNeighborsHash;
 	bufs->bufs.Edges = Edges;
 	bufs->bufs.Pi = Pi;
 	bufs->bufs.Phi = Phi;
@@ -300,7 +297,6 @@ inline int sample_latent_vars_of(
 		global const Graph *g,
 		global const Graph *hg,
 		global int* neighbor_nodes,
-		global int* neighbor_nodes_hash,
 		global const double *pi,
 		global const double *beta,
 		const double epsilon,
@@ -308,48 +304,8 @@ inline int sample_latent_vars_of(
 		ulong2* randomSeed,
 		global double *p) {
 	for (int i = 0; i < K; ++i) z[i] = 0;
-
 	for (int i = 0; i < NEIGHBOR_SAMPLE_SIZE; ++i) {
-		int neighborId;
-		int ret;
-		for (;;) {
-			neighborId = randint(randomSeed, 0, MAX_NODE_ID);
-			const bool cond1 = neighborId != node;
-			const bool cond2 = !graph_has_peer(hg, node, neighborId);
-			const bool cond = cond1 && cond2;
-			if (cond) {
-				ret = hash_put(neighborId, neighbor_nodes_hash, HASH_SIZE);
-				if (HASH_OK(ret)) {
-					neighbor_nodes[i] = ret;
-					break;
-				}
-				if (ret == HASH_FOUND) continue;
-				if (ret == HASH_FAIL) {
-					report_first_error(bufs,( constant char* ) "ERROR: FAILED TO INSERT ITEM IN HASH\n");
-					return -1;
-				}
-			}
-		}
-	}
-#ifdef RANDOM_FOLLOWS_CPP // for verification only
-	for (int i = 0; i < NEIGHBOR_SAMPLE_SIZE - 1; ++i) {
-		for (int j = 0; j < NEIGHBOR_SAMPLE_SIZE - i - 1; ++j) {
-			int loc1 = neighbor_nodes[j];
-			int loc2 = neighbor_nodes[j + 1];
-			if (neighbor_nodes_hash[loc1] > neighbor_nodes_hash[loc2]) {
-				int tmp = neighbor_nodes_hash[loc1];
-				neighbor_nodes_hash[loc1] = neighbor_nodes_hash[loc2];
-				neighbor_nodes_hash[loc2] = tmp;
-			}
-		}
-	}
-#endif
-
-	for (int i = 0; i < NEIGHBOR_SAMPLE_SIZE; ++i) {
-		int neighborLoc = neighbor_nodes[i];
-		int neighbor = neighbor_nodes_hash[neighborLoc];
-		neighbor_nodes_hash[neighborLoc] = HASH_EMPTY; // reset the hash bucket to empty
-
+		int neighbor = neighbor_nodes[i];
 		int y_ab = graph_has_peer(g, node, neighbor);
 		int z_ab = sample_z_ab_from_edge(
 				pi + node * K, pi + neighbor * K,
@@ -409,8 +365,7 @@ kernel void sample_latent_vars(
 				node,
 				bufs->bufs.G, bufs->bufs.HG,
 				// index by gid
-				bufs->bufs.NodesNeighbors + gid * NEIGHBOR_SAMPLE_SIZE,
-				bufs->bufs.NodesNeighborsHash + gid * HASH_SIZE,
+				bufs->bufs.NodesNeighbors + i * NEIGHBOR_SAMPLE_SIZE,
 				bufs->bufs.Pi,
 				bufs->bufs.Beta,
 				epsilon,
@@ -526,7 +481,7 @@ kernel void update_beta_calculate_grads(
 	size_t gid = get_global_id(0);
 	if (gid < count_partial_sums) {
 		size_t gsize = get_global_size(0);
-		global double2 *grads = bufs->bufs.Scratch + gid * K;
+		global double2 *grads = bufs->bufs.Scratch + 2 * gid * K;
 
 		for (int i = 0; i < K; ++i) {
 			grads[i].x = 0;
@@ -554,7 +509,7 @@ kernel void update_beta_calculate_theta(
 	ulong2 randomSeed = bufs->bufs.RandomSeed[gid];
 	global double2 *ggrads = bufs->bufs.Scratch;
 	for (int i = 1; i < count_partial_sums; ++i) {
-		global double2 *grads = bufs->bufs.Scratch + i * K;
+		global double2 *grads = bufs->bufs.Scratch + 2 * i * K;
 		for (int k = 0; k < K; ++k) {
 			ggrads[k].x += grads[k].x;
 			ggrads[k].y += grads[k].y;

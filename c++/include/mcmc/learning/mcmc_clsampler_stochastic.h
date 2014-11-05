@@ -66,7 +66,7 @@ public:
 		  csumDouble(vexContext), csumInt(vexContext),
 		  groupSize(args.openclGroupSize), numGroups(args.openclNumGroups),
 		  globalThreads(groupSize * numGroups),
-			kRoundedThreads(round_up_to_multiples(K, groupSize)), totalAllocedClBufers(0) {
+			kRoundedThreads(round_up_to_multiples(K, groupSize)), hostNodeNeighbors(0), totalAllocedClBufers(0) {
 
 		::size_t hash_table_size = round_next_power_2(real_num_node_sample());
 		if ((double)hash_table_size / real_num_node_sample() < 1.8) {
@@ -112,11 +112,9 @@ public:
 				num_nodes_in_batch * sizeof(cl_int)
 				);
 		clNodesNeighbors = createBuffer("clNodesNeighbors", CL_MEM_READ_ONLY,
-				std::min(num_nodes_in_batch, globalThreads) * real_num_node_sample() * sizeof(cl_int)
+				num_nodes_in_batch * real_num_node_sample() * sizeof(cl_int)
 				);
-		clNodesNeighborsHash = createBuffer("clNodesNeighborsHash", CL_MEM_READ_ONLY,
-				std::min(num_nodes_in_batch, globalThreads) * hash_table_size * sizeof(cl_int)
-				);
+		hostNodeNeighbors = new cl_int[num_nodes_in_batch * real_num_node_sample()];
 		clEdges = createBuffer("clEdges", CL_MEM_READ_ONLY,
 				num_edges_in_batch * sizeof(cl_int2)
 				);
@@ -157,7 +155,6 @@ public:
 		init_buffers_kernel.setArg(Idx++, clHeldOutGraph);
 		init_buffers_kernel.setArg(Idx++, clNodes);
 		init_buffers_kernel.setArg(Idx++, clNodesNeighbors);
-		init_buffers_kernel.setArg(Idx++, clNodesNeighborsHash);
 		init_buffers_kernel.setArg(Idx++, clEdges);
 		init_buffers_kernel.setArg(Idx++, clPi);
 		init_buffers_kernel.setArg(Idx++, clPhi);
@@ -218,10 +215,6 @@ public:
 		clContext.queue.enqueueWriteBuffer(clRandomSeed, CL_TRUE,
 				0, randomSeed.size() * sizeof(cl_ulong2),
 				randomSeed.data());
-		// fill Hash with EMPTY (-1) values
-		vex::backend::opencl::device_vector<cl_int> vexDeviceHash(clNodesNeighborsHash);
-		vex::vector<cl_int> vexHash(vexContext.queue(0), vexDeviceHash);
-		vexHash = (cl_int) -1;
 
 		vex::backend::opencl::device_vector<cl_int> vexDeviceErr(clErrorCtrl);
 		vex::vector<cl_int> vexErr(vexContext.queue(0), vexDeviceErr);
@@ -237,6 +230,10 @@ public:
 		clContext.queue.finish();
 
 		info(std::cout);
+	}
+
+	~MCMCClSamplerStochastic() {
+		if (hostNodeNeighbors) delete[] hostNodeNeighbors;
 	}
 
 	virtual void run() {
@@ -411,6 +408,21 @@ protected:
 				std::cerr << beta[k] << " ";
 			}
 			std::cerr << std::endl;
+		}
+
+
+		for (unsigned int i = 0; i < v_nodes.size(); ++i) {
+			OrderedVertexSet neighbors = sample_neighbor_nodes(num_node_sample, v_nodes[i]);
+
+			if (neighbors.size() != real_num_node_sample()) {
+				abort();
+			}
+
+			std::copy(neighbors.begin(), neighbors.end(), hostNodeNeighbors + i * real_num_node_sample());
+			clContext.queue.enqueueWriteBuffer(clNodesNeighbors, CL_FALSE,
+					i * real_num_node_sample() * sizeof(cl_int),
+					real_num_node_sample() * sizeof(cl_int),
+					hostNodeNeighbors + i * real_num_node_sample());
 		}
 
 		int Idx = 0;
@@ -710,7 +722,6 @@ protected:
 
 	cl::Buffer clNodes;
 	cl::Buffer clNodesNeighbors;
-	cl::Buffer clNodesNeighborsHash;
 	cl::Buffer clEdges;
 	cl::Buffer clPi;
 	cl::Buffer clPhi;
@@ -736,6 +747,8 @@ protected:
 	const ::size_t numGroups;
 	const ::size_t globalThreads;
 	const ::size_t kRoundedThreads;
+
+	cl_int *hostNodeNeighbors;
 
 	::size_t totalAllocedClBufers;
 	std::vector<std::pair<std::string, ::size_t> > clBufAllocSizes;
