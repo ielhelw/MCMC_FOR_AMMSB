@@ -156,7 +156,7 @@ inline int hash2(const int key, const int n_buckets) {
 #else
 	const int SOME_PRIME = 3;
 #endif
-	return (key % SOME_PRIME) + 1;
+	return (key % SOME_PRIME) | 1; // must be odd
 }
 
 inline int hash_put(const int key, global int* buckets, const int n_buckets) {
@@ -164,10 +164,7 @@ inline int hash_put(const int key, global int* buckets, const int n_buckets) {
 	const int h2 = hash2(key, n_buckets);
 
 	for (int i = 0; i < n_buckets; ++i) {
-		// mix quadratic probing with double hashing
-		// for 2 keys to have the exact probing sequence,
-		// both must have equal h1/h2 values which is highly unlikely
-		int loc = (h1 + i*i*h2) % n_buckets;
+		int loc = (h1 + i*h2) % n_buckets;
 
 		if (buckets[loc] == HASH_EMPTY) {
 			buckets[loc] = key;
@@ -177,6 +174,52 @@ inline int hash_put(const int key, global int* buckets, const int n_buckets) {
 		}
 	}
 	return HASH_FAIL;
+}
+
+
+kernel void
+random_gamma(global Buffers *bufs,
+			 global double *data,
+			 double eta0,
+			 double eta1,
+			 int X,
+			 int Y)
+{
+	size_t gid = get_global_id(0);
+	size_t gsize = get_global_size(0);
+	ulong2 randomSeed = bufs->bufs.RandomSeed[gid];
+
+	for (int i = gid; i < X; i += gsize) {
+		for (int j = 0; j < Y; j++) {
+			data[i * Y + j] = rand_gamma(&randomSeed, eta0, eta1);
+		}
+	}
+	bufs->bufs.RandomSeed[gid] = randomSeed;
+}
+
+
+kernel void
+row_normalize(const global double *in,
+			  global double *out,
+			  int X,
+			  int Y)
+{
+	size_t gid = get_global_id(0);
+	size_t gsize = get_global_size(0);
+
+	for (int i = gid; i < X; i += gsize) {
+		const double *gin = in + i * Y;
+		double *gout = out + i * Y;
+
+		double sum = 0.0;
+		for (int j = 0; j < Y; j++) {
+			sum += gin[j];
+		}
+
+		for (int j = 0; j < Y; j++) {
+			gout[j] = gin[j] / sum;
+		}
+	}
 }
 
 
@@ -321,7 +364,7 @@ inline int sample_latent_vars_of(
 			const bool cond2 = !graph_has_peer(hg, node, neighborId);
 			const bool cond = cond1 && cond2;
 			if (cond) {
-				ret = hash_put(neighborId, neighbor_nodes_hash, HASH_MULTIPLE*NEIGHBOR_SAMPLE_SIZE);
+				ret = hash_put(neighborId, neighbor_nodes_hash, HASH_SIZE);
 				if (HASH_OK(ret)) {
 					neighbor_nodes[i] = ret;
 					break;
@@ -413,7 +456,7 @@ kernel void sample_latent_vars(
 				bufs->bufs.G, bufs->bufs.HG,
 				// index by gid
 				bufs->bufs.NodesNeighbors + gid * NEIGHBOR_SAMPLE_SIZE,
-				bufs->bufs.NodesNeighborsHash + gid * HASH_MULTIPLE * NEIGHBOR_SAMPLE_SIZE,
+				bufs->bufs.NodesNeighborsHash + gid * HASH_SIZE,
 				bufs->bufs.Pi,
 				bufs->bufs.Beta,
 				epsilon,
@@ -529,7 +572,7 @@ kernel void update_beta_calculate_grads(
 	size_t gid = get_global_id(0);
 	if (gid < count_partial_sums) {
 		size_t gsize = get_global_size(0);
-		global double2 *grads = bufs->bufs.Scratch + gid * K;
+		global double2 *grads = (global double2 *)(bufs->bufs.Scratch + gid * K);
 
 		for (int i = 0; i < K; ++i) {
 			grads[i].x = 0;
@@ -555,9 +598,9 @@ kernel void update_beta_calculate_theta(
 		) {
 	size_t gid = get_global_id(0);
 	ulong2 randomSeed = bufs->bufs.RandomSeed[gid];
-	global double2 *ggrads = bufs->bufs.Scratch;
+	global double2 *ggrads = (global double2 *)bufs->bufs.Scratch;
 	for (int i = 1; i < count_partial_sums; ++i) {
-		global double2 *grads = bufs->bufs.Scratch + i * K;
+		global double2 *grads = (global double2 *)bufs->bufs.Scratch + i * K;
 		for (int k = 0; k < K; ++k) {
 			ggrads[k].x += grads[k].x;
 			ggrads[k].y += grads[k].y;
@@ -579,6 +622,10 @@ kernel void update_beta_calculate_theta(
 	bufs->bufs.RandomSeed[gid] = randomSeed;
 }
 
+// Expand the python fully, knowing this is two dimensions so we don't need
+// to synchronize to pre-calculate the sum:
+// 		temp = self.__theta/np.sum(self.__theta,1)[:,np.newaxis]
+// 		self._beta = temp[:,1]
 kernel void update_beta_calculate_beta(
 		global double2 *theta,		// #K
 		global double *beta			// #K

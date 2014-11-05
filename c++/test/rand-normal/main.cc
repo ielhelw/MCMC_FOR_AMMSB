@@ -58,5 +58,14 @@ int main(int argc, char *argv[]) {
 		mcmc::Random::random->report();
 	}
 
+	if (true) {
+		std::vector<std::vector<double> > a(N/K, std::vector<double>(K));
+		auto start = std::chrono::system_clock::now();
+		a = mcmc::Random::random->gamma(1.0, 0.1, N / K, K);
+		auto stop = std::chrono::system_clock::now();
+		std::cout << "gamma(" << (N / K) << "," << K << ") takes total " << (stop - start).count() << " per call " << (1.0 * (stop - start).count() / ((N / K) * K)) << std::endl;
+		mcmc::Random::random->report();
+	}
+
 	return 0;
 }

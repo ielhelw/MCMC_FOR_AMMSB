@@ -74,8 +74,8 @@ public:
         // updating \pi and \beta.
 		std::cerr << "Ignore eta[] in random.gamma: use 100.0 and 0.01" << std::endl;
 		// theta = Random::random->gamma(eta[0], eta[1], K, 2);		// parameterization for \beta
-		theta = Random::random->gamma(100.0, 0.01, K, 2);		// parameterization for \beta
-		phi = Random::random->gamma(1, 1, N, K);					// parameterization for \pi
+		theta = kernelRandom.gamma(100.0, 0.01, K, 2);		// parameterization for \beta
+		phi = kernelRandom.gamma(1, 1, N, K);					// parameterization for \pi
 
 		// FIXME RFHH -- code sharing with variational_inf*::update_pi_beta()
         // temp = self.__theta/np.sum(self.__theta,1)[:,np.newaxis]
@@ -86,6 +86,24 @@ public:
         // self._pi = self.__phi/np.sum(self.__phi,1)[:,np.newaxis]
 		pi.resize(phi.size(), std::vector<double>(phi[0].size()));
 		np::row_normalize(&pi, phi);
+
+		if (false) {
+			for (::size_t i = 0; i < 10; i++) {
+				std::cerr << "phi[" << i << "]: ";
+				for (::size_t k = 0; k < 10; k++) {
+					std::cerr << std::fixed << std::setprecision(12) << phi[i][k] << " ";
+				}
+				std::cerr << std::endl;
+			}
+
+			for (::size_t i = 0; i < 10; i++) {
+				std::cerr << "pi[" << i << "]: ";
+				for (::size_t k = 0; k < 10; k++) {
+					std::cerr << std::fixed << std::setprecision(12) << pi[i][k] << " ";
+				}
+				std::cerr << std::endl;
+			}
+		}
 
 		info(std::cout);
 	}
@@ -509,7 +527,7 @@ protected:
                 y_ab = 1;
 			}
 
-            int z_ab = this->sample_z_ab_from_edge(y_ab, pi[node], pi[*neighbor], beta, epsilon, K);
+            int z_ab = sample_z_ab_from_edge(y_ab, pi[node], pi[*neighbor], beta, epsilon, K);
             z[z_ab] += 1;
 		}
 
@@ -620,6 +638,7 @@ protected:
 #endif
 
 
+#ifdef NO_DIFFERENCE_WITH_COMMON_IMPL
     int sample_z_ab_from_edge(int y,
 							  const std::vector<double> &pi_a,
 							  const std::vector<double> &pi_b,
@@ -676,6 +695,7 @@ protected:
 		return np::find_le(p, location);
 #endif
 	}
+#endif
 
 
 protected:
