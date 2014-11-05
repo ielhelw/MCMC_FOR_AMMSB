@@ -18,9 +18,18 @@
 namespace mcmc {
 namespace learning {
 
+#ifdef RANDOM_FOLLOWS_CPP
+#define EDGEMAP_IS_VECTOR
+#endif
 
-// typedef std::unordered_map<Edge, int>	EdgeMapZ;
-typedef std::map<Edge, int>	EdgeMapZ;
+// EDGEMAP_IS_VECTOR is a more efficient implementation anyway
+#ifdef EDGEMAP_IS_VECTOR
+typedef std::vector<int>    EdgeMapZ;
+#else
+// typedef std::map<Edge, int>	EdgeMapZ;
+typedef std::unordered_map<Edge, int>   EdgeMapZ;
+#endif
+
 
 class MCMCSamplerStochastic : public Learner {
 public:
@@ -55,6 +64,10 @@ public:
     MCMCSamplerStochastic(const Options &args, const Network &graph)
 			: Learner(args, graph), kernelRandom(42) {
 
+#ifdef RANDOM_FOLLOWS_CPP
+		std::cerr << "RANDOM_FOLLOWS_CPP enabled" << std::endl;
+#endif
+
         // step size parameters.
         this->a = args.a;
         this->b = args.b;
@@ -74,8 +87,8 @@ public:
         // updating \pi and \beta.
 		std::cerr << "Ignore eta[] in random.gamma: use 100.0 and 0.01" << std::endl;
 		// theta = Random::random->gamma(eta[0], eta[1], K, 2);		// parameterization for \beta
-		theta = Random::random->gamma(100.0, 0.01, K, 2);		// parameterization for \beta
-		phi = Random::random->gamma(1, 1, N, K);					// parameterization for \pi
+		theta = kernelRandom.gamma(100.0, 0.01, K, 2);		// parameterization for \beta
+		phi = kernelRandom.gamma(1, 1, N, K);					// parameterization for \pi
 
 		// FIXME RFHH -- code sharing with variational_inf*::update_pi_beta()
         // temp = self.__theta/np.sum(self.__theta,1)[:,np.newaxis]
@@ -86,6 +99,24 @@ public:
         // self._pi = self.__phi/np.sum(self.__phi,1)[:,np.newaxis]
 		pi.resize(phi.size(), std::vector<double>(phi[0].size()));
 		np::row_normalize(&pi, phi);
+
+		if (false) {
+			for (::size_t i = 0; i < 10; i++) {
+				std::cerr << "phi[" << i << "]: ";
+				for (::size_t k = 0; k < 10; k++) {
+					std::cerr << std::fixed << std::setprecision(12) << phi[i][k] << " ";
+				}
+				std::cerr << std::endl;
+			}
+
+			for (::size_t i = 0; i < 10; i++) {
+				std::cerr << "pi[" << i << "]: ";
+				for (::size_t k = 0; k < 10; k++) {
+					std::cerr << std::fixed << std::setprecision(12) << pi[i][k] << " ";
+				}
+				std::cerr << std::endl;
+			}
+		}
 
 		info(std::cout);
 	}
@@ -303,17 +334,24 @@ protected:
 		std::transform(theta.begin(), theta.end(), sums.begin(), np::sum<double>);
 		std::vector<std::vector<double> > noise = kernelRandom.randn(K, 2);	// random noise.
 
-        for (EdgeMapZ::const_iterator edge = z.begin();
-			 	edge != z.end();
-				edge++) {
-            int y_ab = 0;
-            if (edge->first.in(network.get_linked_edges())) {
-                y_ab = 1;
-			}
-            int k = edge->second;
+#ifdef EDGEMAP_IS_VECTOR
+		size_t i = 0;
+		for (auto edge: mini_batch) {
+			int k = z[i];
+			i++;
+#else
+			for (auto e: z) {
+				auto edge = e.first;
+				int k = e.second;
+#endif
             // if k==-1 means z_ab != z_ba => gradient is 0.
             if (k == -1) {
                 continue;
+			}
+
+            int y_ab = 0;
+            if (edge.in(network.get_linked_edges())) {
+                y_ab = 1;
 			}
 
             grads[k][0] += std::abs(1-y_ab) / theta[k][0] - 1 / sums[k];
@@ -414,14 +452,24 @@ protected:
         since we only need indicator function in the gradient update. More details, please see the comments
         within the sample_z_for_each_edge function.
          */
+#ifdef EDGEMAP_IS_VECTOR
+		EdgeMapZ z(mini_batch.size());
+		::size_t i = 0;
+#else
 		EdgeMapZ z;
+#endif
 		for (auto edge = mini_batch.begin(); edge != mini_batch.end(); edge++) {
             int y_ab = 0;
             if (edge->in(network.get_linked_edges())) {
                 y_ab = 1;
 			}
 
-            z[*edge] = sample_z_for_each_edge(y_ab, pi[edge->first], pi[edge->second], \
+#ifdef EDGEMAP_IS_VECTOR
+			z[i++]
+#else
+			z[*edge]
+#endif
+			   	= sample_z_for_each_edge(y_ab, pi[edge->first], pi[edge->second], \
 											  beta, K);
 		}
 
@@ -473,6 +521,7 @@ protected:
         // // bounds = np.cumsum(p)
 		// // std::vector<double> bounds(K + 1);
 		// // std::partial_sum(p.begin(), p.end(), bounds.begin());
+		// FIXME FIXME FIXME ---- need to restore p[K] probably ---- FIXME FIXME FIXME
 		// FIXME: replace p[K] w/ p[K-1] here. Why? RFHH
         // double location = Random::random->random() * p[K];
         double r = kernelRandom.random();
@@ -509,7 +558,7 @@ protected:
                 y_ab = 1;
 			}
 
-            int z_ab = this->sample_z_ab_from_edge(y_ab, pi[node], pi[*neighbor], beta, epsilon, K);
+            int z_ab = sample_z_ab_from_edge(y_ab, pi[node], pi[*neighbor], beta, epsilon, K);
             z[z_ab] += 1;
 		}
 
@@ -620,6 +669,8 @@ protected:
 #endif
 
 
+#ifdef RANDOM_FOLLOWS_CPP
+	// in this case, we need to sample randoms from kernelRandom
     int sample_z_ab_from_edge(int y,
 							  const std::vector<double> &pi_a,
 							  const std::vector<double> &pi_b,
@@ -676,6 +727,7 @@ protected:
 		return np::find_le(p, location);
 #endif
 	}
+#endif
 
 
 protected:

@@ -177,6 +177,52 @@ inline int hash_put(const int key, global int* buckets, const int n_buckets) {
 }
 
 
+kernel void
+random_gamma(global Buffers *bufs,
+			 global double *data,
+			 double eta0,
+			 double eta1,
+			 int X,
+			 int Y)
+{
+	size_t gid = get_global_id(0);
+	size_t gsize = get_global_size(0);
+	ulong2 randomSeed = bufs->bufs.RandomSeed[gid];
+
+	for (int i = gid; i < X; i += gsize) {
+		for (int j = 0; j < Y; j++) {
+			data[i * Y + j] = rand_gamma(&randomSeed, eta0, eta1);
+		}
+	}
+	bufs->bufs.RandomSeed[gid] = randomSeed;
+}
+
+
+kernel void
+row_normalize(const global double *in,
+			  global double *out,
+			  int X,
+			  int Y)
+{
+	size_t gid = get_global_id(0);
+	size_t gsize = get_global_size(0);
+
+	for (int i = gid; i < X; i += gsize) {
+		const double *gin = in + i * Y;
+		double *gout = out + i * Y;
+
+		double sum = 0.0;
+		for (int j = 0; j < Y; j++) {
+			sum += gin[j];
+		}
+
+		for (int j = 0; j < Y; j++) {
+			gout[j] = gin[j] / sum;
+		}
+	}
+}
+
+
 typedef struct PERP_ACCU {
 	double		likelihood;
 	int			count;
@@ -526,7 +572,7 @@ kernel void update_beta_calculate_grads(
 	size_t gid = get_global_id(0);
 	if (gid < count_partial_sums) {
 		size_t gsize = get_global_size(0);
-		global double2 *grads = bufs->bufs.Scratch + gid * K;
+		global double2 *grads = ((global double2 *)bufs->bufs.Scratch) + gid * K;
 
 		for (int i = 0; i < K; ++i) {
 			grads[i].x = 0;
@@ -552,9 +598,9 @@ kernel void update_beta_calculate_theta(
 		) {
 	size_t gid = get_global_id(0);
 	ulong2 randomSeed = bufs->bufs.RandomSeed[gid];
-	global double2 *ggrads = bufs->bufs.Scratch;
+	global double2 *ggrads = (global double2 *)bufs->bufs.Scratch;
 	for (int i = 1; i < count_partial_sums; ++i) {
-		global double2 *grads = bufs->bufs.Scratch + i * K;
+		global double2 *grads = ((global double2 *)bufs->bufs.Scratch) + i * K;
 		for (int k = 0; k < K; ++k) {
 			ggrads[k].x += grads[k].x;
 			ggrads[k].y += grads[k].y;
@@ -576,6 +622,10 @@ kernel void update_beta_calculate_theta(
 	bufs->bufs.RandomSeed[gid] = randomSeed;
 }
 
+// Expand the python fully, knowing this is two dimensions so we don't need
+// to synchronize to pre-calculate the sum:
+// 		temp = self.__theta/np.sum(self.__theta,1)[:,np.newaxis]
+// 		self._beta = temp[:,1]
 kernel void update_beta_calculate_beta(
 		global double2 *theta,		// #K
 		global double *beta			// #K
