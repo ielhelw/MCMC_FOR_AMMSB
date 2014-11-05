@@ -17,24 +17,31 @@ int main(int argc, char *argv[]) {
 		const Data *data = df.get_data();
 		Network network(data, 0.1);
 
-		if (false) {
+		if (args.run.mcmc_stochastical) {
 			std::cout << "start MCMC stochastical" << std::endl;
 			MCMCSamplerStochastic mcmcSampler(args, network);
 			mcmcSampler.run();
 		}
 
-		if (false) {
+		if (args.run.mcmc_batch) {
 			std::cout << "start MCMC batch" << std::endl;
 			MCMCSamplerBatch mcmcSampler(args, network);
 			mcmcSampler.run();
 		}
 
 #ifdef ENABLE_OPENCL
-		if (false) {
-			std::cout << "start MCMC CL stochastical" << std::endl;
+		if (args.run.mcmc_stochastical_cl) {
+			std::cout << "start MCMC stochastical CL" << std::endl;
 			MCMCClSamplerStochastic mcmcclSampler(args, network, context);
 			mcmcclSampler.run();
 		}
+#ifdef IMPLEMENT_MCMC_CL_BATCH
+		if (args.run.mcmc_batch_cl) {
+			std::cout << "start MCMC batch CL" << std::endl;
+			MCMCClSamplerBatch mcmcclSampler(args, network, context);
+			mcmcclSampler.run();
+		}
+#endif
 #endif
 
 		if (false) {
@@ -51,6 +58,9 @@ int main(int argc, char *argv[]) {
 
 		return 0;
 
+	} catch (cl::Error &e) {
+		std::cerr << "OpenCL error [code=" << e.err() << "]: " << e.what() << std::endl;
+		return 33;
 	} catch (mcmc::IOException &e) {
 		std::cerr << "IO error: " << e.what() << std::endl;
 		return 33;

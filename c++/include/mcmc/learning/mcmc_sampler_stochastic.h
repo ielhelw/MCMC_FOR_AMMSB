@@ -61,9 +61,9 @@ public:
         this->c = args.c;
 
         // control parameters for learning
-        // num_node_sample = static_cast< ::size_t>(std::sqrt(network.get_num_nodes()));
+        num_node_sample = static_cast< ::size_t>(std::sqrt(network.get_num_nodes()));
 
-		num_node_sample = N / 5;
+		//num_node_sample = N / 5;
 		std::cerr << "num_node_sample " << num_node_sample << std::endl;
 
         // model parameters and re-parameterization
@@ -348,6 +348,15 @@ protected:
 		std::vector<std::vector<double> > temp(theta.size(), std::vector<double>(theta[0].size()));
 		np::row_normalize(&temp, theta);
 		std::transform(temp.begin(), temp.end(), beta.begin(), np::SelectColumn<double>(1));
+
+		if (false) {
+			std::cerr << __func__ << std::endl;
+			std::cerr << "beta ";
+			for (::size_t k = 0; k < K; k++) {
+				std::cerr << beta[k] << " ";
+			}
+			std::cerr << std::endl;
+		}
 	}
 
 
@@ -542,7 +551,7 @@ protected:
         const EdgeMap &held_out_set = network.get_held_out_set();
         const EdgeMap &test_set = network.get_test_set();
 
-        #ifdef EFFICIENCY_FOLLOWS_PYTHON
+#ifdef EFFICIENCY_FOLLOWS_PYTHON
         while (p > 0) {
 			std::cerr << "FIXME: horribly inefficient xrange thingy" << std::endl;
 			auto nodeList = Random::random->sample(np::xrange(0, N), sample_size * 2);
