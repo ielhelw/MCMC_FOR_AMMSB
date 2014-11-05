@@ -572,7 +572,7 @@ kernel void update_beta_calculate_grads(
 	size_t gid = get_global_id(0);
 	if (gid < count_partial_sums) {
 		size_t gsize = get_global_size(0);
-		global double2 *grads = (global double2 *)(bufs->bufs.Scratch + gid * K);
+		global double2 *grads = ((global double2 *)bufs->bufs.Scratch) + gid * K;
 
 		for (int i = 0; i < K; ++i) {
 			grads[i].x = 0;
@@ -600,7 +600,7 @@ kernel void update_beta_calculate_theta(
 	ulong2 randomSeed = bufs->bufs.RandomSeed[gid];
 	global double2 *ggrads = (global double2 *)bufs->bufs.Scratch;
 	for (int i = 1; i < count_partial_sums; ++i) {
-		global double2 *grads = (global double2 *)bufs->bufs.Scratch + i * K;
+		global double2 *grads = ((global double2 *)bufs->bufs.Scratch) + i * K;
 		for (int k = 0; k < K; ++k) {
 			ggrads[k].x += grads[k].x;
 			ggrads[k].y += grads[k].y;
