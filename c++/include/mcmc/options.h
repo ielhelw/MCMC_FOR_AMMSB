@@ -224,6 +224,8 @@ public:
 #ifdef ENABLE_OPENCL
 			("platform,p", po::value<std::string>(&openClPlatform), "OpenCL platform")
 			("device,d", po::value<std::string>(&openClDevice), "OpenCL device")
+			(",G", po::value< ::size_t>(&openclGroupSize)->default_value(1), "OpenCL thread group size")
+			(",g", po::value< ::size_t>(&openclNumGroups)->default_value(1), "num OpenCL thread groups")
 #endif
 			;
 
@@ -267,6 +269,8 @@ public:
 #ifdef ENABLE_OPENCL
 	std::string	openClPlatform;
 	std::string	openClDevice;
+	::size_t openclGroupSize;
+	::size_t openclNumGroups;
 #endif
 
 	struct {

@@ -15,13 +15,12 @@
 #include "mcmc/random.h"
 #include "mcmc/learning/learner.h"
 
-#define PARALLELISM 1
-
 namespace mcmc {
 namespace learning {
 
 #define do_stringify(str)	#str
 #define stringify(str)		do_stringify(str)
+#define ERROR_MESSAGE_LENGTH (4 * 1024)
 
 class MCMCClSamplerStochastic : public Learner {
 public:
@@ -30,7 +29,10 @@ public:
 		  vexContext(std::vector<cl::Context>(1, clContext.getContext()),
 					 std::vector<cl::CommandQueue>(1, clContext.getQueue())),
 		  csumDouble(vexContext), csumInt(vexContext),
-   		  kernelRandom(42) {
+   		  kernelRandom(42),
+		  groupSize(args.openclGroupSize), numGroups(args.openclNumGroups),
+		  globalThreads(groupSize * numGroups),
+		  kRoundedThreads(round_up_to_multiples(K, groupSize)), totalAllocedClBufers(0) {
 
         // step size parameters.
         this->a = args.a;
@@ -75,45 +77,53 @@ public:
 		cal_perplexity_kernel = cl::Kernel(sampler_program, "cal_perplexity");
 		init_buffers_kernel = cl::Kernel(sampler_program, "init_buffers");
 
-		clBuffers = cl::Buffer(clContext.context, CL_MEM_READ_WRITE, 64 * 100); // enough space for 100 pointers
-		clNodes = cl::Buffer(clContext.context, CL_MEM_READ_ONLY,
-				N * sizeof(cl_int) // max: 2 unique nodes per edge in batch
-				// FIXME: better estimate for #nodes in mini batch
+		clBuffers = createBuffer(CL_MEM_READ_WRITE, 64 * 100); // enough space for 100 pointers
+
+		// BASED ON STRATIFIED RANDOM NODE SAMPLING STRATEGY
+		::size_t num_edges_in_batch = N/10 + 1;
+		::size_t num_nodes_in_batch = num_edges_in_batch + 1;
+
+		clNodes = createBuffer(CL_MEM_READ_ONLY,
+				num_nodes_in_batch * sizeof(cl_int)
 				);
-		clNodesNeighbors = cl::Buffer(clContext.context, CL_MEM_READ_ONLY,
-				N * real_num_node_sample() * hash_table_multiple * sizeof(cl_int) // #total_nodes x #neighbors_per_node
-				// FIXME: we don't need space for all N elements. Space should be limited to #nodes_in_mini_batch * num_node_sample (DEPENDS ON ABOVE)
+		clNodesNeighbors = createBuffer(CL_MEM_READ_ONLY,
+				std::min(num_nodes_in_batch, globalThreads) * real_num_node_sample() * sizeof(cl_int)
 				);
-		clEdges = cl::Buffer(clContext.context, CL_MEM_READ_ONLY,
-				N * sizeof(cl_int2) // #total_nodes x #neighbors_per_node
-				// FIXME: should be multiple of mini_batch_size
+		clNodesNeighborsHash = createBuffer(CL_MEM_READ_ONLY,
+				std::min(num_nodes_in_batch, globalThreads) * real_num_node_sample() * hash_table_multiple * sizeof(cl_int)
 				);
-		clPi = cl::Buffer(clContext.context, CL_MEM_READ_WRITE,
+		clEdges = createBuffer(CL_MEM_READ_ONLY,
+				num_edges_in_batch * sizeof(cl_int2)
+				);
+		clPi = createBuffer(CL_MEM_READ_WRITE,
 				N * K * sizeof(cl_double) // #total_nodes x #K
 				);
-		clPhi = cl::Buffer(clContext.context, CL_MEM_READ_WRITE,
+		clPhi = createBuffer(CL_MEM_READ_WRITE,
 				N * K * sizeof(cl_double) // #total_nodes x #K
 				);
-		clBeta = cl::Buffer(clContext.context, CL_MEM_READ_WRITE,
+		clBeta = createBuffer(CL_MEM_READ_WRITE,
 				K * sizeof(cl_double) // #K
 				);
-		clTheta = cl::Buffer(clContext.context, CL_MEM_READ_WRITE,
+		clTheta = createBuffer(CL_MEM_READ_WRITE,
 				2 * K * sizeof(cl_double) // 2 x #K
 				);
-		clThetaSum = cl::Buffer(clContext.context, CL_MEM_READ_WRITE,
+		clThetaSum = createBuffer(CL_MEM_READ_WRITE,
 				K * sizeof(cl_double) // #K
 				);
-		clZ = cl::Buffer(clContext.context, CL_MEM_READ_WRITE,
-				N * K * sizeof(cl_int) // #total_nodes x #K
+		clZ = createBuffer(CL_MEM_READ_WRITE,
+				num_nodes_in_batch * K * sizeof(cl_int)
 				);
-		clScratch = cl::Buffer(clContext.context, CL_MEM_READ_WRITE,
-				std::max(
-						N * K * sizeof(cl_double), // #total_nodes x #K
-						N * K * sizeof(cl_double3)
-					)
+		clScratch = createBuffer(CL_MEM_READ_WRITE,
+				std::min(num_nodes_in_batch, globalThreads) * K * sizeof(cl_double)
 				);
-		clRandomSeed = cl::Buffer(clContext.context, CL_MEM_READ_WRITE,
-				PARALLELISM * sizeof(cl_ulong2)
+		clRandomSeed = createBuffer(CL_MEM_READ_WRITE,
+				globalThreads * sizeof(cl_ulong2)
+				);
+		clErrorCtrl = createBuffer(CL_MEM_READ_WRITE,
+				sizeof(cl_int16)
+				);
+		clErrorMsg = createBuffer(CL_MEM_READ_WRITE,
+				ERROR_MESSAGE_LENGTH
 				);
 
 		int Idx = 0;
@@ -122,6 +132,7 @@ public:
 		init_buffers_kernel.setArg(Idx++, clHeldOutGraph);
 		init_buffers_kernel.setArg(Idx++, clNodes);
 		init_buffers_kernel.setArg(Idx++, clNodesNeighbors);
+		init_buffers_kernel.setArg(Idx++, clNodesNeighborsHash);
 		init_buffers_kernel.setArg(Idx++, clEdges);
 		init_buffers_kernel.setArg(Idx++, clPi);
 		init_buffers_kernel.setArg(Idx++, clPhi);
@@ -131,9 +142,21 @@ public:
 		init_buffers_kernel.setArg(Idx++, clZ);
 		init_buffers_kernel.setArg(Idx++, clScratch);
 		init_buffers_kernel.setArg(Idx++, clRandomSeed);
-		clContext.queue.enqueueTask(init_buffers_kernel);
+		init_buffers_kernel.setArg(Idx++, clErrorCtrl);
+		init_buffers_kernel.setArg(Idx++, clErrorMsg);
+		try {
+			clContext.queue.enqueueTask(init_buffers_kernel);
+		} catch (cl::Error &e) {
+			if (e.err() == CL_MEM_OBJECT_ALLOCATION_FAILURE) {
+				std::cerr << "Failed to allocate CL buffers (sum = " << (double)totalAllocedClBufers/(1024*1024) << " MB)" << std::endl;
+				for (::size_t size : clBufAllocSizes) {
+					std::cerr << "Buffer size = " << (double)size/(1024*1024) << " MB" << std::endl;
+				}
+			}
+			throw e;
+		}
 
-		std::vector<cl_ulong2> randomSeed(PARALLELISM);
+		std::vector<cl_ulong2> randomSeed(globalThreads);
 		for (unsigned int i = 0; i < randomSeed.size(); ++i) {
 			randomSeed[i].s[0] = 42 + i;
 			randomSeed[i].s[1] = 42 + i + 1;
@@ -146,7 +169,7 @@ public:
 		// // theta = Random::random->gamma(eta[0], eta[1], K, 2);		// parameterization for \beta
 		// theta = Random::random->gamma(100.0, 0.01, K, 2);		// parameterization for \beta
 		std::cerr << "Ignore eta[] in random.gamma: use 100.0 and 0.01" << std::endl;
-		::size_t K_workers = std::min(K, static_cast< ::size_t>(PARALLELISM));
+		::size_t K_workers = std::min(K, static_cast< ::size_t>(globalThreads));
 		Idx = 0;
 		random_gamma_kernel.setArg(Idx++, clBuffers);
 		random_gamma_kernel.setArg(Idx++, clTheta);
@@ -170,7 +193,7 @@ public:
 		random_gamma_kernel.setArg(Idx++, (double)1.0);
 		random_gamma_kernel.setArg(Idx++, (int)N);
 		random_gamma_kernel.setArg(Idx++, (int)K);
-		clContext.queue.enqueueNDRangeKernel(random_gamma_kernel, cl::NullRange, cl::NDRange(PARALLELISM), cl::NDRange(1));
+		clContext.queue.enqueueNDRangeKernel(random_gamma_kernel, cl::NullRange, cl::NDRange(globalThreads), cl::NDRange(1));
 
 		// pi.resize(phi.size(), std::vector<double>(phi[0].size()));
         // self._pi = self.__phi/np.sum(self.__phi,1)[:,np.newaxis]
@@ -254,14 +277,28 @@ public:
 		clContext.queue.enqueueWriteBuffer(clBeta, CL_TRUE, 0, K * sizeof(double), beta.data());
 #endif
 
-		clLinkLikelihood = cl::Buffer(clContext.context, CL_MEM_READ_WRITE, PARALLELISM * sizeof(cl_double));
-		clNonLinkLikelihood = cl::Buffer(clContext.context, CL_MEM_READ_WRITE, PARALLELISM * sizeof(cl_double));
-		clLinkCount = cl::Buffer(clContext.context, CL_MEM_READ_WRITE, PARALLELISM * sizeof(cl_int));
-		clNonLinkCount = cl::Buffer(clContext.context, CL_MEM_READ_WRITE, PARALLELISM * sizeof(cl_int));
+		// fill Hash with EMPTY (-1) values
+		vex::backend::opencl::device_vector<cl_int> vexDeviceHash(clNodesNeighborsHash);
+		vex::vector<cl_int> vexHash(vexContext.queue(0), vexDeviceHash);
+		vexHash = (cl_int) -1;
+
+		vex::backend::opencl::device_vector<cl_int> vexDeviceErr(clErrorCtrl);
+		vex::vector<cl_int> vexErr(vexContext.queue(0), vexDeviceErr);
+		vexErr = 0;
+
+		errMsg = new char[ERROR_MESSAGE_LENGTH];
+
+		clLinkLikelihood = createBuffer(CL_MEM_READ_WRITE, globalThreads * sizeof(cl_double));
+		clNonLinkLikelihood = createBuffer(CL_MEM_READ_WRITE, globalThreads * sizeof(cl_double));
+		clLinkCount = createBuffer(CL_MEM_READ_WRITE, globalThreads * sizeof(cl_int));
+		clNonLinkCount = createBuffer(CL_MEM_READ_WRITE, globalThreads * sizeof(cl_int));
 
 		clContext.queue.finish();
 
 		info(std::cout);
+	}
+
+	virtual ~MCMCClSamplerStochastic() {
 	}
 
 	virtual void run() {
@@ -325,13 +362,12 @@ protected:
 
 		clContext.queue.enqueueNDRangeKernel(row_normalize_kernel,
 											 cl::NullRange,
-											 cl::NDRange(PARALLELISM),
+											 cl::NDRange(globalThreads),
 											 cl::NDRange(1));
 		clContext.queue.finish();
 	}
 
 	void update_beta(const OrderedEdgeSet &mini_batch, double scale) {
-		::size_t K_workers = std::min(K, static_cast< ::size_t>(PARALLELISM));
 		int arg;
 
 		arg = 0;
@@ -339,20 +375,22 @@ protected:
 		update_beta_calculate_theta_sum_kernel.setArg(arg++, clThetaSum);
 
 		clContext.queue.enqueueNDRangeKernel(update_beta_calculate_theta_sum_kernel,
-											 cl::NullRange, cl::NDRange(K_workers), cl::NDRange(1));
+											 cl::NullRange, cl::NDRange(kRoundedThreads), cl::NDRange(groupSize));
 		clContext.queue.finish();
+
+		::size_t countPartialSums = std::min(mini_batch.size(), globalThreads);
+		::size_t calcGradsThreads = round_up_to_multiples(countPartialSums, groupSize);
 
 		update_beta_calculate_grads_kernel.setArg(0, clBuffers);
 		update_beta_calculate_grads_kernel.setArg(1, (cl_int)mini_batch.size());
 		update_beta_calculate_grads_kernel.setArg(2, (cl_double)scale);
-
-		::size_t countPartialSums = std::min(mini_batch.size(), (::size_t)PARALLELISM);
+		update_beta_calculate_grads_kernel.setArg(3, (cl_int)countPartialSums);
 
 		clContext.queue.finish(); // Wait for sample_latent_vars2
 
 		cl::Event e_grads_kernel;
 		clContext.queue.enqueueNDRangeKernel(update_beta_calculate_grads_kernel, cl::NullRange,
-				cl::NDRange(countPartialSums), cl::NDRange(1),
+				cl::NDRange(calcGradsThreads), cl::NDRange(groupSize),
 				NULL, &e_grads_kernel);
 
 		double eps_t = a * std::pow(1.0 + step_count / b, -c);
@@ -375,7 +413,7 @@ protected:
 		update_beta_calculate_beta_kernel.setArg(arg++, clTheta);
 		update_beta_calculate_beta_kernel.setArg(arg++, clBeta);
 
-		clContext.queue.enqueueNDRangeKernel(update_beta_calculate_beta_kernel, cl::NullRange, cl::NDRange(K_workers), cl::NDRange(1));
+		clContext.queue.enqueueNDRangeKernel(update_beta_calculate_beta_kernel, cl::NullRange, cl::NDRange(kRoundedThreads), cl::NDRange(groupSize));
 		clContext.queue.finish();
 
 		if (false) {
@@ -407,7 +445,7 @@ protected:
 
 		clContext.queue.finish(); // Wait for clEdges and PiUpdates from sample_latent_vars_and_update_pi
 
-		clContext.queue.enqueueNDRangeKernel(sample_latent_vars2_kernel, cl::NullRange, cl::NDRange(PARALLELISM), cl::NDRange(1));
+		clContext.queue.enqueueNDRangeKernel(sample_latent_vars2_kernel, cl::NullRange, cl::NDRange(globalThreads), cl::NDRange(groupSize));
 	}
 
 	::size_t real_num_node_sample() const {
@@ -436,7 +474,7 @@ protected:
 		sample_latent_vars_kernel.setArg(Idx++, (cl_double)epsilon);
 
 		clContext.queue.finish();
-		clContext.queue.enqueueNDRangeKernel(sample_latent_vars_kernel, cl::NullRange, cl::NDRange(PARALLELISM), cl::NDRange(1));
+		clContext.queue.enqueueNDRangeKernel(sample_latent_vars_kernel, cl::NullRange, cl::NDRange(globalThreads), cl::NDRange(groupSize));
 
 		Idx = 0;
 		update_pi_kernel.setArg(Idx++, clBuffers);
@@ -449,8 +487,8 @@ protected:
 		update_pi_kernel.setArg(Idx++, (cl_int)N);
 
 		clContext.queue.finish();
-		clContext.queue.enqueueNDRangeKernel(update_pi_kernel, cl::NullRange, cl::NDRange(PARALLELISM), cl::NDRange(1));
-
+		check_for_kernel_errors(); // sample_latent_vars
+		clContext.queue.enqueueNDRangeKernel(update_pi_kernel, cl::NullRange, cl::NDRange(globalThreads), cl::NDRange(groupSize));
 		clContext.queue.finish();
 #if 0	// pi stays on the device
 		// read Pi again
@@ -510,12 +548,12 @@ protected:
 	double cal_perplexity_held_out() {
 	/**
 	 * calculate the perplexity for data.
-	 * perplexity defines as exponential of negative average log likelihood. 
+	 * perplexity defines as exponential of negative average log likelihood.
 	 * formally:
 	 *     ppx = exp(-1/N * \sum){i}^{N}log p(y))
-	 * 
-	 * we calculate average log likelihood for link and non-link separately, with the 
-	 * purpose of weighting each part proportionally. (the reason is that we sample 
+	 *
+	 * we calculate average log likelihood for link and non-link separately, with the
+	 * purpose of weighting each part proportionally. (the reason is that we sample
 	 * the equal number of link edges and non-link edges for held out data and test data,
 	 * which is not true representation of actual data set, which is extremely sparse.
 	 */
@@ -538,7 +576,7 @@ protected:
 		cal_perplexity_kernel.setArg(arg++, clNonLinkCount);
 
 		clContext.queue.finish();
-		clContext.queue.enqueueNDRangeKernel(cal_perplexity_kernel, cl::NullRange, cl::NDRange(PARALLELISM), cl::NDRange(1));
+		clContext.queue.enqueueNDRangeKernel(cal_perplexity_kernel, cl::NullRange, cl::NDRange(globalThreads), cl::NDRange(groupSize));
 		clContext.queue.finish();
 
 		link_likelihood = deviceSum<double>(clLinkLikelihood);
@@ -587,9 +625,9 @@ protected:
 			}
 		}
 
-		edges = cl::Buffer(clContext.context, CL_MEM_READ_ONLY|CL_MEM_COPY_HOST_PTR, h_edges_size*sizeof(cl_int), h_edges.get());
-		nodes = cl::Buffer(clContext.context, CL_MEM_READ_ONLY|CL_MEM_COPY_HOST_PTR, h_nodes_size*sizeof(cl_int2), h_nodes.get());
-		graph = cl::Buffer(clContext.context, CL_MEM_READ_WRITE, 2*64/8 /* 2 pointers, each is at most 64-bits */);
+		edges = createBuffer(CL_MEM_READ_ONLY|CL_MEM_COPY_HOST_PTR, h_edges_size*sizeof(cl_int), h_edges.get());
+		nodes = createBuffer(CL_MEM_READ_ONLY|CL_MEM_COPY_HOST_PTR, h_nodes_size*sizeof(cl_int2), h_nodes.get());
+		graph = createBuffer(CL_MEM_READ_WRITE, 2*64/8 /* 2 pointers, each is at most 64-bits */);
 
 		graph_init_kernel.setArg(0, graph);
 		graph_init_kernel.setArg(1, edges);
@@ -603,11 +641,14 @@ protected:
 		std::unique_ptr<cl_int3[]> hIterableGraph(new cl_int3[data.size()]);
 		::size_t i = 0;
 		for (auto a: data) {
-			cl_int3 e = { a.first.first, a.first.second, a.second ? 1 : 0 };
+			cl_int3 e;
+			e.s[0] = a.first.first;
+			e.s[1] = a.first.second;
+			e.s[2] = a.second ? 1 : 0;
 			hIterableGraph.get()[i] = e;
 			i++;
 		}
-		iterableGraph = cl::Buffer(clContext.context, CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR, data.size() * sizeof(cl_int3), hIterableGraph.get());
+		iterableGraph = createBuffer(CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR, data.size() * sizeof(cl_int3), hIterableGraph.get());
 	}
 
 	void init_graph() {
@@ -660,6 +701,39 @@ protected:
 	}
 #endif
 
+	void check_for_kernel_errors() {
+		cl_int err = 0;
+		clContext.queue.enqueueReadBuffer(clErrorCtrl, CL_TRUE, 0, sizeof(cl_int), &err);
+		if (err) {
+			clContext.queue.enqueueReadBuffer(clErrorMsg, CL_TRUE, 0, ERROR_MESSAGE_LENGTH, errMsg);
+			std::cerr << errMsg << std::endl;
+			abort();
+		}
+	}
+
+	/**
+	 * returns the smallest #threads; #threads >= minRequired && #threads % groupSize == 0
+	 */
+	static inline ::size_t round_up_to_multiples(::size_t minRequired, ::size_t groupSize) {
+		int numGroups = minRequired / groupSize;
+		if (numGroups*groupSize < minRequired) {
+			numGroups += 1;
+		}
+		return numGroups * groupSize;
+	}
+
+	cl::Buffer createBuffer(cl_mem_flags flags, ::size_t size, void *ptr = NULL) {
+		if (size > clContext.device.getInfo<CL_DEVICE_MAX_MEM_ALLOC_SIZE>()) {
+			std::stringstream s;
+			s << "Cannot allocate buffer of size " << size << " > " << clContext.device.getInfo<CL_DEVICE_MAX_MEM_ALLOC_SIZE>();
+			throw MCMCException(s.str());
+		}
+		cl::Buffer buf = cl::Buffer(clContext.context, flags, size, ptr);
+		totalAllocedClBufers += size;
+		clBufAllocSizes.push_back(size);
+		return buf;
+	}
+
 	std::string progOpts;
 
 	cl::ClContext clContext;
@@ -694,6 +768,7 @@ protected:
 
 	cl::Buffer clNodes;
 	cl::Buffer clNodesNeighbors;
+	cl::Buffer clNodesNeighborsHash;
 	cl::Buffer clEdges;
 	cl::Buffer clPi;
 	cl::Buffer clPhi;
@@ -703,6 +778,8 @@ protected:
 	cl::Buffer clZ;
 	cl::Buffer clScratch;
 	cl::Buffer clRandomSeed;
+	cl::Buffer clErrorCtrl;
+	cl::Buffer clErrorMsg;
 
 	vex::Context vexContext;
 	vex::Reductor<double, vex::SUM_Kahan> csumDouble;
@@ -726,6 +803,16 @@ protected:
 	// To be deprecated:
 	// std::vector<std::vector<double> > phi;			// parameterization for \pi
 	Random::Random kernelRandom;
+
+	const ::size_t groupSize;
+	const ::size_t numGroups;
+	const ::size_t globalThreads;
+	const ::size_t kRoundedThreads;
+
+	::size_t totalAllocedClBufers;
+	std::vector< ::size_t> clBufAllocSizes;
+
+	char *errMsg;
 };
 
 }
