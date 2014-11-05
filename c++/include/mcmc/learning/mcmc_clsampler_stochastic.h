@@ -20,6 +20,43 @@ namespace learning {
 #define stringify(str)		do_stringify(str)
 #define ERROR_MESSAGE_LENGTH (4 * 1024)
 
+struct STAT {
+	typedef std::chrono::microseconds tick;
+
+	STAT& operator+=(const STAT& s) {
+		mini_batch += s.mini_batch;
+		nodes_in_batch += s.nodes_in_batch;
+		sample_latent_vars += s.sample_latent_vars;
+		update_pi_for_node += s.update_pi_for_node;
+		sample_latent_vars2 += s.sample_latent_vars2;
+		update_beta += s.update_beta;
+		perplexity += s.perplexity;
+		return *this;
+	}
+
+	tick mini_batch;
+	tick nodes_in_batch;
+	tick sample_latent_vars;
+	tick update_pi_for_node;
+	tick sample_latent_vars2;
+	tick update_beta;
+	tick perplexity;
+};
+
+template<class Stream>
+Stream& operator<<(Stream& out, const STAT& stat) {
+	out << "TIME BREAKDOWN:" << std::endl
+	<< "\t mini_batch          = " << stat.mini_batch.count() << std::endl
+	<< "\t nodes_in_batch      = " << stat.nodes_in_batch.count() << std::endl
+	<< "\t sample_latent_vars  = " << stat.sample_latent_vars.count() << std::endl
+	<< "\t update_pi_for_node  = " << stat.update_pi_for_node.count() << std::endl
+	<< "\t sample_latent_vars2 = " << stat.sample_latent_vars2.count() << std::endl
+	<< "\t update_beta         = " << stat.update_beta.count() << std::endl
+	<< "\t perplexity          = " << stat.perplexity.count() << std::endl;
+	return out;
+}
+
+
 class MCMCClSamplerStochastic : public MCMCSamplerStochastic {
 public:
 	MCMCClSamplerStochastic(const Options &args, const Network &graph, cl::ClContext clContext)
@@ -203,8 +240,9 @@ public:
 	}
 
 	virtual void run() {
+		using namespace std::chrono;
 		/** run mini-batch based MCMC sampler, based on the sungjin's note */
-
+		STAT g_stat;
 		if (step_count % 1 == 0) {
 			double ppx_score = cal_perplexity_held_out();
 			std::cout << std::fixed << std::setprecision(15) << "perplexity for hold out set is: " << ppx_score << std::endl;
@@ -214,21 +252,33 @@ public:
 		while (step_count < max_iteration && ! is_converged()) {
 			auto l1 = std::chrono::system_clock::now();
 
+			t1 = system_clock::now();
+
 			// (mini_batch, scale) = self._network.sample_mini_batch(self._mini_batch_size, "stratified-random-node")
 			EdgeSample edgeSample = network.sample_mini_batch(mini_batch_size, strategy::STRATIFIED_RANDOM_NODE);
 			const OrderedEdgeSet &mini_batch = *edgeSample.first;
 			double scale = edgeSample.second;
 
+			t2 = system_clock::now();
+
 			// iterate through each node in the mini batch.
 			OrderedVertexSet nodes = nodes_in_batch(mini_batch);
 
+			t3 = system_clock::now();
+
 			sample_latent_vars_and_update_pi(nodes);
+
+			t5 = system_clock::now();
 
 			// sample (z_ab, z_ba) for each edge in the mini_batch.
 			// z is map structure. i.e  z = {(1,10):3, (2,4):-1}
 			sample_latent_vars2(mini_batch);
 
+			t6 = system_clock::now();
+
 			update_beta(mini_batch, scale);
+
+			t7 = system_clock::now();
 
 
 			if (step_count % 1 == 0) {
@@ -237,12 +287,27 @@ public:
 				ppxs_held_out.push_back(ppx_score);
 			}
 
+			t8 = system_clock::now();
+
 			delete edgeSample.first;
 
 			step_count++;
 			auto l2 = std::chrono::system_clock::now();
 			std::cout << "LOOP  = " << (l2-l1).count() << std::endl;
+
+			STAT stat = {
+				duration_cast<STAT::tick>(t2-t1),
+				duration_cast<STAT::tick>(t3-t2),
+				duration_cast<STAT::tick>(t4-t3),
+				duration_cast<STAT::tick>(t5-t4),
+				duration_cast<STAT::tick>(t6-t5),
+				duration_cast<STAT::tick>(t7-t6),
+				duration_cast<STAT::tick>(t8-t7)
+			};
+			std::cout << stat;
+			g_stat += stat;
 		}
+		std::cout << g_stat;
 	}
 
 protected:
@@ -368,6 +433,9 @@ protected:
 
 		clContext.queue.finish();
 		check_for_kernel_errors(); // sample_latent_vars
+
+		t4 = std::chrono::system_clock::now();
+
 		clContext.queue.enqueueNDRangeKernel(update_pi_kernel, cl::NullRange, cl::NDRange(globalThreads), cl::NDRange(groupSize));
 		clContext.queue.finish();
 		// read Pi again
@@ -673,6 +741,7 @@ protected:
 	std::vector<std::pair<std::string, ::size_t> > clBufAllocSizes;
 
 	char *errMsg;
+	std::chrono::time_point<std::chrono::system_clock> t1, t2, t3, t4, t5, t6, t7, t8;
 };
 
 }
