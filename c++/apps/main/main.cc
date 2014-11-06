@@ -12,6 +12,17 @@ int main(int argc, char *argv[]) {
 		cl::ClContext context = cl::ClContext::createOpenCLContext(args.openClPlatform,
 																   args.openClDevice);
 #endif
+		if (! args.run.mcmc_stochastical
+			&& ! args.run.mcmc_batch
+#ifdef ENABLE_OPENCL
+			&& ! args.run.mcmc_stochastical_cl
+#ifdef IMPLEMENT_MCMC_CL_BATCH
+			&& ! args.run.mcmc_batch_cl
+#endif
+#endif
+			) {
+			std::cerr << "No compute device selected. Is that what you wanted?" << std::endl;
+		}
 
 		DataFactory df(args.dataset_class, args.filename);
 		const Data *data = df.get_data();

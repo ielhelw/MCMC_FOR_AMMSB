@@ -1,4 +1,6 @@
+#if __OPENCL_VERSION__ <= CL_VERSION_1_1
 #pragma OPENCL EXTENSION cl_khr_fp64 : enable
+#endif
 
 #include "graph.h"
 #include "random.h"
@@ -208,8 +210,8 @@ row_normalize(const global double *in,
 	size_t gsize = get_global_size(0);
 
 	for (int i = gid; i < X; i += gsize) {
-		const double *gin = in + i * Y;
-		double *gout = out + i * Y;
+		const global double *gin = in + i * Y;
+		global double *gout = out + i * Y;
 
 		double sum = 0.0;
 		for (int j = 0; j < Y; j++) {
@@ -572,7 +574,7 @@ kernel void update_beta_calculate_grads(
 	size_t gid = get_global_id(0);
 	if (gid < count_partial_sums) {
 		size_t gsize = get_global_size(0);
-		global double2 *grads = ((global double2 *)bufs->bufs.Scratch) + gid * K;
+		global double2 *grads = (global double2 *)bufs->bufs.Scratch + gid * K;
 
 		for (int i = 0; i < K; ++i) {
 			grads[i].x = 0;
@@ -600,7 +602,7 @@ kernel void update_beta_calculate_theta(
 	ulong2 randomSeed = bufs->bufs.RandomSeed[gid];
 	global double2 *ggrads = (global double2 *)bufs->bufs.Scratch;
 	for (int i = 1; i < count_partial_sums; ++i) {
-		global double2 *grads = ((global double2 *)bufs->bufs.Scratch) + i * K;
+		global double2 *grads = (global double2 *)bufs->bufs.Scratch + i * K;
 		for (int k = 0; k < K; ++k) {
 			ggrads[k].x += grads[k].x;
 			ggrads[k].y += grads[k].y;
