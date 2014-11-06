@@ -199,6 +199,7 @@ public:
 
 		// pi.resize(phi.size(), std::vector<double>(phi[0].size()));
         // self._pi = self.__phi/np.sum(self.__phi,1)[:,np.newaxis]
+		clContext.queue.finish();
 		device_row_normalize(clPi, clPhi, N, K);
 		// np::row_normalize(&pi, phi);
 
