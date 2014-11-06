@@ -305,35 +305,62 @@ public:
 
 	virtual void run() {
 		/** run mini-batch based MCMC sampler, based on the sungjin's note */
+		timer::Timer t_outer("  outer");
+		timer::Timer t_perplexity("  perplexity");
+		timer::Timer t_mini_batch("  sample_mini_batch");
+		timer::Timer t_nodes_in_mini_batch("  nodes_in_mini_batch");
+		timer::Timer t_latent_vars("  sample_latent_vars");
+		timer::Timer t_latent_vars2("  sample_latent_vars2");
+		timer::Timer t_update_pi("  update_pi");
+		timer::Timer t_update_beta("  update_beta");
+		timer::Timer::setTabular(true);
 
 		if (step_count % 1 == 0) {
+			t_perplexity.start();
 			double ppx_score = cal_perplexity_held_out();
+			t_perplexity.stop();
 			std::cout << std::fixed << std::setprecision(15) << "perplexity for hold out set is: " << ppx_score << std::endl;
 			ppxs_held_out.push_back(ppx_score);
 		}
 
 		while (step_count < max_iteration && ! is_converged()) {
 			auto l1 = std::chrono::system_clock::now();
+			t_outer.start();
 
 			// (mini_batch, scale) = self._network.sample_mini_batch(self._mini_batch_size, "stratified-random-node")
+			t_mini_batch.start();
 			EdgeSample edgeSample = network.sample_mini_batch(mini_batch_size, strategy::STRATIFIED_RANDOM_NODE);
+			t_mini_batch.stop();
 			const OrderedEdgeSet &mini_batch = *edgeSample.first;
 			double scale = edgeSample.second;
 
 			// iterate through each node in the mini batch.
+			t_nodes_in_mini_batch.start();
 			OrderedVertexSet nodes = nodes_in_batch(mini_batch);
+			t_nodes_in_mini_batch.stop();
 
-			sample_latent_vars_and_update_pi(nodes);
+			t_latent_vars.start();
+			sample_latent_vars(nodes);
+			t_latent_vars.stop();
+
+			t_update_pi.start();
+			update_pi(nodes);
+			t_update_pi.stop();
 
 			// sample (z_ab, z_ba) for each edge in the mini_batch.
 			// z is map structure. i.e  z = {(1,10):3, (2,4):-1}
+			t_latent_vars2.start();
 			sample_latent_vars2(mini_batch);
+			t_latent_vars2.stop();
 
+			t_update_beta.start();
 			update_beta(mini_batch, scale);
-
+			t_update_beta.stop();
 
 			if (step_count % 1 == 0) {
+				t_perplexity.start();
 				double ppx_score = cal_perplexity_held_out();
+				t_perplexity.stop();
 				std::cout << std::fixed << std::setprecision(12) << "perplexity for hold out set is: " << ppx_score << std::endl;
 				ppxs_held_out.push_back(ppx_score);
 			}
@@ -341,9 +368,20 @@ public:
 			delete edgeSample.first;
 
 			step_count++;
+			t_outer.stop();
 			auto l2 = std::chrono::system_clock::now();
 			std::cout << "LOOP  = " << (l2-l1).count() << std::endl;
 		}
+
+		timer::Timer::printHeader(std::cout);
+		std::cout << t_outer << std::endl;
+		std::cout << t_perplexity << std::endl;
+		std::cout << t_mini_batch << std::endl;
+		std::cout << t_nodes_in_mini_batch << std::endl;
+		std::cout << t_latent_vars << std::endl;
+		std::cout << t_latent_vars2 << std::endl;
+		std::cout << t_update_pi << std::endl;
+		std::cout << t_update_beta << std::endl;
 	}
 
 protected:
@@ -454,7 +492,7 @@ protected:
 		return num_node_sample + 1;
 	}
 
-	void sample_latent_vars_and_update_pi(const OrderedVertexSet& nodes) {
+	void sample_latent_vars(OrderedVertexSet& nodes) {
 
 		// Copy sampled node IDs
 		std::vector<int> v_nodes(nodes.begin(), nodes.end()); // FIXME: replace OrderedVertexSet with vector
@@ -477,8 +515,12 @@ protected:
 
 		clContext.queue.finish();
 		clContext.queue.enqueueNDRangeKernel(sample_latent_vars_kernel, cl::NullRange, cl::NDRange(globalThreads), cl::NDRange(groupSize));
+		clContext.queue.finish();
+	}
 
-		Idx = 0;
+	void update_pi(const OrderedVertexSet& nodes) {
+
+		int Idx = 0;
 		update_pi_kernel.setArg(Idx++, clBuffers);
 		update_pi_kernel.setArg(Idx++, (cl_int)nodes.size());
 		update_pi_kernel.setArg(Idx++, (cl_double)alpha);
