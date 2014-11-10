@@ -51,6 +51,8 @@ public:
 		num_total_edges = linked_edges->size(); // number of total edges.
 	   	this->held_out_ratio = held_out_ratio;	// percentage of held-out data size
 
+		calc_max_fan_out();
+
 		// Based on the a-MMSB paper, it samples equal number of
 		// linked edges and non-linked edges.
 		held_out_size = held_out_ratio * linked_edges->size();
@@ -459,6 +461,30 @@ protected:
 		}
 	}
 
+	void calc_max_fan_out() {
+		std::unordered_map<int, ::size_t> fan_out;
+
+		for (auto e: *linked_edges) {
+			if (! fan_out[e.first]) {
+				fan_out[e.first] = 1;
+			} else {
+				fan_out[e.first]++;
+			}
+		}
+
+		::size_t max_fan_out = 0;
+		for (auto v: fan_out) {
+			if (v.second > max_fan_out) {
+				max_fan_out = v.second;
+			}
+		}
+	}
+
+public:
+	::size_t get_max_fan_out() const {
+		return max_fan_out;
+	}
+
 
 protected:
 	/**
@@ -539,6 +565,7 @@ protected:
 
 	::size_t	num_pieces;
 
+	::size_t	max_fan_out;
 };
 
 }; // namespace mcmc
