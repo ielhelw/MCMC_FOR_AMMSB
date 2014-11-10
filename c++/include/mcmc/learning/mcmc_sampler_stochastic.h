@@ -675,7 +675,7 @@ protected:
 			int neighborId;
 			Edge edge(0, 0);
 			do {
-				neighborId = kernelRandom.randint(0, N);
+				neighborId = kernelRandom.randint(0, N - 1);
 				edge = Edge(std::min(nodeId, neighborId), std::max(nodeId, neighborId));
 			} while (neighborId == nodeId
 					|| edge.in(held_out_set)

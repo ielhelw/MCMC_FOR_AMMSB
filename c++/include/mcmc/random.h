@@ -46,7 +46,7 @@ public:
 	inline uint64_t rand() {return xorshift_128plus();}
 
 	int randint(int from, int upto) {
-		return (rand() % (upto - from)) + from;
+		return (rand() % (upto + 1 - from)) + from;
 	}
 
 	double random() {
@@ -70,7 +70,7 @@ protected:
 
 		std::unordered_set<int> accu;
 		for (::size_t i = 0; i < count; i++) {
-			int r = randint(from, upto);
+			int r = randint(from, upto - 1);
 			if (accu.find(r) == accu.end()) {
 				accu.insert(r);
 			} else {
@@ -261,7 +261,7 @@ static const double wtab[128];
 
 #define gsl_rng_get(r)				rand()
 #define gsl_rng_uniform(r)			random()
-#define gsl_rng_uniform_int(r, n)	randint(0, n)
+#define gsl_rng_uniform_int(r, n)	randint(0, n - 1)
 struct gsl_rng;
 
 // #define TICK(x)		do x++; while (0)
