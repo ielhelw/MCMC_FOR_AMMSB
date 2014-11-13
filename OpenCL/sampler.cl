@@ -342,19 +342,14 @@ inline int sample_z_ab_from_edge(
 	return find_le(p, location, K, 0);
 }
 
-inline int sample_latent_vars_of(
+inline int sample_latent_vars_neighbors_of(
 		global Buffers *bufs,
 		const int node,
-		global const Graph *g,
 		global const Graph *hg,
 		global int* neighbor_nodes,
 		global int* neighbor_nodes_hash,
-		global const double *pi,
-		global const double *beta,
-		const double epsilon,
-		global int *z, /* K elements */
-		ulong2* randomSeed,
-		global double *p) {
+		ulong2* randomSeed)
+{
 	for (int i = 0; i < K; ++i) z[i] = 0;
 
 	for (int i = 0; i < NEIGHBOR_SAMPLE_SIZE; ++i) {
@@ -362,7 +357,7 @@ inline int sample_latent_vars_of(
 		int ret;
 		for (;;) {
 			neighborId = randint(randomSeed, 0, MAX_NODE_ID);
-			const bool cond1 = neighborId != node;
+			const bool cond1 = neighborId != bufs->nodes[node];
 			const bool cond2 = !graph_has_peer(hg, node, neighborId);
 			const bool cond = cond1 && cond2;
 			if (cond) {
@@ -392,21 +387,91 @@ inline int sample_latent_vars_of(
 		}
 	}
 #endif
+}
+
+kernel void sample_latent_vars_neighbors(
+		global Buffers *bufs,
+		const int N) // #nodes
+		{
+	size_t gid = get_global_id(0);
+	size_t gsize = get_global_size(0);
+	global double *_p = bufs->bufs.Scratch + gid * K;
+	ulong2 randomSeed = bufs->bufs.RandomSeed[gid];
+
+	for (int i = gid; i < N; i += gsize) {
+		int node = bufs->bufs.Nodes[i];
+		int ret = sample_latent_vars_neighbors_of(
+				bufs,
+				node,
+				bufs->bufs.HG,
+				// index by gid
+				bufs->bufs.NodesNeighbors + gid * NEIGHBOR_SAMPLE_SIZE,
+				bufs->bufs.NodesNeighborsHash + gid * HASH_SIZE,
+				&randomSeed);
+		if (ret) break;
+	}
+	bufs->bufs.RandomSeed[gid] = randomSeed;
+}
+
+inline int sample_latent_vars_sample_z_ab_of(
+		global Buffers *bufs,
+		const int node,
+		global const Graph *g,
+		global int* neighbor_nodes,
+		global int* neighbor_nodes_hash,
+		global const double *pi,
+		global const double *beta,
+		const double epsilon,
+		global int *z, /* K elements */
+		ulong2* randomSeed,
+		global double *p) {
+	for (int i = 0; i < K; ++i) z[i] = 0;
 
 	for (int i = 0; i < NEIGHBOR_SAMPLE_SIZE; ++i) {
 		int neighborLoc = neighbor_nodes[i];
 		int neighbor = neighbor_nodes_hash[neighborLoc];
 		neighbor_nodes_hash[neighborLoc] = HASH_EMPTY; // reset the hash bucket to empty
 
+		// Until pi has been subGraphed, need indirection for pi access
 		int y_ab = graph_has_peer(g, node, neighbor);
 		int z_ab = sample_z_ab_from_edge(
-				pi + node * K, pi + neighbor * K,
+				pi + buf->nodes[node] * K, pi + neighbor * K,
 				beta, epsilon, y_ab,
 				random(randomSeed),
 				p);
 		z[z_ab] += 1;
 	}
 	return 0;
+}
+
+kernel void sample_latent_vars_sample_z_ab(
+		global Buffers *bufs,
+		const int N, // #nodes
+		const double epsilon
+		){
+	size_t gid = get_global_id(0);
+	size_t gsize = get_global_size(0);
+	global double *_p = bufs->bufs.Scratch + gid * K;
+	ulong2 randomSeed = bufs->bufs.RandomSeed[gid];
+
+	for (int i = gid; i < N; i += gsize) {
+		int node = bufs->bufs.Nodes[i];
+		int ret = sample_latent_vars_sample_z_ab_of(
+				bufs,
+				node,
+				bufs->bufs.G,
+				// index by gid
+				bufs->bufs.NodesNeighbors + gid * NEIGHBOR_SAMPLE_SIZE,
+				bufs->bufs.NodesNeighborsHash + gid * HASH_SIZE,
+				bufs->bufs.Pi,
+				bufs->bufs.Beta,
+				epsilon,
+				bufs->bufs.Z + i * K,
+				&randomSeed,
+				_p);
+		if (ret) break;
+	}
+	bufs->bufs.RandomSeed[gid] = randomSeed;
 }
 
 void update_pi_for_node_(
@@ -438,36 +503,6 @@ void update_pi_for_node_(
 	for (int i = 0; i < K; ++i) {
 		pi[i] = phi[i]/phi_sum;
 	}
-}
-
-kernel void sample_latent_vars(
-		global Buffers *bufs,
-		const int N, // #nodes
-		const double epsilon
-		){
-	size_t gid = get_global_id(0);
-	size_t gsize = get_global_size(0);
-	global double *_p = bufs->bufs.Scratch + gid * K;
-	ulong2 randomSeed = bufs->bufs.RandomSeed[gid];
-
-	for (int i = gid; i < N; i += gsize) {
-		int node = bufs->bufs.Nodes[i];
-		int ret = sample_latent_vars_of(
-				bufs,
-				node,
-				bufs->bufs.G, bufs->bufs.HG,
-				// index by gid
-				bufs->bufs.NodesNeighbors + gid * NEIGHBOR_SAMPLE_SIZE,
-				bufs->bufs.NodesNeighborsHash + gid * HASH_SIZE,
-				bufs->bufs.Pi,
-				bufs->bufs.Beta,
-				epsilon,
-				bufs->bufs.Z + i * K,
-				&randomSeed,
-				_p);
-		if (ret) break;
-	}
-	bufs->bufs.RandomSeed[gid] = randomSeed;
 }
 
 kernel void update_pi(

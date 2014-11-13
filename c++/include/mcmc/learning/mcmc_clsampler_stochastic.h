@@ -22,7 +22,101 @@ namespace learning {
 #define stringify(str)		do_stringify(str)
 #define ERROR_MESSAGE_LENGTH (4 * 1024)
 
+
 class MCMCClSamplerStochastic : public Learner {
+
+
+	class GraphWrapper {
+	public:
+		// TODO: share buffers for clNodes clEdges
+		// FIXME FIXME FIXME What about NodesNeighbors and NodesNeighborsHash?????
+		void init(MCMCClSamplerStochastic &learner, const EdgeSet &edges) {
+			int maxNode = -1;
+			for (auto e: edges) {
+				if (e.second > maxNode) {
+					maxNode = e.second;
+					adjacency_list.resize(maxNode + 1);
+				}
+				if (e.first > maxNode) {
+					maxNode = e.first;
+					adjacency_list.resize(maxNode + 1);
+				}
+				adjacency_list[e.first].push_back(e.second);
+				adjacency_list[e.second].push_back(e.first);
+			}
+
+			// Question: is there a point in sorting the adjacency lists?
+
+			this->nNodes = maxNode + 1;
+
+			init_buffers();
+		}
+
+		void init(MCMCClSamplerStochastic &learner, const EdgeMap &edges) {
+			int maxNode = -1;
+			for (auto e: edges) {
+				if (e.first.second > maxNode) {
+					maxNode = e.first.second;
+					adjacency_list.resize(maxNode + 1);
+				}
+				if (e.first.first > maxNode) {
+					maxNode = e.first.first;
+					adjacency_list.resize(maxNode + 1);
+				}
+				adjacency_list[e.first.first].push_back(e.first.second);
+				adjacency_list[e.first.second].push_back(e.first.first);
+			}
+
+			// Question: is there a point in sorting the adjacency lists?
+
+			this->nNodes = maxNode + 1;
+
+			init_buffers();
+		}
+
+		void init_buffers() {
+#ifdef NO_NOT_YET
+			// BASED ON STRATIFIED RANDOM NODE SAMPLING STRATEGY
+			::size_t num_edges_in_batch = learner.N/10 + 1;
+			::size_t num_nodes_in_batch = num_edges_in_batch + 1;
+
+			clNodes = learner.createBuffer("clNodes", CL_MEM_READ_ONLY,
+					num_nodes_in_batch * sizeof(cl_int)
+					);
+			clNodesNeighbors = learner.createBuffer("clNodesNeighbors", CL_MEM_READ_ONLY,
+					std::min(num_nodes_in_batch, learner.globalThreads) * learner.real_num_node_sample() * sizeof(cl_int)
+					);
+			clNodesNeighborsHash = learner.createBuffer("clNodesNeighborsHash", CL_MEM_READ_ONLY,
+					std::min(num_nodes_in_batch, learner.globalThreads) * learner.hash_table_size * sizeof(cl_int)
+					);
+			clEdges = learner.createBuffer("clEdges", CL_MEM_READ_ONLY,
+					num_edges_in_batch * sizeof(cl_int2)
+					);
+
+			learner.graph_init_kernel.setArg(0, clGraph);
+			learner.graph_init_kernel.setArg(1, clEdges);
+			learner.graph_init_kernel.setArg(2, clNodes);
+
+			learner.clContext.queue.enqueueTask(learner.graph_init_kernel);
+			learner.clContext.queue.finish();
+#endif
+		}
+
+		std::vector<std::vector<int> >	adjacency_list;
+
+		cl::Buffer						clGraph;
+		cl::Buffer						clNodes;
+		cl::Buffer						clEdges;
+		cl::Buffer						clNodesNeighbors;
+		cl::Buffer						clNodesNeighborsHash;
+
+		std::vector<cl_int2>			h_subNodes;
+		std::vector<cl_int>				h_subEdges;
+
+		::size_t						nNodes;
+	};
+
+
 public:
 	MCMCClSamplerStochastic(const Options &args, const Network &graph, cl::ClContext clContext)
 		: Learner(args, graph), clContext(clContext),
@@ -44,7 +138,7 @@ public:
         num_node_sample = static_cast< ::size_t>(std::sqrt(network.get_num_nodes()));
 		std::cerr << "num_node_sample " << num_node_sample << std::endl;
 
-		::size_t hash_table_size = round_next_power_2(real_num_node_sample());
+		hash_table_size = round_next_power_2(real_num_node_sample());
 		if ((double)hash_table_size / real_num_node_sample() < 1.8) {
 			hash_table_size *= 2;
 		}
@@ -65,12 +159,18 @@ public:
 
 		std::cout << "num_node_sample = " << num_node_sample << std::endl;
 
+#ifndef DEPRECATED
+		graph_program = this->clContext.createProgram(stringify(PROJECT_HOME) "/../OpenCL/graph.cl", progOpts);
+		graph_init_kernel = cl::Kernel(graph_program, "graph_init");
+#endif
+
 		init_graph();
 
 		sampler_program = this->clContext.createProgram(stringify(PROJECT_HOME) "/../OpenCL/sampler.cl", progOpts);
 		random_gamma_kernel = cl::Kernel(sampler_program, "random_gamma");
 		row_normalize_kernel = cl::Kernel(sampler_program, "row_normalize");
-		sample_latent_vars_kernel = cl::Kernel(sampler_program, "sample_latent_vars");
+		sample_latent_vars_neighbors_kernel = cl::Kernel(sampler_program, "sample_latent_vars_neighbors");
+		sample_latent_vars_sample_z_ab_kernel = cl::Kernel(sampler_program, "sample_latent_vars_sample_z_ab");
 		update_pi_kernel = cl::Kernel(sampler_program, "update_pi");
 		sample_latent_vars2_kernel = cl::Kernel(sampler_program, "sample_latent_vars2");
 		update_beta_calculate_theta_sum_kernel = cl::Kernel(sampler_program, "update_beta_calculate_theta_sum");
@@ -493,30 +593,78 @@ protected:
 		return num_node_sample + 1;
 	}
 
-	void sample_latent_vars(OrderedVertexSet& nodes) {
-
-		// Copy sampled node IDs
-		std::vector<int> v_nodes(nodes.begin(), nodes.end()); // FIXME: replace OrderedVertexSet with vector
-		clContext.queue.enqueueWriteBuffer(clNodes, CL_FALSE, 0, v_nodes.size()*sizeof(int), v_nodes.data());
-
-		if (false) {
-			clContext.queue.enqueueReadBuffer(clBeta, CL_FALSE, 0, K * sizeof(double), beta.data());
-			std::cerr << __func__ << std::endl;
-			std::cerr << "beta ";
-			for (::size_t k = 0; k < K; k++) {
-				std::cerr << beta[k] << " ";
-			}
-			std::cerr << std::endl;
+	void stage_subgraph(GraphWrapper *graph, const OrderedVertexSet &nodes) {
+		// Copy held_out_set subgraph for nodes
+		::size_t edge_elts = nodes.size() * std::max(network.get_max_fan_out(), num_node_sample + 1);
+		graph->h_subEdges.clear();
+		graph->h_subEdges.resize(edge_elts);
+		graph->h_subNodes.clear();
+		graph->h_subNodes.resize(nodes.size());
+		::size_t i = 0;
+		::size_t offset = 0;
+		for (auto node: nodes) {
+			const auto &neighbors = graph->adjacency_list[node];
+			graph->h_subEdges.insert(graph->h_subEdges.end(), neighbors.begin(), neighbors.end());
+			graph->h_subNodes[i].s[0] = offset;
+			graph->h_subNodes[i].s[1] = neighbors.size();
+			i++;
+			offset += neighbors.size();
 		}
 
+		std::cerr << "For now, stage statically to the HeldOutSet graph" << std::endl;
+		clContext.queue.enqueueWriteBuffer(clHeldOutGraphNodes, CL_FALSE, 0, graph->h_subNodes.size()*sizeof graph->h_subNodes[0], graph->h_subNodes.data());
+		clContext.queue.enqueueWriteBuffer(clHeldOutGraphEdges, CL_FALSE, 0, graph->h_subEdges.size()*sizeof graph->h_subEdges[0], graph->h_subEdges.data());
+
+	}
+
+	void sample_latent_vars_neighbors(const OrderedVertexSet& nodes) {
+		stage_subgraph(&clSubHeldOutGraph, nodes);
+
+		// Copy sampled node IDs
+		std::vector<cl_int> node_index(nodes.begin(), nodes.end()); // FIXME: replace OrderedVertexSet with vector
+		clContext.queue.enqueueWriteBuffer(clNodes, CL_FALSE, 0, node_index.size() * sizeof(cl_int), node_index.data());
+
 		int Idx = 0;
-		sample_latent_vars_kernel.setArg(Idx++, clBuffers);
-		sample_latent_vars_kernel.setArg(Idx++, (cl_int)nodes.size());
-		sample_latent_vars_kernel.setArg(Idx++, (cl_double)epsilon);
+		sample_latent_vars_neighbors_kernel.setArg(Idx++, clBuffers);
+		sample_latent_vars_neighbors_kernel.setArg(Idx++, (cl_int)nodes.size());
 
 		clContext.queue.finish();
-		clContext.queue.enqueueNDRangeKernel(sample_latent_vars_kernel, cl::NullRange, cl::NDRange(globalThreads), cl::NDRange(groupSize));
+		clContext.queue.enqueueNDRangeKernel(sample_latent_vars_neighbors_kernel, cl::NullRange, cl::NDRange(globalThreads), cl::NDRange(groupSize));
 		clContext.queue.finish();
+	}
+
+	void sample_latent_vars_sample_z_ab(const OrderedVertexSet& nodes) {
+		// clNodes still contains nodes
+		// std::vector<int> v_nodes(nodes.begin(), nodes.end());
+		// clContext.queue.enqueueWriteBuffer(clNodes, CL_FALSE, 0, v_nodes.size()*sizeof(int), v_nodes.data());
+
+#if STAGE_PI_SUBGRAPH_TOO
+		stage_subgraph(&clSubGraph, nodes);
+
+		// 1. merge nodes and neighbors
+		// 2. stage pi for the merged(nodes, neighbors)
+		// 3. ensure that pi is staged in the order of the device neighbor index array
+		stage_subgraph(clPi, nodes);
+#else
+		std::cerr << "For now, also stage nodes to the Graph" << std::endl;
+		clContext.queue.enqueueWriteBuffer(clGraphNodes, CL_FALSE, 0, clSubHeldOutGraph.h_subNodes.size()*sizeof clSubHeldOutGraph.h_subNodes[0], clSubHeldOutGraph.h_subNodes.data());
+#endif
+
+		int Idx = 0;
+		sample_latent_vars_sample_z_ab_kernel.setArg(Idx++, clBuffers);
+		sample_latent_vars_sample_z_ab_kernel.setArg(Idx++, (cl_int)nodes.size());
+		sample_latent_vars_sample_z_ab_kernel.setArg(Idx++, (cl_double)epsilon);
+
+		clContext.queue.finish();
+		check_for_kernel_errors(); // sample_latent_vars
+		clContext.queue.enqueueNDRangeKernel(sample_latent_vars_sample_z_ab_kernel, cl::NullRange, cl::NDRange(globalThreads), cl::NDRange(groupSize));
+		clContext.queue.finish();
+		check_for_kernel_errors(); // sample_latent_vars
+	}
+
+	void sample_latent_vars(OrderedVertexSet& nodes) {
+		sample_latent_vars_neighbors(nodes);
+		sample_latent_vars_sample_z_ab(nodes);
 	}
 
 	void update_pi(const OrderedVertexSet& nodes) {
@@ -697,6 +845,8 @@ protected:
 	}
 
 	void init_graph() {
+#ifdef DEPRECATED
+#endif
 		graph_program = this->clContext.createProgram(stringify(PROJECT_HOME) "/../OpenCL/graph.cl", progOpts);
 		graph_init_kernel = cl::Kernel(graph_program, "graph_init");
 		std::map<int, std::vector<int>> linkedMap;
@@ -718,6 +868,9 @@ protected:
 			linkedMap[e.first.second].push_back(e.first.first);
 		}
 		_prepare_flat_cl_graph(clHeldOutGraphEdges, clHeldOutGraphNodes, clHeldOutGraph, linkedMap);
+
+		clSubGraph.init(*this, network.get_linked_edges());
+		clSubHeldOutGraph.init(*this, network.get_held_out_set());
 
 		prepare_iterable_cl_graph(clIterableHeldOutGraph, network.get_held_out_set());
 
@@ -800,7 +953,8 @@ protected:
 	cl::Kernel graph_init_kernel;
 	cl::Kernel random_gamma_kernel;
 	cl::Kernel row_normalize_kernel;
-	cl::Kernel sample_latent_vars_kernel;
+	cl::Kernel sample_latent_vars_neighbors_kernel;
+	cl::Kernel sample_latent_vars_sample_z_ab_kernel;
 	cl::Kernel update_pi_kernel;
 	cl::Kernel sample_latent_vars2_kernel;
 	cl::Kernel update_beta_calculate_theta_sum_kernel;
@@ -812,16 +966,17 @@ protected:
 
 	cl::Buffer clBuffers;
 
-	cl::Buffer clGraphEdges;
-	cl::Buffer clGraphNodes;
-	cl::Buffer clGraph;
-
-	cl::Buffer clHeldOutGraphEdges;
-	cl::Buffer clHeldOutGraphNodes;
-	cl::Buffer clHeldOutGraph;
+	GraphWrapper clSubGraph;
+	GraphWrapper clSubHeldOutGraph;
 
 	cl::Buffer clIterableHeldOutGraph;
 
+	cl::Buffer clGraphEdges;				// to be deprecated
+	cl::Buffer clGraphNodes;				// to be deprecated
+	cl::Buffer clGraph;				// to be deprecated
+	cl::Buffer clHeldOutGraphEdges;		// to be deprecated
+	cl::Buffer clHeldOutGraphNodes;		// to be deprecated
+	cl::Buffer clHeldOutGraph;		// to be deprecated
 	cl::Buffer clNodes;
 	cl::Buffer clNodesNeighbors;
 	cl::Buffer clNodesNeighborsHash;
@@ -836,6 +991,8 @@ protected:
 	cl::Buffer clRandomSeed;
 	cl::Buffer clErrorCtrl;
 	cl::Buffer clErrorMsg;
+
+	::size_t hash_table_size;
 
 	vex::Context vexContext;
 	vex::Reductor<double, vex::SUM_Kahan> csumDouble;
