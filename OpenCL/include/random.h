@@ -21,7 +21,7 @@ inline double random(ulong2 *s) {
 }
 
 inline int randint(ulong2 *s, int from, int upto) {
-	return (rand(s) % (upto - from)) + from;
+	return (rand(s) % (upto + 1 - from)) + from;
 }
 
 

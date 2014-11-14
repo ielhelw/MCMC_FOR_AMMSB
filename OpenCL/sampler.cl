@@ -164,6 +164,7 @@ inline int hash2(const int key, const int n_buckets) {
 inline int hash_put(const int key, global int* buckets, const int n_buckets) {
 	const int h1 = hash1(key, n_buckets);
 	const int h2 = hash2(key, n_buckets);
+if (key == 68) printf((__constant char *)"hash_put %d n_buckets %d h1 %d h2 %d\n", key, n_buckets, h1, h2);
 
 	for (int i = 0; i < n_buckets; ++i) {
 		int loc = (h1 + i*h2) % n_buckets;
@@ -350,19 +351,30 @@ inline int sample_latent_vars_neighbors_of(
 		global int* neighbor_nodes_hash,
 		ulong2* randomSeed)
 {
-	for (int i = 0; i < K; ++i) z[i] = 0;
+	if (1) {
+		int2 desc = hg->_g.node_edges[node];
+		const global int *p = hg->_g.edges + desc.y;
+		printf((__constant char *)"Node %d neighbors[%d] [", bufs->bufs.Nodes[node], desc.x);
+		for (int i = 0; i < desc.x; ++i,++p) {
+			printf((__constant char *)"%d ", *p);
+		}
+		printf((__constant char *)"]\n");
+	}
 
 	for (int i = 0; i < NEIGHBOR_SAMPLE_SIZE; ++i) {
 		int neighborId;
 		int ret;
 		for (;;) {
-			neighborId = randint(randomSeed, 0, MAX_NODE_ID);
-			const bool cond1 = neighborId != bufs->nodes[node];
+			neighborId = randint(randomSeed, 0, MAX_NODE_ID - 1);
+			printf((__constant char *)"randint %d seed (%ul,%ul)\n", neighborId, (*randomSeed).x, (*randomSeed).y);
+			const bool cond1 = neighborId != bufs->bufs.Nodes[node];
+// printf((__constant char *)"node[%d] = %d query neighbor %d\n", node, bufs->bufs.Nodes[node], neighborId);
 			const bool cond2 = !graph_has_peer(hg, node, neighborId);
 			const bool cond = cond1 && cond2;
 			if (cond) {
 				ret = hash_put(neighborId, neighbor_nodes_hash, HASH_SIZE);
 				if (HASH_OK(ret)) {
+					printf((__constant char *)"neighbor_nodes@%d [%d] := %d\n", NEIGHBOR_SAMPLE_SIZE, i, ret);
 					neighbor_nodes[i] = ret;
 					break;
 				}
@@ -387,6 +399,8 @@ inline int sample_latent_vars_neighbors_of(
 		}
 	}
 #endif
+
+	return 0;
 }
 
 kernel void sample_latent_vars_neighbors(
@@ -395,18 +409,18 @@ kernel void sample_latent_vars_neighbors(
 		{
 	size_t gid = get_global_id(0);
 	size_t gsize = get_global_size(0);
-	global double *_p = bufs->bufs.Scratch + gid * K;
 	ulong2 randomSeed = bufs->bufs.RandomSeed[gid];
 
 	for (int i = gid; i < N; i += gsize) {
-		int node = bufs->bufs.Nodes[i];
+		// int node = bufs->bufs.Nodes[i];
+		int node = i;
 		int ret = sample_latent_vars_neighbors_of(
 				bufs,
 				node,
 				bufs->bufs.HG,
-				// index by gid
-				bufs->bufs.NodesNeighbors + gid * NEIGHBOR_SAMPLE_SIZE,
-				bufs->bufs.NodesNeighborsHash + gid * HASH_SIZE,
+				// index by i
+				bufs->bufs.NodesNeighbors + i * NEIGHBOR_SAMPLE_SIZE,
+				bufs->bufs.NodesNeighborsHash + i * HASH_SIZE,
 				&randomSeed);
 		if (ret) break;
 	}
@@ -435,7 +449,7 @@ inline int sample_latent_vars_sample_z_ab_of(
 		// Until pi has been subGraphed, need indirection for pi access
 		int y_ab = graph_has_peer(g, node, neighbor);
 		int z_ab = sample_z_ab_from_edge(
-				pi + buf->nodes[node] * K, pi + neighbor * K,
+				pi + bufs->bufs.Nodes[node] * K, pi + neighbor * K,
 				beta, epsilon, y_ab,
 				random(randomSeed),
 				p);
@@ -455,14 +469,15 @@ kernel void sample_latent_vars_sample_z_ab(
 	ulong2 randomSeed = bufs->bufs.RandomSeed[gid];
 
 	for (int i = gid; i < N; i += gsize) {
-		int node = bufs->bufs.Nodes[i];
+		// int node = bufs->bufs.Nodes[i];
+		int node = i;
 		int ret = sample_latent_vars_sample_z_ab_of(
 				bufs,
 				node,
 				bufs->bufs.G,
-				// index by gid
-				bufs->bufs.NodesNeighbors + gid * NEIGHBOR_SAMPLE_SIZE,
-				bufs->bufs.NodesNeighborsHash + gid * HASH_SIZE,
+				// index by i
+				bufs->bufs.NodesNeighbors + i * NEIGHBOR_SAMPLE_SIZE,
+				bufs->bufs.NodesNeighborsHash + i * HASH_SIZE,
 				bufs->bufs.Pi,
 				bufs->bufs.Beta,
 				epsilon,

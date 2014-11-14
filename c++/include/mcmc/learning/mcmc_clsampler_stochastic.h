@@ -52,6 +52,26 @@ class MCMCClSamplerStochastic : public Learner {
 			init_buffers();
 		}
 
+		void init(MCMCClSamplerStochastic &learner, const std::map<int, std::vector<int> > &edges, ::size_t N) {
+			adjacency_list.resize(N);
+			for (auto e: edges) {
+				adjacency_list[e.first] = e.second;	// This is a full copy, right?
+				if (e.first == 922 || find(e.second.begin(), e.second.end(), 922) != e.second.end()) {
+					std::cerr << "Edge init: found [" << e.first;
+					for (auto n: e.second) {
+						std::cerr << " " << n;
+					}
+					std::cerr << "]" << std::endl;
+				}
+			}
+
+			// Question: is there a point in sorting the adjacency lists?
+
+			this->nNodes = adjacency_list.size();
+
+			init_buffers();
+		}
+
 		void init(MCMCClSamplerStochastic &learner, const EdgeMap &edges) {
 			int maxNode = -1;
 			for (auto e: edges) {
@@ -189,11 +209,11 @@ public:
 		clNodes = createBuffer("clNodes", CL_MEM_READ_ONLY,
 				num_nodes_in_batch * sizeof(cl_int)
 				);
-		clNodesNeighbors = createBuffer("clNodesNeighbors", CL_MEM_READ_ONLY,
-				std::min(num_nodes_in_batch, globalThreads) * real_num_node_sample() * sizeof(cl_int)
+		clNodesNeighbors = createBuffer("clNodesNeighbors", CL_MEM_READ_WRITE,
+				num_nodes_in_batch * real_num_node_sample() * sizeof(cl_int)
 				);
-		clNodesNeighborsHash = createBuffer("clNodesNeighborsHash", CL_MEM_READ_ONLY,
-				std::min(num_nodes_in_batch, globalThreads) * hash_table_size * sizeof(cl_int)
+		clNodesNeighborsHash = createBuffer("clNodesNeighborsHash", CL_MEM_READ_WRITE,
+				num_nodes_in_batch * hash_table_size * sizeof(cl_int)
 				);
 		clEdges = createBuffer("clEdges", CL_MEM_READ_ONLY,
 				num_edges_in_batch * sizeof(cl_int2)
@@ -595,9 +615,8 @@ protected:
 
 	void stage_subgraph(GraphWrapper *graph, const OrderedVertexSet &nodes) {
 		// Copy held_out_set subgraph for nodes
-		::size_t edge_elts = nodes.size() * std::max(network.get_max_fan_out(), num_node_sample + 1);
+		// ::size_t edge_elts = nodes.size() * std::max(network.get_max_fan_out(), num_node_sample + 1);
 		graph->h_subEdges.clear();
-		graph->h_subEdges.resize(edge_elts);
 		graph->h_subNodes.clear();
 		graph->h_subNodes.resize(nodes.size());
 		::size_t i = 0;
@@ -605,10 +624,17 @@ protected:
 		for (auto node: nodes) {
 			const auto &neighbors = graph->adjacency_list[node];
 			graph->h_subEdges.insert(graph->h_subEdges.end(), neighbors.begin(), neighbors.end());
-			graph->h_subNodes[i].s[0] = offset;
-			graph->h_subNodes[i].s[1] = neighbors.size();
+			graph->h_subNodes[i].s[0] = neighbors.size();
+			graph->h_subNodes[i].s[1] = offset;
 			i++;
 			offset += neighbors.size();
+			if (node == 922 || node == 918) {
+				std::cerr << "Insert node " << node << " neighbors [";
+				for (::size_t i = offset - neighbors.size(); i < offset; i++) {
+					std::cerr << graph->h_subEdges[i] << " ";
+				}
+				std::cerr << "] offset becomes " << offset << std::endl;
+			}
 		}
 
 		std::cerr << "For now, stage statically to the HeldOutSet graph" << std::endl;
@@ -819,7 +845,9 @@ protected:
 		}
 
 		edges = createBuffer("graph edges", CL_MEM_READ_ONLY|CL_MEM_COPY_HOST_PTR, h_edges_size*sizeof(cl_int), h_edges.get());
+		std::cerr << "create edge buffer size " << h_edges_size << " entries" << std::endl;
 		nodes = createBuffer("graph nodes", CL_MEM_READ_ONLY|CL_MEM_COPY_HOST_PTR, h_nodes_size*sizeof(cl_int2), h_nodes.get());
+		std::cerr << "create node buffer size " << h_nodes_size << " entries" << std::endl;
 		graph = createBuffer("graph", CL_MEM_READ_WRITE, 2*64/8 /* 2 pointers, each is at most 64-bits */);
 
 		graph_init_kernel.setArg(0, graph);
@@ -845,8 +873,6 @@ protected:
 	}
 
 	void init_graph() {
-#ifdef DEPRECATED
-#endif
 		graph_program = this->clContext.createProgram(stringify(PROJECT_HOME) "/../OpenCL/graph.cl", progOpts);
 		graph_init_kernel = cl::Kernel(graph_program, "graph_init");
 		std::map<int, std::vector<int>> linkedMap;
@@ -856,6 +882,8 @@ protected:
 			linkedMap[e.second].push_back(e.first);
 		}
 		_prepare_flat_cl_graph(clGraphEdges, clGraphNodes, clGraph, linkedMap);
+		std::cerr << "Get adjacency list repr of Graph" << std::endl;
+		clSubGraph.init(*this, linkedMap, N);
 
 		linkedMap.clear();
 
@@ -868,9 +896,8 @@ protected:
 			linkedMap[e.first.second].push_back(e.first.first);
 		}
 		_prepare_flat_cl_graph(clHeldOutGraphEdges, clHeldOutGraphNodes, clHeldOutGraph, linkedMap);
-
-		clSubGraph.init(*this, network.get_linked_edges());
-		clSubHeldOutGraph.init(*this, network.get_held_out_set());
+		std::cerr << "Get adjacency list repr of HeldOutGraph" << std::endl;
+		clSubHeldOutGraph.init(*this, linkedMap, N);
 
 		prepare_iterable_cl_graph(clIterableHeldOutGraph, network.get_held_out_set());
 

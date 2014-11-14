@@ -463,6 +463,7 @@ protected:
 
 	void calc_max_fan_out() {
 		std::unordered_map<int, ::size_t> fan_out;
+		std::unordered_map<int, ::size_t> fan_in;
 
 		for (auto e: *linked_edges) {
 			if (! fan_out[e.first]) {
@@ -470,14 +471,26 @@ protected:
 			} else {
 				fan_out[e.first]++;
 			}
+			if (! fan_in[e.first]) {
+				fan_in[e.first] = 1;
+			} else {
+				fan_in[e.first]++;
+			}
 		}
 
-		::size_t max_fan_out = 0;
+		max_fan_out = 0;
 		for (auto v: fan_out) {
 			if (v.second > max_fan_out) {
 				max_fan_out = v.second;
 			}
 		}
+		for (auto v: fan_in) {
+			if (v.second > max_fan_out) {
+				max_fan_out = v.second;
+			}
+		}
+
+		std::cerr << "max_fan_out " << max_fan_out << std::endl;
 	}
 
 public:
