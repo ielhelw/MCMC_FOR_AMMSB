@@ -624,7 +624,7 @@ protected:
 		return num_node_sample + 1;
 	}
 
-	void stage_subgraph(GraphWrapper *graph, const OrderedVertexSet &nodes) {
+	void stage_subgraph(GraphWrapper *graph, const OrderedVertexSet &nodes, cl::Buffer &clNodes, cl::Buffer &clEdges) {
 		// Copy held_out_set subgraph for nodes
 		// ::size_t edge_elts = nodes.size() * std::max(network.get_max_fan_out(), num_node_sample + 1);
 		graph->h_subEdges.clear();
@@ -648,14 +648,13 @@ protected:
 			}
 		}
 
-		std::cerr << "For now, stage statically to the HeldOutSet graph" << std::endl;
-		clContext.queue.enqueueWriteBuffer(clHeldOutGraphNodes, CL_FALSE, 0, graph->h_subNodes.size()*sizeof graph->h_subNodes[0], graph->h_subNodes.data());
-		clContext.queue.enqueueWriteBuffer(clHeldOutGraphEdges, CL_FALSE, 0, graph->h_subEdges.size()*sizeof graph->h_subEdges[0], graph->h_subEdges.data());
+		clContext.queue.enqueueWriteBuffer(clNodes, CL_FALSE, 0, graph->h_subNodes.size()*sizeof graph->h_subNodes[0], graph->h_subNodes.data());
+		clContext.queue.enqueueWriteBuffer(clEdges, CL_FALSE, 0, graph->h_subEdges.size()*sizeof graph->h_subEdges[0], graph->h_subEdges.data());
 
 	}
 
 	void sample_latent_vars_neighbors(const OrderedVertexSet& nodes) {
-		stage_subgraph(&clSubHeldOutGraph, nodes);
+		stage_subgraph(&clSubHeldOutGraph, nodes, clHeldOutGraphNodes, clHeldOutGraphEdges);
 
 		// Copy sampled node IDs
 		std::vector<cl_int> node_index(nodes.begin(), nodes.end()); // FIXME: replace OrderedVertexSet with vector
@@ -675,9 +674,9 @@ protected:
 		// std::vector<int> v_nodes(nodes.begin(), nodes.end());
 		// clContext.queue.enqueueWriteBuffer(clNodes, CL_FALSE, 0, v_nodes.size()*sizeof(int), v_nodes.data());
 
-#if STAGE_PI_SUBGRAPH_TOO
-		stage_subgraph(&clSubGraph, nodes);
+		stage_subgraph(&clSubGraph, nodes, clGraphNodes, clGraphEdges);
 
+#if STAGE_PI_SUBGRAPH_TOO
 		// 1. merge nodes and neighbors
 		// 2. stage pi for the merged(nodes, neighbors)
 		// 3. ensure that pi is staged in the order of the device neighbor index array

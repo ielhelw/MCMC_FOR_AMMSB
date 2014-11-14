@@ -466,7 +466,7 @@ inline int sample_latent_vars_sample_z_ab_of(
 		int neighbor = neighbor_nodes_hash[neighborLoc];
 		neighbor_nodes_hash[neighborLoc] = HASH_EMPTY; // reset the hash bucket to empty
 
-		int y_ab = graph_has_peer(g, realNode, neighbor);
+		int y_ab = graph_has_peer(g, node, neighbor);
 		int z_ab = sample_z_ab_from_edge(
 				pi + realNode * K, pi + neighbor * K,
 				beta, epsilon, y_ab,
