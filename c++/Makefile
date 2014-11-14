@@ -11,5 +11,6 @@ apps test: src
 src: 3rdparty
 
 $(PROJECT)/config.mk: $(PROJECT)/config.mk.in
+	-if [ -e $@ && ! -e $@.patch ]; then diff -u $@.in $@ > $@.patch; fi
 	-cp $< $@
 	-if [ -e $@.patch ]; then patch < $@.patch && diff -u $@.in $@ > $@.patch; fi
