@@ -415,6 +415,12 @@ inline int sample_latent_vars_neighbors_of(
 	}
 #endif
 
+	for (int i = 0; i < NEIGHBOR_SAMPLE_SIZE; ++i) {
+		int x = neighbor_nodes[i];
+		neighbor_nodes[i] = neighbor_nodes_hash[x];
+		neighbor_nodes_hash[x] = HASH_EMPTY; // reset the hash bucket to empty
+	}
+
 	return 0;
 }
 
@@ -447,7 +453,6 @@ inline int sample_latent_vars_sample_z_ab_of(
 		const int node,
 		global const Graph *g,
 		global int* neighbor_nodes,
-		global int* neighbor_nodes_hash,
 		global const double *pi,
 		global const double *beta,
 		const double epsilon,
@@ -462,10 +467,7 @@ inline int sample_latent_vars_sample_z_ab_of(
 	}
 	int realNode = bufs->bufs.Nodes[node];
 	for (int i = 0; i < NEIGHBOR_SAMPLE_SIZE; ++i) {
-		int neighborLoc = neighbor_nodes[i];
-		int neighbor = neighbor_nodes_hash[neighborLoc];
-		neighbor_nodes_hash[neighborLoc] = HASH_EMPTY; // reset the hash bucket to empty
-
+		int neighbor = neighbor_nodes[i];
 		int y_ab = graph_has_peer(g, node, neighbor);
 		int z_ab = sample_z_ab_from_edge(
 				pi + realNode * K, pi + neighbor * K,
@@ -500,7 +502,6 @@ kernel void sample_latent_vars_sample_z_ab(
 				bufs->bufs.G,
 				// index by i
 				bufs->bufs.NodesNeighbors + i * NEIGHBOR_SAMPLE_SIZE,
-				bufs->bufs.NodesNeighborsHash + i * HASH_SIZE,
 				bufs->bufs.Pi,
 				bufs->bufs.Beta,
 				epsilon,

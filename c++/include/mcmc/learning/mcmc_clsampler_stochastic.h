@@ -680,7 +680,7 @@ protected:
 		// 1. merge nodes and neighbors
 		// 2. stage pi for the merged(nodes, neighbors)
 		// 3. ensure that pi is staged in the order of the device neighbor index array
-		stage_subgraph(clPi, nodes);
+		stage_subgraph(clPi, nodes, neighbors);
 #endif
 
 		int Idx = 0;
@@ -701,6 +701,13 @@ protected:
 	}
 
 	void update_pi(const OrderedVertexSet& nodes) {
+
+#if STAGE_PI_SUBGRAPH_TOO
+		// 1. merge nodes and neighbors
+		// 2. stage pi for the merged(nodes, neighbors)
+		// 3. ensure that pi is staged in the order of the device neighbor index array
+		stage_subgraph(clPhi, nodes, neighbors);
+#endif
 
 		int Idx = 0;
 		update_pi_kernel.setArg(Idx++, clBuffers);
