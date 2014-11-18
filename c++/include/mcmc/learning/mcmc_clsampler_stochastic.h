@@ -29,7 +29,6 @@ class MCMCClSamplerStochastic : public Learner {
 	class GraphWrapper {
 	public:
 		// TODO: share buffers for clNodes clEdges
-		// FIXME FIXME FIXME What about NodesNeighbors and NodesNeighborsHash?????
 
 		void init(MCMCClSamplerStochastic &learner, cl::Buffer *clGraph, const std::map<int, std::vector<int> > &edges, ::size_t N, ::size_t num_nodes_in_batch, ::size_t num_edges_in_batch) {
 			this->clGraph = clGraph;
@@ -50,6 +49,9 @@ class MCMCClSamplerStochastic : public Learner {
 				}
 			}
 
+			*clGraph = learner.createBuffer("graph", CL_MEM_READ_WRITE,
+					2*64/8 /* 2 pointers, each is at most 64-bits */
+					);
 			clNodes = learner.createBuffer("clNodes", CL_MEM_READ_ONLY,
 					num_nodes_in_batch * sizeof h_subNodes[0]
 					);
@@ -123,6 +125,11 @@ public:
 		std::cout << "COMPILE OPTS: " << progOpts << std::endl;
 
 		std::cout << "num_node_sample = " << num_node_sample << std::endl;
+#ifdef RANDOM_FOLLOWS_SCALABLE_GRAPH
+		std::cout << "Randomness IS compatible with nonscaling graph version" << std::endl;
+#else
+		std::cout << "Randomness IS NOT compatible with nonscaling graph version" << std::endl;
+#endif
 
 		// BASED ON STRATIFIED RANDOM NODE SAMPLING STRATEGY
 		::size_t num_edges_in_batch = N/10 + 1;
@@ -149,9 +156,6 @@ public:
 		update_beta_calculate_grads_kernel = cl::Kernel(sampler_program, "update_beta_calculate_grads");
 		update_beta_calculate_theta_kernel = cl::Kernel(sampler_program, "update_beta_calculate_theta");
 		update_beta_calculate_beta_kernel = cl::Kernel(sampler_program, "update_beta_calculate_beta");
-#ifdef CALCULATE_PERPLEXITY_ON_DEVICE
-		cal_perplexity_kernel = cl::Kernel(sampler_program, "cal_perplexity");
-#endif
 		init_buffers_kernel = cl::Kernel(sampler_program, "init_buffers");
 
 		clBuffers = createBuffer("clBuffers", CL_MEM_READ_WRITE, 64 * 100); // enough space for 100 * 8 pointers
@@ -260,7 +264,7 @@ public:
 		random_gamma_kernel.setArg(Idx++, 2);
 		clContext.queue.enqueueNDRangeKernel(random_gamma_kernel, cl::NullRange, cl::NDRange(K_workers), cl::NDRange(1));
 
-#if defined CALCULATE_PHI_ON_DEVICE || defined RANDOM_FOLLOWS_SCALABLE_GRAPH
+#if defined INITIALIZE_PHI_ON_DEVICE || defined RANDOM_FOLLOWS_SCALABLE_GRAPH
         // model parameters and re-parameterization
         // since the model parameter - \pi and \beta should stay in the simplex,
         // we need to restrict the sum of probability equals to 1.  The way we
@@ -283,7 +287,7 @@ public:
 		device_row_normalize(clPi, clPhi, N, K);
 		// np::row_normalize(&pi, phi);
 #endif
-#ifndef CALCULATE_PHI_ON_DEVICE
+#ifndef INITIALIZE_PHI_ON_DEVICE
 #ifdef RANDOM_FOLLOWS_SCALABLE_GRAPH
 		(void)kernelRandom.gamma(100.0, 0.01, K, 2);		// parameterization for \beta
 #endif
@@ -309,7 +313,7 @@ public:
 #endif
 
 		if (true) {
-#ifdef CALCULATE_PHI_ON_DEVICE
+#ifdef INITIALIZE_PHI_ON_DEVICE
 			std::vector<std::vector<double> > pi(N, std::vector<double>(K));            // parameterization for \pi
 			std::vector<std::vector<double> > phi(N, std::vector<double>(K));           // parameterization for \pi
 
@@ -355,10 +359,8 @@ public:
 		update_beta_calculate_beta_kernel.setArg(Idx++, clBeta);
 		clContext.queue.enqueueNDRangeKernel(update_beta_calculate_beta_kernel, cl::NullRange, cl::NDRange(K_workers), cl::NDRange(1));
 
-#ifndef CALCULATE_PERPLEXITY_ON_DEVICE
 		clContext.queue.finish();
 		clContext.queue.enqueueReadBuffer(clBeta, CL_FALSE, 0, K * sizeof(double), beta.data());
-#endif
 
 		clContext.queue.finish();
 
@@ -389,11 +391,6 @@ public:
 		vexErr = 0;
 
 		errMsg = new char[ERROR_MESSAGE_LENGTH];
-
-		clLinkLikelihood = createBuffer("clLinkLikelihood", CL_MEM_READ_WRITE, globalThreads * sizeof(cl_double));
-		clNonLinkLikelihood = createBuffer("clNonLinkLikelihood", CL_MEM_READ_WRITE, globalThreads * sizeof(cl_double));
-		clLinkCount = createBuffer("clLinkCount", CL_MEM_READ_WRITE, globalThreads * sizeof(cl_int));
-		clNonLinkCount = createBuffer("clNonLinkCount", CL_MEM_READ_WRITE, globalThreads * sizeof(cl_int));
 
 		clContext.queue.finish();
 
@@ -497,7 +494,7 @@ public:
 
 protected:
 
-#if defined CALCULATE_PHI_ON_DEVICE || defined RANDOM_FOLLOWS_SCALABLE_GRAPH
+#if defined INITIALIZE_PHI_ON_DEVICE || defined RANDOM_FOLLOWS_SCALABLE_GRAPH
 	void device_row_normalize(cl::Buffer &clPi, cl::Buffer &clPhi, ::size_t N, ::size_t K) {
 		// pi.resize(phi.size(), std::vector<double>(phi[0].size()));
         // self._pi = self.__phi/np.sum(self.__phi,1)[:,np.newaxis]
@@ -569,11 +566,8 @@ protected:
 		clContext.queue.enqueueNDRangeKernel(update_beta_calculate_beta_kernel, cl::NullRange, cl::NDRange(kRoundedThreads), cl::NDRange(groupSize));
 		clContext.queue.finish();
 
-#ifndef CALCULATE_PERPLEXITY_ON_DEVICE
 		clContext.queue.enqueueReadBuffer(clBeta, CL_FALSE, 0, K * sizeof(double), beta.data());
-#endif
-		if (true) {
-			clContext.queue.enqueueReadBuffer(clBeta, CL_FALSE, 0, K * sizeof(double), beta.data());
+		if (false) {
 			std::cerr << __func__ << std::endl;
 			std::cerr << "beta ";
 			for (::size_t k = 0; k < K; k++) {
@@ -697,11 +691,6 @@ protected:
 		for (auto n: nodes) {
 			data[n].clear();
 			data[n].insert(data[n].end(), hostBuffer.begin() + i * K, hostBuffer.begin() + (i + 1) * K);
-			std::cerr << "Update pi/phi[" << n << "]: ";
-			for (auto x: data[n]) {
-				std::cerr << std::fixed << std::setprecision(12) << x << " ";
-			}
-			std::cerr << std::endl;
 			i++;
 		}
 	}
@@ -806,146 +795,6 @@ protected:
         return node_set;
 	}
 
-	double deviceSumDouble(cl::Buffer &xBuffer) {
-		vex::backend::opencl::device_vector<double> xDev(xBuffer);
-		vex::vector<double> X(vexContext.queue(0), xDev);
-
-		double y = csumDouble(X);
-
-		return y;
-	}
-
-	int deviceSumInt(cl::Buffer &xBuffer) {
-		vex::backend::opencl::device_vector<int> xDev(xBuffer);
-		vex::vector<int> X(vexContext.queue(0), xDev);
-
-		int y = csumInt(X);
-
-		return y;
-	}
-
-	template <typename T>
-	T deviceSum(cl::Buffer &xBuffer) {
-		vex::backend::opencl::device_vector<T> xDev(xBuffer);
-		vex::vector<T> X(vexContext.queue(0), xDev);
-
-		vex::Reductor<T, vex::SUM_Kahan> csum;
-		T y = csum(X);
-
-		return y;
-	}
-
-#ifdef CALCULATE_PERPLEXITY_ON_DEVICE
-	double cal_perplexity_held_out() {
-	/**
-	 * calculate the perplexity for data.
-	 * perplexity defines as exponential of negative average log likelihood.
-	 * formally:
-	 *     ppx = exp(-1/N * \sum){i}^{N}log p(y))
-	 *
-	 * we calculate average log likelihood for link and non-link separately, with the
-	 * purpose of weighting each part proportionally. (the reason is that we sample
-	 * the equal number of link edges and non-link edges for held out data and test data,
-	 * which is not true representation of actual data set, which is extremely sparse.
-	 */
-		cl_double link_likelihood = 0.0;
-		cl_double non_link_likelihood = 0.0;
-		cl_int link_count = 0;
-		cl_int non_link_count = 0;
-
-		cl_int H = static_cast<cl_int>(network.get_held_out_set().size());
-
-		int arg = 0;
-		cal_perplexity_kernel.setArg(arg++, clIterableHeldOutGraph);
-		cal_perplexity_kernel.setArg(arg++, H);
-		cal_perplexity_kernel.setArg(arg++, clPi);
-		cal_perplexity_kernel.setArg(arg++, clBeta);
-		cal_perplexity_kernel.setArg(arg++, (cl_double)epsilon);
-		cal_perplexity_kernel.setArg(arg++, clLinkLikelihood);
-		cal_perplexity_kernel.setArg(arg++, clNonLinkLikelihood);
-		cal_perplexity_kernel.setArg(arg++, clLinkCount);
-		cal_perplexity_kernel.setArg(arg++, clNonLinkCount);
-
-		clContext.queue.finish();
-		clContext.queue.enqueueNDRangeKernel(cal_perplexity_kernel, cl::NullRange, cl::NDRange(globalThreads), cl::NDRange(groupSize));
-		clContext.queue.finish();
-
-		link_likelihood = deviceSum<double>(clLinkLikelihood);
-		non_link_likelihood = deviceSum<double>(clNonLinkLikelihood);
-		link_count = deviceSum<int>(clLinkCount);
-		non_link_count = deviceSum<int>(clNonLinkCount);
-
-		clContext.queue.finish();
-		// direct calculation.
-		double avg_likelihood = (link_likelihood + non_link_likelihood) / (link_count + non_link_count);
-		if (true) {
-			double avg_likelihood1 = link_ratio * (link_likelihood / link_count) + \
-										 (1.0 - link_ratio) * (non_link_likelihood / non_link_count);
-			std::cerr << std::fixed << std::setprecision(12) << avg_likelihood << " " << (link_likelihood / link_count) << " " << link_count << " " << \
-				(non_link_likelihood / non_link_count) << " " << non_link_count << " " << avg_likelihood1 << std::endl;
-			// std::cerr << "perplexity score is: " << exp(-avg_likelihood) << std::endl;
-		}
-
-		// return std::exp(-avg_likelihood);
-		return (-avg_likelihood);
-	}
-#endif
-
-
-	// TODO: Deprecate
-	// FIXME: Why is linkedMap not a ref?
-	void _prepare_flat_cl_graph(cl::Buffer &edges, cl::Buffer &nodes, cl::Buffer &graph, std::map<int, std::vector<int>> linkedMap) {
-		const int h_edges_size = 2 * network.get_num_linked_edges();
-		std::unique_ptr<cl_int[]> h_edges(new cl_int[h_edges_size]);
-		const int h_nodes_size = network.get_num_nodes();
-		std::unique_ptr<cl_int2[]> h_nodes(new cl_int2[h_nodes_size]);
-
-		size_t offset = 0;
-		for (cl_int i = 0; i < network.get_num_nodes(); ++i) {
-			auto it = linkedMap.find(i);
-			if (it == linkedMap.end()) {
-				h_nodes.get()[i].s[0] = 0;
-				h_nodes.get()[i].s[1] = 0;
-			} else {
-				std::sort(it->second.begin(), it->second.end());
-				h_nodes.get()[i].s[0] = it->second.size();
-				h_nodes.get()[i].s[1] = offset;
-				for (auto viter = it->second.begin();
-						viter != it->second.end(); ++viter) {
-					h_edges.get()[offset] = *viter;
-					++offset;
-				}
-			}
-		}
-
-		edges = createBuffer("graph edges", CL_MEM_READ_ONLY|CL_MEM_COPY_HOST_PTR, h_edges_size*sizeof(cl_int), h_edges.get());
-		std::cerr << "create edge buffer size " << h_edges_size << " entries" << std::endl;
-		nodes = createBuffer("graph nodes", CL_MEM_READ_ONLY|CL_MEM_COPY_HOST_PTR, h_nodes_size*sizeof(cl_int2), h_nodes.get());
-		std::cerr << "create node buffer size " << h_nodes_size << " entries" << std::endl;
-		graph = createBuffer("graph", CL_MEM_READ_WRITE, 2*64/8 /* 2 pointers, each is at most 64-bits */);
-
-		graph_init_kernel.setArg(0, graph);
-		graph_init_kernel.setArg(1, edges);
-		graph_init_kernel.setArg(2, nodes);
-
-		clContext.queue.enqueueTask(graph_init_kernel);
-		clContext.queue.finish();
-	}
-
-	void prepare_iterable_cl_graph(cl::Buffer &iterableGraph, const EdgeMap &data) {
-		std::unique_ptr<cl_int3[]> hIterableGraph(new cl_int3[data.size()]);
-		::size_t i = 0;
-		for (auto a: data) {
-			cl_int3 e;
-			e.s[0] = a.first.first;
-			e.s[1] = a.first.second;
-			e.s[2] = a.second ? 1 : 0;
-			hIterableGraph.get()[i] = e;
-			i++;
-		}
-		iterableGraph = createBuffer("iterableGraph", CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR, data.size() * sizeof(cl_int3), hIterableGraph.get());
-	}
-
 	void init_graph() {
 		graph_program = this->clContext.createProgram(stringify(PROJECT_HOME) "/../OpenCL/graph.cl", progOpts);
 		graph_init_kernel = cl::Kernel(graph_program, "graph_init");
@@ -955,8 +804,6 @@ protected:
 			linkedMap[e.first].push_back(e.second);
 			linkedMap[e.second].push_back(e.first);
 		}
-		_prepare_flat_cl_graph(clGraphEdges, clGraphNodes, clGraph, linkedMap);
-		std::cerr << "Get adjacency list repr of Graph" << std::endl;
 
 		// BASED ON STRATIFIED RANDOM NODE SAMPLING STRATEGY
 		::size_t num_nodes_in_batch = N/10 + 1 + 1;
@@ -973,13 +820,9 @@ protected:
 			linkedMap[e.first.first].push_back(e.first.second);
 			linkedMap[e.first.second].push_back(e.first.first);
 		}
-		_prepare_flat_cl_graph(clHeldOutGraphEdges, clHeldOutGraphNodes, clHeldOutGraph, linkedMap);
-		std::cerr << "Get adjacency list repr of HeldOutGraph" << std::endl;
 		// BASED ON STRATIFIED RANDOM NODE SAMPLING STRATEGY
 		num_edges_in_batch = num_nodes_in_batch - 1;
 		clSubHeldOutGraph.init(*this, &clHeldOutGraph, linkedMap, N, num_nodes_in_batch, num_edges_in_batch);
-
-		prepare_iterable_cl_graph(clIterableHeldOutGraph, network.get_held_out_set());
 
 #if MCMC_CL_STOCHASTIC_TEST_GRAPH
 		test_graph();
@@ -1053,9 +896,6 @@ protected:
 	std::vector<double> hostPiBuffer;
 	std::vector<double> hostPhiBuffer;
 	std::vector<cl_int> hostNeighbors;
-#ifndef CALCULATE_PHI_ON_DEVICE
-	std::vector<std::vector<double> > phi;			// parameterization for \pi
-#endif
 
 	std::string progOpts;
 
@@ -1075,17 +915,12 @@ protected:
 	cl::Kernel update_beta_calculate_grads_kernel;
 	cl::Kernel update_beta_calculate_theta_kernel;
 	cl::Kernel update_beta_calculate_beta_kernel;
-#ifdef CALCULATE_PERPLEXITY_ON_DEVICE
-	cl::Kernel cal_perplexity_kernel;
-#endif
 	cl::Kernel init_buffers_kernel;
 
 	cl::Buffer clBuffers;
 
 	GraphWrapper clSubGraph;
 	GraphWrapper clSubHeldOutGraph;
-
-	cl::Buffer clIterableHeldOutGraph;
 
 	cl::Buffer clGraphEdges;				// to be deprecated
 	cl::Buffer clGraphNodes;				// to be deprecated
@@ -1117,11 +952,6 @@ protected:
 	vex::Reductor<double, vex::SUM_Kahan> csumDouble;
 	vex::Reductor<int, vex::SUM_Kahan> csumInt;
 
-	cl::Buffer clLinkLikelihood;
-	cl::Buffer clNonLinkLikelihood;
-	cl::Buffer clLinkCount;
-	cl::Buffer clNonLinkCount;
-
 protected:
 	// replicated in both mcmc_sampler_
 	double	a;
@@ -1132,8 +962,9 @@ protected:
 
 	// To be deprecated:
 	// std::vector<std::vector<double> > theta;		// parameterization for \beta
-	// To be deprecated:
-	// std::vector<std::vector<double> > phi;			// parameterization for \pi
+#ifndef INITIALIZE_PHI_ON_DEVICE
+	std::vector<std::vector<double> > phi;			// parameterization for \pi
+#endif
 	Random::Random kernelRandom;
 
 	const ::size_t groupSize;

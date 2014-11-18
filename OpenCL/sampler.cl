@@ -534,7 +534,7 @@ void update_pi_for_node_(
 		double a, double b, double c,
 		int step_count, int total_node_count
 		) {
-	if (bufs->bufs.Nodes[node] == 5) {
+	if (false && bufs->bufs.Nodes[node] == 5) {
 		printf((__constant char *)"phi[%d]: ", bufs->bufs.Nodes[node]);
 		for (int i = 0; i < K; i++) {
 			printf((__constant char *)"%.12f ", phi[i]);
@@ -542,7 +542,7 @@ void update_pi_for_node_(
 		}
 		printf((__constant char *)"\n");
 	}
-	printf((__constant char *)"Node %d Random seed: (%lu,%lu)\n", bufs->bufs.Nodes[node], (*randomSeed).x, (*randomSeed).y);
+	// printf((__constant char *)"Node %d Random seed: (%lu,%lu)\n", bufs->bufs.Nodes[node], (*randomSeed).x, (*randomSeed).y);
 	double eps_t = a * pow((1 + step_count/b), -c);
 	double phi_i_sum = 0;
 	for (int i = 0; i < K; ++i) phi_i_sum += phi[i];
@@ -562,7 +562,7 @@ void update_pi_for_node_(
 	for (int i = 0; i < K; ++i) {
 		pi[i] = phi[i]/phi_sum;
 	}
-	if (bufs->bufs.Nodes[node] == 5) {
+	if (false && bufs->bufs.Nodes[node] == 5) {
 		printf((__constant char *)"pi[%d]: ", bufs->bufs.Nodes[node]);
 		for (int i = 0; i < K; i++) {
 			printf((__constant char *)"%.12f ", pi[i]);
@@ -628,21 +628,23 @@ int sample_latent_vars2_(
 	global double *pi_a = pi + edge.x * K;
 	global double *pi_b = pi + edge.y * K;
 
-	printf((__constant char *)"pi_a: ");
-	for (int k = 0; k < K; k++) {
-		printf((__constant char *)"%.12f ", pi_a[k]);
+	if (0) {
+		printf((__constant char *)"pi_a: ");
+		for (int k = 0; k < K; k++) {
+			printf((__constant char *)"%.12f ", pi_a[k]);
+		}
+		printf((__constant char *)"\n");
+		printf((__constant char *)"pi_b: ");
+		for (int k = 0; k < K; k++) {
+			printf((__constant char *)"%.12f ", pi_b[k]);
+		}
+		printf((__constant char *)"\n");
+		printf((__constant char *)"beta: ");
+		for (int k = 0; k < K; k++) {
+			printf((__constant char *)"%.12f ", beta[k]);
+		}
+		printf((__constant char *)"\n");
 	}
-	printf((__constant char *)"\n");
-	printf((__constant char *)"pi_b: ");
-	for (int k = 0; k < K; k++) {
-		printf((__constant char *)"%.12f ", pi_b[k]);
-	}
-	printf((__constant char *)"\n");
-	printf((__constant char *)"beta: ");
-	for (int k = 0; k < K; k++) {
-		printf((__constant char *)"%.12f ", beta[k]);
-	}
-	printf((__constant char *)"\n");
 
 	p[0] = sample_latent_vars2_expr(0);
 	double p_sum = p[0];
@@ -653,7 +655,7 @@ int sample_latent_vars2_(
 	}
 	p[K] = 1 - p_sum;
 	double location = r * p[K-1];
-	printf((__constant char *)"node %d neighbor %d y %d random %.12lf location %.12lf\n", bufs->bufs.Nodes[edge.x], bufs->bufs.Nodes[edge.y], y, r, location);
+	// printf((__constant char *)"node %d neighbor %d y %d random %.12lf location %.12lf\n", bufs->bufs.Nodes[edge.x], bufs->bufs.Nodes[edge.y], y, r, location);
 	return find_le(p, location, K, 0);
 }
 
