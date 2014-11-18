@@ -30,34 +30,18 @@ class MCMCClSamplerStochastic : public Learner {
 	public:
 		// TODO: share buffers for clNodes clEdges
 		// FIXME FIXME FIXME What about NodesNeighbors and NodesNeighborsHash?????
-		void init(MCMCClSamplerStochastic &learner, const EdgeSet &edges) {
-			int maxNode = -1;
-			for (auto e: edges) {
-				if (e.second > maxNode) {
-					maxNode = e.second;
-					adjacency_list.resize(maxNode + 1);
-				}
-				if (e.first > maxNode) {
-					maxNode = e.first;
-					adjacency_list.resize(maxNode + 1);
-				}
-				adjacency_list[e.first].push_back(e.second);
-				adjacency_list[e.second].push_back(e.first);
-			}
 
-			// Question: is there a point in sorting the adjacency lists?
+		void init(MCMCClSamplerStochastic &learner, cl::Buffer *clGraph, const std::map<int, std::vector<int> > &edges, ::size_t N, ::size_t num_nodes_in_batch, ::size_t num_edges_in_batch) {
+			this->clGraph = clGraph;
+			this->num_nodes_in_batch = num_nodes_in_batch;
+			this->num_edges_in_batch = num_edges_in_batch;
 
-			this->nNodes = maxNode + 1;
-
-			init_buffers();
-		}
-
-		void init(MCMCClSamplerStochastic &learner, const std::map<int, std::vector<int> > &edges, ::size_t N) {
 			adjacency_list.resize(N);
 			for (auto e: edges) {
 				adjacency_list[e.first] = e.second;	// This is a full copy, right?
+				// Question: is there a point in sorting the adjacency lists?
 				std::sort(adjacency_list[e.first].begin(), adjacency_list[e.first].end());
-				if (e.first == 922 || find(e.second.begin(), e.second.end(), 922) != e.second.end()) {
+				if (e.first == 1218 || find(e.second.begin(), e.second.end(), 1218) != e.second.end()) {
 					std::cerr << "Edge init: found [" << e.first;
 					for (auto n: e.second) {
 						std::cerr << " " << n;
@@ -66,75 +50,32 @@ class MCMCClSamplerStochastic : public Learner {
 				}
 			}
 
-			// Question: is there a point in sorting the adjacency lists?
-
-			this->nNodes = adjacency_list.size();
-
-			init_buffers();
-		}
-
-		void init(MCMCClSamplerStochastic &learner, const EdgeMap &edges) {
-			int maxNode = -1;
-			for (auto e: edges) {
-				if (e.first.second > maxNode) {
-					maxNode = e.first.second;
-					adjacency_list.resize(maxNode + 1);
-				}
-				if (e.first.first > maxNode) {
-					maxNode = e.first.first;
-					adjacency_list.resize(maxNode + 1);
-				}
-				adjacency_list[e.first.first].push_back(e.first.second);
-				adjacency_list[e.first.second].push_back(e.first.first);
-			}
-
-			// Question: is there a point in sorting the adjacency lists?
-
-			this->nNodes = maxNode + 1;
-
-			init_buffers();
-		}
-
-		void init_buffers() {
-#ifdef NO_NOT_YET
-			// BASED ON STRATIFIED RANDOM NODE SAMPLING STRATEGY
-			::size_t num_edges_in_batch = learner.N/10 + 1;
-			::size_t num_nodes_in_batch = num_edges_in_batch + 1;
-
 			clNodes = learner.createBuffer("clNodes", CL_MEM_READ_ONLY,
-					num_nodes_in_batch * sizeof(cl_int)
-					);
-			clNodesNeighbors = learner.createBuffer("clNodesNeighbors", CL_MEM_READ_ONLY,
-					std::min(num_nodes_in_batch, learner.globalThreads) * learner.real_num_node_sample() * sizeof(cl_int)
-					);
-			clNodesNeighborsHash = learner.createBuffer("clNodesNeighborsHash", CL_MEM_READ_ONLY,
-					std::min(num_nodes_in_batch, learner.globalThreads) * learner.hash_table_size * sizeof(cl_int)
+					num_nodes_in_batch * sizeof h_subNodes[0]
 					);
 			clEdges = learner.createBuffer("clEdges", CL_MEM_READ_ONLY,
-					num_edges_in_batch * sizeof(cl_int2)
+					num_edges_in_batch * sizeof h_subEdges[0]
 					);
 
-			learner.graph_init_kernel.setArg(0, clGraph);
+			learner.graph_init_kernel.setArg(0, *clGraph);
 			learner.graph_init_kernel.setArg(1, clEdges);
 			learner.graph_init_kernel.setArg(2, clNodes);
 
 			learner.clContext.queue.enqueueTask(learner.graph_init_kernel);
 			learner.clContext.queue.finish();
-#endif
 		}
 
 		std::vector<std::vector<int> >	adjacency_list;
 
-		cl::Buffer						clGraph;
+		cl::Buffer						*clGraph;
 		cl::Buffer						clNodes;
 		cl::Buffer						clEdges;
-		cl::Buffer						clNodesNeighbors;
-		cl::Buffer						clNodesNeighborsHash;
 
 		std::vector<cl_int2>			h_subNodes;
 		std::vector<cl_int>				h_subEdges;
 
-		::size_t						nNodes;
+		::size_t						num_edges_in_batch;
+		::size_t						num_nodes_in_batch;
 	};
 
 
@@ -183,10 +124,17 @@ public:
 
 		std::cout << "num_node_sample = " << num_node_sample << std::endl;
 
-#ifndef DEPRECATED
+		// BASED ON STRATIFIED RANDOM NODE SAMPLING STRATEGY
+		::size_t num_edges_in_batch = N/10 + 1;
+		::size_t num_nodes_in_batch = num_edges_in_batch + 1;
+
+		::size_t nodes_neighbors = num_nodes_in_batch * (1 + real_num_node_sample());
+		hostPiBuffer = std::vector<double>(nodes_neighbors * K);
+		hostPhiBuffer = std::vector<double>(nodes_neighbors * K);
+		hostNeighbors = std::vector<cl_int>(num_nodes_in_batch * real_num_node_sample());
+
 		graph_program = this->clContext.createProgram(stringify(PROJECT_HOME) "/../OpenCL/graph.cl", progOpts);
 		graph_init_kernel = cl::Kernel(graph_program, "graph_init");
-#endif
 
 		init_graph();
 
@@ -201,14 +149,12 @@ public:
 		update_beta_calculate_grads_kernel = cl::Kernel(sampler_program, "update_beta_calculate_grads");
 		update_beta_calculate_theta_kernel = cl::Kernel(sampler_program, "update_beta_calculate_theta");
 		update_beta_calculate_beta_kernel = cl::Kernel(sampler_program, "update_beta_calculate_beta");
+#ifdef CALCULATE_PERPLEXITY_ON_DEVICE
 		cal_perplexity_kernel = cl::Kernel(sampler_program, "cal_perplexity");
+#endif
 		init_buffers_kernel = cl::Kernel(sampler_program, "init_buffers");
 
 		clBuffers = createBuffer("clBuffers", CL_MEM_READ_WRITE, 64 * 100); // enough space for 100 * 8 pointers
-
-		// BASED ON STRATIFIED RANDOM NODE SAMPLING STRATEGY
-		::size_t num_edges_in_batch = N/10 + 1;
-		::size_t num_nodes_in_batch = num_edges_in_batch + 1;
 
 		clNodes = createBuffer("clNodes", CL_MEM_READ_ONLY,
 				num_nodes_in_batch * sizeof(cl_int)
@@ -222,11 +168,13 @@ public:
 		clEdges = createBuffer("clEdges", CL_MEM_READ_ONLY,
 				num_edges_in_batch * sizeof(cl_int2)
 				);
+		// FIXME: make this nodes_neighbors * K
 		clPi = createBuffer("clPi", CL_MEM_READ_WRITE,
-				N * K * sizeof(cl_double) // #total_nodes x #K
+				std::max(N, nodes_neighbors) * K * sizeof(cl_double) // #total_nodes x #K
 				);
+		// FIXME: make this nodes_neighbors * K
 		clPhi = createBuffer("clPhi", CL_MEM_READ_WRITE,
-				N * K * sizeof(cl_double) // #total_nodes x #K
+				std::max(N, nodes_neighbors) * K * sizeof(cl_double) // #total_nodes x #K
 				);
 		clBeta = createBuffer("clBeta", CL_MEM_READ_WRITE,
 				K * sizeof(cl_double) // #K
@@ -312,6 +260,7 @@ public:
 		random_gamma_kernel.setArg(Idx++, 2);
 		clContext.queue.enqueueNDRangeKernel(random_gamma_kernel, cl::NullRange, cl::NDRange(K_workers), cl::NDRange(1));
 
+#if defined CALCULATE_PHI_ON_DEVICE || defined RANDOM_FOLLOWS_SCALABLE_GRAPH
         // model parameters and re-parameterization
         // since the model parameter - \pi and \beta should stay in the simplex,
         // we need to restrict the sum of probability equals to 1.  The way we
@@ -333,6 +282,16 @@ public:
 		clContext.queue.finish();
 		device_row_normalize(clPi, clPhi, N, K);
 		// np::row_normalize(&pi, phi);
+#endif
+#ifndef CALCULATE_PHI_ON_DEVICE
+#ifdef RANDOM_FOLLOWS_SCALABLE_GRAPH
+		(void)kernelRandom.gamma(100.0, 0.01, K, 2);		// parameterization for \beta
+#endif
+		phi = kernelRandom.gamma(1, 1, N, K);					// parameterization for \pi
+        // self._pi = self.__phi/np.sum(self.__phi,1)[:,np.newaxis]
+		pi.resize(phi.size(), std::vector<double>(phi[0].size()));
+		np::row_normalize(&pi, phi);
+#endif
 
 #if 0
 		for (unsigned i = 0; i < N; ++i) {
@@ -348,10 +307,13 @@ public:
 					pi[i].data());
 		}
 #endif
-		if (false) {
-			std::vector<std::vector<double> > pi(N, std::vector<double>(K));			// parameterization for \pi
-			std::vector<std::vector<double> > phi(N, std::vector<double>(K));			// parameterization for \pi
-			for (unsigned i = 0; i < N; ++i) {
+
+		if (true) {
+#ifdef CALCULATE_PHI_ON_DEVICE
+			std::vector<std::vector<double> > pi(N, std::vector<double>(K));            // parameterization for \pi
+			std::vector<std::vector<double> > phi(N, std::vector<double>(K));           // parameterization for \pi
+
+			for (::size_t i = 0; i < N; ++i) {
 				// copy phi
 				clContext.queue.enqueueReadBuffer(clPhi, CL_TRUE,
 												  i * K * sizeof(cl_double),
@@ -363,6 +325,7 @@ public:
 												  K * sizeof(double),
 												  pi[i].data());
 			}
+#endif
 
 			for (::size_t i = 0; i < 10; i++) {
 				std::cerr << "phi[" << i << "]: ";
@@ -391,6 +354,11 @@ public:
 		update_beta_calculate_beta_kernel.setArg(Idx++, clTheta);
 		update_beta_calculate_beta_kernel.setArg(Idx++, clBeta);
 		clContext.queue.enqueueNDRangeKernel(update_beta_calculate_beta_kernel, cl::NullRange, cl::NDRange(K_workers), cl::NDRange(1));
+
+#ifndef CALCULATE_PERPLEXITY_ON_DEVICE
+		clContext.queue.finish();
+		clContext.queue.enqueueReadBuffer(clBeta, CL_FALSE, 0, K * sizeof(double), beta.data());
+#endif
 
 		clContext.queue.finish();
 
@@ -482,7 +450,18 @@ public:
 			// sample (z_ab, z_ba) for each edge in the mini_batch.
 			// z is map structure. i.e  z = {(1,10):3, (2,4):-1}
 			t_latent_vars2.start();
-			sample_latent_vars2(mini_batch);
+			std::cerr << "Nodes in mini_batch: ";
+			for (auto n: nodes) {
+				std::cerr << n << " ";
+			}
+			std::cerr << std::endl;
+			std::cerr << "Edges in mini_batch: ";
+			for (auto e: mini_batch) {
+				std::cerr << e << " ";
+			}
+			std::cerr << std::endl;
+
+			sample_latent_vars2(mini_batch, nodes);
 			t_latent_vars2.stop();
 
 			t_update_beta.start();
@@ -518,6 +497,7 @@ public:
 
 protected:
 
+#if defined CALCULATE_PHI_ON_DEVICE || defined RANDOM_FOLLOWS_SCALABLE_GRAPH
 	void device_row_normalize(cl::Buffer &clPi, cl::Buffer &clPhi, ::size_t N, ::size_t K) {
 		// pi.resize(phi.size(), std::vector<double>(phi[0].size()));
         // self._pi = self.__phi/np.sum(self.__phi,1)[:,np.newaxis]
@@ -538,6 +518,7 @@ protected:
 											 cl::NDRange(1));
 		clContext.queue.finish();
 	}
+#endif
 
 	void update_beta(const OrderedEdgeSet &mini_batch, double scale) {
 		int arg;
@@ -588,7 +569,10 @@ protected:
 		clContext.queue.enqueueNDRangeKernel(update_beta_calculate_beta_kernel, cl::NullRange, cl::NDRange(kRoundedThreads), cl::NDRange(groupSize));
 		clContext.queue.finish();
 
-		if (false) {
+#ifndef CALCULATE_PERPLEXITY_ON_DEVICE
+		clContext.queue.enqueueReadBuffer(clBeta, CL_FALSE, 0, K * sizeof(double), beta.data());
+#endif
+		if (true) {
 			clContext.queue.enqueueReadBuffer(clBeta, CL_FALSE, 0, K * sizeof(double), beta.data());
 			std::cerr << __func__ << std::endl;
 			std::cerr << "beta ";
@@ -599,21 +583,45 @@ protected:
 		}
 	}
 
-	void sample_latent_vars2(const OrderedEdgeSet &mini_batch) {
+	void sample_latent_vars2(const OrderedEdgeSet &mini_batch, const OrderedVertexSet &nodes) {
+		::size_t i;
 		std::vector<cl_int2> edges(mini_batch.size());
 		// Copy edges
+#ifndef NDEBUG
+		std::vector<int> node_index(N, -1);
+#else
+		std::vector<int> node_index(N);
+#endif
+		i = 0;
+		for (auto n: nodes) {
+			node_index[n] = i;
+			i++;
+		}
+#if 0
 		std::transform(mini_batch.begin(), mini_batch.end(), edges.begin(), [](const Edge& e) {
 			cl_int2 E;
-			E.s[0] = e.first;
-			E.s[1] = e.second;
+			E.s[0] = node_index[e.first];
+			E.s[1] = node_index[e.second];
 			return E;
 		});
+#else
+		i = 0;
+		for (auto e: mini_batch) {
+			assert(node_index[e.first] != -1);
+			assert(node_index[e.second] != -1);
+			edges[i].s[0] = node_index[e.first];
+			edges[i].s[1] = node_index[e.second];
+			i++;
+		}
+#endif
 		clContext.queue.enqueueWriteBuffer(clEdges, CL_FALSE,
 				0, edges.size()*sizeof(cl_int2),
 				edges.data());
 
-		sample_latent_vars2_kernel.setArg(0, clBuffers);
-		sample_latent_vars2_kernel.setArg(1, (cl_int)edges.size());
+		::size_t arg = 0;
+		sample_latent_vars2_kernel.setArg(arg++, clBuffers);
+		sample_latent_vars2_kernel.setArg(arg++, (cl_int)edges.size());
+		sample_latent_vars2_kernel.setArg(arg++, (cl_int)nodes.size());
 
 		clContext.queue.finish(); // Wait for clEdges and PiUpdates from sample_latent_vars_and_update_pi
 
@@ -624,7 +632,7 @@ protected:
 		return num_node_sample + 1;
 	}
 
-	void stage_subgraph(GraphWrapper *graph, const OrderedVertexSet &nodes, cl::Buffer &clNodes, cl::Buffer &clEdges) {
+	void stage_subgraph(GraphWrapper *graph, const OrderedVertexSet &nodes) {
 		// Copy held_out_set subgraph for nodes
 		// ::size_t edge_elts = nodes.size() * std::max(network.get_max_fan_out(), num_node_sample + 1);
 		graph->h_subEdges.clear();
@@ -639,7 +647,7 @@ protected:
 			graph->h_subNodes[i].s[1] = offset;
 			i++;
 			offset += neighbors.size();
-			if (node == 922 || node == 918) {
+			if (node == 1218 || node == 918) {
 				std::cerr << "Insert node " << node << " neighbors [";
 				for (::size_t i = offset - neighbors.size(); i < offset; i++) {
 					std::cerr << graph->h_subEdges[i] << " ";
@@ -648,13 +656,59 @@ protected:
 			}
 		}
 
-		clContext.queue.enqueueWriteBuffer(clNodes, CL_FALSE, 0, graph->h_subNodes.size()*sizeof graph->h_subNodes[0], graph->h_subNodes.data());
-		clContext.queue.enqueueWriteBuffer(clEdges, CL_FALSE, 0, graph->h_subEdges.size()*sizeof graph->h_subEdges[0], graph->h_subEdges.data());
+		assert(graph->h_subNodes.size() <= graph->num_nodes_in_batch);
+		assert(graph->h_subEdges.size() <= graph->num_edges_in_batch);
+		assert(sizeof graph->h_subNodes[0] == sizeof(cl_int2));
+		assert(sizeof graph->h_subEdges[0] == sizeof(cl_int));
 
+		clContext.queue.finish();
+		clContext.queue.enqueueWriteBuffer(graph->clNodes, CL_FALSE, 0, graph->h_subNodes.size()*sizeof graph->h_subNodes[0], graph->h_subNodes.data());
+		clContext.queue.enqueueWriteBuffer(graph->clEdges, CL_FALSE, 0, graph->h_subEdges.size()*sizeof graph->h_subEdges[0], graph->h_subEdges.data());
+		clContext.queue.finish();
+	}
+
+	void stage_sub_vectors(cl::Buffer &buffer,
+						   const std::vector<std::vector<double> > &data,
+						   std::vector<double> &hostBuffer,
+						   const OrderedVertexSet &nodes,
+						   const std::vector<int> &neighbors) {
+		hostBuffer.clear();
+		for (auto n: nodes) {
+			assert(data[n].size() == K);
+			hostBuffer.insert(hostBuffer.end(), data[n].begin(), data[n].end());
+		}
+		for (auto n: neighbors) {
+			assert(data[n].size() == K);
+			hostBuffer.insert(hostBuffer.end(), data[n].begin(), data[n].end());
+		}
+
+		std::cerr << "Nodes[" << nodes.size() << "] Neighbors[" << neighbors.size() << "] host buffer[" << hostBuffer.size() << "]" << std::endl;
+		clContext.queue.enqueueWriteBuffer(buffer, CL_FALSE, 0, (nodes.size() + neighbors.size()) * K * sizeof(cl_double), hostBuffer.data());
+	}
+
+	void retrieve_sub_vectors(cl::Buffer &buffer,
+							  std::vector<std::vector<double> > &data,
+							  std::vector<double> &hostBuffer,
+							  const OrderedVertexSet &nodes) {
+
+		clContext.queue.enqueueReadBuffer(buffer, CL_TRUE, 0, nodes.size() * K * sizeof(cl_double), hostBuffer.data());
+
+		::size_t i = 0;
+		for (auto n: nodes) {
+			data[n].clear();
+			data[n].insert(data[n].end(), hostBuffer.begin() + i * K, hostBuffer.begin() + (i + 1) * K);
+			std::cerr << "Update pi/phi[" << n << "]: ";
+			for (auto x: data[n]) {
+				std::cerr << std::fixed << std::setprecision(12) << x << " ";
+			}
+			std::cerr << std::endl;
+			i++;
+		}
 	}
 
 	void sample_latent_vars_neighbors(const OrderedVertexSet& nodes) {
-		stage_subgraph(&clSubHeldOutGraph, nodes, clHeldOutGraphNodes, clHeldOutGraphEdges);
+		std::cerr << "Stage clSubHeldOutGraph" << std::endl;
+		stage_subgraph(&clSubHeldOutGraph, nodes);
 
 		// Copy sampled node IDs
 		std::vector<cl_int> node_index(nodes.begin(), nodes.end()); // FIXME: replace OrderedVertexSet with vector
@@ -667,21 +721,24 @@ protected:
 		clContext.queue.finish();
 		clContext.queue.enqueueNDRangeKernel(sample_latent_vars_neighbors_kernel, cl::NullRange, cl::NDRange(globalThreads), cl::NDRange(groupSize));
 		clContext.queue.finish();
+
+		clContext.queue.enqueueReadBuffer(clNodesNeighbors, CL_FALSE, 0, nodes.size() * real_num_node_sample() * sizeof(cl_int), hostNeighbors.data());
 	}
 
 	void sample_latent_vars_sample_z_ab(const OrderedVertexSet& nodes) {
-		// clNodes still contains nodes
-		// std::vector<int> v_nodes(nodes.begin(), nodes.end());
-		// clContext.queue.enqueueWriteBuffer(clNodes, CL_FALSE, 0, v_nodes.size()*sizeof(int), v_nodes.data());
+		std::cerr << "Stage clSubGraph" << std::endl;
+		stage_subgraph(&clSubGraph, nodes);
 
-		stage_subgraph(&clSubGraph, nodes, clGraphNodes, clGraphEdges);
-
-#if STAGE_PI_SUBGRAPH_TOO
-		// 1. merge nodes and neighbors
-		// 2. stage pi for the merged(nodes, neighbors)
-		// 3. ensure that pi is staged in the order of the device neighbor index array
-		stage_subgraph(clPi, nodes, neighbors);
-#endif
+		// TODO FIXME TODO FIXME
+		// On the host, just maintain Phi.
+		// Stage only the sub_vectors for Phi. Calculate Pi from these.
+		// No need to maintain Pi on the host, or to copy it back and forth.
+		// TODO FIXME TODO FIXME
+		//
+		// Pi is staged in two contiguous sections:
+		// 1) pi(i) for i in nodes
+		// 2) pi(n(i)) for the neighbors n(i) of node i
+		stage_sub_vectors(clPi, pi, hostPiBuffer, nodes, hostNeighbors);
 
 		int Idx = 0;
 		sample_latent_vars_sample_z_ab_kernel.setArg(Idx++, clBuffers);
@@ -702,12 +759,10 @@ protected:
 
 	void update_pi(const OrderedVertexSet& nodes) {
 
-#if STAGE_PI_SUBGRAPH_TOO
 		// 1. merge nodes and neighbors
 		// 2. stage pi for the merged(nodes, neighbors)
 		// 3. ensure that pi is staged in the order of the device neighbor index array
-		stage_subgraph(clPhi, nodes, neighbors);
-#endif
+		stage_sub_vectors(clPhi, phi, hostPhiBuffer, nodes, hostNeighbors);
 
 		int Idx = 0;
 		update_pi_kernel.setArg(Idx++, clBuffers);
@@ -734,6 +789,8 @@ protected:
 					pi[*node].data());
 		}
 #endif
+		retrieve_sub_vectors(clPi, pi, hostPiBuffer, nodes);
+		retrieve_sub_vectors(clPhi, phi, hostPhiBuffer, nodes);
 	}
 
     OrderedVertexSet nodes_in_batch(const OrderedEdgeSet &mini_batch) const {
@@ -778,6 +835,7 @@ protected:
 		return y;
 	}
 
+#ifdef CALCULATE_PERPLEXITY_ON_DEVICE
 	double cal_perplexity_held_out() {
 	/**
 	 * calculate the perplexity for data.
@@ -831,8 +889,10 @@ protected:
 		// return std::exp(-avg_likelihood);
 		return (-avg_likelihood);
 	}
+#endif
 
 
+	// TODO: Deprecate
 	// FIXME: Why is linkedMap not a ref?
 	void _prepare_flat_cl_graph(cl::Buffer &edges, cl::Buffer &nodes, cl::Buffer &graph, std::map<int, std::vector<int>> linkedMap) {
 		const int h_edges_size = 2 * network.get_num_linked_edges();
@@ -897,7 +957,11 @@ protected:
 		}
 		_prepare_flat_cl_graph(clGraphEdges, clGraphNodes, clGraph, linkedMap);
 		std::cerr << "Get adjacency list repr of Graph" << std::endl;
-		clSubGraph.init(*this, linkedMap, N);
+
+		// BASED ON STRATIFIED RANDOM NODE SAMPLING STRATEGY
+		::size_t num_nodes_in_batch = N/10 + 1 + 1;
+		::size_t num_edges_in_batch = std::min(num_nodes_in_batch * network.get_max_fan_out(), network.get_num_linked_edges());
+		clSubGraph.init(*this, &clGraph, linkedMap, N, num_nodes_in_batch, num_edges_in_batch);
 
 		linkedMap.clear();
 
@@ -911,7 +975,9 @@ protected:
 		}
 		_prepare_flat_cl_graph(clHeldOutGraphEdges, clHeldOutGraphNodes, clHeldOutGraph, linkedMap);
 		std::cerr << "Get adjacency list repr of HeldOutGraph" << std::endl;
-		clSubHeldOutGraph.init(*this, linkedMap, N);
+		// BASED ON STRATIFIED RANDOM NODE SAMPLING STRATEGY
+		num_edges_in_batch = num_nodes_in_batch - 1;
+		clSubHeldOutGraph.init(*this, &clHeldOutGraph, linkedMap, N, num_nodes_in_batch, num_edges_in_batch);
 
 		prepare_iterable_cl_graph(clIterableHeldOutGraph, network.get_held_out_set());
 
@@ -984,6 +1050,13 @@ protected:
 		return v;
 	}
 
+	std::vector<double> hostPiBuffer;
+	std::vector<double> hostPhiBuffer;
+	std::vector<cl_int> hostNeighbors;
+#ifndef CALCULATE_PHI_ON_DEVICE
+	std::vector<std::vector<double> > phi;			// parameterization for \pi
+#endif
+
 	std::string progOpts;
 
 	cl::ClContext clContext;
@@ -1002,7 +1075,9 @@ protected:
 	cl::Kernel update_beta_calculate_grads_kernel;
 	cl::Kernel update_beta_calculate_theta_kernel;
 	cl::Kernel update_beta_calculate_beta_kernel;
+#ifdef CALCULATE_PERPLEXITY_ON_DEVICE
 	cl::Kernel cal_perplexity_kernel;
+#endif
 	cl::Kernel init_buffers_kernel;
 
 	cl::Buffer clBuffers;

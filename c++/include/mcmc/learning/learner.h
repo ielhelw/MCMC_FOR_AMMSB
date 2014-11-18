@@ -139,6 +139,20 @@ protected:
 		::size_t link_count = 0;
 		::size_t non_link_count = 0;
 
+		for (::size_t i = 0; i < 10; i++) {
+			std::cerr << "pi[" << i << "]: ";
+			for (::size_t j = 0; j < 10; j++) {
+				std::cerr << std::fixed << std::setprecision(12) << pi[i][j] << " ";
+			}
+			std::cerr << std::endl;
+		}
+
+		std::cerr << "beta: ";
+		for (::size_t j = 0; j < 10; j++) {
+			std::cerr << std::fixed << std::setprecision(12) << beta[j] << " ";
+		}
+		std::cerr << std::endl;
+
 		::size_t i = 0;
 		for (EdgeMap::const_iterator edge = data.begin();
 			 	edge != data.end();

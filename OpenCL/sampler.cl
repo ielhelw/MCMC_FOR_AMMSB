@@ -296,6 +296,7 @@ kernel void cal_perplexity(
 										(*edge).z,
 										beta,
 										epsilon);
+		// printf((__constant char *)"(%d, %d) in? %s -> %.12f\n", (*edge).x, (*edge).y, (*edge).z == 1 ? "True" : "False", el);
 		if ((*edge).z == 1) {
 			l0 += el;
 			c0++;
@@ -359,7 +360,7 @@ inline int sample_latent_vars_neighbors_of(
 		global int* neighbor_nodes_hash,
 		ulong2* randomSeed)
 {
-	if (0) {
+	if (bufs->bufs.Nodes[node] == 1218) {
 		int2 desc = hg->_g.node_edges[node];
 		const global int *p = hg->_g.edges + desc.y;
 		printf((__constant char *)"Node %d neighbors[%d] [", bufs->bufs.Nodes[node], desc.x);
@@ -374,11 +375,11 @@ inline int sample_latent_vars_neighbors_of(
 		int ret;
 		for (;;) {
 			neighborId = randint(randomSeed, 0, MAX_NODE_ID - 1);
-			// printf((__constant char *)"randint %d seed (%ul,%ul)\n", neighborId, (*randomSeed).x, (*randomSeed).y);
 			const bool cond1 = neighborId != bufs->bufs.Nodes[node];
 // printf((__constant char *)"node[%d] = %d query neighbor %d\n", node, bufs->bufs.Nodes[node], neighborId);
 			const bool cond2 = !graph_has_peer(hg, node, neighborId);
 			const bool cond = cond1 && cond2;
+			// printf((__constant char *)"node %d neighbor %d peer %d randint %d seed (%lu,%lu)\n", bufs->bufs.Nodes[node], neighborId, cond2, neighborId, (*randomSeed).x, (*randomSeed).y);
 			if (cond) {
 				ret = hash_put(neighborId, neighbor_nodes_hash, HASH_SIZE);
 				if (HASH_OK(ret)) {
@@ -446,11 +447,13 @@ kernel void sample_latent_vars_neighbors(
 		if (ret) break;
 	}
 	bufs->bufs.RandomSeed[gid] = randomSeed;
+	printf((__constant char *)"seed (%lu,%lu)\n", randomSeed.x, randomSeed.y);
 }
 
 inline int sample_latent_vars_sample_z_ab_of(
 		global Buffers *bufs,
 		const int node,
+		const int N,		// #nodes
 		global const Graph *g,
 		global int* neighbor_nodes,
 		global const double *pi,
@@ -461,16 +464,13 @@ inline int sample_latent_vars_sample_z_ab_of(
 		global double *p) {
 	for (int i = 0; i < K; ++i) z[i] = 0;
 
-	// Until pi has been subGraphed, need indirection for pi access
-	if (node == 0) {
-		printf((__constant char *)"**** FIXME For now, indirect node %d to %d\n", node, bufs->bufs.Nodes[node]);
-	}
-	int realNode = bufs->bufs.Nodes[node];
 	for (int i = 0; i < NEIGHBOR_SAMPLE_SIZE; ++i) {
 		int neighbor = neighbor_nodes[i];
+
 		int y_ab = graph_has_peer(g, node, neighbor);
 		int z_ab = sample_z_ab_from_edge(
-				pi + realNode * K, pi + neighbor * K,
+				pi + node * K,		// pi(node)
+				pi + (N + node * NEIGHBOR_SAMPLE_SIZE + i) * K,	// pi(neighbor(i) of node)
 				beta, epsilon, y_ab,
 #ifdef RANDOM_FOLLOWS_SCALABLE_GRAPH
 				bufs->bufs.stored_random[node * NEIGHBOR_SAMPLE_SIZE + i],
@@ -479,6 +479,14 @@ inline int sample_latent_vars_sample_z_ab_of(
 #endif
 				p);
 		z[z_ab] += 1;
+	}
+	if (bufs->bufs.Nodes[node] == 922) {
+		printf((__constant char *)"z[%d]: ", bufs->bufs.Nodes[node]);
+		for (int k = 0; k < K; k++) {
+			printf((__constant char *)"%d ", z[k]);
+			if ((k + 1) % 10 == 0) printf((__constant char *)"\n... z[%d]: ", bufs->bufs.Nodes[node]);
+		}
+		printf((__constant char *)"\n");
 	}
 	return 0;
 }
@@ -499,6 +507,7 @@ kernel void sample_latent_vars_sample_z_ab(
 		int ret = sample_latent_vars_sample_z_ab_of(
 				bufs,
 				node,
+				N,
 				bufs->bufs.G,
 				// index by i
 				bufs->bufs.NodesNeighbors + i * NEIGHBOR_SAMPLE_SIZE,
@@ -514,6 +523,7 @@ kernel void sample_latent_vars_sample_z_ab(
 }
 
 void update_pi_for_node_(
+						 global Buffers *bufs,
 		int node,
 		global double *pi,// #K
 		global double *phi,// #K
@@ -524,6 +534,15 @@ void update_pi_for_node_(
 		double a, double b, double c,
 		int step_count, int total_node_count
 		) {
+	if (bufs->bufs.Nodes[node] == 5) {
+		printf((__constant char *)"phi[%d]: ", bufs->bufs.Nodes[node]);
+		for (int i = 0; i < K; i++) {
+			printf((__constant char *)"%.12f ", phi[i]);
+			if ((i + 1) % 10 == 0) printf((__constant char *)"\n    ");
+		}
+		printf((__constant char *)"\n");
+	}
+	printf((__constant char *)"Node %d Random seed: (%lu,%lu)\n", bufs->bufs.Nodes[node], (*randomSeed).x, (*randomSeed).y);
 	double eps_t = a * pow((1 + step_count/b), -c);
 	double phi_i_sum = 0;
 	for (int i = 0; i < K; ++i) phi_i_sum += phi[i];
@@ -539,8 +558,17 @@ void update_pi_for_node_(
 	}
 	double phi_sum = 0;
 	for (int i = 0; i < K; ++i) phi_sum += phi[i];
+	printf((__constant char *)"phi_sum %.12f\n", phi_sum);
 	for (int i = 0; i < K; ++i) {
 		pi[i] = phi[i]/phi_sum;
+	}
+	if (bufs->bufs.Nodes[node] == 5) {
+		printf((__constant char *)"pi[%d]: ", bufs->bufs.Nodes[node]);
+		for (int i = 0; i < K; i++) {
+			printf((__constant char *)"%.12f ", pi[i]);
+			if ((i + 1) % 10 == 0) printf((__constant char *)"\n    ");
+		}
+		printf((__constant char *)"\n");
 	}
 }
 
@@ -555,9 +583,11 @@ kernel void update_pi(
 	size_t gsize = get_global_size(0);
 	global double *_p = bufs->bufs.Scratch + gid * K;
 	ulong2 randomSeed = bufs->bufs.RandomSeed[gid];
+	printf((__constant char *)"seed (%lu,%lu)\n", randomSeed.x, randomSeed.y);
 	for (int i = gid; i < N; i += gsize) {
-		int node = bufs->bufs.Nodes[i];
-		update_pi_for_node_(node,
+		// int node = bufs->bufs.Nodes[i];
+		int node = i;
+		update_pi_for_node_(bufs, node,
 				bufs->bufs.Pi + node * K,
 				bufs->bufs.Phi + node * K,
 				bufs->bufs.Z + i * K,
@@ -566,6 +596,7 @@ kernel void update_pi(
 				alpha, a, b, c, step_count, total_node_count);
 	}
 	bufs->bufs.RandomSeed[gid] = randomSeed;
+	printf((__constant char *)"seed (%lu,%lu)\n", randomSeed.x, randomSeed.y);
 }
 
 #define sample_latent_vars2_orig(k) \
@@ -584,16 +615,34 @@ kernel void update_pi(
 #define sample_latent_vars2_expr sample_latent_vars2_optimized
 
 int sample_latent_vars2_(
+		const global Buffers *bufs,
 		int2 edge,
+		int N,
 		global Graph *g,
 		global double *pi,// (#total_nodes, K)
 		global double *beta,// (#K)
 		global double *p,// #K+1
 		double r
 		) {
-	int y = graph_has_peer(g, edge.x, edge.y);
+	int y = graph_has_peer(g, edge.x, bufs->bufs.Nodes[edge.y]);
 	global double *pi_a = pi + edge.x * K;
 	global double *pi_b = pi + edge.y * K;
+
+	printf((__constant char *)"pi_a: ");
+	for (int k = 0; k < K; k++) {
+		printf((__constant char *)"%.12f ", pi_a[k]);
+	}
+	printf((__constant char *)"\n");
+	printf((__constant char *)"pi_b: ");
+	for (int k = 0; k < K; k++) {
+		printf((__constant char *)"%.12f ", pi_b[k]);
+	}
+	printf((__constant char *)"\n");
+	printf((__constant char *)"beta: ");
+	for (int k = 0; k < K; k++) {
+		printf((__constant char *)"%.12f ", beta[k]);
+	}
+	printf((__constant char *)"\n");
 
 	p[0] = sample_latent_vars2_expr(0);
 	double p_sum = p[0];
@@ -604,12 +653,14 @@ int sample_latent_vars2_(
 	}
 	p[K] = 1 - p_sum;
 	double location = r * p[K-1];
+	printf((__constant char *)"node %d neighbor %d y %d random %.12lf location %.12lf\n", bufs->bufs.Nodes[edge.x], bufs->bufs.Nodes[edge.y], y, r, location);
 	return find_le(p, location, K, 0);
 }
 
 kernel void sample_latent_vars2(
 		global Buffers *bufs,
-		int E // #edges
+		int E, // #edges
+		int N	// #nodes
 		) {
 	size_t gid = get_global_id(0);
 	size_t gsize = get_global_size(0);
@@ -617,7 +668,9 @@ kernel void sample_latent_vars2(
 
 	for (int i = gid; i < E; i += gsize) {
 		bufs->bufs.Z[i] = sample_latent_vars2_(
+				bufs,
 				bufs->bufs.Edges[i],
+				N,
 				bufs->bufs.G,
 				bufs->bufs.Pi,
 				bufs->bufs.Beta,
@@ -655,7 +708,7 @@ kernel void update_beta_calculate_grads(
 			grads[i].y = 0;
 		}
 		for (int i = gid; i < E; i += gsize) {
-			int y_ab = graph_has_peer(bufs->bufs.G, bufs->bufs.Edges[i].x, bufs->bufs.Edges[i].y);
+			int y_ab = graph_has_peer(bufs->bufs.G, bufs->bufs.Edges[i].x, bufs->bufs.Nodes[bufs->bufs.Edges[i].y]);
 			int k = bufs->bufs.Z[i];
 			if (k != -1) {
 				grads[k].x += (1-y_ab) / bufs->bufs.Theta[k].x - 1 / bufs->bufs.ThetaSum[k];

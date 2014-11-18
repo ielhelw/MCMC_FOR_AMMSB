@@ -90,7 +90,6 @@ public:
 		std::cerr << "Ignore eta[] in random.gamma: use 100.0 and 0.01" << std::endl;
 		// theta = Random::random->gamma(eta[0], eta[1], K, 2);		// parameterization for \beta
 		theta = kernelRandom.gamma(100.0, 0.01, K, 2);		// parameterization for \beta
-		phi = kernelRandom.gamma(1, 1, N, K);					// parameterization for \pi
 
 		// FIXME RFHH -- code sharing with variational_inf*::update_pi_beta()
         // temp = self.__theta/np.sum(self.__theta,1)[:,np.newaxis]
@@ -98,6 +97,8 @@ public:
 		std::vector<std::vector<double> > temp(theta.size(), std::vector<double>(theta[0].size()));
 		np::row_normalize(&temp, theta);
 		std::transform(temp.begin(), temp.end(), beta.begin(), np::SelectColumn<double>(1));
+
+		phi = kernelRandom.gamma(1, 1, N, K);					// parameterization for \pi
         // self._pi = self.__phi/np.sum(self.__phi,1)[:,np.newaxis]
 		pi.resize(phi.size(), std::vector<double>(phi[0].size()));
 		np::row_normalize(&pi, phi);
