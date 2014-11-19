@@ -569,6 +569,7 @@ protected:
 		clContext.queue.finish();
 
 		clContext.queue.enqueueReadBuffer(clBeta, CL_FALSE, 0, K * sizeof(double), beta.data());
+		clContext.queue.finish();
 		if (false) {
 			std::cerr << __func__ << std::endl;
 			std::cerr << "beta ";
@@ -921,14 +922,10 @@ protected:
 	cl::Buffer clBuffers;
 
 	GraphWrapper clSubGraph;
+	cl::Buffer clGraph;
 	GraphWrapper clSubHeldOutGraph;
+	cl::Buffer clHeldOutGraph;
 
-	cl::Buffer clGraphEdges;				// to be deprecated
-	cl::Buffer clGraphNodes;				// to be deprecated
-	cl::Buffer clGraph;				// to be deprecated
-	cl::Buffer clHeldOutGraphEdges;		// to be deprecated
-	cl::Buffer clHeldOutGraphNodes;		// to be deprecated
-	cl::Buffer clHeldOutGraph;		// to be deprecated
 	cl::Buffer clNodes;
 	cl::Buffer clNodesNeighbors;
 	cl::Buffer clNodesNeighborsHash;
