@@ -25,6 +25,7 @@ namespace learning {
 #endif
 
 // EDGEMAP_IS_VECTOR is a more efficient implementation anyway
+#define EDGEMAP_IS_VECTOR
 #ifdef EDGEMAP_IS_VECTOR
 typedef std::vector<int>    EdgeMapZ;
 #else

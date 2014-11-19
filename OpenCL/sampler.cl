@@ -314,7 +314,7 @@ kernel void cal_perplexity(
 (	y == 1? \
 		pi_a[i] * (pi_b[i] * (beta[i] - epsilon) + epsilon) \
 	: \
-		pi_a[i] * (pi_b[i] * (epsilon - beta[i]) + (1-epsilon)) \
+		pi_a[i] * (pi_b[i] * (epsilon - beta[i]) - epsilon_1) \
 )
 
 #define sample_z_ab_from_edge_expr_y_lifted(i) \
@@ -333,10 +333,20 @@ inline int sample_z_ab_from_edge(
 		) {
 	int y_1 = y - 1;
 	int y2_1 = y + y_1;
+#if 1
+	double epsilon_1 = epsilon - 1;
 	p[0] = sample_z_ab_from_edge_expr(0);
 	for (int i = 1; i < K; ++i) {
 		p[i] = p[i-1] + sample_z_ab_from_edge_expr(i);
 	}
+#else
+	for (int i = 0; i < K; ++i) {
+		p[i] = sample_z_ab_from_edge_expr(i);
+	}
+	for (int i = 1; i < K; ++i) {
+		p[i] += p[i-1];
+	}
+#endif
 
 	double location = random * p[K-1];
 	return find_le(p, location, K, 0);
