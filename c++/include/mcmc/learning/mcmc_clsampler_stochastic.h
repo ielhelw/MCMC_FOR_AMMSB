@@ -40,7 +40,7 @@ class MCMCClSamplerStochastic : public Learner {
 				adjacency_list[e.first] = e.second;	// This is a full copy, right?
 				// Question: is there a point in sorting the adjacency lists?
 				std::sort(adjacency_list[e.first].begin(), adjacency_list[e.first].end());
-				if (e.first == 1218 || find(e.second.begin(), e.second.end(), 1218) != e.second.end()) {
+				if (false && (e.first == 1218 || find(e.second.begin(), e.second.end(), 1218) != e.second.end())) {
 					std::cerr << "Edge init: found [" << e.first;
 					for (auto n: e.second) {
 						std::cerr << " " << n;
@@ -312,7 +312,7 @@ public:
 		}
 #endif
 
-		if (true) {
+		if (false) {
 #ifdef INITIALIZE_PHI_ON_DEVICE
 			std::vector<std::vector<double> > pi(N, std::vector<double>(K));            // parameterization for \pi
 			std::vector<std::vector<double> > phi(N, std::vector<double>(K));           // parameterization for \pi
@@ -446,18 +446,20 @@ public:
 
 			// sample (z_ab, z_ba) for each edge in the mini_batch.
 			// z is map structure. i.e  z = {(1,10):3, (2,4):-1}
-			t_latent_vars2.start();
-			std::cerr << "Nodes in mini_batch: ";
-			for (auto n: nodes) {
-				std::cerr << n << " ";
+			if (false) {
+				std::cerr << "Nodes in mini_batch: ";
+				for (auto n: nodes) {
+					std::cerr << n << " ";
+				}
+				std::cerr << std::endl;
+				std::cerr << "Edges in mini_batch: ";
+				for (auto e: mini_batch) {
+					std::cerr << e << " ";
+				}
+				std::cerr << std::endl;
 			}
-			std::cerr << std::endl;
-			std::cerr << "Edges in mini_batch: ";
-			for (auto e: mini_batch) {
-				std::cerr << e << " ";
-			}
-			std::cerr << std::endl;
 
+			t_latent_vars2.start();
 			sample_latent_vars2(mini_batch, nodes);
 			t_latent_vars2.stop();
 
@@ -676,7 +678,6 @@ protected:
 			hostBuffer.insert(hostBuffer.end(), data[n].begin(), data[n].end());
 		}
 
-		std::cerr << "Nodes[" << nodes.size() << "] Neighbors[" << neighbors.size() << "] host buffer[" << hostBuffer.size() << "]" << std::endl;
 		clContext.queue.enqueueWriteBuffer(buffer, CL_FALSE, 0, (nodes.size() + neighbors.size()) * K * sizeof(cl_double), hostBuffer.data());
 	}
 

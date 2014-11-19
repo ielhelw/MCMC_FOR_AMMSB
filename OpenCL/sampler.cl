@@ -447,7 +447,7 @@ kernel void sample_latent_vars_neighbors(
 		if (ret) break;
 	}
 	bufs->bufs.RandomSeed[gid] = randomSeed;
-	printf((__constant char *)"seed (%lu,%lu)\n", randomSeed.x, randomSeed.y);
+	// printf((__constant char *)"seed (%lu,%lu)\n", randomSeed.x, randomSeed.y);
 }
 
 inline int sample_latent_vars_sample_z_ab_of(
@@ -480,7 +480,7 @@ inline int sample_latent_vars_sample_z_ab_of(
 				p);
 		z[z_ab] += 1;
 	}
-	if (bufs->bufs.Nodes[node] == 922) {
+	if (false && bufs->bufs.Nodes[node] == 922) {
 		printf((__constant char *)"z[%d]: ", bufs->bufs.Nodes[node]);
 		for (int k = 0; k < K; k++) {
 			printf((__constant char *)"%d ", z[k]);
@@ -558,7 +558,7 @@ void update_pi_for_node_(
 	}
 	double phi_sum = 0;
 	for (int i = 0; i < K; ++i) phi_sum += phi[i];
-	printf((__constant char *)"phi_sum %.12f\n", phi_sum);
+	// printf((__constant char *)"phi_sum %.12f\n", phi_sum);
 	for (int i = 0; i < K; ++i) {
 		pi[i] = phi[i]/phi_sum;
 	}
@@ -583,7 +583,7 @@ kernel void update_pi(
 	size_t gsize = get_global_size(0);
 	global double *_p = bufs->bufs.Scratch + gid * K;
 	ulong2 randomSeed = bufs->bufs.RandomSeed[gid];
-	printf((__constant char *)"seed (%lu,%lu)\n", randomSeed.x, randomSeed.y);
+	// printf((__constant char *)"seed (%lu,%lu)\n", randomSeed.x, randomSeed.y);
 	for (int i = gid; i < N; i += gsize) {
 		// int node = bufs->bufs.Nodes[i];
 		int node = i;
@@ -596,7 +596,7 @@ kernel void update_pi(
 				alpha, a, b, c, step_count, total_node_count);
 	}
 	bufs->bufs.RandomSeed[gid] = randomSeed;
-	printf((__constant char *)"seed (%lu,%lu)\n", randomSeed.x, randomSeed.y);
+	// printf((__constant char *)"seed (%lu,%lu)\n", randomSeed.x, randomSeed.y);
 }
 
 #define sample_latent_vars2_orig(k) \
