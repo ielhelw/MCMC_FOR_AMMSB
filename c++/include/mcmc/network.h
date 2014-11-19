@@ -325,6 +325,10 @@ public:
 					delete nodeList;
 				}
 
+				if (true) {
+					std::cerr << "Create mini batch size " << mini_batch_set->size() << " scale " << (N * num_pieces) << std::endl;
+				}
+
 				return EdgeSample(mini_batch_set, N * num_pieces);
 
 			} else {
@@ -340,8 +344,8 @@ public:
 												std::max(nodeId, *neighborId)));
 				}
 
-				if (false) {
-					std::cerr << "B Create mini batch size " << mini_batch_set->size() << " scale " << N << std::endl;
+				if (true) {
+					std::cerr << "Create mini batch size " << mini_batch_set->size() << " scale " << N << std::endl;
 				}
 				if (mini_batch_set->size() > 0) {
 					return EdgeSample(mini_batch_set, N);
