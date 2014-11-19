@@ -11,6 +11,7 @@ CXX			= g++-4.7
 # OPENCL_ROOT		= /usr/share/amd/AMDAPPSDK-2.9-1
 # DAS
 # OPENCL_ROOT		= /cm/shared/package/amd-app-sdk/2.9
+# OPENCL_ROOT		= /cm/shared/apps/cuda55/toolkit/current
 #
 # CXXFLAGS		+= -DRANDOM_FOLLOWS_PYTHON -DEFFICIENCY_FOLLOWS_PYTHON
 # CXXFLAGS		+= -DRANDOM_FOLLOWS_CPP
