@@ -41,8 +41,15 @@ public:
 
         // control parameters for learning
 		// num_node_sample = N / 5;
-        num_node_sample = static_cast< ::size_t>(std::sqrt(network.get_num_nodes()));
+		if (args.num_node_sample == 0) {
+			num_node_sample = static_cast< ::size_t>(std::sqrt(network.get_num_nodes()));
+		} else {
+			num_node_sample = args.num_node_sample;
+		}
 		std::cerr << "num_node_sample " << num_node_sample << std::endl;
+		if (args.mini_batch_size == 0) {
+			mini_batch_size = N / 10;	// old default for STRATIFIED_RANDOM_NODE_SAMPLING
+		}
 
 		::size_t hash_table_size = round_next_power_2(real_num_node_sample());
 		if ((double)hash_table_size / real_num_node_sample() < 1.8) {
@@ -82,9 +89,8 @@ public:
 
 		clBuffers = createBuffer("clBuffers", CL_MEM_READ_WRITE, 64 * 100); // enough space for 100 * 8 pointers
 
-		// BASED ON STRATIFIED RANDOM NODE SAMPLING STRATEGY
-		::size_t num_edges_in_batch = N/10 + 1;
-		::size_t num_nodes_in_batch = num_edges_in_batch + 1;
+		::size_t num_edges_in_batch = network.minibatch_edges_for_strategy(mini_batch_size, strategy);
+		::size_t num_nodes_in_batch = network.minibatch_nodes_for_strategy(mini_batch_size, strategy);
 
 		clNodes = createBuffer("clNodes", CL_MEM_READ_ONLY,
 				num_nodes_in_batch * sizeof(cl_int)
@@ -330,7 +336,7 @@ public:
 
 			// (mini_batch, scale) = self._network.sample_mini_batch(self._mini_batch_size, "stratified-random-node")
 			t_mini_batch.start();
-			EdgeSample edgeSample = network.sample_mini_batch(mini_batch_size, strategy::STRATIFIED_RANDOM_NODE);
+			EdgeSample edgeSample = network.sample_mini_batch(mini_batch_size, strategy);
 			t_mini_batch.stop();
 			const OrderedEdgeSet &mini_batch = *edgeSample.first;
 			double scale = edgeSample.second;

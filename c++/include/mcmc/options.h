@@ -205,7 +205,9 @@ public:
 			("eta1", po::value<double>(&eta1)->default_value(1.0), "eta1")
 
 			("K,K", po::value< ::size_t>(&K)->default_value(300), "K")
-			("mini-batch-size,m", po::value< ::size_t>(&mini_batch_size)->default_value(50), "mini_batch_size")
+			("mini-batch-size,m", po::value< ::size_t>(&mini_batch_size)->default_value(0), "mini_batch_size")
+			("num-node-sample,n", po::value< ::size_t>(&num_node_sample)->default_value(0), "mini_batch_size")
+			("strategy", po::value<std::string>(&strategy)->default_value("unspecified"), "sampling strategy")
 
 			("epsilon,e", po::value<double>(&epsilon)->default_value(0.05), "epsilon")
 			("max-iteration,x", po::value< ::size_t>(&max_iteration)->default_value(10000000), "max_iteration")
@@ -251,6 +253,8 @@ public:
 	double		eta1;
 	::size_t	K;
 	::size_t	mini_batch_size;
+	::size_t	num_node_sample;
+	std::string	strategy;
 	double		epsilon;
 	::size_t	max_iteration;
 

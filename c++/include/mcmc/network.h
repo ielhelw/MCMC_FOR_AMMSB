@@ -98,7 +98,38 @@ public:
 		case strategy::STRATIFIED_RANDOM_PAIR:
 			return stratified_random_pair_sampling(mini_batch_size);
 		case strategy::STRATIFIED_RANDOM_NODE:
-			return stratified_random_node_sampling(10);
+			std::cerr << "Set stratified random node sampling divisor to " << (N / mini_batch_size) << std::endl;
+			return stratified_random_node_sampling(N / mini_batch_size);
+		default:
+			throw MCMCException("Invalid sampling strategy");
+		}
+	}
+
+	::size_t minibatch_nodes_for_strategy(::size_t mini_batch_size, strategy::strategy strategy) const {
+		switch (strategy) {
+		case strategy::RANDOM_PAIR:
+			return 2 * minibatch_edges_for_strategy(mini_batch_size, strategy);
+		case strategy::RANDOM_NODE:
+			return minibatch_edges_for_strategy(mini_batch_size, strategy) + 1;
+		case strategy::STRATIFIED_RANDOM_PAIR:
+			return minibatch_edges_for_strategy(mini_batch_size, strategy) + 1;
+		case strategy::STRATIFIED_RANDOM_NODE:
+			return minibatch_edges_for_strategy(mini_batch_size, strategy) + 1;
+		default:
+			throw MCMCException("Invalid sampling strategy");
+		}
+	}
+
+	::size_t minibatch_edges_for_strategy(::size_t mini_batch_size, strategy::strategy strategy) const {
+		switch (strategy) {
+		case strategy::RANDOM_PAIR:
+			return mini_batch_size + 1;
+		case strategy::RANDOM_NODE:
+			return N - held_out_map.size() - test_map.size();
+		case strategy::STRATIFIED_RANDOM_PAIR:
+			return mini_batch_size + 1;
+		case strategy::STRATIFIED_RANDOM_NODE:
+			return mini_batch_size + 1;
 		default:
 			throw MCMCException("Invalid sampling strategy");
 		}
