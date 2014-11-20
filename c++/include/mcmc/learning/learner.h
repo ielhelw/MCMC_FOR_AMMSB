@@ -57,6 +57,20 @@ public:
 		CONVERGENCE_THRESHOLD = 0.000000000001;
 
 		stepsize_switch = false;
+
+		if (args.strategy == "unspecified") {
+			strategy = strategy::STRATIFIED_RANDOM_NODE;
+		} else if (args.strategy == "random-pair") {
+			strategy = strategy::RANDOM_PAIR;
+		} else if (args.strategy == "random-node") {
+			strategy = strategy::RANDOM_NODE;
+		} else if (args.strategy == "stratified-random-pair") {
+			strategy = strategy::STRATIFIED_RANDOM_PAIR;
+		} else if (args.strategy == "stratified-random-node") {
+			strategy = strategy::STRATIFIED_RANDOM_NODE;
+		} else {
+			throw MCMCException("Unknown strategy type: " + args.strategy);
+		}
 	}
 
 	virtual ~Learner() {
@@ -292,6 +306,8 @@ protected:
 	double CONVERGENCE_THRESHOLD;
 
 	bool stepsize_switch;
+
+	strategy::strategy strategy;
 };
 
 
