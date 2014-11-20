@@ -141,6 +141,8 @@ public:
 		::size_t num_edges_in_batch = network.minibatch_edges_for_strategy(mini_batch_size, strategy);
 		::size_t num_nodes_in_batch = network.minibatch_nodes_for_strategy(mini_batch_size, strategy);
 
+		info(std::cout);
+
 		::size_t nodes_neighbors = num_nodes_in_batch * (1 + real_num_node_sample());
 		hostPiBuffer = std::vector<double>(nodes_neighbors * K);
 		hostPhiBuffer = std::vector<double>(nodes_neighbors * K);
@@ -399,8 +401,6 @@ public:
 		errMsg = new char[ERROR_MESSAGE_LENGTH];
 
 		clContext.queue.finish();
-
-		info(std::cout);
 	}
 
 	virtual ~MCMCClSamplerStochastic() {
