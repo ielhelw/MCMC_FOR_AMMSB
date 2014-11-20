@@ -228,6 +228,7 @@ public:
 			("device,d", po::value<std::string>(&openClDevice), "OpenCL device")
 			("thread-group-size,G", po::value< ::size_t>(&openclGroupSize)->default_value(1), "OpenCL thread group size")
 			("num-thread-groups,g", po::value< ::size_t>(&openclNumGroups)->default_value(1), "num OpenCL thread groups")
+			("buffer-size,b", po::value< ::size_t>(&openclBufferSize)->default_value(0), "OpenCL buffer size");
 #endif
 			;
 
@@ -275,6 +276,7 @@ public:
 	std::string	openClDevice;
 	::size_t openclGroupSize;
 	::size_t openclNumGroups;
+	::size_t openclBufferSize;
 #endif
 
 	struct {
