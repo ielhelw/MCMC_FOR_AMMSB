@@ -358,7 +358,8 @@ inline int sample_latent_vars_neighbors_of(
 		global const Graph *hg,
 		global int* neighbor_nodes,
 		global int* neighbor_nodes_hash,
-		ulong2* randomSeed)
+		ulong2* randomSeed,
+		int start)
 {
 	if (bufs->bufs.Nodes[node] == 1218) {
 		int2 desc = hg->_g.node_edges[node];
@@ -412,7 +413,7 @@ inline int sample_latent_vars_neighbors_of(
 #ifdef RANDOM_FOLLOWS_SCALABLE_GRAPH
 	printf((__constant char *)"Store an extra %d randoms\n", NEIGHBOR_SAMPLE_SIZE);
 	for (int i = 0; i < NEIGHBOR_SAMPLE_SIZE; ++i) {
-		bufs->bufs.stored_random[node * NEIGHBOR_SAMPLE_SIZE + i] = random(randomSeed);
+		bufs->bufs.stored_random[start + node * NEIGHBOR_SAMPLE_SIZE + i] = random(randomSeed);
 	}
 #endif
 
@@ -427,6 +428,7 @@ inline int sample_latent_vars_neighbors_of(
 
 kernel void sample_latent_vars_neighbors(
 		global Buffers *bufs,
+		const int start,
 		const int N) // #nodes
 		{
 	size_t gid = get_global_id(0);
@@ -443,7 +445,8 @@ kernel void sample_latent_vars_neighbors(
 				// index by i
 				bufs->bufs.NodesNeighbors + i * NEIGHBOR_SAMPLE_SIZE,
 				bufs->bufs.NodesNeighborsHash + i * HASH_SIZE,
-				&randomSeed);
+				&randomSeed,
+				start);
 		if (ret) break;
 	}
 	bufs->bufs.RandomSeed[gid] = randomSeed;

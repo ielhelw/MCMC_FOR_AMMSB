@@ -158,9 +158,9 @@ public:
 		}
 		::size_t subBatchEdges = network.minibatch_nodes_for_strategy(subBatchNodes, strategy);
 
-		hostPiBuffer = std::vector<double>(nodes_neighbors * real_num_node_sample() * K);
-		hostPhiBuffer = std::vector<double>(nodes_neighbors * real_num_node_sample() * K);
-		hostNeighbors = std::vector<cl_int>(nodes_neighbors * real_num_node_sample());
+		hostPiBuffer = std::vector<double>(nodes_neighbors * K);
+		hostPhiBuffer = std::vector<double>(nodes_neighbors * K);
+		hostNeighbors = std::vector<cl_int>(nodes_neighbors);
 
 		graph_program = this->clContext.createProgram(stringify(PROJECT_HOME) "/../OpenCL/graph.cl", progOpts);
 		graph_init_kernel = cl::Kernel(graph_program, "graph_init");
@@ -711,12 +711,12 @@ protected:
 			assert(data[*n].size() == K);
 			hostBuffer.insert(hostBuffer.end(), data[*n].begin(), data[*n].end());
 		}
-		for (auto n: neighbors) {
-			assert(data[n].size() == K);
-			hostBuffer.insert(hostBuffer.end(), data[n].begin(), data[n].end());
+		for (auto n = neighbors.begin(); n < neighbors.begin() + size * real_num_node_sample(); n++) {
+			assert(data[*n].size() == K);
+			hostBuffer.insert(hostBuffer.end(), data[*n].begin(), data[*n].end());
 		}
 
-		clContext.queue.enqueueWriteBuffer(buffer, CL_FALSE, 0, (size + neighbors.size()) * K * sizeof(cl_double), hostBuffer.data());
+		clContext.queue.enqueueWriteBuffer(buffer, CL_FALSE, 0, size * (1 + real_num_node_sample()) * K * sizeof(cl_double), hostBuffer.data());
 	}
 
 	void retrieve_sub_vectors(cl::Buffer &buffer,
@@ -735,7 +735,8 @@ protected:
 
 		int Idx = 0;
 		sample_latent_vars_neighbors_kernel.setArg(Idx++, clBuffers);
-		sample_latent_vars_neighbors_kernel.setArg(Idx++, (cl_int)nodes.size());
+		sample_latent_vars_neighbors_kernel.setArg(Idx++, (cl_int)start);
+		sample_latent_vars_neighbors_kernel.setArg(Idx++, (cl_int)size);
 
 		clContext.queue.finish();
 		clContext.queue.enqueueNDRangeKernel(sample_latent_vars_neighbors_kernel, cl::NullRange, cl::NDRange(globalThreads), cl::NDRange(groupSize));
@@ -848,6 +849,7 @@ protected:
 
 		::size_t num_edges_in_batch = network.minibatch_edges_for_strategy(mini_batch_size, strategy);
 		::size_t num_nodes_in_batch = network.minibatch_nodes_for_strategy(mini_batch_size, strategy);
+		num_edges_in_batch = std::max(num_edges_in_batch, num_nodes_in_batch * network.get_max_fan_out());
 		clSubGraph.init(*this, &clGraph, linkedMap, N, num_nodes_in_batch, num_edges_in_batch);
 
 		linkedMap.clear();
