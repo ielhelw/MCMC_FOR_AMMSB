@@ -5,6 +5,8 @@
 #include <algorithm>
 #include <chrono>
 
+#include <boost/config.hpp>
+
 #include <vexcl/devlist.hpp>
 #include <vexcl/vector.hpp>
 #include <vexcl/reductor.hpp>
@@ -115,7 +117,7 @@ public:
 		}
 
 		std::ostringstream opts;
-		opts << "-I" << stringify(PROJECT_HOME) << "/../OpenCL/include"
+		opts << "-I" << BOOST_STRINGIZE(PROJECT_HOME) << "/../OpenCL/include"
 			 << " -DNEIGHBOR_SAMPLE_SIZE=" << real_num_node_sample()
 			 << " -DK=" << K
 			 << " -DMAX_NODE_ID=" << N
@@ -149,25 +151,39 @@ public:
 			bufferSize = deviceMem;
 		}
 
+		// Sub-batching to calculate neighbors. Necessary because not all of HG fits
+		// in device memory. Batch by dividing the minibatch nodes.
 		subBatchNodes = num_nodes_in_batch;
-		::size_t nodes_neighbors = subBatchNodes * (1 + real_num_node_sample());
-		if (nodes_neighbors * sizeof(cl_double) > deviceMem) {
+		::size_t pi_rows = subBatchNodes * (1 + real_num_node_sample());
+		if (pi_rows * sizeof(cl_double) > deviceMem) {
 			subBatchNodes = deviceMem / (sizeof(cl_double) * real_num_node_sample()) - 1;
 			std::cout << "pi/phi submatrix does not fit in device. Use " << ((num_nodes_in_batch + subBatchNodes - 1) / subBatchNodes) << " sub-batches" << std::endl;
-			nodes_neighbors = subBatchNodes * (1 + real_num_node_sample());
+			pi_rows = subBatchNodes * (1 + real_num_node_sample());
 		}
-		::size_t subBatchEdges = network.minibatch_nodes_for_strategy(subBatchNodes, strategy);
 
-		hostPiBuffer = std::vector<double>(nodes_neighbors * K);
-		hostPhiBuffer = std::vector<double>(nodes_neighbors * K);
-		hostNeighbors = std::vector<cl_int>(nodes_neighbors);
+		// Sub-batching to calculate z_ab. Necessary because not all of pi/phi fits
+		// in device memory. Batch by dividing neighbors.
+		subNeighbors = real_num_node_sample();
+		::size_t nodes_neighbors = num_nodes_in_batch * (1 + subNeighbors);
+		if (K * nodes_neighbors * sizeof(cl_double) > bufferSize) {
+			subNeighbors = bufferSize / (K * sizeof(cl_double) * num_nodes_in_batch) - 1;
+			std::cout << "pi/phi submatrix does not fit in device. Limit neighbor subset size to " << subNeighbors << std::endl;
+			nodes_neighbors = num_nodes_in_batch * (1 + subNeighbors);
+		}
 
-		graph_program = this->clContext.createProgram(stringify(PROJECT_HOME) "/../OpenCL/graph.cl", progOpts);
+		std::cerr << "FIXME FIXME FIXME redo max. edges for strategy" << std::cerr;
+		::size_t subBatchEdges = network.minibatch_edges_for_strategy(subBatchNodes, strategy);
+
+		hostPiBuffer = std::vector<double>(pi_rows * K);
+		hostPhiBuffer = std::vector<double>(pi_rows * K);
+		hostNeighbors = std::vector<cl_int>(num_nodes_in_batch * real_num_node_sample());
+
+		graph_program = this->clContext.createProgram(BOOST_STRINGIZE(PROJECT_HOME) "/../OpenCL/graph.cl", progOpts);
 		graph_init_kernel = cl::Kernel(graph_program, "graph_init");
 
 		init_graph();
 
-		sampler_program = this->clContext.createProgram(stringify(PROJECT_HOME) "/../OpenCL/sampler.cl", progOpts);
+		sampler_program = this->clContext.createProgram(BOOST_STRINGIZE(PROJECT_HOME) "/../OpenCL/sampler.cl", progOpts);
 		random_gamma_kernel = cl::Kernel(sampler_program, "random_gamma");
 		row_normalize_kernel = cl::Kernel(sampler_program, "row_normalize");
 		sample_latent_vars_neighbors_kernel = cl::Kernel(sampler_program, "sample_latent_vars_neighbors");
@@ -183,25 +199,26 @@ public:
 		clBuffers = createBuffer("clBuffers", CL_MEM_READ_WRITE, 64 * 100); // enough space for 100 * 8 pointers
 
 		clNodes = createBuffer("clNodes", CL_MEM_READ_ONLY,
-				subBatchNodes * sizeof(cl_int)
+				num_nodes_in_batch * sizeof(cl_int)
 				);
 		clNodesNeighbors = createBuffer("clNodesNeighbors", CL_MEM_READ_WRITE,
-				nodes_neighbors * real_num_node_sample() * sizeof(cl_int)
+				num_nodes_in_batch * real_num_node_sample() * sizeof(cl_int)
 				);
 		clNodesNeighborsHash = createBuffer("clNodesNeighborsHash", CL_MEM_READ_WRITE,
-				nodes_neighbors * hash_table_size * sizeof(cl_int)
+				num_nodes_in_batch * hash_table_size * sizeof(cl_int)
 				);
+
 		clEdges = createBuffer("clEdges", CL_MEM_READ_ONLY,
 				subBatchEdges * sizeof(cl_int2)
 				);
-		// FIXME: make this nodes_neighbors * K
+
 		clPi = createBuffer("clPi", CL_MEM_READ_WRITE,
-				nodes_neighbors * K * sizeof(cl_double) // #total_nodes x #K
+				pi_rows * K * sizeof(cl_double) // #total_nodes x #K
 				);
-		// FIXME: make this nodes_neighbors * K
 		clPhi = createBuffer("clPhi", CL_MEM_READ_WRITE,
-				nodes_neighbors * K * sizeof(cl_double) // #total_nodes x #K
+				pi_rows * K * sizeof(cl_double) // #total_nodes x #K
 				);
+
 		clBeta = createBuffer("clBeta", CL_MEM_READ_WRITE,
 				K * sizeof(cl_double) // #K
 				);
@@ -211,9 +228,11 @@ public:
 		clThetaSum = createBuffer("clThetaSum", CL_MEM_READ_WRITE,
 				K * sizeof(cl_double) // #K
 				);
+
 		clZ = createBuffer("clZ", CL_MEM_READ_WRITE,
 				subBatchNodes * K * sizeof(cl_int)
 				);
+
 		clScratch = createBuffer("clScratch", CL_MEM_READ_WRITE,
 				std::max(subBatchNodes, globalThreads) * K * sizeof(cl_double)
 				);
@@ -228,7 +247,7 @@ public:
 				);
 #ifdef RANDOM_FOLLOWS_SCALABLE_GRAPH
 		clStoredRandom = createBuffer("clStoredRandom", CL_MEM_READ_WRITE,
-									  subBatchNodes * real_num_node_sample() * sizeof(cl_double));
+									  num_nodes_in_batch * real_num_node_sample() * sizeof(cl_double));
 #endif
 
 		int Idx = 0;
@@ -426,7 +445,8 @@ public:
 		timer::Timer t_perplexity("  perplexity");
 		timer::Timer t_mini_batch("  sample_mini_batch");
 		timer::Timer t_nodes_in_mini_batch("  nodes_in_mini_batch");
-		timer::Timer t_latent_vars("  sample_latent_vars");
+		timer::Timer t_latent_vars_neighbors("  sample_latent_vars_neighbors");
+		timer::Timer t_latent_vars_sample_z_ab("  sample_latent_vars_sample_z_ab");
 		timer::Timer t_latent_vars2("  sample_latent_vars2");
 		timer::Timer t_update_pi("  update_pi");
 		timer::Timer t_update_beta("  update_beta");
@@ -456,42 +476,57 @@ public:
 			const std::vector<int> nodes = nodes_in_batch(mini_batch);
 			t_nodes_in_mini_batch.stop();
 
-			::size_t start = 0;
-			while (start < nodes.size()) {
-				::size_t size = subBatchNodes;
-				if (start + size > nodes.size()) {
-					size = nodes.size() - start;
+			std::cerr << "Stage clSubHeldOutGraph" << std::endl;
+			stage_subgraph(&clSubHeldOutGraph, nodes);
+
+			t_latent_vars_neighbors.start();
+			sample_latent_vars_neighbors(nodes);
+			t_latent_vars_neighbors.stop();
+
+			std::cerr << "Stage clSubGraph" << std::endl;
+			stage_subgraph(&clSubGraph, nodes);
+
+			// Pi is staged in two contiguous sections:
+			// 1) pi(i) for i in nodes
+			// 2) pi(n'(i)) for n'(i): the subset [offset:size] of neighbors n(i) of node i
+			stage_sub_vectors(clPi, pi, hostPiBuffer, nodes);
+
+			::size_t offset = 0;
+			while (offset < real_num_node_sample()) {
+				::size_t size = subNeighbors;
+				if (offset + size > real_num_node_sample()) {
+					size = real_num_node_sample() - offset;
 				}
 
-				t_latent_vars.start();
-				sample_latent_vars(nodes, start, size);
-				t_latent_vars.stop();
+				t_latent_vars_sample_z_ab.stop();
+				sample_latent_vars_sample_z_ab(nodes, offset, size);
+				t_latent_vars_sample_z_ab.stop();
 
-				t_update_pi.start();
-				update_pi(nodes, start, size);
-				t_update_pi.stop();
-
-				// sample (z_ab, z_ba) for each edge in the mini_batch.
-				// z is map structure. i.e  z = {(1,10):3, (2,4):-1}
-				if (false) {
-					std::cerr << "Nodes in mini_batch: ";
-					for (auto n: nodes) {
-						std::cerr << n << " ";
-					}
-					std::cerr << std::endl;
-					std::cerr << "Edges in mini_batch: ";
-					for (auto e: mini_batch) {
-						std::cerr << e << " ";
-					}
-					std::cerr << std::endl;
-				}
-
-				t_latent_vars2.start();
-				sample_latent_vars2(mini_batch, nodes, start, size);
-				t_latent_vars2.stop();
-
-				start += size;
+				offset += size;
 			}
+
+			t_update_pi.start();
+			update_pi(nodes);
+			t_update_pi.stop();
+
+			// sample (z_ab, z_ba) for each edge in the mini_batch.
+			// z is map structure. i.e  z = {(1,10):3, (2,4):-1}
+			if (false) {
+				std::cerr << "Nodes in mini_batch: ";
+				for (auto n: nodes) {
+					std::cerr << n << " ";
+				}
+				std::cerr << std::endl;
+				std::cerr << "Edges in mini_batch: ";
+				for (auto e: mini_batch) {
+					std::cerr << e << " ";
+				}
+				std::cerr << std::endl;
+			}
+
+			t_latent_vars2.start();
+			sample_latent_vars2(mini_batch, nodes);
+			t_latent_vars2.stop();
 
 			t_update_beta.start();
 			update_beta(mini_batch, scale);
@@ -520,7 +555,8 @@ public:
 		std::cout << t_perplexity << std::endl;
 		std::cout << t_mini_batch << std::endl;
 		std::cout << t_nodes_in_mini_batch << std::endl;
-		std::cout << t_latent_vars << std::endl;
+		std::cout << t_latent_vars_neighbors << std::endl;
+		std::cout << t_latent_vars_sample_z_ab << std::endl;
 		std::cout << t_latent_vars2 << std::endl;
 		std::cout << t_update_pi << std::endl;
 		std::cout << t_update_beta << std::endl;
@@ -612,7 +648,7 @@ protected:
 		}
 	}
 
-	void sample_latent_vars2(const OrderedEdgeSet &mini_batch, const std::vector<int> &nodes, ::size_t start, ::size_t size) {
+	void sample_latent_vars2(const OrderedEdgeSet &mini_batch, const std::vector<int> &nodes) {
 		::size_t i;
 		std::vector<cl_int2> edges(mini_batch.size());
 		// Copy edges
@@ -661,7 +697,7 @@ protected:
 		return num_node_sample + 1;
 	}
 
-	void stage_subgraph(GraphWrapper *graph, const std::vector<int> &nodes, ::size_t start, ::size_t size) {
+	void stage_subgraph(GraphWrapper *graph, const std::vector<int> &nodes) {
 		// Copy held_out_set subgraph for nodes
 		// ::size_t edge_elts = nodes.size() * std::max(network.get_max_fan_out(), num_node_sample + 1);
 		graph->h_subEdges.clear();
@@ -669,7 +705,6 @@ protected:
 		graph->h_subNodes.resize(nodes.size());
 		::size_t i = 0;
 		::size_t offset = 0;
-		std::cerr << "FIXME: " << __func__ << "(): convert nodes to vector for slice address" << std::endl;
 		for (auto node: nodes) {
 			const auto &neighbors = graph->adjacency_list[node];
 			graph->h_subEdges.insert(graph->h_subEdges.end(), neighbors.begin(), neighbors.end());
@@ -700,55 +735,85 @@ protected:
 	void stage_sub_vectors(cl::Buffer &buffer,
 						   const std::vector<std::vector<double> > &data,
 						   std::vector<double> &hostBuffer,
-						   const std::vector<int> &nodes,
-						   const std::vector<int> &neighbors,
-						   ::size_t start, ::size_t size) {
+						   const std::vector<int> &nodes) {
+		std::cerr << "FIXME: " << __func__ << "(): ensure neighbor indirect at both host and device" << std::endl;
 		std::cerr << "FIXME: " << __func__ << "(): implement subrange of matrix" << std::endl;
 		std::cerr << "FIXME: " << __func__ << "(): if this is mapped memory: no need for intermediate copy" << std::endl;
 		hostBuffer.clear();
-		std::cerr << "FIXME: " << __func__ << "(): convert nodes to vector for slice address" << std::endl;
-		for (auto n = nodes.begin() + start; n < nodes.begin() + start + size; n++) {
-			assert(data[*n].size() == K);
-			hostBuffer.insert(hostBuffer.end(), data[*n].begin(), data[*n].end());
-		}
-		for (auto n = neighbors.begin(); n < neighbors.begin() + size * real_num_node_sample(); n++) {
-			assert(data[*n].size() == K);
-			hostBuffer.insert(hostBuffer.end(), data[*n].begin(), data[*n].end());
+		for (auto n: nodes) {
+			assert(data[n].size() == K);
+			hostBuffer.insert(hostBuffer.end(), data[n].begin(), data[n].end());
 		}
 
-		clContext.queue.enqueueWriteBuffer(buffer, CL_FALSE, 0, size * (1 + real_num_node_sample()) * K * sizeof(cl_double), hostBuffer.data());
+		clContext.queue.enqueueWriteBuffer(buffer, CL_FALSE, 0, nodes.size() * K * sizeof(cl_double), hostBuffer.data());
+	}
+
+	void stage_sub_neighbor_vectors(cl::Buffer &buffer,
+									const std::vector<std::vector<double> > &data,
+									std::vector<double> &hostBuffer,
+									const std::vector<int> &neighbors,
+									::size_t offset, ::size_t size, ::size_t stride,
+									::size_t bufferOffset) {
+		std::cerr << "FIXME: " << __func__ << "(): ensure neighbor indirect at both host and device" << std::endl;
+		std::cerr << "FIXME: " << __func__ << "(): implement subrange of matrix" << std::endl;
+		std::cerr << "FIXME: " << __func__ << "(): if this is mapped memory: no need for intermediate copy" << std::endl;
+
+		if (false) {
+			for (auto i = neighbors.begin() + offset; i < neighbors.end(); i += stride) {
+				std::cerr << "Neighbors: ";
+				for (auto n = i; n < i + size; n++) {
+					std::cerr << *n << " ";
+				}
+				std::cerr << std::endl;
+			}
+		}
+
+		hostBuffer.clear();
+		for (auto i = neighbors.begin() + offset; i < neighbors.end(); i += stride) {
+			for (auto n = i; n < i + size; n++) {
+				assert(data[*n].size() == K);
+				hostBuffer.insert(hostBuffer.end(), data[*n].begin(), data[*n].end());
+				if (false) {
+					std::cerr << "pi_b: ";
+					for (auto k: data[*n]) {
+						std::cerr << std::fixed << std::setprecision(12) << k << " ";
+					}
+					std::cerr << std::endl;
+				}
+			}
+		}
+
+		::size_t n = neighbors.size() / stride * size;
+		clContext.queue.enqueueWriteBuffer(buffer, CL_FALSE,
+										   bufferOffset,
+										   n * K * sizeof(cl_double),
+										   hostBuffer.data());
 	}
 
 	void retrieve_sub_vectors(cl::Buffer &buffer,
 							  std::vector<double> &hostBuffer,
-							  ::size_t start, ::size_t size) {
-		std::cerr << "FIXME: " << __func__ << "(): implement subrange of matrix" << std::endl;
-		clContext.queue.enqueueReadBuffer(buffer, CL_TRUE, 0, size * K * sizeof(cl_double), hostBuffer.data() + start);
+							  ::size_t offset, ::size_t size) {
+		clContext.queue.enqueueReadBuffer(buffer, CL_TRUE, 0, size * K * sizeof(cl_double), hostBuffer.data() + offset);
 	}
 
-	void sample_latent_vars_neighbors(const std::vector<int> &nodes, ::size_t start, ::size_t size) {
-		std::cerr << "FIXME: " << __func__ << "(): implement subrange of matrix" << std::endl;
-		std::cerr << "Stage clSubHeldOutGraph" << std::endl;
-		stage_subgraph(&clSubHeldOutGraph, nodes, start, size);
+	void sample_latent_vars_neighbors(const std::vector<int> &nodes) {
 
-		clContext.queue.enqueueWriteBuffer(clNodes, CL_FALSE, 0, size * sizeof(cl_int), nodes.data() + start);
+		clContext.queue.enqueueWriteBuffer(clNodes, CL_FALSE, 0, nodes.size() * sizeof(cl_int), nodes.data());
 
 		int Idx = 0;
 		sample_latent_vars_neighbors_kernel.setArg(Idx++, clBuffers);
-		sample_latent_vars_neighbors_kernel.setArg(Idx++, (cl_int)start);
-		sample_latent_vars_neighbors_kernel.setArg(Idx++, (cl_int)size);
+		sample_latent_vars_neighbors_kernel.setArg(Idx++, (cl_int)nodes.size());
 
 		clContext.queue.finish();
 		clContext.queue.enqueueNDRangeKernel(sample_latent_vars_neighbors_kernel, cl::NullRange, cl::NDRange(globalThreads), cl::NDRange(groupSize));
 		clContext.queue.finish();
 
-		clContext.queue.enqueueReadBuffer(clNodesNeighbors, CL_FALSE, 0, size * real_num_node_sample() * sizeof(cl_int), hostNeighbors.data());
+		clContext.queue.enqueueReadBuffer(clNodesNeighbors, CL_FALSE, 0, nodes.size() * real_num_node_sample() * sizeof(cl_int), hostNeighbors.data());
+
+		std::cerr << "FIXME FIXME FIXME: shuffle/indirect/restage neighbor table" << std::endl;
 	}
 
-	void sample_latent_vars_sample_z_ab(const std::vector<int> &nodes, ::size_t start, ::size_t size) {
-		std::cerr << "FIXME: " << __func__ << "(): implement subrange of matrix" << std::endl;
-		std::cerr << "Stage clSubGraph" << std::endl;
-		stage_subgraph(&clSubGraph, nodes, start, size);
+	void sample_latent_vars_sample_z_ab(const std::vector<int> &nodes, ::size_t offset, ::size_t size) {
 
 		// TODO FIXME TODO FIXME
 		// On the host, just maintain Phi.
@@ -758,12 +823,15 @@ protected:
 		//
 		// Pi is staged in two contiguous sections:
 		// 1) pi(i) for i in nodes
-		// 2) pi(n(i)) for the neighbors n(i) of node i
-		stage_sub_vectors(clPi, pi, hostPiBuffer, nodes, hostNeighbors, start, size);
+		// 2) pi(n'(i)) for n'(i): the subset [offset:size] of neighbors n(i) of node i
+		stage_sub_neighbor_vectors(clPi, pi, hostPiBuffer, hostNeighbors, offset, size, real_num_node_sample(), nodes.size() * K * sizeof(cl_double));
 
 		int Idx = 0;
 		sample_latent_vars_sample_z_ab_kernel.setArg(Idx++, clBuffers);
+		sample_latent_vars_sample_z_ab_kernel.setArg(Idx++, (cl_int)offset);
 		sample_latent_vars_sample_z_ab_kernel.setArg(Idx++, (cl_int)size);
+		sample_latent_vars_sample_z_ab_kernel.setArg(Idx++, (cl_int)nodes.size());
+		// TODO FIXME put epsilon into global device struct
 		sample_latent_vars_sample_z_ab_kernel.setArg(Idx++, (cl_double)epsilon);
 
 		clContext.queue.finish();
@@ -773,21 +841,18 @@ protected:
 		check_for_kernel_errors(); // sample_latent_vars_sample_z_ab_kernel
 	}
 
-	void sample_latent_vars(const std::vector<int>& nodes, ::size_t start, ::size_t size) {
-		sample_latent_vars_neighbors(nodes, start, size);
-		sample_latent_vars_sample_z_ab(nodes, start, size);
+	void sample_latent_vars(const std::vector<int>& nodes, ::size_t offset, ::size_t size) {
 	}
 
-	void update_pi(const std::vector<int> &nodes, ::size_t start, ::size_t size) {
+	void update_pi(const std::vector<int> &nodes) {
 
-		// 1. merge nodes and neighbors
 		// 2. stage pi for the merged(nodes, neighbors)
 		// 3. ensure that pi is staged in the order of the device neighbor index array
-		stage_sub_vectors(clPhi, phi, hostPhiBuffer, nodes, hostNeighbors, start, size);
+		stage_sub_vectors(clPhi, phi, hostPhiBuffer, nodes);
 
 		int Idx = 0;
 		update_pi_kernel.setArg(Idx++, clBuffers);
-		update_pi_kernel.setArg(Idx++, (cl_int)size);
+		update_pi_kernel.setArg(Idx++, (cl_int)nodes.size());
 		// FIXME: store alpha, a, b, c in clBuffers. They are constants.
 		update_pi_kernel.setArg(Idx++, (cl_double)alpha);
 		update_pi_kernel.setArg(Idx++, (cl_double)a);
@@ -811,8 +876,8 @@ protected:
 					pi[*node].data());
 		}
 #endif
-		retrieve_sub_vectors(clPi, hostPiBuffer, start, size);
-		retrieve_sub_vectors(clPhi, hostPhiBuffer, start, size);
+		retrieve_sub_vectors(clPi, hostPiBuffer, 0, nodes.size());
+		retrieve_sub_vectors(clPhi, hostPhiBuffer, 0, nodes.size());
 	}
 
 	void commit_phi(const std::vector<int> &nodes) {
@@ -838,7 +903,7 @@ protected:
 	}
 
 	void init_graph() {
-		graph_program = this->clContext.createProgram(stringify(PROJECT_HOME) "/../OpenCL/graph.cl", progOpts);
+		graph_program = this->clContext.createProgram(BOOST_STRINGIZE(PROJECT_HOME) "/../OpenCL/graph.cl", progOpts);
 		graph_init_kernel = cl::Kernel(graph_program, "graph_init");
 		std::map<int, std::vector<int>> linkedMap;
 
@@ -873,7 +938,7 @@ protected:
 
 #if MCMC_CL_STOCHASTIC_TEST_GRAPH // TEST GRAPH ON OPENCL's SIDE
 	void test_graph() {
-		cl::Program program2 = this->clContext.createProgram(stringify(PROJECT_HOME) "/../OpenCL/test.cl", progOpts);
+		cl::Program program2 = this->clContext.createProgram(BOOST_STRINGIZE(PROJECT_HOME) "/../OpenCL/test.cl", progOpts);
 		cl::Kernel test_print_peers_of_kernel(program2, "test_print_peers_of");
 		test_print_peers_of_kernel.setArg(0, clGraph);
 		test_print_peers_of_kernel.setArg(1, 0);
@@ -940,6 +1005,7 @@ protected:
 	std::vector<cl_int> hostNeighbors;
 	::size_t bufferSize;
 	::size_t subBatchNodes;
+	::size_t subNeighbors;
 
 	std::string progOpts;
 

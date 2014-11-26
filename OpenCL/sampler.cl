@@ -234,86 +234,6 @@ row_normalize(const global double *in,
 }
 
 
-typedef struct PERP_ACCU {
-	double		likelihood;
-	int			count;
-	int			padding;
-} perp_accu_t;	// hope padding/alignment is the same as on the host...
-
-
-inline double
-cal_edge_likelihood(global const double *pi_a,
-					global const double *pi_b,
-					const int y,
-					global const double *beta,
-					const double epsilon)
-{
-	double s = 0.0;
-	int iy = y ? 1 : 0;
-	int y_1 = iy - 1;
-	int y2_1 = y_1 + iy;
-	double sum = 0.0;
-	for (int k = 0; k < K; k++) {
-		double f = pi_a[k] * pi_b[k];
-		sum += f;
-		s += f * (beta[k] * y2_1 - y_1);
-	}
-	if (! y) {
-		s += (1.0 - sum) * (1.0 - epsilon);
-	}
-
-	if (s < 1.0e-30) {
-		s = 1.0e-30;
-	}
-
-	return log(s);
-}
-
-
-kernel void cal_perplexity(
-		global const int3 hg[],
-		const int H,			// |hg|
-		global const double *pi,// (#total_nodes, K)
-		global const double *beta,// (#K)
-		const double epsilon,
-		global double *linkLikelihood,	// global_size
-		global double *nonLinkLikelihood,	// global_size
-		global int *linkCount,	// global_size
-		global int *nonLinkCount	// global_size
-		)
-{
-	size_t gid = get_global_id(0);
-	size_t gsize = get_global_size(0);
-
-	double l0 = 0.0;
-	double l1 = 0.0;
-	int c0 = 0;
-	int c1 = 0;
-	for (int i = gid; i < H; i += gsize) {
-		global const int3 *edge = &hg[i];
-		double el = cal_edge_likelihood(pi + (*edge).x * K,
-										pi + (*edge).y * K,
-										(*edge).z,
-										beta,
-										epsilon);
-		// printf((__constant char *)"(%d, %d) in? %s -> %.12f\n", (*edge).x, (*edge).y, (*edge).z == 1 ? "True" : "False", el);
-		if ((*edge).z == 1) {
-			l0 += el;
-			c0++;
-		} else {
-			l1 += el;
-			c1++;
-		}
-	}
-
-	linkLikelihood[gid] = l0;
-	linkCount[gid] = c0;
-	nonLinkLikelihood[gid] = l1;
-	nonLinkCount[gid] = c1;
-
-	// and perform a scan over scratch.{likelihood,count} + a scan over scratch'.{likelihood,count}
-}
-
 #define sample_z_ab_from_edge_expr_orig(i) \
 (\
 	pow(beta[i], y) * pow(1-beta[i], 1-y) * pi_a[i] * pi_b[i] \
@@ -341,6 +261,25 @@ inline int sample_z_ab_from_edge(
 		const double random,
 		global double *p
 		) {
+
+	if (0) {
+		printf((__constant char *)"pi_a: ");
+		for (int k = 0; k < K; k++) {
+			printf((__constant char *)"%.12f ", pi_a[k]);
+		}
+		printf((__constant char *)"\n");
+		printf((__constant char *)"pi_b: ");
+		for (int k = 0; k < K; k++) {
+			printf((__constant char *)"%.12f ", pi_b[k]);
+		}
+		printf((__constant char *)"\n");
+		printf((__constant char *)"beta: ");
+		for (int k = 0; k < K; k++) {
+			printf((__constant char *)"%.12f ", beta[k]);
+		}
+		printf((__constant char *)"\n");
+	}
+
 	int y_1 = y - 1;
 	int y2_1 = y + y_1;
 	p[0] = sample_z_ab_from_edge_expr(0);
@@ -349,6 +288,7 @@ inline int sample_z_ab_from_edge(
 	}
 
 	double location = random * p[K-1];
+	// printf((__constant char *)"random %.12lf location %.12lf\n", random, location);
 	return find_le(p, location, K, 0);
 }
 
@@ -358,8 +298,7 @@ inline int sample_latent_vars_neighbors_of(
 		global const Graph *hg,
 		global int* neighbor_nodes,
 		global int* neighbor_nodes_hash,
-		ulong2* randomSeed,
-		int start)
+		ulong2* randomSeed)
 {
 	if (bufs->bufs.Nodes[node] == 1218) {
 		int2 desc = hg->_g.node_edges[node];
@@ -413,9 +352,18 @@ inline int sample_latent_vars_neighbors_of(
 #ifdef RANDOM_FOLLOWS_SCALABLE_GRAPH
 	printf((__constant char *)"Store an extra %d randoms\n", NEIGHBOR_SAMPLE_SIZE);
 	for (int i = 0; i < NEIGHBOR_SAMPLE_SIZE; ++i) {
-		bufs->bufs.stored_random[start + node * NEIGHBOR_SAMPLE_SIZE + i] = random(randomSeed);
+		bufs->bufs.stored_random[node * NEIGHBOR_SAMPLE_SIZE + i] = random(randomSeed);
 	}
 #endif
+
+	if (0) {
+		printf((__constant char *)"Neighbors: ");
+		for (int i = 0; i < NEIGHBOR_SAMPLE_SIZE; ++i) {
+			int x = neighbor_nodes[i];
+			printf((__constant char *)"%d ", neighbor_nodes_hash[x]);
+		}
+		printf((__constant char *)"\n");
+	}
 
 	for (int i = 0; i < NEIGHBOR_SAMPLE_SIZE; ++i) {
 		int x = neighbor_nodes[i];
@@ -428,7 +376,6 @@ inline int sample_latent_vars_neighbors_of(
 
 kernel void sample_latent_vars_neighbors(
 		global Buffers *bufs,
-		const int start,
 		const int N) // #nodes
 		{
 	size_t gid = get_global_id(0);
@@ -445,8 +392,7 @@ kernel void sample_latent_vars_neighbors(
 				// index by i
 				bufs->bufs.NodesNeighbors + i * NEIGHBOR_SAMPLE_SIZE,
 				bufs->bufs.NodesNeighborsHash + i * HASH_SIZE,
-				&randomSeed,
-				start);
+				&randomSeed);
 		if (ret) break;
 	}
 	bufs->bufs.RandomSeed[gid] = randomSeed;
@@ -456,6 +402,8 @@ kernel void sample_latent_vars_neighbors(
 inline int sample_latent_vars_sample_z_ab_of(
 		global Buffers *bufs,
 		const int node,
+		const int start,		// neighbor subset start
+		const int neighbors,	// neighbor subset size
 		const int N,		// #nodes
 		global const Graph *g,
 		global int* neighbor_nodes,
@@ -468,6 +416,7 @@ inline int sample_latent_vars_sample_z_ab_of(
 	for (int i = 0; i < K; ++i) z[i] = 0;
 
 	for (int i = 0; i < NEIGHBOR_SAMPLE_SIZE; ++i) {
+		// FIXME indirect through global neighbor lookup
 		int neighbor = neighbor_nodes[i];
 
 		int y_ab = graph_has_peer(g, node, neighbor);
@@ -476,7 +425,7 @@ inline int sample_latent_vars_sample_z_ab_of(
 				pi + (N + node * NEIGHBOR_SAMPLE_SIZE + i) * K,	// pi(neighbor(i) of node)
 				beta, epsilon, y_ab,
 #ifdef RANDOM_FOLLOWS_SCALABLE_GRAPH
-				bufs->bufs.stored_random[node * NEIGHBOR_SAMPLE_SIZE + i],
+				bufs->bufs.stored_random[start + node * NEIGHBOR_SAMPLE_SIZE + i],
 #else
 				random(randomSeed),
 #endif
@@ -496,6 +445,8 @@ inline int sample_latent_vars_sample_z_ab_of(
 
 kernel void sample_latent_vars_sample_z_ab(
 		global Buffers *bufs,
+		const int start,
+		const int neighbors,
 		const int N, // #nodes
 		const double epsilon
 		){
@@ -510,6 +461,8 @@ kernel void sample_latent_vars_sample_z_ab(
 		int ret = sample_latent_vars_sample_z_ab_of(
 				bufs,
 				node,
+				start,
+				neighbors,
 				N,
 				bufs->bufs.G,
 				// index by i
@@ -630,24 +583,6 @@ int sample_latent_vars2_(
 	int y = graph_has_peer(g, edge.x, bufs->bufs.Nodes[edge.y]);
 	global double *pi_a = pi + edge.x * K;
 	global double *pi_b = pi + edge.y * K;
-
-	if (0) {
-		printf((__constant char *)"pi_a: ");
-		for (int k = 0; k < K; k++) {
-			printf((__constant char *)"%.12f ", pi_a[k]);
-		}
-		printf((__constant char *)"\n");
-		printf((__constant char *)"pi_b: ");
-		for (int k = 0; k < K; k++) {
-			printf((__constant char *)"%.12f ", pi_b[k]);
-		}
-		printf((__constant char *)"\n");
-		printf((__constant char *)"beta: ");
-		for (int k = 0; k < K; k++) {
-			printf((__constant char *)"%.12f ", beta[k]);
-		}
-		printf((__constant char *)"\n");
-	}
 
 	p[0] = sample_latent_vars2_expr(0);
 	double p_sum = p[0];
