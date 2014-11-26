@@ -402,7 +402,7 @@ kernel void sample_latent_vars_neighbors(
 inline int sample_latent_vars_sample_z_ab_of(
 		global Buffers *bufs,
 		const int node,
-		const int start,		// neighbor subset start
+		const int offset,		// neighbor subset offset
 		const int neighbors,	// neighbor subset size
 		const int N,		// #nodes
 		global const Graph *g,
@@ -413,19 +413,22 @@ inline int sample_latent_vars_sample_z_ab_of(
 		global int *z, /* K elements */
 		ulong2* randomSeed,
 		global double *p) {
-	for (int i = 0; i < K; ++i) z[i] = 0;
+	if (offset == 0) {
+		for (int i = 0; i < K; ++i) z[i] = 0;
+	}
 
-	for (int i = 0; i < NEIGHBOR_SAMPLE_SIZE; ++i) {
+	for (int i = 0; i < neighbors; ++i) {
 		// FIXME indirect through global neighbor lookup
-		int neighbor = neighbor_nodes[i];
+		int neighbor = neighbor_nodes[i + offset];
 
 		int y_ab = graph_has_peer(g, node, neighbor);
 		int z_ab = sample_z_ab_from_edge(
 				pi + node * K,		// pi(node)
-				pi + (N + node * NEIGHBOR_SAMPLE_SIZE + i) * K,	// pi(neighbor(i) of node)
+				pi + (N + node * neighbors + i) * K,	// pi(neighbor(i) of node)
 				beta, epsilon, y_ab,
 #ifdef RANDOM_FOLLOWS_SCALABLE_GRAPH
-				bufs->bufs.stored_random[start + node * NEIGHBOR_SAMPLE_SIZE + i],
+				// FIXME: stride through the randoms in a pattern that matches the creates
+				bufs->bufs.stored_random[offset + node * NEIGHBOR_SAMPLE_SIZE + i],
 #else
 				random(randomSeed),
 #endif
@@ -445,7 +448,7 @@ inline int sample_latent_vars_sample_z_ab_of(
 
 kernel void sample_latent_vars_sample_z_ab(
 		global Buffers *bufs,
-		const int start,
+		const int offset,
 		const int neighbors,
 		const int N, // #nodes
 		const double epsilon
@@ -461,12 +464,12 @@ kernel void sample_latent_vars_sample_z_ab(
 		int ret = sample_latent_vars_sample_z_ab_of(
 				bufs,
 				node,
-				start,
+				offset,
 				neighbors,
 				N,
 				bufs->bufs.G,
 				// index by i
-				bufs->bufs.NodesNeighbors + i * NEIGHBOR_SAMPLE_SIZE,
+				bufs->bufs.NodesNeighbors + i * neighbors,
 				bufs->bufs.Pi,
 				bufs->bufs.Beta,
 				epsilon,

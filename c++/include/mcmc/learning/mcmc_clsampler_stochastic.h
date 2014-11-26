@@ -140,7 +140,8 @@ public:
 		std::cout << "Randomness IS NOT compatible with nonscaling graph version" << std::endl;
 #endif
 
-		// ::size_t num_edges_in_batch = network.minibatch_edges_for_strategy(mini_batch_size, strategy);
+		std::cerr << "FIXME FIXME FIXME redo max. edges for strategy" << std::endl;
+		::size_t num_edges_in_batch = network.minibatch_edges_for_strategy(mini_batch_size, strategy);
 		::size_t num_nodes_in_batch = network.minibatch_nodes_for_strategy(mini_batch_size, strategy);
 
 		info(std::cout);
@@ -151,31 +152,21 @@ public:
 			bufferSize = deviceMem;
 		}
 
-		// Sub-batching to calculate neighbors. Necessary because not all of HG fits
-		// in device memory. Batch by dividing the minibatch nodes.
-		subBatchNodes = num_nodes_in_batch;
-		::size_t pi_rows = subBatchNodes * (1 + real_num_node_sample());
-		if (pi_rows * sizeof(cl_double) > deviceMem) {
-			subBatchNodes = deviceMem / (sizeof(cl_double) * real_num_node_sample()) - 1;
-			std::cout << "pi/phi submatrix does not fit in device. Use " << ((num_nodes_in_batch + subBatchNodes - 1) / subBatchNodes) << " sub-batches" << std::endl;
-			pi_rows = subBatchNodes * (1 + real_num_node_sample());
-		}
-
 		// Sub-batching to calculate z_ab. Necessary because not all of pi/phi fits
 		// in device memory. Batch by dividing neighbors.
 		subNeighbors = real_num_node_sample();
 		::size_t nodes_neighbors = num_nodes_in_batch * (1 + subNeighbors);
 		if (K * nodes_neighbors * sizeof(cl_double) > bufferSize) {
+			if (bufferSize / (K * sizeof(cl_double) * num_nodes_in_batch) < 2) {
+				throw BufferSizeException("Buffer too small for nodes + 1 neighbor chunk");
+			}
 			subNeighbors = bufferSize / (K * sizeof(cl_double) * num_nodes_in_batch) - 1;
 			std::cout << "pi/phi submatrix does not fit in device. Limit neighbor subset size to " << subNeighbors << std::endl;
 			nodes_neighbors = num_nodes_in_batch * (1 + subNeighbors);
 		}
 
-		std::cerr << "FIXME FIXME FIXME redo max. edges for strategy" << std::cerr;
-		::size_t subBatchEdges = network.minibatch_edges_for_strategy(subBatchNodes, strategy);
-
-		hostPiBuffer = std::vector<double>(pi_rows * K);
-		hostPhiBuffer = std::vector<double>(pi_rows * K);
+		hostPiBuffer = std::vector<double>(nodes_neighbors * K);
+		hostPhiBuffer = std::vector<double>(nodes_neighbors * K);
 		hostNeighbors = std::vector<cl_int>(num_nodes_in_batch * real_num_node_sample());
 
 		graph_program = this->clContext.createProgram(BOOST_STRINGIZE(PROJECT_HOME) "/../OpenCL/graph.cl", progOpts);
@@ -199,7 +190,7 @@ public:
 		clBuffers = createBuffer("clBuffers", CL_MEM_READ_WRITE, 64 * 100); // enough space for 100 * 8 pointers
 
 		clNodes = createBuffer("clNodes", CL_MEM_READ_ONLY,
-				num_nodes_in_batch * sizeof(cl_int)
+				10 * num_nodes_in_batch * sizeof(cl_int)
 				);
 		clNodesNeighbors = createBuffer("clNodesNeighbors", CL_MEM_READ_WRITE,
 				num_nodes_in_batch * real_num_node_sample() * sizeof(cl_int)
@@ -209,14 +200,14 @@ public:
 				);
 
 		clEdges = createBuffer("clEdges", CL_MEM_READ_ONLY,
-				subBatchEdges * sizeof(cl_int2)
+				num_edges_in_batch * sizeof(cl_int2)
 				);
 
 		clPi = createBuffer("clPi", CL_MEM_READ_WRITE,
-				pi_rows * K * sizeof(cl_double) // #total_nodes x #K
+				nodes_neighbors * K * sizeof(cl_double) // #total_nodes x #K
 				);
 		clPhi = createBuffer("clPhi", CL_MEM_READ_WRITE,
-				pi_rows * K * sizeof(cl_double) // #total_nodes x #K
+				num_nodes_in_batch * K * sizeof(cl_double) // #total_nodes x #K
 				);
 
 		clBeta = createBuffer("clBeta", CL_MEM_READ_WRITE,
@@ -230,11 +221,11 @@ public:
 				);
 
 		clZ = createBuffer("clZ", CL_MEM_READ_WRITE,
-				subBatchNodes * K * sizeof(cl_int)
+				num_nodes_in_batch * K * sizeof(cl_int)
 				);
 
 		clScratch = createBuffer("clScratch", CL_MEM_READ_WRITE,
-				std::max(subBatchNodes, globalThreads) * K * sizeof(cl_double)
+				std::max(num_nodes_in_batch, globalThreads) * K * sizeof(cl_double)
 				);
 		clRandomSeed = createBuffer("clRandomSeed", CL_MEM_READ_WRITE,
 				globalThreads * sizeof(cl_ulong2)
@@ -305,7 +296,6 @@ public:
 		random_gamma_kernel.setArg(Idx++, 2);
 		clContext.queue.enqueueNDRangeKernel(random_gamma_kernel, cl::NullRange, cl::NDRange(K_workers), cl::NDRange(1));
 
-#if defined INITIALIZE_PHI_ON_DEVICE || defined RANDOM_FOLLOWS_SCALABLE_GRAPH
         // model parameters and re-parameterization
         // since the model parameter - \pi and \beta should stay in the simplex,
         // we need to restrict the sum of probability equals to 1.  The way we
@@ -313,6 +303,7 @@ public:
         // introduce another set of variables, and update them first followed by
         // updating \pi and \beta.
 		// phi = Random::random->gamma(1, 1, N, K);					// parameterization for \pi
+#if 0 && (defined INITIALIZE_PHI_ON_DEVICE || defined RANDOM_FOLLOWS_SCALABLE_GRAPH)
 		Idx = 0;
 		random_gamma_kernel.setArg(Idx++, clBuffers);
 		random_gamma_kernel.setArg(Idx++, clPhi);
@@ -328,6 +319,11 @@ public:
 		device_row_normalize(clPi, clPhi, N, K);
 		// np::row_normalize(&pi, phi);
 #endif
+#ifdef RANDOM_FOLLOWS_SCALABLE_GRAPH
+		std::cerr << "******** FIXME FIXME FIXME Need to advance gamma random on the device" << std::endl;
+// #error "Need to advance gamma random on the device
+#endif
+
 #ifndef INITIALIZE_PHI_ON_DEVICE
 #ifdef RANDOM_FOLLOWS_SCALABLE_GRAPH
 		(void)kernelRandom.gamma(100.0, 0.01, K, 2);		// parameterization for \beta
@@ -498,7 +494,7 @@ public:
 					size = real_num_node_sample() - offset;
 				}
 
-				t_latent_vars_sample_z_ab.stop();
+				t_latent_vars_sample_z_ab.start();
 				sample_latent_vars_sample_z_ab(nodes, offset, size);
 				t_latent_vars_sample_z_ab.stop();
 
@@ -881,7 +877,7 @@ protected:
 	}
 
 	void commit_phi(const std::vector<int> &nodes) {
-		::size_t i;
+		::size_t i = 0;
 		for (auto n: nodes) {
 			pi[n] = std::vector<cl_double>(hostPiBuffer.begin() + i * K, hostPiBuffer.begin() + (i + 1) * K);
 			phi[n] = std::vector<cl_double>(hostPhiBuffer.begin() + i * K, hostPhiBuffer.begin() + (i + 1) * K);
@@ -914,7 +910,7 @@ protected:
 
 		::size_t num_edges_in_batch = network.minibatch_edges_for_strategy(mini_batch_size, strategy);
 		::size_t num_nodes_in_batch = network.minibatch_nodes_for_strategy(mini_batch_size, strategy);
-		num_edges_in_batch = std::max(num_edges_in_batch, num_nodes_in_batch * network.get_max_fan_out());
+		num_edges_in_batch = std::max(num_edges_in_batch, network.get_max_fan_out(num_nodes_in_batch));
 		clSubGraph.init(*this, &clGraph, linkedMap, N, num_nodes_in_batch, num_edges_in_batch);
 
 		linkedMap.clear();
@@ -927,8 +923,6 @@ protected:
 			linkedMap[e.first.first].push_back(e.first.second);
 			linkedMap[e.first.second].push_back(e.first.first);
 		}
-		// BASED ON STRATIFIED RANDOM NODE SAMPLING STRATEGY
-		num_edges_in_batch = num_nodes_in_batch - 1;
 		clSubHeldOutGraph.init(*this, &clHeldOutGraph, linkedMap, N, num_nodes_in_batch, num_edges_in_batch);
 
 #if MCMC_CL_STOCHASTIC_TEST_GRAPH
@@ -1004,7 +998,6 @@ protected:
 	std::vector<double> hostPhiBuffer;
 	std::vector<cl_int> hostNeighbors;
 	::size_t bufferSize;
-	::size_t subBatchNodes;
 	::size_t subNeighbors;
 
 	std::string progOpts;

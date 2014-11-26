@@ -5,6 +5,8 @@
 #include <set>
 #include <unordered_set>
 
+#include <boost/bind.hpp>
+
 #include "mcmc/types.h"
 #include "mcmc/data.h"
 #include "mcmc/random.h"
@@ -132,6 +134,7 @@ public:
 			return mini_batch_size + 1;
 		case strategy::STRATIFIED_RANDOM_NODE:
 			return mini_batch_size + 1;
+			// return fan_out_cumul_distro[mini_batch_size];
 		default:
 			throw MCMCException("Invalid sampling strategy");
 		}
@@ -499,6 +502,9 @@ protected:
 		}
 	}
 
+	template <class T>
+	static bool descending(T i, T j) { return (i > j); }
+
 	void calc_max_fan_out() {
 		std::unordered_map<int, ::size_t> fan_out;
 		std::unordered_map<int, ::size_t> fan_in;
@@ -528,12 +534,24 @@ protected:
 			}
 		}
 
+		std::transform(fan_out.begin(), fan_out.end(),
+					   std::back_inserter(fan_out_cumul_distro),
+					   boost::bind(&std::unordered_map<int, ::size_t>::value_type::second, _1));
+		std::sort(fan_out_cumul_distro.begin(), fan_out_cumul_distro.end(), descending< ::size_t>);
+		std::partial_sum(fan_out_cumul_distro.begin(), fan_out_cumul_distro.end(),
+						 fan_out_cumul_distro.begin());
+
 		std::cerr << "max_fan_out " << max_fan_out << std::endl;
 	}
 
 public:
 	::size_t get_max_fan_out() const {
 		return max_fan_out;
+	}
+
+
+	::size_t get_max_fan_out(::size_t batch_size) const {
+		return fan_out_cumul_distro[batch_size];
 	}
 
 
@@ -617,6 +635,8 @@ protected:
 	::size_t	num_pieces;
 
 	::size_t	max_fan_out;
+
+	std::vector< ::size_t> fan_out_cumul_distro;
 };
 
 }; // namespace mcmc

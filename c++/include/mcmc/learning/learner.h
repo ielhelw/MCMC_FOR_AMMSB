@@ -162,7 +162,7 @@ protected:
 														 edge->second, beta);
 			// std::cerr << std::fixed << std::setprecision(12) << e << " in? " << (e.in(network.get_linked_edges()) ? "True" : "False") << " -> " << edge_likelihood << std::endl;
 			// FIXME FIXME should not test again if we already know
-			assert(edge->second == e.in(network.get_linked_edges()));
+			// assert(edge->second == e.in(network.get_linked_edges()));
 			if (edge->second) {
 				link_count++;
 				link_likelihood += edge_likelihood;
