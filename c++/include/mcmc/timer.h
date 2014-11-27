@@ -74,7 +74,7 @@ protected:
 	static const ::size_t MILLI = 1000;
 	static const ::size_t MICRO = 1000000;
 	static const ::size_t NANO = 1000000000;
-	static const ::size_t nameWidth = 30;
+	static const ::size_t nameWidth = 36;
 	static const ::size_t totalWidth = 12;
 	static const ::size_t tickWidth = 8;
 	static const ::size_t perTickWidth = 14;

@@ -188,6 +188,28 @@ inline int hash_put(const int key, global int* buckets, const int n_buckets) {
 }
 
 
+#ifdef RANDOM_FOLLOWS_SCALABLE_GRAPH
+kernel void
+random_gamma_dummy(global Buffers *bufs,
+				   double eta0,
+				   double eta1,
+				   int X,
+				   int Y)
+{
+	size_t gid = get_global_id(0);
+	size_t gsize = get_global_size(0);
+	ulong2 randomSeed = bufs->bufs.RandomSeed[gid];
+
+	for (int i = gid; i < X; i += gsize) {
+		for (int j = 0; j < Y; j++) {
+			(void)rand_gamma(&randomSeed, eta0, eta1);
+		}
+	}
+	bufs->bufs.RandomSeed[gid] = randomSeed;
+}
+#endif
+
+
 kernel void
 random_gamma(global Buffers *bufs,
 			 global double *data,
@@ -231,6 +253,86 @@ row_normalize(const global double *in,
 			gout[j] = gin[j] / sum;
 		}
 	}
+}
+
+
+typedef struct PERP_ACCU {
+	double		likelihood;
+	int			count;
+	int			padding;
+} perp_accu_t;	// hope padding/alignment is the same as on the host...
+
+
+inline double
+cal_edge_likelihood(global const double *pi_a,
+					global const double *pi_b,
+					const int y,
+					global const double *beta,
+					const double epsilon)
+{
+	double s = 0.0;
+	int iy = y ? 1 : 0;
+	int y_1 = iy - 1;
+	int y2_1 = y_1 + iy;
+	double sum = 0.0;
+	for (int k = 0; k < K; k++) {
+		double f = pi_a[k] * pi_b[k];
+		sum += f;
+		s += f * (beta[k] * y2_1 - y_1);
+	}
+	if (! y) {
+		s += (1.0 - sum) * (1.0 - epsilon);
+	}
+
+	if (s < 1.0e-30) {
+		s = 1.0e-30;
+	}
+
+	return log(s);
+}
+
+
+kernel void cal_perplexity(
+		global const int3 hg[],
+		const int H,			// |hg|
+		global const double *pi,// (#total_nodes, K)
+		global const double *beta,// (#K)
+		const double epsilon,
+		global double *linkLikelihood,	// global_size
+		global double *nonLinkLikelihood,	// global_size
+		global int *linkCount,	// global_size
+		global int *nonLinkCount	// global_size
+		)
+{
+	size_t gid = get_global_id(0);
+	size_t gsize = get_global_size(0);
+
+	double l0 = 0.0;
+	double l1 = 0.0;
+	int c0 = 0;
+	int c1 = 0;
+	for (int i = gid; i < H; i += gsize) {
+		global const int3 *edge = &hg[i];
+		double el = cal_edge_likelihood(pi + (*edge).x * K,
+										pi + (*edge).y * K,
+										(*edge).z,
+										beta,
+										epsilon);
+		if ((*edge).z == 1) {
+			l0 += el;
+			c0++;
+		} else {
+			l1 += el;
+			c1++;
+		}
+	}
+
+	linkLikelihood[gid] = l0;
+	linkCount[gid] = c0;
+	nonLinkLikelihood[gid] = l1;
+	nonLinkCount[gid] = c1;
+
+	// and perform a scan over scratch.{likelihood,count} + a scan over scratch'.{likelihood,count}
 }
 
 

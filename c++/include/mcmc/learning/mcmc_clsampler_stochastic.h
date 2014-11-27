@@ -176,6 +176,9 @@ public:
 
 		sampler_program = this->clContext.createProgram(BOOST_STRINGIZE(PROJECT_HOME) "/../OpenCL/sampler.cl", progOpts);
 		random_gamma_kernel = cl::Kernel(sampler_program, "random_gamma");
+#ifdef RANDOM_FOLLOWS_SCALABLE_GRAPH
+		random_gamma_dummy_kernel = cl::Kernel(sampler_program, "random_gamma_dummy");
+#endif
 		row_normalize_kernel = cl::Kernel(sampler_program, "row_normalize");
 		sample_latent_vars_neighbors_kernel = cl::Kernel(sampler_program, "sample_latent_vars_neighbors");
 		sample_latent_vars_sample_z_ab_kernel = cl::Kernel(sampler_program, "sample_latent_vars_sample_z_ab");
@@ -185,6 +188,7 @@ public:
 		update_beta_calculate_grads_kernel = cl::Kernel(sampler_program, "update_beta_calculate_grads");
 		update_beta_calculate_theta_kernel = cl::Kernel(sampler_program, "update_beta_calculate_theta");
 		update_beta_calculate_beta_kernel = cl::Kernel(sampler_program, "update_beta_calculate_beta");
+		cal_perplexity_kernel = cl::Kernel(sampler_program, "cal_perplexity");
 		init_buffers_kernel = cl::Kernel(sampler_program, "init_buffers");
 
 		clBuffers = createBuffer("clBuffers", CL_MEM_READ_WRITE, 64 * 100); // enough space for 100 * 8 pointers
@@ -303,25 +307,14 @@ public:
         // introduce another set of variables, and update them first followed by
         // updating \pi and \beta.
 		// phi = Random::random->gamma(1, 1, N, K);					// parameterization for \pi
-#if 0 && (defined INITIALIZE_PHI_ON_DEVICE || defined RANDOM_FOLLOWS_SCALABLE_GRAPH)
-		Idx = 0;
-		random_gamma_kernel.setArg(Idx++, clBuffers);
-		random_gamma_kernel.setArg(Idx++, clPhi);
-		random_gamma_kernel.setArg(Idx++, (double)1.0);
-		random_gamma_kernel.setArg(Idx++, (double)1.0);
-		random_gamma_kernel.setArg(Idx++, (int)N);
-		random_gamma_kernel.setArg(Idx++, (int)K);
-		clContext.queue.enqueueNDRangeKernel(random_gamma_kernel, cl::NullRange, cl::NDRange(globalThreads), cl::NDRange(1));
-
-		// pi.resize(phi.size(), std::vector<double>(phi[0].size()));
-        // self._pi = self.__phi/np.sum(self.__phi,1)[:,np.newaxis]
-		clContext.queue.finish();
-		device_row_normalize(clPi, clPhi, N, K);
-		// np::row_normalize(&pi, phi);
-#endif
 #ifdef RANDOM_FOLLOWS_SCALABLE_GRAPH
-		std::cerr << "******** FIXME FIXME FIXME Need to advance gamma random on the device" << std::endl;
-// #error "Need to advance gamma random on the device
+		Idx = 0;
+		random_gamma_dummy_kernel.setArg(Idx++, clBuffers);
+		random_gamma_dummy_kernel.setArg(Idx++, (double)1.0);
+		random_gamma_dummy_kernel.setArg(Idx++, (double)1.0);
+		random_gamma_dummy_kernel.setArg(Idx++, (int)N);
+		random_gamma_dummy_kernel.setArg(Idx++, (int)K);
+		clContext.queue.enqueueNDRangeKernel(random_gamma_dummy_kernel, cl::NullRange, cl::NDRange(globalThreads), cl::NDRange(1));
 #endif
 
 #ifndef INITIALIZE_PHI_ON_DEVICE
@@ -428,6 +421,11 @@ public:
 		vexErr = 0;
 
 		errMsg = new char[ERROR_MESSAGE_LENGTH];
+
+		clLinkLikelihood = createBuffer("clLinkLikelihood", CL_MEM_READ_WRITE, globalThreads * sizeof(cl_double));
+		clNonLinkLikelihood = createBuffer("clNonLinkLikelihood", CL_MEM_READ_WRITE, globalThreads * sizeof(cl_double));
+		clLinkCount = createBuffer("clLinkCount", CL_MEM_READ_WRITE, globalThreads * sizeof(cl_int));
+		clNonLinkCount = createBuffer("clNonLinkCount", CL_MEM_READ_WRITE, globalThreads * sizeof(cl_int));
 
 		clContext.queue.finish();
 	}
@@ -898,6 +896,105 @@ protected:
         return std::vector<int>(node_set.begin(), node_set.end());
 	}
 
+	double deviceSumDouble(cl::Buffer &xBuffer) {
+		vex::backend::opencl::device_vector<double> xDev(xBuffer);
+		vex::vector<double> X(vexContext.queue(0), xDev);
+
+		double y = csumDouble(X);
+
+		return y;
+	}
+
+	int deviceSumInt(cl::Buffer &xBuffer) {
+		vex::backend::opencl::device_vector<int> xDev(xBuffer);
+		vex::vector<int> X(vexContext.queue(0), xDev);
+
+		int y = csumInt(X);
+
+		return y;
+	}
+
+	template <typename T>
+	T deviceSum(cl::Buffer &xBuffer) {
+		vex::backend::opencl::device_vector<T> xDev(xBuffer);
+		vex::vector<T> X(vexContext.queue(0), xDev);
+
+		vex::Reductor<T, vex::SUM_Kahan> csum;
+		T y = csum(X);
+
+		return y;
+	}
+
+	double device_cal_perplexity_held_out() {
+	/**
+	 * calculate the perplexity for data.
+	 * perplexity defines as exponential of negative average log likelihood.
+	 * formally:
+	 *     ppx = exp(-1/N * \sum){i}^{N}log p(y))
+	 *
+	 * we calculate average log likelihood for link and non-link separately, with the
+	 * purpose of weighting each part proportionally. (the reason is that we sample
+	 * the equal number of link edges and non-link edges for held out data and test data,
+	 * which is not true representation of actual data set, which is extremely sparse.
+	 */
+		std::cerr << "FIXME: chunk up pi/phi to incrementally calculate the likelihoods and counts" << std::endl;
+
+		cl_double link_likelihood = 0.0;
+		cl_double non_link_likelihood = 0.0;
+		cl_int link_count = 0;
+		cl_int non_link_count = 0;
+
+		cl_int H = static_cast<cl_int>(network.get_held_out_set().size());
+
+		int arg = 0;
+		cal_perplexity_kernel.setArg(arg++, clIterableHeldOutGraph);
+		cal_perplexity_kernel.setArg(arg++, H);
+		cal_perplexity_kernel.setArg(arg++, clPi);
+		cal_perplexity_kernel.setArg(arg++, clBeta);
+		cal_perplexity_kernel.setArg(arg++, (cl_double)epsilon);
+		cal_perplexity_kernel.setArg(arg++, clLinkLikelihood);
+		cal_perplexity_kernel.setArg(arg++, clNonLinkLikelihood);
+		cal_perplexity_kernel.setArg(arg++, clLinkCount);
+		cal_perplexity_kernel.setArg(arg++, clNonLinkCount);
+
+		clContext.queue.finish();
+		clContext.queue.enqueueNDRangeKernel(cal_perplexity_kernel, cl::NullRange, cl::NDRange(globalThreads), cl::NDRange(groupSize));
+		clContext.queue.finish();
+
+		link_likelihood = deviceSum<double>(clLinkLikelihood);
+		non_link_likelihood = deviceSum<double>(clNonLinkLikelihood);
+		link_count = deviceSum<int>(clLinkCount);
+		non_link_count = deviceSum<int>(clNonLinkCount);
+
+		clContext.queue.finish();
+		// direct calculation.
+		double avg_likelihood = (link_likelihood + non_link_likelihood) / (link_count + non_link_count);
+		if (true) {
+			double avg_likelihood1 = link_ratio * (link_likelihood / link_count) + \
+										 (1.0 - link_ratio) * (non_link_likelihood / non_link_count);
+			std::cerr << std::fixed << std::setprecision(12) << avg_likelihood << " " << (link_likelihood / link_count) << " " << link_count << " " << \
+				(non_link_likelihood / non_link_count) << " " << non_link_count << " " << avg_likelihood1 << std::endl;
+			// std::cerr << "perplexity score is: " << exp(-avg_likelihood) << std::endl;
+		}
+
+		// return std::exp(-avg_likelihood);
+		return (-avg_likelihood);
+	}
+
+	void prepare_iterable_cl_graph(cl::Buffer &iterableGraph, const EdgeMap &data) {
+		std::unique_ptr<cl_int3[]> hIterableGraph(new cl_int3[data.size()]);
+		::size_t i = 0;
+		for (auto a: data) {
+			cl_int3 e;
+			e.s[0] = a.first.first;
+			e.s[1] = a.first.second;
+			e.s[2] = a.second ? 1 : 0;
+			hIterableGraph.get()[i] = e;
+			i++;
+		}
+		iterableGraph = createBuffer("iterableGraph", CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR, data.size() * sizeof(cl_int3), hIterableGraph.get());
+	}
+
 	void init_graph() {
 		graph_program = this->clContext.createProgram(BOOST_STRINGIZE(PROJECT_HOME) "/../OpenCL/graph.cl", progOpts);
 		graph_init_kernel = cl::Kernel(graph_program, "graph_init");
@@ -924,6 +1021,8 @@ protected:
 			linkedMap[e.first.second].push_back(e.first.first);
 		}
 		clSubHeldOutGraph.init(*this, &clHeldOutGraph, linkedMap, N, num_nodes_in_batch, num_edges_in_batch);
+
+		prepare_iterable_cl_graph(clIterableHeldOutGraph, network.get_held_out_set());
 
 #if MCMC_CL_STOCHASTIC_TEST_GRAPH
 		test_graph();
@@ -1009,6 +1108,9 @@ protected:
 
 	cl::Kernel graph_init_kernel;
 	cl::Kernel random_gamma_kernel;
+#ifdef RANDOM_FOLLOWS_SCALABLE_GRAPH
+	cl::Kernel random_gamma_dummy_kernel;
+#endif
 	cl::Kernel row_normalize_kernel;
 	cl::Kernel sample_latent_vars_neighbors_kernel;
 	cl::Kernel sample_latent_vars_sample_z_ab_kernel;
@@ -1018,6 +1120,7 @@ protected:
 	cl::Kernel update_beta_calculate_grads_kernel;
 	cl::Kernel update_beta_calculate_theta_kernel;
 	cl::Kernel update_beta_calculate_beta_kernel;
+	cl::Kernel cal_perplexity_kernel;
 	cl::Kernel init_buffers_kernel;
 
 	cl::Buffer clBuffers;
@@ -1026,6 +1129,8 @@ protected:
 	cl::Buffer clGraph;
 	GraphWrapper clSubHeldOutGraph;
 	cl::Buffer clHeldOutGraph;
+
+	cl::Buffer clIterableHeldOutGraph;
 
 	cl::Buffer clNodes;
 	cl::Buffer clNodesNeighbors;
@@ -1050,6 +1155,11 @@ protected:
 	vex::Context vexContext;
 	vex::Reductor<double, vex::SUM_Kahan> csumDouble;
 	vex::Reductor<int, vex::SUM_Kahan> csumInt;
+
+	cl::Buffer clLinkLikelihood;
+	cl::Buffer clNonLinkLikelihood;
+	cl::Buffer clLinkCount;
+	cl::Buffer clNonLinkCount;
 
 protected:
 	// replicated in both mcmc_sampler_
