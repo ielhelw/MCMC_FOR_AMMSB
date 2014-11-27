@@ -91,7 +91,7 @@ public:
 		  csumDouble(vexContext), csumInt(vexContext),
    		  kernelRandom(42),
 		  groupSize(args.openclGroupSize), numGroups(args.openclNumGroups),
-		  globalThreads(groupSize * numGroups),
+		  globalThreads(args.openclGroupSize * args.openclNumGroups),
 		  kRoundedThreads(round_up_to_multiples(K, groupSize)), totalAllocedClBufers(0) {
 
         // step size parameters.
@@ -110,6 +110,21 @@ public:
 		if (args.mini_batch_size == 0) {
 			mini_batch_size = N / 10;	// old default for STRATIFIED_RANDOM_NODE_SAMPLING
 		}
+
+		t_outer = timer::Timer("  outer");
+		t_perplexity = timer::Timer("  perplexity");
+		t_mini_batch = timer::Timer("  sample_mini_batch");
+		t_nodes_in_mini_batch = timer::Timer("  nodes_in_mini_batch");
+		t_latent_vars_neighbors = timer::Timer("  sample_latent_vars_neighbors");
+		t_latent_vars_sample_z_ab = timer::Timer("  sample_latent_vars_sample_z_ab");
+		t_latent_vars2 = timer::Timer("  sample_latent_vars2");
+		t_stage_held_out = timer::Timer("  stage_held_out");
+		t_stage_graph = timer::Timer("  stage_graph");
+		t_stage_pi = timer::Timer("  stage_pi");
+		t_stage_pi_neighbors = timer::Timer("  stage_pi_neighbors");
+		t_stage_phi = timer::Timer("  stage_phi");
+		t_update_pi = timer::Timer("  update_pi");
+		t_update_beta = timer::Timer("  update_beta");
 
 		hash_table_size = round_next_power_2(real_num_node_sample());
 		if ((double)hash_table_size / real_num_node_sample() < 1.8) {
@@ -435,15 +450,19 @@ public:
 
 	virtual void run() {
 		/** run mini-batch based MCMC sampler, based on the sungjin's note */
-		timer::Timer t_outer("  outer");
-		timer::Timer t_perplexity("  perplexity");
-		timer::Timer t_mini_batch("  sample_mini_batch");
-		timer::Timer t_nodes_in_mini_batch("  nodes_in_mini_batch");
-		timer::Timer t_latent_vars_neighbors("  sample_latent_vars_neighbors");
-		timer::Timer t_latent_vars_sample_z_ab("  sample_latent_vars_sample_z_ab");
-		timer::Timer t_latent_vars2("  sample_latent_vars2");
-		timer::Timer t_update_pi("  update_pi");
-		timer::Timer t_update_beta("  update_beta");
+		// timer::Timer t_outer("  outer");
+		// timer::Timer t_perplexity("  perplexity");
+		// timer::Timer t_mini_batch("  sample_mini_batch");
+		// timer::Timer t_nodes_in_mini_batch("  nodes_in_mini_batch");
+		// timer::Timer t_latent_vars_neighbors("  sample_latent_vars_neighbors");
+		// timer::Timer t_latent_vars_sample_z_ab("  sample_latent_vars_sample_z_ab");
+		// timer::Timer t_latent_vars2("  sample_latent_vars2");
+		// timer::Timer t_stage_held_out("  stage_held_out");
+		// timer::Timer t_stage_graph("  stage_graph");
+		// timer::Timer t_stage_pi("  stage_pi");
+		// timer::Timer t_stage_phi("  stage_phi");
+		// timer::Timer t_update_pi("  update_pi");
+		// timer::Timer t_update_beta("  update_beta");
 		timer::Timer::setTabular(true);
 
 		if (step_count % 1 == 0) {
@@ -471,19 +490,25 @@ public:
 			t_nodes_in_mini_batch.stop();
 
 			std::cerr << "Stage clSubHeldOutGraph" << std::endl;
+			t_stage_held_out.start();
 			stage_subgraph(&clSubHeldOutGraph, nodes);
+			t_stage_held_out.stop();
 
 			t_latent_vars_neighbors.start();
 			sample_latent_vars_neighbors(nodes);
 			t_latent_vars_neighbors.stop();
 
 			std::cerr << "Stage clSubGraph" << std::endl;
+			t_stage_graph.start();
 			stage_subgraph(&clSubGraph, nodes);
+			t_stage_graph.stop();
 
 			// Pi is staged in two contiguous sections:
 			// 1) pi(i) for i in nodes
 			// 2) pi(n'(i)) for n'(i): the subset [offset:size] of neighbors n(i) of node i
+			t_stage_pi.start();
 			stage_sub_vectors(clPi, pi, hostPiBuffer, nodes);
+			t_stage_pi.stop();
 
 			::size_t offset = 0;
 			while (offset < real_num_node_sample()) {
@@ -551,7 +576,12 @@ public:
 		std::cout << t_nodes_in_mini_batch << std::endl;
 		std::cout << t_latent_vars_neighbors << std::endl;
 		std::cout << t_latent_vars_sample_z_ab << std::endl;
+		std::cout << t_stage_held_out << std::endl;
+		std::cout << t_stage_graph << std::endl;
+		std::cout << t_stage_pi << std::endl;
+		std::cout << t_stage_pi_neighbors << std::endl;
 		std::cout << t_latent_vars2 << std::endl;
+		std::cout << t_stage_phi << std::endl;
 		std::cout << t_update_pi << std::endl;
 		std::cout << t_update_beta << std::endl;
 	}
@@ -730,9 +760,13 @@ protected:
 						   const std::vector<std::vector<double> > &data,
 						   std::vector<double> &hostBuffer,
 						   const std::vector<int> &nodes) {
-		std::cerr << "FIXME: " << __func__ << "(): ensure neighbor indirect at both host and device" << std::endl;
-		std::cerr << "FIXME: " << __func__ << "(): implement subrange of matrix" << std::endl;
-		std::cerr << "FIXME: " << __func__ << "(): if this is mapped memory: no need for intermediate copy" << std::endl;
+		static int first = 1;
+		if (first) {
+			first = 0;
+			std::cerr << "FIXME: " << __func__ << "(): ensure neighbor indirect at both host and device" << std::endl;
+			std::cerr << "FIXME: " << __func__ << "(): implement subrange of matrix" << std::endl;
+			std::cerr << "FIXME: " << __func__ << "(): if this is mapped memory: no need for intermediate copy" << std::endl;
+		}
 		hostBuffer.clear();
 		for (auto n: nodes) {
 			assert(data[n].size() == K);
@@ -748,9 +782,13 @@ protected:
 									const std::vector<int> &neighbors,
 									::size_t offset, ::size_t size, ::size_t stride,
 									::size_t bufferOffset) {
-		std::cerr << "FIXME: " << __func__ << "(): ensure neighbor indirect at both host and device" << std::endl;
-		std::cerr << "FIXME: " << __func__ << "(): implement subrange of matrix" << std::endl;
-		std::cerr << "FIXME: " << __func__ << "(): if this is mapped memory: no need for intermediate copy" << std::endl;
+		static int first = 1;
+		if (first) {
+			first = 0;
+			std::cerr << "FIXME: " << __func__ << "(): ensure neighbor indirect at both host and device" << std::endl;
+			std::cerr << "FIXME: " << __func__ << "(): implement subrange of matrix" << std::endl;
+			std::cerr << "FIXME: " << __func__ << "(): if this is mapped memory: no need for intermediate copy" << std::endl;
+		}
 
 		if (false) {
 			for (auto i = neighbors.begin() + offset; i < neighbors.end(); i += stride) {
@@ -761,6 +799,8 @@ protected:
 				std::cerr << std::endl;
 			}
 		}
+
+		FIXME: check duplicates in the neighbor sets, see if we can gain something...
 
 		hostBuffer.clear();
 		for (auto i = neighbors.begin() + offset; i < neighbors.end(); i += stride) {
@@ -804,7 +844,11 @@ protected:
 
 		clContext.queue.enqueueReadBuffer(clNodesNeighbors, CL_FALSE, 0, nodes.size() * real_num_node_sample() * sizeof(cl_int), hostNeighbors.data());
 
-		std::cerr << "FIXME FIXME FIXME: shuffle/indirect/restage neighbor table" << std::endl;
+		static int first = 1;
+		if (first) {
+			first = 0;
+			std::cerr << "FIXME FIXME FIXME: shuffle/indirect/restage neighbor table" << std::endl;
+		}
 	}
 
 	void sample_latent_vars_sample_z_ab(const std::vector<int> &nodes, ::size_t offset, ::size_t size) {
@@ -818,7 +862,9 @@ protected:
 		// Pi is staged in two contiguous sections:
 		// 1) pi(i) for i in nodes
 		// 2) pi(n'(i)) for n'(i): the subset [offset:size] of neighbors n(i) of node i
+		t_stage_pi_neighbors.start();
 		stage_sub_neighbor_vectors(clPi, pi, hostPiBuffer, hostNeighbors, offset, size, real_num_node_sample(), nodes.size() * K * sizeof(cl_double));
+		t_stage_pi_neighbors.stop();
 
 		int Idx = 0;
 		sample_latent_vars_sample_z_ab_kernel.setArg(Idx++, clBuffers);
@@ -842,7 +888,9 @@ protected:
 
 		// 2. stage pi for the merged(nodes, neighbors)
 		// 3. ensure that pi is staged in the order of the device neighbor index array
+		t_stage_phi.start();
 		stage_sub_vectors(clPhi, phi, hostPhiBuffer, nodes);
+		t_stage_phi.stop();
 
 		int Idx = 0;
 		update_pi_kernel.setArg(Idx++, clBuffers);
@@ -1185,6 +1233,21 @@ protected:
 	std::vector<std::pair<std::string, ::size_t> > clBufAllocSizes;
 
 	char *errMsg;
+
+	timer::Timer t_outer;
+	timer::Timer t_perplexity;
+	timer::Timer t_mini_batch;
+	timer::Timer t_nodes_in_mini_batch;
+	timer::Timer t_latent_vars_neighbors;
+	timer::Timer t_latent_vars_sample_z_ab;
+	timer::Timer t_latent_vars2;
+	timer::Timer t_stage_held_out;
+	timer::Timer t_stage_graph;
+	timer::Timer t_stage_pi;
+	timer::Timer t_stage_pi_neighbors;
+	timer::Timer t_stage_phi;
+	timer::Timer t_update_pi;
+	timer::Timer t_update_beta;
 };
 
 }
