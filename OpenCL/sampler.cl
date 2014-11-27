@@ -292,6 +292,7 @@ cal_edge_likelihood(global const double *pi_a,
 }
 
 
+// FIXME TODO make this iterable over subsets of the graph
 kernel void cal_perplexity(
 		global const int3 hg[],
 		const int H,			// |hg|
