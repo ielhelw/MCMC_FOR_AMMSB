@@ -127,6 +127,13 @@ public:
 		t_stage_phi = timer::Timer("  stage_phi");
 		t_update_pi = timer::Timer("  update_pi");
 		t_update_beta = timer::Timer("  update_beta");
+		t_kernel_calculate_beta = timer::Timer("    kernel_calculate_beta");
+		t_kernel_calculate_theta = timer::Timer("    kernel_calculate_theta");
+		t_kernel_calculate_grads = timer::Timer("    kernel_calculate_grads");
+		t_kernel_latent_vars2 = timer::Timer("    kernel_latent_vars2");
+		t_kernel_neighbors = timer::Timer("    kernel_neighbors");
+		t_kernel_sample_z_ab = timer::Timer("    kernel_sample_z_ab");
+		t_kernel_update_pi = timer::Timer("    kernel_update_pi");
 
 		hash_table_size = round_next_power_2(real_num_node_sample());
 		if ((double)hash_table_size / real_num_node_sample() < 1.8) {
@@ -401,12 +408,14 @@ public:
 		// np::row_normalize(&temp, theta);
 		// std::transform(temp.begin(), temp.end(), beta.begin(), np::SelectColumn<double>(1));
 
+		t_kernel_calculate_beta.start();
 		Idx = 0;
 		update_beta_calculate_beta_kernel.setArg(Idx++, clTheta);
 		update_beta_calculate_beta_kernel.setArg(Idx++, clBeta);
 		clContext.queue.enqueueNDRangeKernel(update_beta_calculate_beta_kernel, cl::NullRange, cl::NDRange(K_workers), cl::NDRange(1));
 
 		clContext.queue.finish();
+		t_kernel_calculate_beta.stop();
 		clContext.queue.enqueueReadBuffer(clBeta, CL_FALSE, 0, K * sizeof(double), beta.data());
 
 		clContext.queue.finish();
@@ -608,6 +617,13 @@ public:
 		std::cout << t_stage_phi << std::endl;
 		std::cout << t_update_pi << std::endl;
 		std::cout << t_update_beta << std::endl;
+		std::cout << t_kernel_calculate_beta << std::endl;
+		std::cout << t_kernel_calculate_theta << std::endl;
+		std::cout << t_kernel_calculate_grads << std::endl;
+		std::cout << t_kernel_latent_vars2 << std::endl;
+		std::cout << t_kernel_neighbors << std::endl;
+		std::cout << t_kernel_sample_z_ab << std::endl;
+		std::cout << t_kernel_update_pi << std::endl;
 	}
 
 protected:
@@ -642,9 +658,11 @@ protected:
 		update_beta_calculate_theta_sum_kernel.setArg(arg++, clTheta);
 		update_beta_calculate_theta_sum_kernel.setArg(arg++, clThetaSum);
 
+		t_kernel_calculate_theta.start();
 		clContext.queue.enqueueNDRangeKernel(update_beta_calculate_theta_sum_kernel,
 											 cl::NullRange, cl::NDRange(kRoundedThreads), cl::NDRange(groupSize));
 		clContext.queue.finish();
+		t_kernel_calculate_theta.stop();
 
 		::size_t countPartialSums = std::min(mini_batch.size(), globalThreads);
 		::size_t calcGradsThreads = round_up_to_multiples(countPartialSums, groupSize);
@@ -656,6 +674,7 @@ protected:
 
 		clContext.queue.finish(); // Wait for sample_latent_vars2
 
+		t_kernel_calculate_grads.start();
 		cl::Event e_grads_kernel;
 		clContext.queue.enqueueNDRangeKernel(update_beta_calculate_grads_kernel, cl::NullRange,
 				cl::NDRange(calcGradsThreads), cl::NDRange(groupSize),
@@ -667,6 +686,7 @@ protected:
 		clEta.s[1] = this->eta[1];
 
 		e_grads_kernel.wait();
+		t_kernel_calculate_grads.stop();
 
 		update_beta_calculate_theta_kernel.setArg(0, clBuffers);
 		update_beta_calculate_theta_kernel.setArg(1, (cl_double)scale);
@@ -681,8 +701,10 @@ protected:
 		update_beta_calculate_beta_kernel.setArg(arg++, clTheta);
 		update_beta_calculate_beta_kernel.setArg(arg++, clBeta);
 
+		t_kernel_calculate_beta.start();
 		clContext.queue.enqueueNDRangeKernel(update_beta_calculate_beta_kernel, cl::NullRange, cl::NDRange(kRoundedThreads), cl::NDRange(groupSize));
 		clContext.queue.finish();
+		t_kernel_calculate_beta.stop();
 
 		clContext.queue.enqueueReadBuffer(clBeta, CL_FALSE, 0, K * sizeof(double), beta.data());
 		clContext.queue.finish();
@@ -738,7 +760,10 @@ protected:
 
 		clContext.queue.finish(); // Wait for clEdges and PiUpdates from sample_latent_vars_and_update_pi
 
+		t_kernel_latent_vars2.start();
 		clContext.queue.enqueueNDRangeKernel(sample_latent_vars2_kernel, cl::NullRange, cl::NDRange(globalThreads), cl::NDRange(groupSize));
+clContext.queue.finish(); // Wait for clEdges and PiUpdates from sample_latent_vars_and_update_pi
+		t_kernel_latent_vars2.stop();
 	}
 
 	::size_t real_num_node_sample() const {
@@ -872,8 +897,10 @@ protected:
 		sample_latent_vars_neighbors_kernel.setArg(Idx++, (cl_int)nodes.size());
 
 		clContext.queue.finish();
+		t_kernel_neighbors.start();
 		clContext.queue.enqueueNDRangeKernel(sample_latent_vars_neighbors_kernel, cl::NullRange, cl::NDRange(globalThreads), cl::NDRange(groupSize));
 		clContext.queue.finish();
+		t_kernel_neighbors.stop();
 
 		clContext.queue.enqueueReadBuffer(clNodesNeighbors, CL_FALSE, 0, nodes.size() * real_num_node_sample() * sizeof(cl_int), hostNeighbors.data());
 
@@ -910,8 +937,10 @@ protected:
 
 		clContext.queue.finish();
 		check_for_kernel_errors(); // sample_latent_vars_neighbors_kernel
+		t_kernel_sample_z_ab.start();
 		clContext.queue.enqueueNDRangeKernel(sample_latent_vars_sample_z_ab_kernel, cl::NullRange, cl::NDRange(globalThreads), cl::NDRange(groupSize));
 		clContext.queue.finish();
+		t_kernel_sample_z_ab.stop();
 		check_for_kernel_errors(); // sample_latent_vars_sample_z_ab_kernel
 	}
 
@@ -939,8 +968,10 @@ protected:
 
 		clContext.queue.finish();
 		check_for_kernel_errors(); // sample_latent_vars
+		t_kernel_update_pi.start();
 		clContext.queue.enqueueNDRangeKernel(update_pi_kernel, cl::NullRange, cl::NDRange(globalThreads), cl::NDRange(groupSize));
 		clContext.queue.finish();
+		t_kernel_update_pi.stop();
 #if 0	// pi stays on the device
 		// read Pi again
 		for (auto node = nodes.begin();
@@ -1284,6 +1315,13 @@ protected:
 	timer::Timer t_stage_phi;
 	timer::Timer t_update_pi;
 	timer::Timer t_update_beta;
+	timer::Timer t_kernel_calculate_beta;
+	timer::Timer t_kernel_calculate_theta;
+	timer::Timer t_kernel_calculate_grads;
+	timer::Timer t_kernel_latent_vars2;
+	timer::Timer t_kernel_neighbors;
+	timer::Timer t_kernel_sample_z_ab;
+	timer::Timer t_kernel_update_pi;
 };
 
 }
