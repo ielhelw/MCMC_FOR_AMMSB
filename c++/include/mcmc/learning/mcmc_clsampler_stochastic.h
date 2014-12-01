@@ -115,13 +115,15 @@ public:
 		t_perplexity = timer::Timer("  perplexity");
 		t_mini_batch = timer::Timer("  sample_mini_batch");
 		t_nodes_in_mini_batch = timer::Timer("  nodes_in_mini_batch");
-		t_latent_vars_neighbors = timer::Timer("  sample_latent_vars_neighbors");
-		t_latent_vars_sample_z_ab = timer::Timer("  sample_latent_vars_sample_z_ab");
-		t_latent_vars2 = timer::Timer("  sample_latent_vars2");
 		t_stage_held_out = timer::Timer("  stage_held_out");
+		t_latent_vars_neighbors = timer::Timer("  sample_latent_vars_neighbors");
 		t_stage_graph = timer::Timer("  stage_graph");
 		t_stage_pi = timer::Timer("  stage_pi");
-		t_stage_pi_neighbors = timer::Timer("  stage_pi_neighbors");
+		t_latent_vars_sample_z_ab = timer::Timer("  sample_latent_vars_sample_z_ab");
+		t_stage_pi_neighbors = timer::Timer("      stage_pi_neighbors");
+		t_stage_pi_neighbors_gather = timer::Timer("      stage_pi_neighbors_gather");
+		total_data_stage_pi_neighbors = 0;
+		t_latent_vars2 = timer::Timer("  sample_latent_vars2");
 		t_stage_phi = timer::Timer("  stage_phi");
 		t_update_pi = timer::Timer("  update_pi");
 		t_update_beta = timer::Timer("  update_beta");
@@ -510,6 +512,23 @@ public:
 			stage_sub_vectors(clPi, pi, hostPiBuffer, nodes);
 			t_stage_pi.stop();
 
+			if (true) {
+				std::unordered_set<int> unique;
+				for (auto i = hostNeighbors.begin(); i < hostNeighbors.begin() + nodes.size() * real_num_node_sample(); i++) {
+					unique.insert(*i);
+				}
+				std::cerr << "Neighbors " << (nodes.size() * real_num_node_sample()) << " unique " << unique.size() << " fraction " << (unique.size() / (1.0 * nodes.size() * real_num_node_sample())) << std::endl;
+			}
+			if (false) {
+				for (::size_t i = 0; i < nodes.size(); i++) {
+					std::cerr << "Neigbors[" << i << "] ";
+					for (::size_t n = 0; n < real_num_node_sample(); n++) {
+						std::cerr << hostNeighbors[i * real_num_node_sample() + n] << " ";
+					}
+					std::cerr << std::endl;
+				}
+			}
+
 			::size_t offset = 0;
 			while (offset < real_num_node_sample()) {
 				::size_t size = subNeighbors;
@@ -574,12 +593,17 @@ public:
 		std::cout << t_perplexity << std::endl;
 		std::cout << t_mini_batch << std::endl;
 		std::cout << t_nodes_in_mini_batch << std::endl;
-		std::cout << t_latent_vars_neighbors << std::endl;
-		std::cout << t_latent_vars_sample_z_ab << std::endl;
 		std::cout << t_stage_held_out << std::endl;
+		std::cout << t_latent_vars_neighbors << std::endl;
 		std::cout << t_stage_graph << std::endl;
 		std::cout << t_stage_pi << std::endl;
+		std::cout << t_latent_vars_sample_z_ab << std::endl;
 		std::cout << t_stage_pi_neighbors << std::endl;
+		std::cout << t_stage_pi_neighbors_gather << std::endl;
+		double mb = total_data_stage_pi_neighbors / (1.0 * (1 << 20));
+		std::cout << "    Wrote staged data " << mb << "MB " <<
+			"time " << std::chrono::duration_cast<std::chrono::milliseconds>(t_stage_pi_neighbors_gather.total()).count() << "ms " <<
+			"throughput " << (mb / std::chrono::duration_cast<std::chrono::milliseconds>(t_stage_pi_neighbors_gather.total()).count()) << "GB/s" << std::endl;
 		std::cout << t_latent_vars2 << std::endl;
 		std::cout << t_stage_phi << std::endl;
 		std::cout << t_update_pi << std::endl;
@@ -780,6 +804,7 @@ protected:
 									const std::vector<std::vector<double> > &data,
 									std::vector<double> &hostBuffer,
 									const std::vector<int> &neighbors,
+									::size_t numNeighbors,
 									::size_t offset, ::size_t size, ::size_t stride,
 									::size_t bufferOffset) {
 		static int first = 1;
@@ -791,7 +816,7 @@ protected:
 		}
 
 		if (false) {
-			for (auto i = neighbors.begin() + offset; i < neighbors.end(); i += stride) {
+			for (auto i = neighbors.begin() + offset; i < neighbors.begin() + numNeighbors; i += stride) {
 				std::cerr << "Neighbors: ";
 				for (auto n = i; n < i + size; n++) {
 					std::cerr << *n << " ";
@@ -800,13 +825,16 @@ protected:
 			}
 		}
 
-		FIXME: check duplicates in the neighbor sets, see if we can gain something...
+		::size_t n = numNeighbors / stride * size;
 
 		hostBuffer.clear();
-		for (auto i = neighbors.begin() + offset; i < neighbors.end(); i += stride) {
+		t_stage_pi_neighbors_gather.start();
+		for (auto i = neighbors.begin() + offset; i < neighbors.begin() + numNeighbors; i += stride) {
 			for (auto n = i; n < i + size; n++) {
 				assert(data[*n].size() == K);
+				// t_stage_pi_neighbors_gather.start();
 				hostBuffer.insert(hostBuffer.end(), data[*n].begin(), data[*n].end());
+				// t_stage_pi_neighbors_gather.stop();
 				if (false) {
 					std::cerr << "pi_b: ";
 					for (auto k: data[*n]) {
@@ -816,12 +844,17 @@ protected:
 				}
 			}
 		}
+		t_stage_pi_neighbors_gather.stop();
 
-		::size_t n = neighbors.size() / stride * size;
+		total_data_stage_pi_neighbors += n * K * sizeof(cl_double);
+
+		assert(hostBuffer.size() == n * K);
+		// std::cerr << "Stage hostBuffer size " << hostBuffer.size() << " must be " << (n * K) << std::endl;
 		clContext.queue.enqueueWriteBuffer(buffer, CL_FALSE,
 										   bufferOffset,
 										   n * K * sizeof(cl_double),
 										   hostBuffer.data());
+		clContext.queue.finish();
 	}
 
 	void retrieve_sub_vectors(cl::Buffer &buffer,
@@ -862,8 +895,9 @@ protected:
 		// Pi is staged in two contiguous sections:
 		// 1) pi(i) for i in nodes
 		// 2) pi(n'(i)) for n'(i): the subset [offset:size] of neighbors n(i) of node i
+
 		t_stage_pi_neighbors.start();
-		stage_sub_neighbor_vectors(clPi, pi, hostPiBuffer, hostNeighbors, offset, size, real_num_node_sample(), nodes.size() * K * sizeof(cl_double));
+		stage_sub_neighbor_vectors(clPi, pi, hostPiBuffer, hostNeighbors, nodes.size() * real_num_node_sample(), offset, size, real_num_node_sample(), nodes.size() * K * sizeof(cl_double));
 		t_stage_pi_neighbors.stop();
 
 		int Idx = 0;
@@ -1245,6 +1279,8 @@ protected:
 	timer::Timer t_stage_graph;
 	timer::Timer t_stage_pi;
 	timer::Timer t_stage_pi_neighbors;
+	timer::Timer t_stage_pi_neighbors_gather;
+	::size_t total_data_stage_pi_neighbors;
 	timer::Timer t_stage_phi;
 	timer::Timer t_update_pi;
 	timer::Timer t_update_beta;
