@@ -222,6 +222,7 @@ public:
 
 			("input-file,f", po::value<std::string>(&filename)->default_value(""), "input file")
 			("class,c", po::value<std::string>(&dataset_class)->default_value("netscience"), "input class")
+			("contiguous,C", po::value<bool>(&contiguous)->default_value(false), "contiguous input data")
 
 #ifdef ENABLE_OPENCL
 			("platform,p", po::value<std::string>(&openClPlatform), "OpenCL platform")
@@ -270,6 +271,7 @@ public:
 
 	std::string filename;
 	std::string dataset_class;
+	bool		contiguous;
 
 #ifdef ENABLE_OPENCL
 	std::string	openClPlatform;

@@ -51,7 +51,8 @@ typedef std::unordered_map<int, std::string> Vertex;
 
 class NetScience : public DataSet {
 public:
-	NetScience(const std::string &filename) : DataSet(filename == "" ? "datasets/netscience.xml" : filename) {
+	NetScience(const std::string &filename, bool contiguous = false)
+			: DataSet(filename == "" ? "datasets/netscience.xml" : filename, contiguous) {
 	}
 
 	virtual ~NetScience() {
