@@ -13,6 +13,7 @@
 #define MCMC_PREPROCESS_RELATIVITY_H__
 
 #include <fstream>
+#include <chrono>
 
 #include "mcmc/data.h"
 #include "mcmc/preprocess/dataset.h"
@@ -27,7 +28,8 @@ namespace preprocess {
  */
 class Relativity : public DataSet {
 public:
-	Relativity(const std::string &filename) : DataSet(filename == "" ? "datasets/CA-GrQc.txt" : filename) {
+	Relativity(const std::string &filename, bool contiguous = false)
+			: DataSet(filename == "" ? "datasets/CA-GrQc.txt" : filename, contiguous) {
 	}
 
 	virtual ~Relativity() {
@@ -50,55 +52,89 @@ public:
 	 * the node ID first.
 	 */
 	virtual const Data *process() {
+using namespace std::chrono;
+auto start = system_clock::now();
+
 		std::ifstream infile(filename);
 		if (! infile) {
 			throw mcmc::IOException("Cannot open " + filename);
 		}
 
+std::cerr << duration_cast<milliseconds>((system_clock::now() - start)).count() << "ms open file" << std::endl;
 		std::string line;
 		for (int i = 0; i < 4; i++) {
 			std::getline(infile, line);
 		}
 
 		// start from the 5th line.
-		std::set<int> vertex;	// ordered set
-		std::vector<mcmc::Edge> edge;
-		while (std::getline(infile, line)) {
-			int a;
-			int b;
-			std::istringstream iss(line);
-			if (! (iss >> a >> b)) {
-				throw mcmc::IOException("Fail to parse int");
-			}
-			vertex.insert(a);
-			vertex.insert(b);
-			edge.push_back(Edge(a, b));
-		}
-
-		std::vector<int> nodelist(vertex.begin(), vertex.end()); // use range constructor, retain order
-
-		::size_t N = nodelist.size();
-
-		// change the node ID to make it start from 0
-		std::unordered_map<int, int> node_id_map;
-		int i = 0;
-		for (std::vector<int>::iterator node_id = nodelist.begin();
-			 	node_id != nodelist.end();
-				node_id++) {
-			node_id_map[*node_id] = i;
-			i++;
-		}
 
 		mcmc::EdgeSet *E = new mcmc::EdgeSet();	// store all pair of edges.
-		for (std::vector<Edge>::iterator i = edge.begin();
-				 i != edge.end();
-				 i++) {
-			int node1 = node_id_map[i->first];
-			int node2 = node_id_map[i->second];
-			if (node1 == node2) {
-				continue;
+		::size_t N;
+
+		if (contiguous) {
+			int max = -1;
+			std::unordered_set<int> vertex;
+			while (std::getline(infile, line)) {
+				int a;
+				int b;
+				std::istringstream iss(line);
+				if (! (iss >> a >> b)) {
+					throw mcmc::IOException("Fail to parse int");
+				}
+				a--;
+				b--;
+				vertex.insert(a);
+				vertex.insert(b);
+				max = std::max(a, max);
+				max = std::max(b, max);
+				E->insert(Edge(std::min(a, b), std::max(a, b)));
 			}
-			E->insert(Edge(std::min(node1, node2), std::max(node1, node2)));
+			std::cerr << duration_cast<milliseconds>((system_clock::now() - start)).count() << "ms read unordered set" << std::endl;
+			N = vertex.size();
+			if (max + 1 != (int)N) {
+				std::ostringstream s;
+				s << "# vertices " << N << " max vertex " << max;
+				throw OutOfRangeException(s.str());
+			}
+
+		} else {
+			std::set<int> vertex;	// ordered set
+			std::vector<mcmc::Edge> edge;
+			while (std::getline(infile, line)) {
+				int a;
+				int b;
+				std::istringstream iss(line);
+				if (! (iss >> a >> b)) {
+					throw mcmc::IOException("Fail to parse int");
+				}
+				vertex.insert(a);
+				vertex.insert(b);
+				edge.push_back(Edge(a, b));
+			}
+			std::cerr << duration_cast<milliseconds>((system_clock::now() - start)).count() << "ms read ordered set" << std::endl;
+
+			std::vector<int> nodelist(vertex.begin(), vertex.end()); // use range constructor, retain order
+
+			N = nodelist.size();
+
+			// change the node ID to make it start from 0
+			std::unordered_map<int, int> node_id_map;
+			int i = 0;
+			for (auto node_id: nodelist) {
+				node_id_map[node_id] = i;
+				i++;
+			}
+			std::cerr << duration_cast<milliseconds>((system_clock::now() - start)).count() << "ms create map" << std::endl;
+
+			for (auto i: edge) {
+				int node1 = node_id_map[i.first];
+				int node2 = node_id_map[i.second];
+				if (node1 == node2) {
+					continue;
+				}
+				E->insert(Edge(std::min(node1, node2), std::max(node1, node2)));
+			}
+			std::cerr << duration_cast<milliseconds>((system_clock::now() - start)).count() << "ms create EdgeSet" << std::endl;
 		}
 
 		return new Data(NULL, E, N);

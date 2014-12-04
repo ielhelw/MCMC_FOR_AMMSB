@@ -26,7 +26,8 @@ namespace preprocess {
  */
 class DataSet {
 public:
-	DataSet(const std::string &filename) : filename(filename) {
+	DataSet(const std::string &filename, bool contiguous = false)
+			: filename(filename), contiguous(contiguous) {
 		std::cerr << "Handle input dataset from file " << filename << std::endl;
 	}
 
@@ -45,6 +46,7 @@ public:
 
 protected:
 	std::string filename;
+	bool contiguous;
 };
 
 } 	// namespace preprocess

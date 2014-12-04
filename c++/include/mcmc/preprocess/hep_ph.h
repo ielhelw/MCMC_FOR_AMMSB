@@ -24,7 +24,8 @@ namespace preprocess {
 
 class HepPH : public DataSet {
 public:
-	HepPH(const std::string &filename) : DataSet(filename == "" ?  "datasets/CA-HepPh.txt" : filename) {
+	HepPH(const std::string &filename, bool contiguous = false)
+			: DataSet(filename == "" ?  "datasets/CA-HepPh.txt" : filename, contiguous) {
 	}
 
 	virtual ~HepPH() {

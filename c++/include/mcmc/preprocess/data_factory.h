@@ -12,8 +12,8 @@ namespace preprocess {
 
 class DataFactory {
 public:
-	DataFactory(const std::string &dataset_name, const std::string &filename = "")
-   			: dataset_name(dataset_name), filename(filename) {
+	DataFactory(const std::string &dataset_name, const std::string &filename = "", bool contiguous = false)
+   			: dataset_name(dataset_name), filename(filename), contiguous(contiguous) {
 	}
 
 	virtual ~DataFactory() {
@@ -23,17 +23,19 @@ public:
 		DataSet *dataObj = NULL;
 		if (false) {
 		} else if (dataset_name == "netscience") {
-			dataObj = new NetScience(filename);
+			dataObj = new NetScience(filename, contiguous);
 		} else if (dataset_name == "relativity") {
-			dataObj = new Relativity(filename);
+			dataObj = new Relativity(filename, contiguous);
+		} else if (dataset_name == "rc") {
+			dataObj = new Relativity(filename, true);
 		} else if (dataset_name == "hep_ph") {
-			// dataObj = new HepPH(filename);
+			// dataObj = new HepPH(filename, contiguous);
 		} else if (dataset_name == "astro_ph") {
-			// dataObj = new AstroPH(filename);
+			// dataObj = new AstroPH(filename, contiguous);
 		} else if (dataset_name == "condmat") {
-			// dataObj = new CondMat(filename);
+			// dataObj = new CondMat(filename, contiguous);
 		} else if (dataset_name == "hep_th") {
-			// dataObj = new HepTH(filename);
+			// dataObj = new HepTH(filename, contiguous);
 		} else {
 			throw MCMCException("Unknown dataset name \"" + dataset_name + "\"");
 		}
@@ -44,6 +46,7 @@ public:
 protected:
 	std::string dataset_name;
 	std::string filename;
+	bool		contiguous;
 };
 
 };	// namespace preprocess
