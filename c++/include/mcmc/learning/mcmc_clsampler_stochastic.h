@@ -34,6 +34,10 @@ public:
 		  globalThreads(groupSize * numGroups),
 		  kRoundedThreads(round_up_to_multiples(K, groupSize)), totalAllocedClBufers(0) {
 
+#ifdef RANDOM_FOLLOWS_CPP
+		std::cerr << "RANDOM_FOLLOWS_CPP enabled" << std::endl;
+#endif
+
         // step size parameters.
         this->a = args.a;
         this->b = args.b;

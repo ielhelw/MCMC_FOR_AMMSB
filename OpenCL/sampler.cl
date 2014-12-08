@@ -331,6 +331,7 @@ inline int sample_z_ab_from_edge(
 		const double random,
 		global double *p
 		) {
+
 	int y_1 = y - 1;
 	int y2_1 = y + y_1;
 	p[0] = sample_z_ab_from_edge_expr(0);
@@ -339,6 +340,7 @@ inline int sample_z_ab_from_edge(
 	}
 
 	double location = random * p[K-1];
+	// printf((__constant char *)"random %.12lf location %.12lf\n", random, location);
 	return find_le(p, location, K, 0);
 }
 
@@ -365,6 +367,7 @@ inline int sample_latent_vars_of(
 			const bool cond1 = neighborId != node;
 			const bool cond2 = !graph_has_peer(hg, node, neighborId);
 			const bool cond = cond1 && cond2;
+			// printf((__constant char *)"node %d neighbor %d peer %d randint %d seed (%lu,%lu)\n", node, neighborId, cond2, neighborId, (*randomSeed).x, (*randomSeed).y);
 			if (cond) {
 				ret = hash_put(neighborId, neighbor_nodes_hash, HASH_SIZE);
 				if (HASH_OK(ret)) {
