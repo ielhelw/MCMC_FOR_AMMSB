@@ -87,6 +87,9 @@ public:
 		} else {
 			interval = args.interval;
 		}
+		if (args.mini_batch_size == 0) {
+			mini_batch_size = N / 10;   // old default for STRATIFIED_RANDOM_NODE_SAMPLING
+		}
 		std::cerr << "num_node_sample " << num_node_sample << " a " << a << " b " << b << " c " << c << " alpha " << alpha << " eta (" << eta[0] << "," << eta[1] << ")" << std::endl;
 
         // model parameters and re-parameterization
@@ -193,6 +196,7 @@ public:
 		timer::Timer t_nodes_in_mini_batch("  nodes_in_mini_batch");
 		timer::Timer t_sample_neighbor_nodes("  sample_sample_neighbor_nodes");
 		timer::Timer t_update_phi("  update_phi");
+		timer::Timer t_update_pi("  update_pi");
 		timer::Timer t_update_beta("  update_beta");
 		timer::Timer::setTabular(true);
 
@@ -265,6 +269,11 @@ public:
 			OrderedVertexSet nodes = nodes_in_batch(mini_batch);
 			t_nodes_in_mini_batch.stop();
 
+#ifndef EFFICIENCY_FOLLOWS_PYTHON
+			double eps_t  = a * std::pow(1 + step_count / b, -c);	// step size
+			// double eps_t = std::pow(1024+step_count, -0.5);
+#endif
+
 			for (auto node = nodes.begin();
 				 	node != nodes.end();
 					node++) {
@@ -274,10 +283,15 @@ public:
 				t_sample_neighbor_nodes.stop();
 
 				t_update_phi.start();
-				update_phi(*node, neighbors);
+				update_phi(*node, neighbors
+#ifndef EFFICIENCY_FOLLOWS_PYTHON
+						   , eps_t
+#endif
+						   );
 				t_update_phi.stop();
 			}
 
+			t_update_pi.start();
 #ifdef EFFICIENCY_FOLLOWS_PYTHON
 			np::row_normalize(&pi, phi);	// update pi from phi.
 #else
@@ -286,6 +300,7 @@ public:
 				np::normalize(&pi[i], phi[i]);
 			}
 #endif
+			t_update_pi.stop();
 
 			t_update_beta.start();
             update_beta(mini_batch, scale);
@@ -315,6 +330,7 @@ public:
 		std::cout << t_nodes_in_mini_batch << std::endl;
 		std::cout << t_sample_neighbor_nodes << std::endl;
 		std::cout << t_update_phi << std::endl;
+		std::cout << t_update_pi << std::endl;
 		std::cout << t_update_beta << std::endl;
 	}
 
@@ -375,7 +391,6 @@ protected:
 #endif
 
 
-	// FIXME lots of code sharing w/ mcmc_sampler_batch
     void update_beta(const OrderedEdgeSet &mini_batch, double scale) {
 
 		std::vector<std::vector<double> > grads(K, std::vector<double>(2, 0.0));	// gradients K*2 dimension
@@ -412,15 +427,20 @@ protected:
 
 #ifdef EFFICIENCY_FOLLOWS_PYTHON
 			double prob_0 = std::pow(epsilon, y) * std::pow(1 - epsilon, 1 - y) * (1 - pi_sum);
+			double prob_sum = np::sum(probs) + prob_0;
+			for (::size_t k = 0; k < K; k++) {
+				grads[k][0] += probs[k] / prob_sum * std::abs(1 - y) / theta[k][0] - 1 / theta_sum[k];
+				grads[k][1] += probs[k] / prob_sum * std::abs(-y) / theta[k][1] - 1 / theta_sum[k];
+			}
 #else
 			double prob_0 = ((y == 1) ? epsilon : (1.0 - epsilon)) * (1.0 - pi_sum);
-#endif
 			double prob_sum = np::sum(probs) + prob_0;
 			for (::size_t k = 0; k < K; k++) {
 				double f = probs[k] / prob_sum;
-				grads[k][0] += f * std::abs(1 - y) / theta[k][0] - 1 / theta_sum[k];
-				grads[k][1] += f * std::abs(-y) / theta[k][1] - 1 / theta_sum[k];
+				grads[k][0] += f * (1 - y) / theta[k][0] - 1.0 / theta_sum[k];
+				grads[k][1] += f * y / theta[k][1] - 1.0 / theta_sum[k];
 			}
+#endif
 		}
 
         // update theta
@@ -434,8 +454,8 @@ protected:
 																  scale * grads[k][i]) +
 									   std::pow(eps_t, .5) * std::pow(theta[k][i], .5) * noise[k][i]);
 #else
-				theta[k][i] = std::abs(theta[k][i] + eps_t / 2 * (eta[i] - theta[k][i] + \
-																  scale * grads[k][i]) +
+				theta[k][i] = std::abs(theta[k][i] + eps_t / 2.0 * (eta[i] - theta[k][i] + \
+																	scale * grads[k][i]) +
 									   sqrt(eps_t * theta[k][i]) * noise[k][i]);
 #endif
 			}
@@ -458,12 +478,18 @@ protected:
 	}
 
 
-    void update_phi(int i, const OrderedVertexSet &neighbors) {
+    void update_phi(int i, const OrderedVertexSet &neighbors
+#ifndef EFFICIENCY_FOLLOWS_PYTHON
+						   , double eps_t
+#endif
+					) {
+#ifdef EFFICIENCY_FOLLOWS_PYTHON
 		double eps_t  = a * std::pow(1 + step_count / b, -c);	// step size
 		// double eps_t = std::pow(1024+step_count, -0.5);
+#endif
 
 		double phi_i_sum = np::sum(phi[i]);
-        std::vector<double> grads(K, 0);					// gradient for K classes
+        std::vector<double> grads(K, neighbors.size() / phi_i_sum);	// gradient for K classes
 		// std::vector<double> phi_star(K);					// temp vars
 
 		for (auto neighbor = neighbors.begin();
@@ -493,7 +519,7 @@ protected:
 
 			double prob_sum = np::sum(probs);
 			for (::size_t k = 0; k < K; k++) {
-				grads[k] += (probs[k] / prob_sum) / phi[i][k] - 1.0 / phi_i_sum;
+				grads[k] += (probs[k] / prob_sum) / phi[i][k];
 			}
 		}
 

@@ -37,7 +37,6 @@ typedef struct {
 		global double *Beta;
 		global double2 *Theta;
 		global double *ThetaSum;
-		global int *Z;
 		global double *Scratch;
 		global ulong2 *RandomSeed;
 		global int *errCtrl;
@@ -61,7 +60,6 @@ kernel void init_buffers(
 		global double *Beta,
 		global double2 *Theta,
 		global double *ThetaSum,
-		global int *Z,
 		global double *Scratch,
 		global ulong2 *RandomSeed,
 		global int *errCtrl,
@@ -81,7 +79,6 @@ kernel void init_buffers(
 	bufs->bufs.Beta = Beta;
 	bufs->bufs.Theta = Theta;
 	bufs->bufs.ThetaSum = ThetaSum;
-	bufs->bufs.Z = Z;
 	bufs->bufs.Scratch = Scratch;
 	bufs->bufs.RandomSeed = RandomSeed;
 	bufs->bufs.errCtrl = errCtrl;
@@ -337,47 +334,7 @@ kernel void cal_perplexity(
 }
 
 
-#define sample_z_ab_from_edge_expr_orig(i) \
-(\
-	pow(beta[i], y) * pow(1-beta[i], 1-y) * pi_a[i] * pi_b[i] \
-		+ pow(epsilon, y) * pow(1-epsilon, 1-y) * pi_a[i] * (1-pi_b[i]) \
-)
-
-#define sample_z_ab_from_edge_expr_optimized(i) \
-(	y == 1? \
-		pi_a[i] * (pi_b[i] * (beta[i] - epsilon) + epsilon) \
-	: \
-		pi_a[i] * (pi_b[i] * (epsilon - beta[i]) + (1-epsilon)) \
-)
-
-#define sample_z_ab_from_edge_expr_y_lifted(i) \
-		(pi_a[i] * (pi_b[i] * y2_1 * ((beta[i] - epsilon) + epsilon) - y_1))
-
-// #define sample_z_ab_from_edge_expr sample_z_ab_from_edge_expr_y_lifted
-#define sample_z_ab_from_edge_expr sample_z_ab_from_edge_expr_optimized
-
-inline int sample_z_ab_from_edge(
-		global const double* pi_a,
-		global const double *pi_b,
-		global const double *beta,
-		const double epsilon, const int y,
-		const double random,
-		global double *p
-		) {
-
-	int y_1 = y - 1;
-	int y2_1 = y + y_1;
-	p[0] = sample_z_ab_from_edge_expr(0);
-	for (int i = 1; i < K; ++i) {
-		p[i] = p[i-1] + sample_z_ab_from_edge_expr(i);
-	}
-
-	double location = random * p[K-1];
-	// printf((__constant char *)"random %.12lf location %.12lf\n", random, location);
-	return find_le(p, location, K, 0);
-}
-
-inline int sample_latent_vars_neighbors_of(
+inline int sample_neighbor_nodes_of(
 		global Buffers *bufs,
 		const int node,
 		global const Graph *hg,
@@ -459,7 +416,7 @@ inline int sample_latent_vars_neighbors_of(
 	return 0;
 }
 
-kernel void sample_latent_vars_neighbors(
+kernel void sample_neighbor_nodes(
 		global Buffers *bufs,
 		const int N) // #nodes
 		{
@@ -470,7 +427,7 @@ kernel void sample_latent_vars_neighbors(
 	for (int i = gid; i < N; i += gsize) {
 		// int node = bufs->bufs.Nodes[i];
 		int node = i;
-		int ret = sample_latent_vars_neighbors_of(
+		int ret = sample_neighbor_nodes_of(
 				bufs,
 				node,
 				bufs->bufs.HG,
@@ -484,100 +441,23 @@ kernel void sample_latent_vars_neighbors(
 	// printf((__constant char *)"seed (%lu,%lu)\n", randomSeed.x, randomSeed.y);
 }
 
-inline int sample_latent_vars_sample_z_ab_of(
-		global Buffers *bufs,
+
+void update_phi_for_node_(global Buffers *bufs,
 		const int node,
-		const int offset,		// neighbor subset offset
 		const int neighbors,	// neighbor subset size
-		const int N,		// #nodes
+		const int N,			// #nodes
 		global const Graph *g,
-		global int* neighbor_nodes,
-		global const double *pi,
-		global const double *beta,
-		const double epsilon,
-		global int *z, /* K elements */
-		ulong2* randomSeed,
-		global double *p) {
-	if (offset == 0) {
-		for (int i = 0; i < K; ++i) z[i] = 0;
-	}
-
-	for (int i = 0; i < neighbors; ++i) {
-		// FIXME indirect through global neighbor lookup
-		int neighbor = neighbor_nodes[i + offset];
-
-		int y_ab = graph_has_peer(g, node, neighbor);
-		int z_ab = sample_z_ab_from_edge(
-				pi + node * K,		// pi(node)
-				pi + (N + node * neighbors + i) * K,	// pi(neighbor(i) of node)
-				beta, epsilon, y_ab,
-#ifdef RANDOM_FOLLOWS_SCALABLE_GRAPH
-				// FIXME: stride through the randoms in a pattern that matches the creates
-				bufs->bufs.stored_random[offset + node * NEIGHBOR_SAMPLE_SIZE + i],
-#else
-				random(randomSeed),
-#endif
-				p);
-		z[z_ab] += 1;
-	}
-	if (false && bufs->bufs.Nodes[node] == 922) {
-		printf((__constant char *)"z[%d]: ", bufs->bufs.Nodes[node]);
-		for (int k = 0; k < K; k++) {
-			printf((__constant char *)"%d ", z[k]);
-			if ((k + 1) % 10 == 0) printf((__constant char *)"\n... z[%d]: ", bufs->bufs.Nodes[node]);
-		}
-		printf((__constant char *)"\n");
-	}
-	return 0;
-}
-
-kernel void sample_latent_vars_sample_z_ab(
-		global Buffers *bufs,
-		const int offset,
-		const int neighbors,
-		const int N, // #nodes
-		const double epsilon
-		){
-	size_t gid = get_global_id(0);
-	size_t gsize = get_global_size(0);
-	global double *_p = bufs->bufs.Scratch + gid * K;
-	ulong2 randomSeed = bufs->bufs.RandomSeed[gid];
-
-	for (int i = gid; i < N; i += gsize) {
-		// int node = bufs->bufs.Nodes[i];
-		int node = i;
-		int ret = sample_latent_vars_sample_z_ab_of(
-				bufs,
-				node,
-				offset,
-				neighbors,
-				N,
-				bufs->bufs.G,
-				// index by i
-				bufs->bufs.NodesNeighbors + i * neighbors,
-				bufs->bufs.Pi,
-				bufs->bufs.Beta,
-				epsilon,
-				bufs->bufs.Z + i * K,
-				&randomSeed,
-				_p);
-		if (ret) break;
-	}
-	bufs->bufs.RandomSeed[gid] = randomSeed;
-}
-
-void update_pi_for_node_(
-						 global Buffers *bufs,
-		int node,
-		global double *pi,// #K
+		global const int *neighbor_nodes,
+		global double *pi,// #(N,K)
 		global double *phi,// #K
-		global int *z, // #K
-		ulong2 *randomSeed,
-		global double *grad, // #K
-		double alpha,
-		double a, double b, double c,
-		int step_count, int total_node_count
+		global double *grads, // #K
+		global double *probs, // #K
+		double alpha, double epsilon, // FIXME: put into bufs->params
+	   	double eps_t,
+		ulong2 *randomSeed
 		) {
+	const global double *beta = bufs->bufs.Beta;
+
 	if (false && bufs->bufs.Nodes[node] == 5) {
 		printf((__constant char *)"phi[%d]: ", bufs->bufs.Nodes[node]);
 		for (int i = 0; i < K; i++) {
@@ -586,127 +466,109 @@ void update_pi_for_node_(
 		}
 		printf((__constant char *)"\n");
 	}
-	// printf((__constant char *)"Node %d Random seed: (%lu,%lu)\n", bufs->bufs.Nodes[node], (*randomSeed).x, (*randomSeed).y);
-	double eps_t = a * pow((1 + step_count/b), -c);
+
+	global double *pi_a = pi + node * K;
 	double phi_i_sum = 0;
-	for (int i = 0; i < K; ++i) phi_i_sum += phi[i];
-	for (int k = 0; k < K; ++k) {
-		grad[k] = -NEIGHBOR_SAMPLE_SIZE * 1/phi_i_sum;
-		grad[k] += 1/phi[k] * z[k];
+	for (int k = 0; k < K; k++) phi_i_sum += phi[k];
+	for (int k = 0; k < K; k++) {
+		grads[k] = -NEIGHBOR_SAMPLE_SIZE * 1.0 / phi_i_sum;
 	}
+	for (int i = 0; i < NEIGHBOR_SAMPLE_SIZE; i++) {
+		int neighbor = neighbor_nodes[i];
+		if (neighbor == bufs->bufs.Nodes[node]) {
+			continue;
+		}
+
+		int y_ab = graph_has_peer(g, node, neighbor);
+		double e = (y_ab == 1) ? epsilon : 1.0 - epsilon;
+		double probs_sum = 0.0;
+		global double *pi_b = pi + (N + node * neighbors + i) * K;
+		for (int k = 0; k < K; k++) {
+			double f = (y_ab == 1) ? (beta[k] - epsilon) : (epsilon - beta[k]);
+			probs[k] = pi_a[k] * (pi_b[k] * f + e);
+			probs_sum += probs[k];
+		}
+		for (int k = 0; k < K; k++) {
+			grads[k] += (probs[k] / probs_sum) / phi[k];
+		}
+	}
+	// printf((__constant char *)"Node %d Random seed: (%lu,%lu)\n", bufs->bufs.Nodes[node], (*randomSeed).x, (*randomSeed).y);
 	for (int k = 0; k < K; ++k) {
-		double phi_star_k = fabs(phi[k] + eps_t/2
-				* (alpha - phi[k] + (total_node_count/NEIGHBOR_SAMPLE_SIZE) * grad[k])
+		double phi_star_k = fabs(phi[k] + eps_t / 2.0
+				* (alpha - phi[k] + (1.0 * MAX_NODE_ID) / NEIGHBOR_SAMPLE_SIZE * grads[k])
 				+ sqrt(eps_t * phi[k]) * randn(randomSeed));
 		phi[k] = phi_star_k;
 	}
-	double phi_sum = 0;
-	for (int i = 0; i < K; ++i) phi_sum += phi[i];
-	// printf((__constant char *)"phi_sum %.12f\n", phi_sum);
-	for (int i = 0; i < K; ++i) {
-		pi[i] = phi[i]/phi_sum;
-	}
-	if (false && bufs->bufs.Nodes[node] == 5) {
-		printf((__constant char *)"pi[%d]: ", bufs->bufs.Nodes[node]);
-		for (int i = 0; i < K; i++) {
-			printf((__constant char *)"%.12f ", pi[i]);
-			if ((i + 1) % 10 == 0) printf((__constant char *)"\n    ");
-		}
-		printf((__constant char *)"\n");
-	}
+	// EMIT({bufs->bufs.Nodes[node], phi[node]})
 }
 
-kernel void update_pi(
+
+kernel void update_phi(
 		global Buffers *bufs,
+		const int neighbors,
 		const int N, // #nodes
-		double alpha,
-		double a, double b, double c,
-		int step_count, int total_node_count
+		double alpha, double epsilon,	// these all in bufs->params
+		double eps_t
 		){
 	size_t gid = get_global_id(0);
 	size_t gsize = get_global_size(0);
-	global double *_p = bufs->bufs.Scratch + gid * K;
+	global double *grads = bufs->bufs.Scratch + 2 * gid * K;
+	global double *prods = bufs->bufs.Scratch + (2 * gid + 1) * K;
 	ulong2 randomSeed = bufs->bufs.RandomSeed[gid];
 	// printf((__constant char *)"seed (%lu,%lu)\n", randomSeed.x, randomSeed.y);
 	for (int i = gid; i < N; i += gsize) {
 		// int node = bufs->bufs.Nodes[i];
 		int node = i;
-		update_pi_for_node_(bufs, node,
-				bufs->bufs.Pi + node * K,
+		update_phi_for_node_(
+				bufs,
+				node,
+				neighbors,
+				N,
+				bufs->bufs.G,
+				bufs->bufs.NodesNeighbors + i * neighbors,
+				bufs->bufs.Pi,
 				bufs->bufs.Phi + node * K,
-				bufs->bufs.Z + i * K,
-				&randomSeed,
-				_p,
-				alpha, a, b, c, step_count, total_node_count);
+				grads,
+			   	prods,
+				alpha, epsilon,
+				eps_t,
+				&randomSeed
+				);
 	}
 	bufs->bufs.RandomSeed[gid] = randomSeed;
 	// printf((__constant char *)"seed (%lu,%lu)\n", randomSeed.x, randomSeed.y);
 }
 
-#define sample_latent_vars2_orig(k) \
-( \
-	pow(beta[k], y) * pow(1-beta[k], 1-y) * pi_a[k] * pi_b[k] \
-)
 
-#define sample_latent_vars2_optimized(k) \
-( \
-	y == 1? \
-		beta[k] * pi_a[k] * pi_b[k] \
-	: \
-		(1-beta[k]) * pi_a[k] * pi_b[k] \
-)
+void update_pi_for_node(
+		global Buffers *bufs,
+		int node,
+		global double *pi,
+		global double *phi)
+{
+	global double *phi_a = phi + K * node;
+	global double *pi_a = pi + K * node;
 
-#define sample_latent_vars2_expr sample_latent_vars2_optimized
-
-int sample_latent_vars2_(
-		const global Buffers *bufs,
-		int2 edge,
-		int N,
-		global Graph *g,
-		global double *pi,// (#total_nodes, K)
-		global double *beta,// (#K)
-		global double *p,// #K+1
-		double r
-		) {
-	int y = graph_has_peer(g, edge.x, bufs->bufs.Nodes[edge.y]);
-	global double *pi_a = pi + edge.x * K;
-	global double *pi_b = pi + edge.y * K;
-
-	p[0] = sample_latent_vars2_expr(0);
-	double p_sum = p[0];
-	for (int k = 1; k < K; ++k) {
-		const double p_k = sample_latent_vars2_expr(k);
-		p[k] = p_k + p[k-1];
-		p_sum += p_k;
+	double phi_i_sum = 0;
+	for (int k = 0; k < K; k++) phi_i_sum += phi_a[k];
+	for (int k = 0; k < K; k++) {
+		pi_a[k] = phi_a[k] / phi_i_sum;
 	}
-	p[K] = 1 - p_sum;
-	double location = r * p[K-1];
-	// printf((__constant char *)"node %d neighbor %d y %d random %.12lf location %.12lf\n", bufs->bufs.Nodes[edge.x], bufs->bufs.Nodes[edge.y], y, r, location);
-	return find_le(p, location, K, 0);
 }
 
-kernel void sample_latent_vars2(
+
+kernel void update_pi(
 		global Buffers *bufs,
-		int E, // #edges
-		int N	// #nodes
-		) {
+		const int N)
+{
 	size_t gid = get_global_id(0);
 	size_t gsize = get_global_size(0);
-	ulong2 randomSeed = bufs->bufs.RandomSeed[gid];
-
-	for (int i = gid; i < E; i += gsize) {
-		bufs->bufs.Z[i] = sample_latent_vars2_(
-				bufs,
-				bufs->bufs.Edges[i],
-				N,
-				bufs->bufs.G,
-				bufs->bufs.Pi,
-				bufs->bufs.Beta,
-				bufs->bufs.Scratch + gid * (K+1),
-				random(&randomSeed));
+	for (int i = gid; i < N; i += gsize) {
+		int node = i;
+		update_pi_for_node(bufs, node, bufs->bufs.Pi, bufs->bufs.Phi);
 	}
-	bufs->bufs.RandomSeed[gid] = randomSeed;
 }
+
 
 kernel void update_beta_calculate_theta_sum(
 		global double2 *theta,		// #K
@@ -720,27 +582,51 @@ kernel void update_beta_calculate_theta_sum(
 	}
 }
 
+
 kernel void update_beta_calculate_grads(
 		global Buffers *bufs,
-		const int E, // #edges
-		double scale,
-		const int count_partial_sums
+		const int E,	// #edges
+		const double scale,
+		const int count_partial_sums,
+		const double epsilon
 		) {
 	size_t gid = get_global_id(0);
 	if (gid < count_partial_sums) {
 		size_t gsize = get_global_size(0);
+		global double *beta = bufs->bufs.Beta;
 		global double2 *grads = (global double2 *)bufs->bufs.Scratch + gid * K;
+		global double *probs = (global double *)(grads + count_partial_sums * K) + gid * K;
 
-		for (int i = 0; i < K; ++i) {
-			grads[i].x = 0;
-			grads[i].y = 0;
+		for (int k = 0; k < K; ++k) {
+			grads[k].x = 0;
+			grads[k].y = 0;
 		}
-		for (int i = gid; i < E; i += gsize) {
-			int y_ab = graph_has_peer(bufs->bufs.G, bufs->bufs.Edges[i].x, bufs->bufs.Nodes[bufs->bufs.Edges[i].y]);
-			int k = bufs->bufs.Z[i];
-			if (k != -1) {
-				grads[k].x += (1-y_ab) / bufs->bufs.Theta[k].x - 1 / bufs->bufs.ThetaSum[k];
-				grads[k].y += y_ab / bufs->bufs.Theta[k].y - 1 / bufs->bufs.ThetaSum[k];
+		for (int e = gid; e < E; e += gsize) {
+			int i = bufs->bufs.Edges[e].x;
+			int j = bufs->bufs.Edges[e].y;
+			int y_ab = graph_has_peer(bufs->bufs.G, i, j);
+
+			double pi_sum = 0.0;
+			double prob_sum = 0.0;
+			global double *pi_i = bufs->bufs.Pi + i * K;
+			global double *pi_j = bufs->bufs.Pi + j * K;
+			for (int k = 0; k < K; k++) {
+				double f = pi_i[k] * pi_j[k];
+				pi_sum += f;
+				if (y_ab) {
+					probs[k] = beta[k] * f;
+				} else {
+					probs[k] = (1.0 - beta[k]) * f;
+				}
+				prob_sum += probs[k];
+			}
+
+			double prob_0 = (y_ab ? epsilon : (1.0 - epsilon)) * (1.0 - pi_sum);
+			prob_sum += prob_0;
+			for (int k = 0; k < K; k++) {
+				double f = probs[k] / prob_sum;
+				grads[k].x += f * (1-y_ab) / bufs->bufs.Theta[k].x - 1.0 / bufs->bufs.ThetaSum[k];
+				grads[k].y += f * y_ab / bufs->bufs.Theta[k].y - 1.0 / bufs->bufs.ThetaSum[k];
 			}
 		}
 	}
@@ -766,15 +652,15 @@ kernel void update_beta_calculate_theta(
 	for (int k = 0; k < K; ++k) {
 		// Ugly: opencl compiler does not recognise the other double2 union fields(.s[i])
 		bufs->bufs.Theta[k].x = fabs(
-				bufs->bufs.Theta[k].x + eps_t
+				bufs->bufs.Theta[k].x + eps_t / 2.0
 				* (eta.x - bufs->bufs.Theta[k].x
 						+ scale * ggrads[k].x)
-				+ sqrt(2.0 * eps_t * bufs->bufs.Theta[k].x) * randn(&randomSeed));
+				+ sqrt(eps_t * bufs->bufs.Theta[k].x) * randn(&randomSeed));
 		bufs->bufs.Theta[k].y = fabs(
-				bufs->bufs.Theta[k].y + eps_t
+				bufs->bufs.Theta[k].y + eps_t / 2.0
 				* (eta.y - bufs->bufs.Theta[k].y
 						+ scale * ggrads[k].y)
-				+ sqrt(2.0 * eps_t * bufs->bufs.Theta[k].y) * randn(&randomSeed));
+				+ sqrt(eps_t * bufs->bufs.Theta[k].y) * randn(&randomSeed));
 	}
 	bufs->bufs.RandomSeed[gid] = randomSeed;
 }

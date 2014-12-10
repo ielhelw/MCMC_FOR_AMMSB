@@ -95,7 +95,12 @@ public:
 		  kRoundedThreads(round_up_to_multiples(K, groupSize)), totalAllocedClBufers(0) {
 
 #ifdef RANDOM_FOLLOWS_CPP
-		std::cerr << "RANDOM_FOLLOWS_CPP enabled" << std::endl;
+		std::cout << "RANDOM_FOLLOWS_CPP enabled" << std::endl;
+#endif
+#ifdef RANDOM_FOLLOWS_SCALABLE_GRAPH
+		std::cout << "Randomness IS compatible with nonscaling graph version" << std::endl;
+#else
+		std::cout << "Randomness is NOT compatible with nonscaling graph version" << std::endl;
 #endif
 
         // step size parameters.
@@ -106,11 +111,18 @@ public:
         // control parameters for learning
 		// num_node_sample = N / 5;
 		if (args.num_node_sample == 0) {
-			num_node_sample = static_cast< ::size_t>(std::sqrt(network.get_num_nodes()));
+			// num_node_sample = static_cast< ::size_t>(std::sqrt(network.get_num_nodes()));
+			num_node_sample = N / 50;
 		} else {
 			num_node_sample = args.num_node_sample;
 		}
-		std::cerr << "num_node_sample " << num_node_sample << std::endl;
+		if (args.interval == 0) {
+			interval = 50;
+		} else {
+			interval = args.interval;
+		}
+
+		std::cerr << "num_node_sample " << num_node_sample << " a " << a << " b " << b << " c " << c << " alpha " << alpha << " eta (" << eta[0] << "," << eta[1] << ")" << std::endl;
 		if (args.mini_batch_size == 0) {
 			mini_batch_size = N / 10;	// old default for STRATIFIED_RANDOM_NODE_SAMPLING
 		}
@@ -120,24 +132,23 @@ public:
 		t_mini_batch = timer::Timer("  sample_mini_batch");
 		t_nodes_in_mini_batch = timer::Timer("  nodes_in_mini_batch");
 		t_stage_held_out = timer::Timer("  stage_held_out");
-		t_latent_vars_neighbors = timer::Timer("  sample_latent_vars_neighbors");
+		t_sample_neighbor_nodes = timer::Timer("  sample_neighbor_nodes");
 		t_stage_graph = timer::Timer("  stage_graph");
 		t_stage_pi = timer::Timer("  stage_pi");
-		t_latent_vars_sample_z_ab = timer::Timer("  sample_latent_vars_sample_z_ab");
+		t_update_phi = timer::Timer("  update_phi");
 		t_stage_pi_neighbors = timer::Timer("      stage_pi_neighbors");
 		t_stage_pi_neighbors_gather = timer::Timer("      stage_pi_neighbors_gather");
 		total_data_stage_pi_neighbors = 0;
-		t_latent_vars2 = timer::Timer("  sample_latent_vars2");
 		t_stage_phi = timer::Timer("  stage_phi");
 		t_update_pi = timer::Timer("  update_pi");
 		t_update_beta = timer::Timer("  update_beta");
+
+		t_kernel_neighbors = timer::Timer("    kernel_neighbors");
+		t_kernel_update_phi = timer::Timer("    kernel_update_phi");
+		t_kernel_update_pi = timer::Timer("    kernel_update_pi");
 		t_kernel_calculate_beta = timer::Timer("    kernel_calculate_beta");
 		t_kernel_calculate_theta = timer::Timer("    kernel_calculate_theta");
 		t_kernel_calculate_grads = timer::Timer("    kernel_calculate_grads");
-		t_kernel_latent_vars2 = timer::Timer("    kernel_latent_vars2");
-		t_kernel_neighbors = timer::Timer("    kernel_neighbors");
-		t_kernel_sample_z_ab = timer::Timer("    kernel_sample_z_ab");
-		t_kernel_update_pi = timer::Timer("    kernel_update_pi");
 
 		hash_table_size = round_next_power_2(real_num_node_sample());
 		if ((double)hash_table_size / real_num_node_sample() < 1.8) {
@@ -160,13 +171,6 @@ public:
 		progOpts = opts.str();
 
 		std::cout << "COMPILE OPTS: " << progOpts << std::endl;
-
-		std::cout << "num_node_sample = " << num_node_sample << std::endl;
-#ifdef RANDOM_FOLLOWS_SCALABLE_GRAPH
-		std::cout << "Randomness IS compatible with nonscaling graph version" << std::endl;
-#else
-		std::cout << "Randomness IS NOT compatible with nonscaling graph version" << std::endl;
-#endif
 
 		std::cerr << "FIXME FIXME FIXME redo max. edges for strategy" << std::endl;
 		::size_t num_edges_in_batch = network.minibatch_edges_for_strategy(mini_batch_size, strategy);
@@ -208,10 +212,9 @@ public:
 		random_gamma_dummy_kernel = cl::Kernel(sampler_program, "random_gamma_dummy");
 #endif
 		row_normalize_kernel = cl::Kernel(sampler_program, "row_normalize");
-		sample_latent_vars_neighbors_kernel = cl::Kernel(sampler_program, "sample_latent_vars_neighbors");
-		sample_latent_vars_sample_z_ab_kernel = cl::Kernel(sampler_program, "sample_latent_vars_sample_z_ab");
+		sample_neighbor_nodes_kernel = cl::Kernel(sampler_program, "sample_neighbor_nodes");
+		update_phi_kernel = cl::Kernel(sampler_program, "update_phi");
 		update_pi_kernel = cl::Kernel(sampler_program, "update_pi");
-		sample_latent_vars2_kernel = cl::Kernel(sampler_program, "sample_latent_vars2");
 		update_beta_calculate_theta_sum_kernel = cl::Kernel(sampler_program, "update_beta_calculate_theta_sum");
 		update_beta_calculate_grads_kernel = cl::Kernel(sampler_program, "update_beta_calculate_grads");
 		update_beta_calculate_theta_kernel = cl::Kernel(sampler_program, "update_beta_calculate_theta");
@@ -252,10 +255,6 @@ public:
 				K * sizeof(cl_double) // #K
 				);
 
-		clZ = createBuffer("clZ", CL_MEM_READ_WRITE,
-				num_nodes_in_batch * K * sizeof(cl_int)
-				);
-
 		clScratch = createBuffer("clScratch", CL_MEM_READ_WRITE,
 				std::max(num_nodes_in_batch, globalThreads) * K * sizeof(cl_double)
 				);
@@ -286,7 +285,6 @@ public:
 		init_buffers_kernel.setArg(Idx++, clBeta);
 		init_buffers_kernel.setArg(Idx++, clTheta);
 		init_buffers_kernel.setArg(Idx++, clThetaSum);
-		init_buffers_kernel.setArg(Idx++, clZ);
 		init_buffers_kernel.setArg(Idx++, clScratch);
 		init_buffers_kernel.setArg(Idx++, clRandomSeed);
 		init_buffers_kernel.setArg(Idx++, clErrorCtrl);
@@ -315,15 +313,15 @@ public:
 				0, randomSeed.size() * sizeof(cl_ulong2),
 				randomSeed.data());
 
-		// // theta = Random::random->gamma(eta[0], eta[1], K, 2);		// parameterization for \beta
+		// theta = Random::random->gamma(eta[0], eta[1], K, 2);		// parameterization for \beta
+		// std::cerr << "Ignore eta[] in random.gamma: use 100.0 and 0.01" << std::endl;
 		// theta = Random::random->gamma(100.0, 0.01, K, 2);		// parameterization for \beta
-		std::cerr << "Ignore eta[] in random.gamma: use 100.0 and 0.01" << std::endl;
 		::size_t K_workers = std::min(K, static_cast< ::size_t>(globalThreads));
 		Idx = 0;
 		random_gamma_kernel.setArg(Idx++, clBuffers);
 		random_gamma_kernel.setArg(Idx++, clTheta);
-		random_gamma_kernel.setArg(Idx++, (double)100.0);
-		random_gamma_kernel.setArg(Idx++, (double)0.01);
+		random_gamma_kernel.setArg(Idx++, (double)eta[0]);
+		random_gamma_kernel.setArg(Idx++, (double)eta[1]);
 		random_gamma_kernel.setArg(Idx++, (int)K);
 		random_gamma_kernel.setArg(Idx++, 2);
 		clContext.queue.enqueueNDRangeKernel(random_gamma_kernel, cl::NullRange, cl::NDRange(K_workers), cl::NDRange(1));
@@ -347,7 +345,8 @@ public:
 
 #ifndef INITIALIZE_PHI_ON_DEVICE
 #ifdef RANDOM_FOLLOWS_SCALABLE_GRAPH
-		(void)kernelRandom.gamma(100.0, 0.01, K, 2);		// parameterization for \beta
+		// (void)kernelRandom.gamma(100.0, 0.01, K, 2);		// parameterization for \beta
+		(void)Random::random->gamma(eta[0], eta[1], K, 2);		// parameterization for \beta
 #endif
 		phi = kernelRandom.gamma(1, 1, N, K);					// parameterization for \pi
         // self._pi = self.__phi/np.sum(self.__phi,1)[:,np.newaxis]
@@ -465,30 +464,18 @@ public:
 
 	virtual void run() {
 		/** run mini-batch based MCMC sampler, based on the sungjin's note */
-		// timer::Timer t_outer("  outer");
-		// timer::Timer t_perplexity("  perplexity");
-		// timer::Timer t_mini_batch("  sample_mini_batch");
-		// timer::Timer t_nodes_in_mini_batch("  nodes_in_mini_batch");
-		// timer::Timer t_latent_vars_neighbors("  sample_latent_vars_neighbors");
-		// timer::Timer t_latent_vars_sample_z_ab("  sample_latent_vars_sample_z_ab");
-		// timer::Timer t_latent_vars2("  sample_latent_vars2");
-		// timer::Timer t_stage_held_out("  stage_held_out");
-		// timer::Timer t_stage_graph("  stage_graph");
-		// timer::Timer t_stage_pi("  stage_pi");
-		// timer::Timer t_stage_phi("  stage_phi");
-		// timer::Timer t_update_pi("  update_pi");
-		// timer::Timer t_update_beta("  update_beta");
 		timer::Timer::setTabular(true);
 
-		if (step_count % 1 == 0) {
-			t_perplexity.start();
-			double ppx_score = cal_perplexity_held_out();
-			t_perplexity.stop();
-			std::cout << std::fixed << std::setprecision(15) << "perplexity for hold out set is: " << ppx_score << std::endl;
-			ppxs_held_out.push_back(ppx_score);
-		}
-
 		while (step_count < max_iteration && ! is_converged()) {
+
+			if (step_count % interval == 0) {
+				t_perplexity.start();
+				double ppx_score = cal_perplexity_held_out();
+				t_perplexity.stop();
+				std::cout << std::fixed << std::setprecision(15) << "perplexity for hold out set is: " << ppx_score << std::endl;
+				ppxs_held_out.push_back(ppx_score);
+			}
+
 			auto l1 = std::chrono::system_clock::now();
 			t_outer.start();
 
@@ -509,9 +496,9 @@ public:
 			stage_subgraph(&clSubHeldOutGraph, nodes);
 			t_stage_held_out.stop();
 
-			t_latent_vars_neighbors.start();
-			sample_latent_vars_neighbors(nodes);
-			t_latent_vars_neighbors.stop();
+			t_sample_neighbor_nodes.start();
+			sample_neighbor_nodes(nodes);
+			t_sample_neighbor_nodes.stop();
 
 			std::cerr << "Stage clSubGraph" << std::endl;
 			t_stage_graph.start();
@@ -549,15 +536,16 @@ public:
 					size = real_num_node_sample() - offset;
 				}
 
-				t_latent_vars_sample_z_ab.start();
-				sample_latent_vars_sample_z_ab(nodes, offset, size);
-				t_latent_vars_sample_z_ab.stop();
+				t_update_phi.start();
+				update_phi(nodes, offset, size);
+				t_update_phi.stop();
 
 				offset += size;
 			}
 
 			t_update_pi.start();
 			update_pi(nodes);
+			commit_phi(nodes);
 			t_update_pi.stop();
 
 			// sample (z_ab, z_ba) for each edge in the mini_batch.
@@ -575,23 +563,9 @@ public:
 				std::cerr << std::endl;
 			}
 
-			t_latent_vars2.start();
-			sample_latent_vars2(mini_batch, nodes);
-			t_latent_vars2.stop();
-
 			t_update_beta.start();
-			update_beta(mini_batch, scale);
+			update_beta(mini_batch, scale, nodes);
 			t_update_beta.stop();
-
-			commit_phi(nodes);
-
-			if (step_count % 1 == 0) {
-				t_perplexity.start();
-				double ppx_score = cal_perplexity_held_out();
-				t_perplexity.stop();
-				std::cout << std::fixed << std::setprecision(12) << "perplexity for hold out set is: " << ppx_score << std::endl;
-				ppxs_held_out.push_back(ppx_score);
-			}
 
 			delete edgeSample.first;
 
@@ -607,26 +581,24 @@ public:
 		std::cout << t_mini_batch << std::endl;
 		std::cout << t_nodes_in_mini_batch << std::endl;
 		std::cout << t_stage_held_out << std::endl;
-		std::cout << t_latent_vars_neighbors << std::endl;
+		std::cout << t_sample_neighbor_nodes << std::endl;
 		std::cout << t_stage_graph << std::endl;
 		std::cout << t_stage_pi << std::endl;
-		std::cout << t_latent_vars_sample_z_ab << std::endl;
+		std::cout << t_update_phi << std::endl;
 		std::cout << t_stage_pi_neighbors << std::endl;
 		std::cout << t_stage_pi_neighbors_gather << std::endl;
 		double mb = total_data_stage_pi_neighbors / (1.0 * (1 << 20));
 		std::cout << "    Wrote staged data " << mb << "MB " <<
 			"time " << std::chrono::duration_cast<std::chrono::milliseconds>(t_stage_pi_neighbors_gather.total()).count() << "ms " <<
 			"throughput " << (mb / std::chrono::duration_cast<std::chrono::milliseconds>(t_stage_pi_neighbors_gather.total()).count()) << "GB/s" << std::endl;
-		std::cout << t_latent_vars2 << std::endl;
 		std::cout << t_stage_phi << std::endl;
 		std::cout << t_update_pi << std::endl;
 		std::cout << t_update_beta << std::endl;
 		std::cout << t_kernel_calculate_beta << std::endl;
 		std::cout << t_kernel_calculate_theta << std::endl;
 		std::cout << t_kernel_calculate_grads << std::endl;
-		std::cout << t_kernel_latent_vars2 << std::endl;
 		std::cout << t_kernel_neighbors << std::endl;
-		std::cout << t_kernel_sample_z_ab << std::endl;
+		std::cout << t_kernel_update_phi << std::endl;
 		std::cout << t_kernel_update_pi << std::endl;
 	}
 
@@ -655,76 +627,10 @@ protected:
 	}
 #endif
 
-	void update_beta(const OrderedEdgeSet &mini_batch, double scale) {
-		int arg;
-
-		arg = 0;
-		update_beta_calculate_theta_sum_kernel.setArg(arg++, clTheta);
-		update_beta_calculate_theta_sum_kernel.setArg(arg++, clThetaSum);
-
-		t_kernel_calculate_theta.start();
-		clContext.queue.enqueueNDRangeKernel(update_beta_calculate_theta_sum_kernel,
-											 cl::NullRange, cl::NDRange(kRoundedThreads), cl::NDRange(groupSize));
-		clContext.queue.finish();
-		t_kernel_calculate_theta.stop();
-
-		::size_t countPartialSums = std::min(mini_batch.size(), globalThreads);
-		::size_t calcGradsThreads = round_up_to_multiples(countPartialSums, groupSize);
-
-		update_beta_calculate_grads_kernel.setArg(0, clBuffers);
-		update_beta_calculate_grads_kernel.setArg(1, (cl_int)mini_batch.size());
-		update_beta_calculate_grads_kernel.setArg(2, (cl_double)scale);
-		update_beta_calculate_grads_kernel.setArg(3, (cl_int)countPartialSums);
-
-		clContext.queue.finish(); // Wait for sample_latent_vars2
-
-		t_kernel_calculate_grads.start();
-		cl::Event e_grads_kernel;
-		clContext.queue.enqueueNDRangeKernel(update_beta_calculate_grads_kernel, cl::NullRange,
-				cl::NDRange(calcGradsThreads), cl::NDRange(groupSize),
-				NULL, &e_grads_kernel);
-
-		double eps_t = a * std::pow(1.0 + step_count / b, -c);
-		cl_double2 clEta;
-		clEta.s[0] = this->eta[0];
-		clEta.s[1] = this->eta[1];
-
-		e_grads_kernel.wait();
-		t_kernel_calculate_grads.stop();
-
-		update_beta_calculate_theta_kernel.setArg(0, clBuffers);
-		update_beta_calculate_theta_kernel.setArg(1, (cl_double)scale);
-		update_beta_calculate_theta_kernel.setArg(2, (cl_double)eps_t);
-		update_beta_calculate_theta_kernel.setArg(3, clEta);
-		update_beta_calculate_theta_kernel.setArg(4, (int)countPartialSums);
-
-		clContext.queue.enqueueTask(update_beta_calculate_theta_kernel);
-		clContext.queue.finish();
-
-		arg = 0;
-		update_beta_calculate_beta_kernel.setArg(arg++, clTheta);
-		update_beta_calculate_beta_kernel.setArg(arg++, clBeta);
-
-		t_kernel_calculate_beta.start();
-		clContext.queue.enqueueNDRangeKernel(update_beta_calculate_beta_kernel, cl::NullRange, cl::NDRange(kRoundedThreads), cl::NDRange(groupSize));
-		clContext.queue.finish();
-		t_kernel_calculate_beta.stop();
-
-		clContext.queue.enqueueReadBuffer(clBeta, CL_FALSE, 0, K * sizeof(double), beta.data());
-		clContext.queue.finish();
-		if (false) {
-			std::cerr << __func__ << std::endl;
-			std::cerr << "beta ";
-			for (::size_t k = 0; k < K; k++) {
-				std::cerr << beta[k] << " ";
-			}
-			std::cerr << std::endl;
-		}
-	}
-
-	void sample_latent_vars2(const OrderedEdgeSet &mini_batch, const std::vector<int> &nodes) {
+	void stage_edges(const OrderedEdgeSet &mini_batch, const std::vector<int> &nodes) {
 		::size_t i;
 		std::vector<cl_int2> edges(mini_batch.size());
+		// Space saver: node_index might as well be an unordered_map<int, int>
 		// Copy edges
 #ifndef NDEBUG
 		std::vector<int> node_index(N, -1);
@@ -756,18 +662,82 @@ protected:
 		clContext.queue.enqueueWriteBuffer(clEdges, CL_FALSE,
 				0, edges.size()*sizeof(cl_int2),
 				edges.data());
+	}
 
-		::size_t arg = 0;
-		sample_latent_vars2_kernel.setArg(arg++, clBuffers);
-		sample_latent_vars2_kernel.setArg(arg++, (cl_int)edges.size());
-		sample_latent_vars2_kernel.setArg(arg++, (cl_int)nodes.size());
+	void update_beta(const OrderedEdgeSet &mini_batch, double scale, const std::vector<int> &nodes) {
+		int arg;
 
-		clContext.queue.finish(); // Wait for clEdges and PiUpdates from sample_latent_vars_and_update_pi
+		// We assume that are staged correctly:
+		//  - linked_edges graph G
+		//  - pi(nodes(mini_batch))
 
-		t_kernel_latent_vars2.start();
-		clContext.queue.enqueueNDRangeKernel(sample_latent_vars2_kernel, cl::NullRange, cl::NDRange(globalThreads), cl::NDRange(groupSize));
-clContext.queue.finish(); // Wait for clEdges and PiUpdates from sample_latent_vars_and_update_pi
-		t_kernel_latent_vars2.stop();
+		arg = 0;
+		update_beta_calculate_theta_sum_kernel.setArg(arg++, clTheta);
+		update_beta_calculate_theta_sum_kernel.setArg(arg++, clThetaSum);
+
+		t_kernel_calculate_theta.start();
+		clContext.queue.enqueueNDRangeKernel(update_beta_calculate_theta_sum_kernel,
+											 cl::NullRange, cl::NDRange(kRoundedThreads), cl::NDRange(groupSize));
+		clContext.queue.finish();
+		t_kernel_calculate_theta.stop();
+
+		stage_edges(mini_batch, nodes);
+
+		::size_t countPartialSums = std::min(mini_batch.size(), globalThreads);
+		::size_t calcGradsThreads = round_up_to_multiples(countPartialSums, groupSize);
+
+		arg = 0;
+		update_beta_calculate_grads_kernel.setArg(arg++, clBuffers);
+		update_beta_calculate_grads_kernel.setArg(arg++, (cl_int)mini_batch.size());
+		update_beta_calculate_grads_kernel.setArg(arg++, (cl_double)scale);
+		update_beta_calculate_grads_kernel.setArg(arg++, (cl_int)countPartialSums);
+		update_beta_calculate_grads_kernel.setArg(arg++, (cl_double)epsilon);	// move to clBuffers
+
+		clContext.queue.finish(); // Wait for previous kernel, staging of edges
+
+		t_kernel_calculate_grads.start();
+		cl::Event e_grads_kernel;
+		clContext.queue.enqueueNDRangeKernel(update_beta_calculate_grads_kernel, cl::NullRange,
+				cl::NDRange(calcGradsThreads), cl::NDRange(groupSize),
+				NULL, &e_grads_kernel);
+
+		double eps_t = a * std::pow(1.0 + step_count / b, -c);
+		cl_double2 clEta;
+		clEta.s[0] = this->eta[0];
+		clEta.s[1] = this->eta[1];
+
+		e_grads_kernel.wait();
+		t_kernel_calculate_grads.stop();
+
+		arg = 0;
+		update_beta_calculate_theta_kernel.setArg(arg++, clBuffers);
+		update_beta_calculate_theta_kernel.setArg(arg++, (cl_double)scale);
+		update_beta_calculate_theta_kernel.setArg(arg++, (cl_double)eps_t);
+		update_beta_calculate_theta_kernel.setArg(arg++, clEta);
+		update_beta_calculate_theta_kernel.setArg(arg++, (int)countPartialSums);
+
+		clContext.queue.enqueueTask(update_beta_calculate_theta_kernel);
+		clContext.queue.finish();
+
+		arg = 0;
+		update_beta_calculate_beta_kernel.setArg(arg++, clTheta);
+		update_beta_calculate_beta_kernel.setArg(arg++, clBeta);
+
+		t_kernel_calculate_beta.start();
+		clContext.queue.enqueueNDRangeKernel(update_beta_calculate_beta_kernel, cl::NullRange, cl::NDRange(kRoundedThreads), cl::NDRange(groupSize));
+		clContext.queue.finish();
+		t_kernel_calculate_beta.stop();
+
+		clContext.queue.enqueueReadBuffer(clBeta, CL_FALSE, 0, K * sizeof(double), beta.data());
+		clContext.queue.finish();
+		if (false) {
+			std::cerr << __func__ << std::endl;
+			std::cerr << "beta ";
+			for (::size_t k = 0; k < K; k++) {
+				std::cerr << beta[k] << " ";
+			}
+			std::cerr << std::endl;
+		}
 	}
 
 	::size_t real_num_node_sample() const {
@@ -892,17 +862,17 @@ clContext.queue.finish(); // Wait for clEdges and PiUpdates from sample_latent_v
 		clContext.queue.enqueueReadBuffer(buffer, CL_TRUE, 0, size * K * sizeof(cl_double), hostBuffer.data() + offset);
 	}
 
-	void sample_latent_vars_neighbors(const std::vector<int> &nodes) {
+	void sample_neighbor_nodes(const std::vector<int> &nodes) {
 
 		clContext.queue.enqueueWriteBuffer(clNodes, CL_FALSE, 0, nodes.size() * sizeof(cl_int), nodes.data());
 
 		int Idx = 0;
-		sample_latent_vars_neighbors_kernel.setArg(Idx++, clBuffers);
-		sample_latent_vars_neighbors_kernel.setArg(Idx++, (cl_int)nodes.size());
+		sample_neighbor_nodes_kernel.setArg(Idx++, clBuffers);
+		sample_neighbor_nodes_kernel.setArg(Idx++, (cl_int)nodes.size());
 
 		clContext.queue.finish();
 		t_kernel_neighbors.start();
-		clContext.queue.enqueueNDRangeKernel(sample_latent_vars_neighbors_kernel, cl::NullRange, cl::NDRange(globalThreads), cl::NDRange(groupSize));
+		clContext.queue.enqueueNDRangeKernel(sample_neighbor_nodes_kernel, cl::NullRange, cl::NDRange(globalThreads), cl::NDRange(groupSize));
 		clContext.queue.finish();
 		t_kernel_neighbors.stop();
 
@@ -915,63 +885,43 @@ clContext.queue.finish(); // Wait for clEdges and PiUpdates from sample_latent_v
 		}
 	}
 
-	void sample_latent_vars_sample_z_ab(const std::vector<int> &nodes, ::size_t offset, ::size_t size) {
+	void update_phi(const std::vector<int> &nodes, ::size_t offset, ::size_t size) {
 
-		// TODO FIXME TODO FIXME
-		// On the host, just maintain Phi.
-		// Stage only the sub_vectors for Phi. Calculate Pi from these.
-		// No need to maintain Pi on the host, or to copy it back and forth.
-		// TODO FIXME TODO FIXME
-		//
 		// Pi is staged in two contiguous sections:
-		// 1) pi(i) for i in nodes
+		// 1) pi(i) for i in nodes, before the loop that calls us
 		// 2) pi(n'(i)) for n'(i): the subset [offset:size] of neighbors n(i) of node i
 
 		t_stage_pi_neighbors.start();
 		stage_sub_neighbor_vectors(clPi, pi, hostPiBuffer, hostNeighbors, nodes.size() * real_num_node_sample(), offset, size, real_num_node_sample(), nodes.size() * K * sizeof(cl_double));
 		t_stage_pi_neighbors.stop();
 
+		cl_double eps_t = a * std::pow(1 + step_count / b, -c);   // step size
 		int Idx = 0;
-		sample_latent_vars_sample_z_ab_kernel.setArg(Idx++, clBuffers);
-		sample_latent_vars_sample_z_ab_kernel.setArg(Idx++, (cl_int)offset);
-		sample_latent_vars_sample_z_ab_kernel.setArg(Idx++, (cl_int)size);
-		sample_latent_vars_sample_z_ab_kernel.setArg(Idx++, (cl_int)nodes.size());
-		// TODO FIXME put epsilon into global device struct
-		sample_latent_vars_sample_z_ab_kernel.setArg(Idx++, (cl_double)epsilon);
+		update_phi_kernel.setArg(Idx++, clBuffers);
+		update_phi_kernel.setArg(Idx++, (cl_int)size);
+		update_phi_kernel.setArg(Idx++, (cl_int)nodes.size());
+		// TODO FIXME put alpha, a, b, c, epsilon into global device struct
+		update_phi_kernel.setArg(Idx++, (cl_double)alpha);
+		update_phi_kernel.setArg(Idx++, (cl_double)epsilon);
+		update_phi_kernel.setArg(Idx++, eps_t);
 
 		clContext.queue.finish();
-		check_for_kernel_errors(); // sample_latent_vars_neighbors_kernel
-		t_kernel_sample_z_ab.start();
-		clContext.queue.enqueueNDRangeKernel(sample_latent_vars_sample_z_ab_kernel, cl::NullRange, cl::NDRange(globalThreads), cl::NDRange(groupSize));
+		check_for_kernel_errors(); // sample_neighbor_nodes_kernel
+		t_kernel_update_phi.start();
+		clContext.queue.enqueueNDRangeKernel(update_phi_kernel, cl::NullRange, cl::NDRange(globalThreads), cl::NDRange(groupSize));
 		clContext.queue.finish();
-		t_kernel_sample_z_ab.stop();
-		check_for_kernel_errors(); // sample_latent_vars_sample_z_ab_kernel
-	}
-
-	void sample_latent_vars(const std::vector<int>& nodes, ::size_t offset, ::size_t size) {
+		t_kernel_update_phi.stop();
+		check_for_kernel_errors(); // update_phi_kernel
 	}
 
 	void update_pi(const std::vector<int> &nodes) {
 
-		// 2. stage pi for the merged(nodes, neighbors)
-		// 3. ensure that pi is staged in the order of the device neighbor index array
-		t_stage_phi.start();
-		stage_sub_vectors(clPhi, phi, hostPhiBuffer, nodes);
-		t_stage_phi.stop();
-
 		int Idx = 0;
 		update_pi_kernel.setArg(Idx++, clBuffers);
 		update_pi_kernel.setArg(Idx++, (cl_int)nodes.size());
-		// FIXME: store alpha, a, b, c in clBuffers. They are constants.
-		update_pi_kernel.setArg(Idx++, (cl_double)alpha);
-		update_pi_kernel.setArg(Idx++, (cl_double)a);
-		update_pi_kernel.setArg(Idx++, (cl_double)b);
-		update_pi_kernel.setArg(Idx++, (cl_double)c);
-		update_pi_kernel.setArg(Idx++, (cl_int)step_count);
-		update_pi_kernel.setArg(Idx++, (cl_int)N);
 
 		clContext.queue.finish();
-		check_for_kernel_errors(); // sample_latent_vars
+		check_for_kernel_errors(); // previous kernel
 		t_kernel_update_pi.start();
 		clContext.queue.enqueueNDRangeKernel(update_pi_kernel, cl::NullRange, cl::NDRange(globalThreads), cl::NDRange(groupSize));
 		clContext.queue.finish();
@@ -1229,10 +1179,9 @@ clContext.queue.finish(); // Wait for clEdges and PiUpdates from sample_latent_v
 	cl::Kernel random_gamma_dummy_kernel;
 #endif
 	cl::Kernel row_normalize_kernel;
-	cl::Kernel sample_latent_vars_neighbors_kernel;
-	cl::Kernel sample_latent_vars_sample_z_ab_kernel;
+	cl::Kernel sample_neighbor_nodes_kernel;
+	cl::Kernel update_phi_kernel;
 	cl::Kernel update_pi_kernel;
-	cl::Kernel sample_latent_vars2_kernel;
 	cl::Kernel update_beta_calculate_theta_sum_kernel;
 	cl::Kernel update_beta_calculate_grads_kernel;
 	cl::Kernel update_beta_calculate_theta_kernel;
@@ -1258,7 +1207,6 @@ clContext.queue.finish(); // Wait for clEdges and PiUpdates from sample_latent_v
 	cl::Buffer clBeta;
 	cl::Buffer clTheta;
 	cl::Buffer clThetaSum;
-	cl::Buffer clZ;
 	cl::Buffer clScratch;
 	cl::Buffer clRandomSeed;
 	cl::Buffer clErrorCtrl;
@@ -1285,6 +1233,7 @@ protected:
 	double	c;
 
 	::size_t num_node_sample;
+	::size_t interval;
 
 	// To be deprecated:
 	// std::vector<std::vector<double> > theta;		// parameterization for \beta
@@ -1307,9 +1256,8 @@ protected:
 	timer::Timer t_perplexity;
 	timer::Timer t_mini_batch;
 	timer::Timer t_nodes_in_mini_batch;
-	timer::Timer t_latent_vars_neighbors;
-	timer::Timer t_latent_vars_sample_z_ab;
-	timer::Timer t_latent_vars2;
+	timer::Timer t_sample_neighbor_nodes;
+	timer::Timer t_update_phi;
 	timer::Timer t_stage_held_out;
 	timer::Timer t_stage_graph;
 	timer::Timer t_stage_pi;
@@ -1322,9 +1270,8 @@ protected:
 	timer::Timer t_kernel_calculate_beta;
 	timer::Timer t_kernel_calculate_theta;
 	timer::Timer t_kernel_calculate_grads;
-	timer::Timer t_kernel_latent_vars2;
 	timer::Timer t_kernel_neighbors;
-	timer::Timer t_kernel_sample_z_ab;
+	timer::Timer t_kernel_update_phi;
 	timer::Timer t_kernel_update_pi;
 };
 
