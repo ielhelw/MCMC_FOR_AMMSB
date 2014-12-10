@@ -365,24 +365,6 @@ inline int sample_z_ab_from_edge(
 		global double *p
 		) {
 
-	if (0) {
-		printf((__constant char *)"pi_a: ");
-		for (int k = 0; k < K; k++) {
-			printf((__constant char *)"%.12f ", pi_a[k]);
-		}
-		printf((__constant char *)"\n");
-		printf((__constant char *)"pi_b: ");
-		for (int k = 0; k < K; k++) {
-			printf((__constant char *)"%.12f ", pi_b[k]);
-		}
-		printf((__constant char *)"\n");
-		printf((__constant char *)"beta: ");
-		for (int k = 0; k < K; k++) {
-			printf((__constant char *)"%.12f ", beta[k]);
-		}
-		printf((__constant char *)"\n");
-	}
-
 	int y_1 = y - 1;
 	int y2_1 = y + y_1;
 	p[0] = sample_z_ab_from_edge_expr(0);
