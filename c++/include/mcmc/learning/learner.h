@@ -27,6 +27,7 @@ public:
 		eta.resize(2);
 		eta[0] = args.eta0;
 		eta[1] = args.eta1;
+		average_count = 1;
 
 		// parameters related to control model
 		K = args.K;
@@ -57,6 +58,8 @@ public:
 		CONVERGENCE_THRESHOLD = 0.000000000001;
 
 		stepsize_switch = false;
+
+		ppx_for_heldout = std::vector<double>(network.get_held_out_size());
 
 		if (args.strategy == "unspecified") {
 			strategy = strategy::STRATIFIED_RANDOM_NODE;
@@ -160,16 +163,31 @@ protected:
 			const Edge &e = edge->first;
 			double edge_likelihood = cal_edge_likelihood(pi[e.first], pi[e.second],
 														 edge->second, beta);
+			if (std::isnan(edge_likelihood)) {
+				std::cerr << "edge_likelihood is NaN; potential bug" << std::endl;
+			}
+
+			//cout<<"AVERAGE COUNT: " <<average_count;
+			ppx_for_heldout[i] = (ppx_for_heldout[i] * (average_count-1) + edge_likelihood)/(average_count);
 			// std::cerr << std::fixed << std::setprecision(12) << e << " in? " << (e.in(network.get_linked_edges()) ? "True" : "False") << " -> " << edge_likelihood << std::endl;
 			// FIXME FIXME should not test again if we already know
 			// assert(edge->second == e.in(network.get_linked_edges()));
 			if (edge->second) {
 				link_count++;
-				link_likelihood += edge_likelihood;
+				link_likelihood += std::log(ppx_for_heldout[i]);
+				//link_likelihood += edge_likelihood;
+
+				if (std::isnan(link_likelihood)){
+					std::cerr << "link_likelihood is NaN; potential bug" << std::endl;
+				}
 			} else {
 				assert(! present(network.get_linked_edges(), e));
 				non_link_count++;
-				non_link_likelihood += edge_likelihood;
+				//non_link_likelihood += edge_likelihood;
+				non_link_likelihood += std::log(ppx_for_heldout[i]);
+				if (std::isnan(non_link_likelihood)){
+					std::cerr << "non_link_likelihood is NaN; potential bug" << std::endl;
+				}
 			}
 			i++;
 		}
@@ -190,6 +208,11 @@ protected:
 		}
 
 		// return std::exp(-avg_likelihood);
+
+
+		//if (step_count > 1000000)
+		average_count = average_count + 1;
+		std::cerr << "average_count is: " << average_count << " ";
 		return (-avg_likelihood);
 	}
 
@@ -253,7 +276,7 @@ protected:
 			s = 1.0e-30;
 		}
 
-		return std::log(s);
+		return s;
 #if 0
 		double prob = 0.0;
 		double s = 0.0;
@@ -300,12 +323,15 @@ protected:
 
 	std::vector<double> ppxs_held_out;
 	std::vector<double> ppxs_test;
+	std::vector<double> iterations;
+	std::vector<double> ppx_for_heldout;
 
 	::size_t max_iteration;
 
 	double CONVERGENCE_THRESHOLD;
 
 	bool stepsize_switch;
+	::size_t average_count;
 
 	strategy::strategy strategy;
 };

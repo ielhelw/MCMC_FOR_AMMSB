@@ -175,9 +175,10 @@ public:
 	std::vector<std::vector<double> > gamma(double p1, double p2, ::size_t n1, ::size_t n2) {
 		// std::vector<std::vector<double> > *a = new std::vector<double>(n1, std::vector<double>(n2, 0.0));
 		std::vector<std::vector<double> > a(n1, std::vector<double>(n2));
+// #define GAMMA_IMPLEMENTATION_STD
 #ifdef GAMMA_IMPLEMENTATION_STD
 #if __GNUC_MINOR__ >= 5
-
+std::cerr << "Use std::gamma" << std::endl;
 		std::gamma_distribution<double> gammaDistribution(p1, p2);
 
 		for (::size_t i = 0; i < n1; i++) {

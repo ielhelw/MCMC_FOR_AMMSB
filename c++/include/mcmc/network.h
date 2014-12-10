@@ -102,7 +102,7 @@ public:
 		case strategy::STRATIFIED_RANDOM_PAIR:
 			return stratified_random_pair_sampling(mini_batch_size);
 		case strategy::STRATIFIED_RANDOM_NODE:
-			std::cerr << "Set stratified random node sampling divisor to " << (N / mini_batch_size) << std::endl;
+			// std::cerr << "Set stratified random node sampling divisor to " << (N / mini_batch_size) << std::endl;
 			return stratified_random_node_sampling(N / mini_batch_size);
 		default:
 			throw MCMCException("Invalid sampling strategy");
@@ -146,6 +146,10 @@ public:
 
 	::size_t get_num_total_edges() const {
 		return num_total_edges;
+	}
+
+	::size_t get_held_out_size() const {
+		return held_out_size;
 	}
 
 	int get_num_nodes() const {
