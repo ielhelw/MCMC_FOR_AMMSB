@@ -47,7 +47,7 @@ public:
 	}
 
 	std::ostream &put(std::ostream &s) const {
-		s << "(" << first << ", " << second << ")";
+		s << std::setw(1) << "(" << first << "," << second << ")";
 
 		return s;
 	}

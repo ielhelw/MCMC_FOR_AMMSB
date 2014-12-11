@@ -243,6 +243,7 @@ protected:
 							   bool y,
 							   const std::vector<double> &beta) const {
 		double s = 0.0;
+#define DONT_FOLD_Y
 #ifdef DONT_FOLD_Y
 		if (y) {
 			for (::size_t k = 0; k < K; k++) {
@@ -254,6 +255,9 @@ protected:
 				double f = pi_a[k] * pi_b[k];
 				s += f * (1.0 - beta[k]);
 				sum += f;
+				assert(! std::isnan(f));
+				assert(! std::isnan(s));
+				assert(! std::isnan(sum));
 			}
 			s += (1.0 - sum) * (1.0 - epsilon);
 		}

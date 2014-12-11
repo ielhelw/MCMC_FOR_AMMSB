@@ -225,7 +225,7 @@ public:
 		clBuffers = createBuffer("clBuffers", CL_MEM_READ_WRITE, 64 * 100); // enough space for 100 * 8 pointers
 
 		clNodes = createBuffer("clNodes", CL_MEM_READ_ONLY,
-				10 * num_nodes_in_batch * sizeof(cl_int)
+				num_nodes_in_batch * sizeof(cl_int)
 				);
 		clNodesNeighbors = createBuffer("clNodesNeighbors", CL_MEM_READ_WRITE,
 				num_nodes_in_batch * real_num_node_sample() * sizeof(cl_int)
@@ -256,7 +256,7 @@ public:
 				);
 
 		clScratch = createBuffer("clScratch", CL_MEM_READ_WRITE,
-				std::max(num_nodes_in_batch, globalThreads) * K * sizeof(cl_double)
+				std::max(num_nodes_in_batch, globalThreads) * K * (sizeof(cl_double2) + sizeof(cl_double))
 				);
 		clRandomSeed = createBuffer("clRandomSeed", CL_MEM_READ_WRITE,
 				globalThreads * sizeof(cl_ulong2)
@@ -282,6 +282,7 @@ public:
 		init_buffers_kernel.setArg(Idx++, clEdges);
 		init_buffers_kernel.setArg(Idx++, clPi);
 		init_buffers_kernel.setArg(Idx++, clPhi);
+		std::cerr << "Phi size " << num_nodes_in_batch << " * " << K << " = " << (num_nodes_in_batch * K) << std::endl;
 		init_buffers_kernel.setArg(Idx++, clBeta);
 		init_buffers_kernel.setArg(Idx++, clTheta);
 		init_buffers_kernel.setArg(Idx++, clThetaSum);
@@ -413,13 +414,21 @@ public:
 
 		t_kernel_calculate_beta.start();
 		Idx = 0;
-		update_beta_calculate_beta_kernel.setArg(Idx++, clTheta);
-		update_beta_calculate_beta_kernel.setArg(Idx++, clBeta);
+		update_beta_calculate_beta_kernel.setArg(Idx++, clBuffers);
 		clContext.queue.enqueueNDRangeKernel(update_beta_calculate_beta_kernel, cl::NullRange, cl::NDRange(K_workers), cl::NDRange(1));
 
 		clContext.queue.finish();
 		t_kernel_calculate_beta.stop();
-		clContext.queue.enqueueReadBuffer(clBeta, CL_FALSE, 0, K * sizeof(double), beta.data());
+		clContext.queue.enqueueReadBuffer(clBeta, CL_FALSE, 0, K * sizeof(cl_double), beta.data());
+		if (true) {
+			clContext.queue.finish();
+			std::cerr << __func__ << std::endl;
+			std::cerr << "beta ";
+			for (::size_t k = 0; k < K; k++) {
+				std::cerr << beta[k] << " ";
+			}
+			std::cerr << std::endl;
+		}
 
 		clContext.queue.finish();
 
@@ -511,6 +520,10 @@ public:
 			t_stage_pi.start();
 			stage_sub_vectors(clPi, pi, hostPiBuffer, nodes);
 			t_stage_pi.stop();
+			t_stage_phi.start();
+			stage_sub_vectors(clPhi, phi, hostPhiBuffer, nodes);
+			clContext.queue.finish();
+			t_stage_phi.stop();
 
 			if (true) {
 				std::unordered_set<int> unique;
@@ -630,36 +643,27 @@ protected:
 	void stage_edges(const OrderedEdgeSet &mini_batch, const std::vector<int> &nodes) {
 		::size_t i;
 		std::vector<cl_int2> edges(mini_batch.size());
-		// Space saver: node_index might as well be an unordered_map<int, int>
-		// Copy edges
-#ifndef NDEBUG
-		std::vector<int> node_index(N, -1);
-#else
-		std::vector<int> node_index(N);
-#endif
+		std::unordered_map<int, int> node_index(N);
 		i = 0;
 		for (auto n: nodes) {
 			node_index[n] = i;
 			i++;
 		}
-#if 0
-		std::transform(mini_batch.begin(), mini_batch.end(), edges.begin(), [](const Edge& e) {
-			cl_int2 E;
-			E.s[0] = node_index[e.first];
-			E.s[1] = node_index[e.second];
-			return E;
-		});
-#else
 		i = 0;
 		for (auto e: mini_batch) {
-			assert(node_index[e.first] != -1);
-			assert(node_index[e.second] != -1);
 			edges[i].s[0] = node_index[e.first];
 			edges[i].s[1] = node_index[e.second];
 			i++;
 		}
-#endif
-		clContext.queue.enqueueWriteBuffer(clEdges, CL_FALSE,
+		if (true) {
+			std::cerr << "Edges: ";
+			for (auto e: edges) {
+				std::cerr << e << " ";
+			}
+			std::cerr << std::endl;
+		}
+
+		clContext.queue.enqueueWriteBuffer(clEdges, CL_TRUE,
 				0, edges.size()*sizeof(cl_int2),
 				edges.data());
 	}
@@ -719,18 +723,28 @@ protected:
 		clContext.queue.enqueueTask(update_beta_calculate_theta_kernel);
 		clContext.queue.finish();
 
+		if (true) {
+			std::vector<cl_double2> theta(K);
+			clContext.queue.enqueueReadBuffer(clTheta, CL_TRUE, 0, K * sizeof(cl_double2), theta.data());
+			std::cerr << __func__ << std::endl;
+			std::cerr << "theta ";
+			for (::size_t k = 0; k < K; k++) {
+				std::cerr << "(" << theta[k].s[0] << "," << theta[k].s[1] << ") ";
+			}
+			std::cerr << std::endl;
+		}
+
 		arg = 0;
-		update_beta_calculate_beta_kernel.setArg(arg++, clTheta);
-		update_beta_calculate_beta_kernel.setArg(arg++, clBeta);
+		update_beta_calculate_beta_kernel.setArg(arg++, clBuffers);
 
 		t_kernel_calculate_beta.start();
 		clContext.queue.enqueueNDRangeKernel(update_beta_calculate_beta_kernel, cl::NullRange, cl::NDRange(kRoundedThreads), cl::NDRange(groupSize));
 		clContext.queue.finish();
 		t_kernel_calculate_beta.stop();
 
-		clContext.queue.enqueueReadBuffer(clBeta, CL_FALSE, 0, K * sizeof(double), beta.data());
+		clContext.queue.enqueueReadBuffer(clBeta, CL_FALSE, 0, K * sizeof(cl_double), beta.data());
 		clContext.queue.finish();
-		if (false) {
+		if (true) {
 			std::cerr << __func__ << std::endl;
 			std::cerr << "beta ";
 			for (::size_t k = 0; k < K; k++) {
@@ -794,6 +808,11 @@ protected:
 		for (auto n: nodes) {
 			assert(data[n].size() == K);
 			hostBuffer.insert(hostBuffer.end(), data[n].begin(), data[n].end());
+#ifndef NDEBUG
+			for (::size_t k = 0; k < K; k++) {
+				assert(! isnan(data[n][k]));
+			}
+#endif
 		}
 
 		clContext.queue.enqueueWriteBuffer(buffer, CL_FALSE, 0, nodes.size() * K * sizeof(cl_double), hostBuffer.data());
