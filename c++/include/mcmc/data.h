@@ -47,7 +47,7 @@ public:
 	}
 
 	std::ostream &put(std::ostream &s) const {
-		s << std::setw(1) << "(" << first << "," << second << ")";
+		s << std::setw(1) << "(" << first << ", " << second << ")";
 
 		return s;
 	}
@@ -138,7 +138,11 @@ namespace std {
 template<>
 struct hash<mcmc::Edge> {
 public:
+#ifdef RANDOM_FOLLOWS_CPP_WENZHE
+	int operator()(const mcmc::Edge &x) const;
+#else
 	::size_t operator()(const mcmc::Edge &x) const;
+#endif
 };
 }
 
@@ -207,10 +211,17 @@ public:
 }	// namespace mcmc
 
 namespace std {
+#ifdef RANDOM_FOLLOWS_CPP_WENZHE
+int hash<mcmc::Edge>::operator()(const mcmc::Edge &x) const {
+	int h = std::hash<int>()(x.first) ^ std::hash<int>()(x.second);
+	return h;
+}
+#else
 ::size_t hash<mcmc::Edge>::operator()(const mcmc::Edge &x) const {
 	::size_t h = ((size_t)x.first * (size_t)x.second) ^ ((size_t)x.first + (size_t)x.second);
 	return h;
 }
+#endif
 }
 
 #endif	// ndef MCMC_DATA_H__

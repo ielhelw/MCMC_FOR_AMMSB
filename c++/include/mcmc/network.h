@@ -250,7 +250,7 @@ public:
 		if (flag == 0) {
 			// sample mini-batch from linked edges
 #ifdef RANDOM_FOLLOWS_PYTHON
-			std::cerr << "FIXME: replace EdgeList w/ (unordered) EdgeSet again" << std::endl;
+			std::cerr << __func__ << ": FIXME: replace EdgeList w/ (unordered) EdgeSet again" << std::endl;
 			auto sampled_linked_edges = Random::random->sampleList(linked_edges, mini_batch_size * 2);
 #else
 			auto sampled_linked_edges = Random::random->sample(linked_edges, mini_batch_size * 2);
@@ -321,6 +321,7 @@ public:
 			int nodeId = Random::random->randint(0, N - 1);
 			// decide to sample links or non-links
 			int flag = Random::random->randint(0, 1);	// flag=0: non-link edges  flag=1: link edges
+			// std::cerr << "num_pieces " << num_pieces << " flag " << flag << std::endl;
 
 			OrderedEdgeSet *mini_batch_set = new OrderedEdgeSet();
 
@@ -343,8 +344,9 @@ public:
 					for (std::vector<int>::iterator neighborId = nodeList->begin();
 							neighborId != nodeList->end();
 							neighborId++) {
+						// std::cerr << "random neighbor " << *neighborId << std::endl;
 						if (p < 0) {
-							std::cerr << __func__ << ": Are you sure p < 0 is a good idea?" << std::endl;
+							// std::cerr << __func__ << ": Are you sure p < 0 is a good idea?" << std::endl;
 							break;
 						}
 						if (*neighborId == nodeId) {
@@ -365,8 +367,8 @@ public:
 					delete nodeList;
 				}
 
-				if (true) {
-					std::cerr << "Create mini batch size " << mini_batch_set->size() << " scale " << (N * num_pieces) << std::endl;
+				if (false) {
+					std::cerr << "A Create mini batch size " << mini_batch_set->size() << " scale " << (N * num_pieces) << std::endl;
 				}
 
 				return EdgeSample(mini_batch_set, N * num_pieces);
@@ -384,8 +386,8 @@ public:
 												std::max(nodeId, *neighborId)));
 				}
 
-				if (true) {
-					std::cerr << "Create mini batch size " << mini_batch_set->size() << " scale " << N << std::endl;
+				if (false) {
+					std::cerr << "B Create mini batch size " << mini_batch_set->size() << " scale " << N << std::endl;
 				}
 				if (mini_batch_set->size() > 0) {
 					return EdgeSample(mini_batch_set, N);
@@ -426,8 +428,8 @@ protected:
 							    "please use smaller held out ratio.");
 		}
 
-#ifdef RANDOM_FOLLOWS_PYTHON
-		std::cerr << "FIXME: replace EdgeList w/ (unordered) EdgeSet again" << std::endl;
+#if defined RANDOM_FOLLOWS_CPP_WENZHE || defined RANDOM_FOLLOWS_PYTHON
+		std::cerr << __func__ << ": FIXME: replace EdgeList w/ (unordered) EdgeSet again" << std::endl;
 		auto sampled_linked_edges = Random::random->sampleList(linked_edges, p);
 #else
 		auto sampled_linked_edges = Random::random->sample(linked_edges, p);
@@ -469,17 +471,18 @@ protected:
 			// Because we already used some of the linked edges for held_out sets,
 			// here we sample twice as much as links, and select among them, which
 			// is likely to contain valid p linked edges.
-#ifdef RANDOM_FOLLOWS_PYTHON
-			std::cerr << "FIXME: replace EdgeList w/ (unordered) EdgeSet again" << std::endl;
+#if defined RANDOM_FOLLOWS_CPP_WENZHE || defined RANDOM_FOLLOWS_PYTHON
+			std::cerr << __func__ << ": FIXME: replace EdgeList w/ (unordered) EdgeSet again" << std::endl;
 			auto sampled_linked_edges = Random::random->sampleList(linked_edges, 2 * p);
 #else
+#  error OOPPPSSS
 			auto sampled_linked_edges = Random::random->sample(linked_edges, 2 * p);
 #endif
 			for (auto edge = sampled_linked_edges->cbegin();
 				 	edge != sampled_linked_edges->cend();
 					edge++) {
 				if (p < 0) {
-					std::cerr << __func__ << ": Are you sure p < 0 is a good idea?" << std::endl;
+					// std::cerr << __func__ << ": Are you sure p < 0 is a good idea?" << std::endl;
 					break;
 				}
 

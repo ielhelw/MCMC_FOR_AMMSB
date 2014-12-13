@@ -472,7 +472,7 @@ void update_phi_for_node_(global Buffers *bufs,
 	double phi_i_sum = 0;
 	for (int k = 0; k < K; k++) phi_i_sum += phi[k];
 	for (int k = 0; k < K; k++) {
-		grads[k] = -NEIGHBOR_SAMPLE_SIZE * 1.0 / phi_i_sum;
+		grads[k] = 0.0;
 	}
 	for (int i = 0; i < NEIGHBOR_SAMPLE_SIZE; i++) {
 		int neighbor = neighbor_nodes[i];
@@ -490,7 +490,7 @@ void update_phi_for_node_(global Buffers *bufs,
 			probs_sum += probs[k];
 		}
 		for (int k = 0; k < K; k++) {
-			grads[k] += (probs[k] / probs_sum) / phi[k];
+			grads[k] += (probs[k] / probs_sum) / phi[k] - 1.0 / phi_i_sum;
 		}
 	}
 	// printf((__constant char *)"Node %d Random seed: (%lu,%lu)\n", bufs->bufs.Nodes[node], (*randomSeed).x, (*randomSeed).y);
@@ -647,8 +647,8 @@ printf((__constant char *)"HERE %d edge[%d] (%d,[%d]=%d)\n", __LINE__, e, i, j, 
 			prob_sum += prob_0;
 			for (int k = 0; k < K; k++) {
 				double f = probs[k] / prob_sum;
-				grads[k].x += f * (1-y_ab) / bufs->bufs.Theta[k].x - 1.0 / bufs->bufs.ThetaSum[k];
-				grads[k].y += f * y_ab / bufs->bufs.Theta[k].y - 1.0 / bufs->bufs.ThetaSum[k];
+				grads[k].x += f * ((1-y_ab) / bufs->bufs.Theta[k].x - 1.0 / bufs->bufs.ThetaSum[k]);
+				grads[k].y += f * (y_ab / bufs->bufs.Theta[k].y - 1.0 / bufs->bufs.ThetaSum[k]);
 			}
 		}
 	}

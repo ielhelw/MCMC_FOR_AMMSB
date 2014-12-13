@@ -26,7 +26,12 @@ int main(int argc, char *argv[]) {
 
 		DataFactory df(args.dataset_class, args.filename);
 		const Data *data = df.get_data();
-		Network network(data, 0.1);
+		double held_out_ratio = args.held_out_ratio;
+		if (args.held_out_ratio == 0.0) {
+			held_out_ratio = 0.01;
+			std::cerr << "Set held_out_ratio to default " << held_out_ratio << std::endl;
+		}
+		Network network(data, held_out_ratio);
 
 		if (args.run.mcmc_stochastical) {
 			std::cout << "start MCMC stochastical" << std::endl;

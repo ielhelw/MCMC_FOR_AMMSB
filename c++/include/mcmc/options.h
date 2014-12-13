@@ -209,7 +209,7 @@ public:
 			("num-node-sample,n", po::value< ::size_t>(&num_node_sample)->default_value(0), "neighbor sample size")
 			("strategy", po::value<std::string>(&strategy)->default_value("unspecified"), "sampling strategy")
 
-			("epsilon,e", po::value<double>(&epsilon)->default_value(0.05), "epsilon")
+			("epsilon,e", po::value<double>(&epsilon)->default_value(0.0000001), "epsilon")
 			("max-iteration,x", po::value< ::size_t>(&max_iteration)->default_value(10000000), "max_iteration")
 			("interval,i", po::value< ::size_t>(&interval)->default_value(0), "perplexity interval")
 
@@ -218,7 +218,7 @@ public:
 			("c", po::value<double>(&c)->default_value(0.55), "c")
 
 			("num-updates,u", po::value< ::size_t>(&num_updates)->default_value(1000), "num_updates")
-			("hold-out-prob,h", po::value<double>(&hold_out_prob)->default_value(0.1), "hold_out_prob")
+			("held-out-ratio,h", po::value<double>(&held_out_ratio)->default_value(0.0), "held_out_ratio")
 			("output-dir,o", po::value<std::string>(&output_dir)->default_value("."), "output_dir")
 
 			("input-file,f", po::value<std::string>(&filename)->default_value(""), "input file")
@@ -268,7 +268,7 @@ public:
 	double		c;
 
 	::size_t	num_updates;
-	double		hold_out_prob;
+	double		held_out_ratio;
 	std::string	output_dir;
 
 	std::string filename;

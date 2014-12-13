@@ -63,10 +63,22 @@ public:
     This method is great marriage between MCMC and stochastic methods.
     */
     MCMCSamplerStochastic(const Options &args, const Network &graph)
-			: Learner(args, graph), kernelRandom(42) {
+			: Learner(args, graph),
+#ifdef RANDOM_FOLLOWS_CPP_WENZHE
+			kernelRandom(Random::random)
+#else
+			kernelRandom(new KernelRandom(42))
+#endif
+	{
 
 #ifdef RANDOM_FOLLOWS_CPP
 		std::cerr << "RANDOM_FOLLOWS_CPP enabled" << std::endl;
+#endif
+#ifdef RANDOM_FOLLOWS_CPP_WENZHE
+		std::cerr << "RANDOM_FOLLOWS_CPP_WENZHE enabled" << std::endl;
+#endif
+#ifdef RANDOM_SYSTEM
+		std::cerr << "RANDOM_SYSTEM enabled" << std::endl;
 #endif
 
         // step size parameters.
@@ -100,8 +112,7 @@ public:
         // updating \pi and \beta.
 		theta = Random::random->gamma(eta[0], eta[1], K, 2);		// parameterization for \beta
 		// std::cerr << "Ignore eta[] in random.gamma: use 100.0 and 0.01" << std::endl;
-		// theta = kernelRandom.gamma(100.0, 0.01, K, 2);		// parameterization for \beta
-		phi = kernelRandom.gamma(1, 1, N, K);					// parameterization for \pi
+		// theta = kernelRandom->gamma(100.0, 0.01, K, 2);		// parameterization for \beta
 
 		// FIXME RFHH -- code sharing with variational_inf*::update_pi_beta()
         // temp = self.__theta/np.sum(self.__theta,1)[:,np.newaxis]
@@ -110,23 +121,32 @@ public:
 		np::row_normalize(&temp, theta);
 		std::transform(temp.begin(), temp.end(), beta.begin(), np::SelectColumn<double>(1));
 
-		phi = kernelRandom.gamma(1, 1, N, K);					// parameterization for \pi
+		phi = kernelRandom->gamma(1, 1, N, K);					// parameterization for \pi
         // self._pi = self.__phi/np.sum(self.__phi,1)[:,np.newaxis]
 		pi.resize(phi.size(), std::vector<double>(phi[0].size()));
 		np::row_normalize(&pi, phi);
 
 		std::cout << "beta[0] " << beta[0] << std::endl;
-		std::cout << "theta[*][0]: ";
-		for (::size_t k = 0; k < K; k++) {
-			std::cout << theta[k][0] << " ";
+		if (false) {
+			std::cout << "theta[*][0]: ";
+			for (::size_t k = 0; k < K; k++) {
+				std::cout << theta[k][0] << " ";
+			}
+			std::cout << std::endl;
+			std::cout << "theta[*][1]: ";
+			for (::size_t k = 0; k < K; k++) {
+				std::cout << theta[k][1] << " ";
+			}
+			std::cout << std::endl;
 		}
-		std::cout << std::endl;
 		std::cout << "phi[0][0] " << phi[0][0] << std::endl;
-		std::cout << "pi[0] ";
-		for (::size_t k = 0; k < K; k++) {
-			std::cout << pi[0][k] << " ";
+		if (false) {
+			std::cout << "pi[0] ";
+			for (::size_t k = 0; k < K; k++) {
+				std::cout << pi[0][k] << " ";
+			}
+			std::cout << std::endl;
 		}
-		std::cout << std::endl;
 
 		if (false) {
 			for (::size_t i = 0; i < 10; i++) {
@@ -150,6 +170,9 @@ public:
 	}
 
 	virtual ~MCMCSamplerStochastic() {
+#ifndef RANDOM_FOLLOWS_CPP_WENZHE
+		delete kernelRandom;
+#endif
 	}
 
 #if 0
@@ -268,6 +291,7 @@ public:
 			t_nodes_in_mini_batch.start();
 			OrderedVertexSet nodes = nodes_in_batch(mini_batch);
 			t_nodes_in_mini_batch.stop();
+// std::cerr << "mini_batch size " << mini_batch.size() << " num_node_sample " << num_node_sample << std::endl;
 
 #ifndef EFFICIENCY_FOLLOWS_PYTHON
 			double eps_t  = a * std::pow(1 + step_count / b, -c);	// step size
@@ -292,7 +316,7 @@ public:
 			}
 
 			t_update_pi.start();
-#ifdef EFFICIENCY_FOLLOWS_PYTHON
+#if 1 || defined EFFICIENCY_FOLLOWS_PYTHON
 			np::row_normalize(&pi, phi);	// update pi from phi.
 #else
 			// No need to update pi where phi is unchanged
@@ -425,26 +449,26 @@ protected:
 #endif
 			}
 
-#ifdef EFFICIENCY_FOLLOWS_PYTHON
+#if defined EFFICIENCY_FOLLOWS_PYTHON
 			double prob_0 = std::pow(epsilon, y) * std::pow(1 - epsilon, 1 - y) * (1 - pi_sum);
 			double prob_sum = np::sum(probs) + prob_0;
 			for (::size_t k = 0; k < K; k++) {
-				grads[k][0] += probs[k] / prob_sum * std::abs(1 - y) / theta[k][0] - 1 / theta_sum[k];
-				grads[k][1] += probs[k] / prob_sum * std::abs(-y) / theta[k][1] - 1 / theta_sum[k];
+				grads[k][0] += (probs[k] / prob_sum) * (std::abs(1 - y) / theta[k][0] - 1 / theta_sum[k]);
+				grads[k][1] += (probs[k] / prob_sum) * (std::abs(-y) / theta[k][1] - 1 / theta_sum[k]);
 			}
 #else
 			double prob_0 = ((y == 1) ? epsilon : (1.0 - epsilon)) * (1.0 - pi_sum);
 			double prob_sum = np::sum(probs) + prob_0;
 			for (::size_t k = 0; k < K; k++) {
 				double f = probs[k] / prob_sum;
-				grads[k][0] += f * (1 - y) / theta[k][0] - 1.0 / theta_sum[k];
-				grads[k][1] += f * y / theta[k][1] - 1.0 / theta_sum[k];
+				grads[k][0] += f * ((1 - y) / theta[k][0] - 1.0 / theta_sum[k]);
+				grads[k][1] += f * (y / theta[k][1] - 1.0 / theta_sum[k]);
 			}
 #endif
 		}
 
         // update theta
-		std::vector<std::vector<double> > noise = kernelRandom.randn(K, 2);	// random noise.
+		std::vector<std::vector<double> > noise = kernelRandom->randn(K, 2);	// random noise.
 		// std::vector<std::vector<double> > theta_star(theta);
         for (::size_t k = 0; k < K; k++) {
             for (::size_t i = 0; i < 2; i++) {
@@ -454,9 +478,10 @@ protected:
 																  scale * grads[k][i]) +
 									   std::pow(eps_t, .5) * std::pow(theta[k][i], .5) * noise[k][i]);
 #else
+				double f = std::sqrt(eps_t * theta[k][i]);
 				theta[k][i] = std::abs(theta[k][i] + eps_t / 2.0 * (eta[i] - theta[k][i] + \
 																	scale * grads[k][i]) +
-									   sqrt(eps_t * theta[k][i]) * noise[k][i]);
+									   f * noise[k][i]);
 #endif
 			}
 		}
@@ -489,7 +514,7 @@ protected:
 #endif
 
 		double phi_i_sum = np::sum(phi[i]);
-        std::vector<double> grads(K, neighbors.size() / phi_i_sum);	// gradient for K classes
+        std::vector<double> grads(K, 0.0);	// gradient for K classes
 		// std::vector<double> phi_star(K);					// temp vars
 
 		for (auto neighbor = neighbors.begin();
@@ -506,9 +531,11 @@ protected:
 			}
 
 			std::vector<double> probs(K);
+#if ! defined EFFICIENCY_FOLLOWS_PYTHON
 			double e = (y_ab == 1) ? epsilon : 1.0 - epsilon;
+#endif
 			for (::size_t k = 0; k < K; k++) {
-#ifdef EFFICIENCY_FOLLOWS_PYTHON
+#if defined EFFICIENCY_FOLLOWS_PYTHON
 				probs[k] = std::pow(beta[k], y_ab) * std::pow(1 - beta[k], 1 - y_ab) * pi[i][k] * pi[*neighbor][k];
 				probs[k] += std::pow(epsilon, y_ab) * std::pow(1 - epsilon, 1 - y_ab) * pi[i][k] * (1 - pi[*neighbor][k]);
 #else
@@ -519,11 +546,11 @@ protected:
 
 			double prob_sum = np::sum(probs);
 			for (::size_t k = 0; k < K; k++) {
-				grads[k] += (probs[k] / prob_sum) / phi[i][k];
+				grads[k] += (probs[k] / prob_sum) / phi[i][k] - 1.0 / phi_i_sum;
 			}
 		}
 
-		std::vector<double> noise = kernelRandom.randn(K);	// random gaussian(???) noise.
+		std::vector<double> noise = kernelRandom->randn(K);	// random gaussian noise.
 #ifndef EFFICIENCY_FOLLOWS_PYTHON
 		double Nn = (1.0 * N) / num_node_sample;
 #endif
@@ -581,17 +608,21 @@ protected:
         const EdgeMap &held_out_set = network.get_held_out_set();
         const EdgeMap &test_set = network.get_test_set();
 
-#ifdef EFFICIENCY_FOLLOWS_PYTHON
+#if defined RANDOM_FOLLOWS_CPP_WENZHE || defined EFFICIENCY_FOLLOWS_PYTHON
         while (p > 0) {
+#ifdef EFFICIENCY_FOLLOWS_PYTHON
 			std::cerr << "FIXME: horribly inefficient xrange thingy" << std::endl;
 			auto nodeList = Random::random->sample(np::xrange(0, N), sample_size * 2);
+#else
+			auto nodeList = Random::random->sampleRange(N, sample_size * 2);
+#endif
 
             for (std::vector<int>::const_iterator neighborId = nodeList->begin();
 				 	neighborId != nodeList->end();
 					neighborId++) {
 				if (p < 0) {
 					if (p != 0) {
-//						std::cerr << __func__ << ": Are you sure p < 0 is a good idea?" << std::endl;
+						// std::cerr << __func__ << ": Are you sure p < 0 is a good idea?" << std::endl;
 					}
 					break;
 				}
@@ -611,12 +642,12 @@ protected:
 
 			delete nodeList;
 		}
-#else
+#else	// if defined RANDOM_FOLLOWS_CPP_WENZHE || defined EFFICIENCY_FOLLOWS_PYTHON
         for (int i = 0; i <= p; ++i) {
 			int neighborId;
 			Edge edge(0, 0);
 			do {
-				neighborId = kernelRandom.randint(0, N - 1);
+				neighborId = kernelRandom->randint(0, N - 1);
 				edge = Edge(std::min(nodeId, neighborId), std::max(nodeId, neighborId));
 			} while (neighborId == nodeId
 					|| edge.in(held_out_set)
@@ -692,7 +723,7 @@ protected:
             p[k] += p[k-1];
 		}
 
-        double r = kernelRandom.random();
+        double r = kernelRandom->random();
         double location = r * p[K-1];
 #if 0
         // get the index of bounds that containing location.
@@ -722,7 +753,7 @@ protected:
 
 	std::vector<std::vector<double> > theta;		// parameterization for \beta
 	std::vector<std::vector<double> > phi;			// parameterization for \pi
-	Random::Random kernelRandom;
+	Random::Random *kernelRandom;
 };
 
 }	// namespace learning

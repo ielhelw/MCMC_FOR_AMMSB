@@ -19,15 +19,25 @@
 namespace mcmc {
 namespace Random {
 
+#ifdef RANDOM_FOLLOWS_CPP_WENZHE
+#  define RANDOM_SYSTEM
+#endif
+
 // #define RANDOM_SYSTEM
 // #define USE_TAUS2_RANDOM
 
 class Random {
+protected:
+	Random() {
+	}
+
 public:
 	Random(unsigned int seed) {
+#ifndef RANDOM_SYSTEM
 		if (seed == 0) throw NumberFormatException("Random seed value 0 not allowed"); // zero value not allowed
 		xorshift_state[0] = seed;
 		xorshift_state[1] = seed + 1;
+#endif
 		srand(seed);
 		std::cerr << "Random seed " << seed << std::endl;
 	}
@@ -35,6 +45,7 @@ public:
 	virtual ~Random() {
 	}
 
+#ifndef RANDOM_SYSTEM
 	inline uint64_t xorshift_128plus() {
 		uint64_t s1 = xorshift_state[0];
 		uint64_t s0 = xorshift_state[1];
@@ -44,6 +55,9 @@ public:
 	}
 
 	inline uint64_t rand() {return xorshift_128plus();}
+#else
+	// use system ::rand()
+#endif
 
 	int randint(int from, int upto) {
 		return (rand() % (upto + 1 - from)) + from;
@@ -175,10 +189,8 @@ public:
 	std::vector<std::vector<double> > gamma(double p1, double p2, ::size_t n1, ::size_t n2) {
 		// std::vector<std::vector<double> > *a = new std::vector<double>(n1, std::vector<double>(n2, 0.0));
 		std::vector<std::vector<double> > a(n1, std::vector<double>(n2));
-// #define GAMMA_IMPLEMENTATION_STD
-#ifdef GAMMA_IMPLEMENTATION_STD
+#ifdef RANDOM_SYSTEM
 #if __GNUC_MINOR__ >= 5
-std::cerr << "Use std::gamma" << std::endl;
 		std::gamma_distribution<double> gammaDistribution(p1, p2);
 
 		for (::size_t i = 0; i < n1; i++) {
@@ -195,10 +207,11 @@ std::cerr << "Use std::gamma" << std::endl;
 				a[i][j] = gsl_ran_gamma (NULL, p1, p2);
 			}
 		}
-#endif
+#endif	// def RANDOM_SYSTEM
 		return a;
 	}
 
+#ifndef RANDOM_SYSTEM
 protected:
 /* gauss.c - gaussian random numbers, using the Ziggurat method
  *
@@ -338,24 +351,41 @@ gsl_ran_gaussian_ziggurat (const gsl_rng * r, const double sigma)
 
   return sign * sigma * x;
 }
+#endif	// def RANDOM_SYSTEM
 
 
 public:
 	std::vector<double> randn(::size_t K) {
 		auto r = std::vector<double>(K);
+#ifdef RANDOM_SYSTEM
+#if __GNUC_MINOR__ >= 5
+		for (::size_t i = 0; i < K; i++) {
+			r[i] = normalDistribution(generator);
+		}
+
+		return r;
+
+#else	// if __GNUC_MINOR__ >= 5
+		throw UnimplementedException("random::randn");
+#endif
+#else
 		for (::size_t i = 0; i < K; i++) {
 			r[i] = gsl_ran_gaussian_ziggurat(NULL, 0.5);
 		}
+#endif
 
 		return r;
 	}
 
 	void report() {
+#ifndef RANDOM_SYSTEM
 		if (n_randn > 0) {
 			std::cerr << "randn calls " << n_randn << " iters " << (1.0 * iters_randn / n_randn) << " ktab miss " << (1.0 * ktab_exceed_randn / n_randn) << " log/exp calls " << (1.0 * log_exp_randn / n_randn) << std::endl;
 		}
+#endif
 	}
 
+#ifndef RANDOM_SYSTEM
 protected:
 	::size_t n_randn = 0;
 	::size_t iters_randn = 0;
@@ -479,15 +509,20 @@ gsl_ran_gamma (const gsl_rng * r, double a, double b)
     return f * b * d * v;
   }
 }
+#endif	// def RANDOM_SYSTEM
 
 
 protected:
+#ifndef RANDOM_SYSTEM
 	uint64_t xorshift_state[2];
+#else
 #if __GNUC_MINOR__ >= 5
-		std::default_random_engine generator;
+	std::default_random_engine generator;
+	std::normal_distribution<double> normalDistribution;
 #else  // if __GNUC_MINOR__ >= 5
-		throw UnimplementedException("random::gamma");
+	throw UnimplementedException("random::gamma");
 #endif
+#endif	// ndef RANDOM_SYSTEM
 };
 
 
