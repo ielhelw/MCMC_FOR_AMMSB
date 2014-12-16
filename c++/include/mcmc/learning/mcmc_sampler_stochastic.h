@@ -67,12 +67,18 @@ public:
 #ifdef RANDOM_FOLLOWS_CPP_WENZHE
 			kernelRandom(Random::random)
 #else
-			kernelRandom(new KernelRandom(42))
+			kernelRandom(new Random::Random(42))
 #endif
 	{
 
 #ifdef RANDOM_FOLLOWS_CPP
 		std::cerr << "RANDOM_FOLLOWS_CPP enabled" << std::endl;
+#endif
+#ifdef EFFICIENCY_FOLLOWS_CPP_WENZHE
+		std::cerr << "EFFICIENCY_FOLLOWS_CPP_WENZHE enabled" << std::endl;
+#  ifndef RANDOM_FOLLOWS_CPP_WENZHE
+#    define RANDOM_FOLLOWS_CPP_WENZHE
+#  endif
 #endif
 #ifdef RANDOM_FOLLOWS_CPP_WENZHE
 		std::cerr << "RANDOM_FOLLOWS_CPP_WENZHE enabled" << std::endl;
@@ -110,7 +116,7 @@ public:
         // restrict this is using re-reparameterization techniques, where we
         // introduce another set of variables, and update them first followed by
         // updating \pi and \beta.
-		theta = Random::random->gamma(eta[0], eta[1], K, 2);		// parameterization for \beta
+		theta = kernelRandom->gamma(eta[0], eta[1], K, 2);		// parameterization for \beta
 		// std::cerr << "Ignore eta[] in random.gamma: use 100.0 and 0.01" << std::endl;
 		// theta = kernelRandom->gamma(100.0, 0.01, K, 2);		// parameterization for \beta
 
@@ -238,7 +244,7 @@ public:
 				t_perplexity.start();
 				double ppx_score = cal_perplexity_held_out();
 				t_perplexity.stop();
-				std::cout << std::fixed << std::setprecision(12) << "step count: " << step_count << " perplexity for hold out set is: " << ppx_score << std::endl;
+				std::cout << std::fixed << std::setprecision(12) << "step count: " << step_count << " perplexity for hold out set: " << ppx_score << std::endl;
 				ppxs_held_out.push_back(ppx_score);
 
 				t2 = clock();
@@ -293,7 +299,7 @@ public:
 			t_nodes_in_mini_batch.stop();
 // std::cerr << "mini_batch size " << mini_batch.size() << " num_node_sample " << num_node_sample << std::endl;
 
-#ifndef EFFICIENCY_FOLLOWS_PYTHON
+#ifndef EFFICIENCY_FOLLOWS_CPP_WENZHE
 			double eps_t  = a * std::pow(1 + step_count / b, -c);	// step size
 			// double eps_t = std::pow(1024+step_count, -0.5);
 #endif
@@ -308,7 +314,7 @@ public:
 
 				t_update_phi.start();
 				update_phi(*node, neighbors
-#ifndef EFFICIENCY_FOLLOWS_PYTHON
+#ifndef EFFICIENCY_FOLLOWS_CPP_WENZHE
 						   , eps_t
 #endif
 						   );
@@ -316,7 +322,8 @@ public:
 			}
 
 			t_update_pi.start();
-#if 1 || defined EFFICIENCY_FOLLOWS_PYTHON
+#if defined EFFICIENCY_FOLLOWS_CPP_WENZHE
+			// std::cerr << __func__ << ":" << __LINE__ << ":  FIXME" << std::endl;
 			np::row_normalize(&pi, phi);	// update pi from phi.
 #else
 			// No need to update pi where phi is unchanged
@@ -335,16 +342,9 @@ public:
             step_count++;
 			t_outer.stop();
 			auto l2 = std::chrono::system_clock::now();
-			std::cout << "LOOP  = " << (l2-l1).count() << std::endl;
-
-            /**
-            pr.disable()
-            s = StringIO.StringIO()
-            sortby = 'cumulative'
-            ps = pstats.Stats(pr, stream=s).sort_stats(sortby)
-            ps.print_stats()
-            print s.getvalue()
-             */
+			if (false) {
+				std::cout << "LOOP  = " << (l2-l1).count() << std::endl;
+			}
 		}
 
 		timer::Timer::printHeader(std::cout);
@@ -418,6 +418,7 @@ protected:
     void update_beta(const OrderedEdgeSet &mini_batch, double scale) {
 
 		std::vector<std::vector<double> > grads(K, std::vector<double>(2, 0.0));	// gradients K*2 dimension
+		std::vector<double> probs(K);
         // sums = np.sum(self.__theta,1)
 		std::vector<double> theta_sum(theta.size());
 		std::transform(theta.begin(), theta.end(), theta_sum.begin(), np::sum<double>);
@@ -433,11 +434,10 @@ protected:
 			int i = edge->first;
 			int j = edge->second;
 
-			std::vector<double> probs(K);
 			double pi_sum = 0.0;
 			for (::size_t k = 0; k < K; k++) {
 				pi_sum += pi[i][k] * pi[j][k];
-#ifdef EFFICIENCY_FOLLOWS_PYTHON
+#ifdef EFFICIENCY_FOLLOWS_CPP_WENZHE
 				probs[k] = std::pow(beta[k], y) * std::pow(1 - beta[k], 1 - y) * pi[i][k] * pi[j][k];
 #else
 				double f = pi[i][k] * pi[j][k];
@@ -449,7 +449,7 @@ protected:
 #endif
 			}
 
-#if defined EFFICIENCY_FOLLOWS_PYTHON
+#if defined EFFICIENCY_FOLLOWS_CPP_WENZHE
 			double prob_0 = std::pow(epsilon, y) * std::pow(1 - epsilon, 1 - y) * (1 - pi_sum);
 			double prob_sum = np::sum(probs) + prob_0;
 			for (::size_t k = 0; k < K; k++) {
@@ -461,8 +461,9 @@ protected:
 			double prob_sum = np::sum(probs) + prob_0;
 			for (::size_t k = 0; k < K; k++) {
 				double f = probs[k] / prob_sum;
-				grads[k][0] += f * ((1 - y) / theta[k][0] - 1.0 / theta_sum[k]);
-				grads[k][1] += f * (y / theta[k][1] - 1.0 / theta_sum[k]);
+				double one_over_theta_sum = 1.0 / theta_sum[k];
+				grads[k][0] += f * ((1 - y) / theta[k][0] - one_over_theta_sum);
+				grads[k][1] += f * (y / theta[k][1] - one_over_theta_sum);
 			}
 #endif
 		}
@@ -491,24 +492,15 @@ protected:
 		std::vector<std::vector<double> > temp(theta.size(), std::vector<double>(theta[0].size()));
 		np::row_normalize(&temp, theta);
 		std::transform(temp.begin(), temp.end(), beta.begin(), np::SelectColumn<double>(1));
-
-		if (false) {
-			std::cerr << __func__ << std::endl;
-			std::cerr << "beta ";
-			for (::size_t k = 0; k < K; k++) {
-				std::cerr << beta[k] << " ";
-			}
-			std::cerr << std::endl;
-		}
 	}
 
 
     void update_phi(int i, const OrderedVertexSet &neighbors
-#ifndef EFFICIENCY_FOLLOWS_PYTHON
+#ifndef EFFICIENCY_FOLLOWS_CPP_WENZHE
 						   , double eps_t
 #endif
 					) {
-#ifdef EFFICIENCY_FOLLOWS_PYTHON
+#ifdef EFFICIENCY_FOLLOWS_CPP_WENZHE
 		double eps_t  = a * std::pow(1 + step_count / b, -c);	// step size
 		// double eps_t = std::pow(1024+step_count, -0.5);
 #endif
@@ -531,11 +523,11 @@ protected:
 			}
 
 			std::vector<double> probs(K);
-#if ! defined EFFICIENCY_FOLLOWS_PYTHON
+#if ! defined EFFICIENCY_FOLLOWS_CPP_WENZHE
 			double e = (y_ab == 1) ? epsilon : 1.0 - epsilon;
 #endif
 			for (::size_t k = 0; k < K; k++) {
-#if defined EFFICIENCY_FOLLOWS_PYTHON
+#if defined EFFICIENCY_FOLLOWS_CPP_WENZHE
 				probs[k] = std::pow(beta[k], y_ab) * std::pow(1 - beta[k], 1 - y_ab) * pi[i][k] * pi[*neighbor][k];
 				probs[k] += std::pow(epsilon, y_ab) * std::pow(1 - epsilon, 1 - y_ab) * pi[i][k] * (1 - pi[*neighbor][k]);
 #else
@@ -551,12 +543,12 @@ protected:
 		}
 
 		std::vector<double> noise = kernelRandom->randn(K);	// random gaussian noise.
-#ifndef EFFICIENCY_FOLLOWS_PYTHON
+#ifndef EFFICIENCY_FOLLOWS_CPP_WENZHE
 		double Nn = (1.0 * N) / num_node_sample;
 #endif
         // update phi for node i
         for (::size_t k = 0; k < K; k++) {
-#ifdef EFFICIENCY_FOLLOWS_PYTHON
+#ifdef EFFICIENCY_FOLLOWS_CPP_WENZHE
 			// FIXME replace a**0.5 * b**0.5 with sqrt(a * b)
 			phi[i][k] = std::abs(phi[i][k] + eps_t / 2 * (alpha - phi[i][k] + \
 														  (N*1.0 / num_node_sample) * grads[k]) +

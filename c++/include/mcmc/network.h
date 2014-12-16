@@ -389,9 +389,8 @@ public:
 				if (false) {
 					std::cerr << "B Create mini batch size " << mini_batch_set->size() << " scale " << N << std::endl;
 				}
-				if (mini_batch_set->size() > 0) {
-					return EdgeSample(mini_batch_set, N);
-				}
+
+				return EdgeSample(mini_batch_set, N);
 			}
 		}
 	}
@@ -475,7 +474,6 @@ protected:
 			std::cerr << __func__ << ": FIXME: replace EdgeList w/ (unordered) EdgeSet again" << std::endl;
 			auto sampled_linked_edges = Random::random->sampleList(linked_edges, 2 * p);
 #else
-#  error OOPPPSSS
 			auto sampled_linked_edges = Random::random->sample(linked_edges, 2 * p);
 #endif
 			for (auto edge = sampled_linked_edges->cbegin();

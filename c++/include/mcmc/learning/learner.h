@@ -198,7 +198,10 @@ protected:
 		//         (1-self._link_ratio)*(non_link_likelihood/non_link_count)
 
 		// direct calculation.
-		double avg_likelihood = (link_likelihood + non_link_likelihood) / (link_count + non_link_count);
+		double avg_likelihood = 0.0;
+		if (link_count + non_link_count != 0){
+			avg_likelihood = (link_likelihood + non_link_likelihood) / (link_count + non_link_count);
+		}
 		if (true) {
 			double avg_likelihood1 = link_ratio * (link_likelihood / link_count) + \
 										 (1.0 - link_ratio) * (non_link_likelihood / non_link_count);
@@ -252,9 +255,15 @@ protected:
 		} else {
 			double sum = 0.0;
 			for (::size_t k = 0; k < K; k++) {
+#ifdef EFFICIENCY_FOLLOWS_CPP_WENZHE
+				// FIXME share common subexpressions
+				s += pi_a[k] * pi_b[k] * (1.0 - beta[k]);
+				sum += pi_a[k] * pi_b[k];
+#else
 				double f = pi_a[k] * pi_b[k];
 				s += f * (1.0 - beta[k]);
 				sum += f;
+#endif
 				assert(! std::isnan(f));
 				assert(! std::isnan(s));
 				assert(! std::isnan(sum));
