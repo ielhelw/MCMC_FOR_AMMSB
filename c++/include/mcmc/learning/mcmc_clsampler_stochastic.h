@@ -121,11 +121,12 @@ public:
 		} else {
 			interval = args.interval;
 		}
-
-		std::cerr << "num_node_sample " << num_node_sample << " a " << a << " b " << b << " c " << c << " alpha " << alpha << " eta (" << eta[0] << "," << eta[1] << ")" << std::endl;
 		if (args.mini_batch_size == 0) {
 			mini_batch_size = N / 10;	// old default for STRATIFIED_RANDOM_NODE_SAMPLING
 		}
+		std::cerr << "num_node_sample " << num_node_sample << " a " << a << " b " << b << " c " << c << " alpha " << alpha << " eta (" << eta[0] << "," << eta[1] << ")" << std::endl;
+
+		info(std::cout);
 
 		t_outer = timer::Timer("  outer");
 		t_perplexity = timer::Timer("  perplexity");
@@ -175,8 +176,6 @@ public:
 		std::cerr << "FIXME FIXME FIXME redo max. edges for strategy" << std::endl;
 		::size_t num_edges_in_batch = network.minibatch_edges_for_strategy(mini_batch_size, strategy);
 		::size_t num_nodes_in_batch = network.minibatch_nodes_for_strategy(mini_batch_size, strategy);
-
-		info(std::cout);
 
 		const ::size_t deviceMem = clContext.device.getInfo<CL_DEVICE_MAX_MEM_ALLOC_SIZE>();
 		bufferSize = args.openclBufferSize;
@@ -315,15 +314,15 @@ public:
 				randomSeed.data());
 
 		// theta = Random::random->gamma(eta[0], eta[1], K, 2);		// parameterization for \beta
-		// std::cerr << "Ignore eta[] in random.gamma: use 100.0 and 0.01" << std::endl;
-		// theta = Random::random->gamma(100.0, 0.01, K, 2);		// parameterization for \beta
+		// // std::cerr << "Ignore eta[] in random.gamma: use 100.0 and 0.01" << std::endl;
+		// // theta = Random::random->gamma(100.0, 0.01, K, 2);		// parameterization for \beta
 		::size_t K_workers = std::min(K, static_cast< ::size_t>(globalThreads));
 		Idx = 0;
 		random_gamma_kernel.setArg(Idx++, clBuffers);
 		random_gamma_kernel.setArg(Idx++, clTheta);
-		random_gamma_kernel.setArg(Idx++, (double)eta[0]);
-		random_gamma_kernel.setArg(Idx++, (double)eta[1]);
-		random_gamma_kernel.setArg(Idx++, (int)K);
+		random_gamma_kernel.setArg(Idx++, (cl_double)eta[0]);
+		random_gamma_kernel.setArg(Idx++, (cl_double)eta[1]);
+		random_gamma_kernel.setArg(Idx++, (cl_int)K);
 		random_gamma_kernel.setArg(Idx++, 2);
 		clContext.queue.enqueueNDRangeKernel(random_gamma_kernel, cl::NullRange, cl::NDRange(K_workers), cl::NDRange(1));
 
@@ -335,6 +334,7 @@ public:
         // updating \pi and \beta.
 		// phi = Random::random->gamma(1, 1, N, K);					// parameterization for \pi
 #ifdef RANDOM_FOLLOWS_SCALABLE_GRAPH
+		// Advance the random state, so device random and host kernelRandom are in sync
 		Idx = 0;
 		random_gamma_dummy_kernel.setArg(Idx++, clBuffers);
 		random_gamma_dummy_kernel.setArg(Idx++, (double)1.0);
@@ -346,8 +346,9 @@ public:
 
 #ifndef INITIALIZE_PHI_ON_DEVICE
 #ifdef RANDOM_FOLLOWS_SCALABLE_GRAPH
+		// Advance the random state, so device random and host kernelRandom are in sync
 		// (void)kernelRandom.gamma(100.0, 0.01, K, 2);		// parameterization for \beta
-		(void)Random::random->gamma(eta[0], eta[1], K, 2);		// parameterization for \beta
+		(void)kernelRandom.gamma(eta[0], eta[1], K, 2);		// parameterization for \beta
 #endif
 		phi = kernelRandom.gamma(1, 1, N, K);					// parameterization for \pi
         // self._pi = self.__phi/np.sum(self.__phi,1)[:,np.newaxis]
@@ -371,6 +372,26 @@ public:
 #endif
 
 		if (false) {
+			std::vector<std::vector<double> > theta(K, std::vector<double>(2));
+
+			for (::size_t i = 0; i < K; ++i) {
+				// copy phi
+				clContext.queue.enqueueReadBuffer(clTheta, CL_TRUE,
+												  i * 2 * sizeof(cl_double),
+												  2 * sizeof(cl_double),
+												  theta[i].data());
+			}
+			std::cout << "theta[*][0]: ";
+			for (::size_t k = 0; k < K; k++) {
+				std::cout << theta[k][0] << " ";
+			}
+			std::cout << std::endl;
+			std::cout << "theta[*][1]: ";
+			for (::size_t k = 0; k < K; k++) {
+				std::cout << theta[k][1] << " ";
+			}
+			std::cout << std::endl;
+
 #ifdef INITIALIZE_PHI_ON_DEVICE
 			std::vector<std::vector<double> > pi(N, std::vector<double>(K));            // parameterization for \pi
 			std::vector<std::vector<double> > phi(N, std::vector<double>(K));           // parameterization for \pi
@@ -481,7 +502,7 @@ public:
 				t_perplexity.start();
 				double ppx_score = cal_perplexity_held_out();
 				t_perplexity.stop();
-				std::cout << std::fixed << std::setprecision(15) << "perplexity for hold out set is: " << ppx_score << std::endl;
+				std::cout << std::fixed << std::setprecision(12) << "step count: " << step_count << " perplexity for hold out set: " << ppx_score << std::endl;
 				ppxs_held_out.push_back(ppx_score);
 			}
 
@@ -494,6 +515,10 @@ public:
 			t_mini_batch.stop();
 			const OrderedEdgeSet &mini_batch = *edgeSample.first;
 			double scale = edgeSample.second;
+
+			if (mini_batch.size() == 0) {
+				std::cerr << "Empty mini batch; who cares nowadays?" << std::endl;
+			}
 
 			// iterate through each node in the mini batch.
 			t_nodes_in_mini_batch.start();
@@ -685,33 +710,39 @@ protected:
 		clContext.queue.finish();
 		t_kernel_calculate_theta.stop();
 
-		stage_edges(mini_batch, nodes);
+		if (nodes.size() != 0) {
+			stage_edges(mini_batch, nodes);
+		}
 
 		::size_t countPartialSums = std::min(mini_batch.size(), globalThreads);
 		::size_t calcGradsThreads = round_up_to_multiples(countPartialSums, groupSize);
 
-		arg = 0;
-		update_beta_calculate_grads_kernel.setArg(arg++, clBuffers);
-		update_beta_calculate_grads_kernel.setArg(arg++, (cl_int)mini_batch.size());
-		update_beta_calculate_grads_kernel.setArg(arg++, (cl_double)scale);
-		update_beta_calculate_grads_kernel.setArg(arg++, (cl_int)countPartialSums);
-		update_beta_calculate_grads_kernel.setArg(arg++, (cl_double)epsilon);	// move to clBuffers
-
-		clContext.queue.finish(); // Wait for previous kernel, staging of edges
-
-		t_kernel_calculate_grads.start();
 		cl::Event e_grads_kernel;
-		clContext.queue.enqueueNDRangeKernel(update_beta_calculate_grads_kernel, cl::NullRange,
-				cl::NDRange(calcGradsThreads), cl::NDRange(groupSize),
-				NULL, &e_grads_kernel);
+		if (nodes.size() != 0) {
+			arg = 0;
+			update_beta_calculate_grads_kernel.setArg(arg++, clBuffers);
+			update_beta_calculate_grads_kernel.setArg(arg++, (cl_int)mini_batch.size());
+			update_beta_calculate_grads_kernel.setArg(arg++, (cl_double)scale);
+			update_beta_calculate_grads_kernel.setArg(arg++, (cl_int)countPartialSums);
+			update_beta_calculate_grads_kernel.setArg(arg++, (cl_double)epsilon);	// move to clBuffers
+
+			clContext.queue.finish(); // Wait for previous kernel, staging of edges
+
+			t_kernel_calculate_grads.start();
+			clContext.queue.enqueueNDRangeKernel(update_beta_calculate_grads_kernel, cl::NullRange,
+					cl::NDRange(calcGradsThreads), cl::NDRange(groupSize),
+					NULL, &e_grads_kernel);
+		}
 
 		double eps_t = a * std::pow(1.0 + step_count / b, -c);
 		cl_double2 clEta;
 		clEta.s[0] = this->eta[0];
 		clEta.s[1] = this->eta[1];
 
-		e_grads_kernel.wait();
-		t_kernel_calculate_grads.stop();
+		if (nodes.size() != 0) {
+			e_grads_kernel.wait();
+			t_kernel_calculate_grads.stop();
+		}
 
 		arg = 0;
 		update_beta_calculate_theta_kernel.setArg(arg++, clBuffers);
@@ -761,6 +792,10 @@ protected:
 	void stage_subgraph(GraphWrapper *graph, const std::vector<int> &nodes) {
 		// Copy held_out_set subgraph for nodes
 		// ::size_t edge_elts = nodes.size() * std::max(network.get_max_fan_out(), num_node_sample + 1);
+		if (nodes.size() == 0) {
+			return;
+		}
+
 		graph->h_subEdges.clear();
 		graph->h_subNodes.clear();
 		graph->h_subNodes.resize(nodes.size());
@@ -804,6 +839,11 @@ protected:
 			std::cerr << "FIXME: " << __func__ << "(): implement subrange of matrix" << std::endl;
 			std::cerr << "FIXME: " << __func__ << "(): if this is mapped memory: no need for intermediate copy" << std::endl;
 		}
+
+		if (nodes.size() == 0) {
+			return;
+		}
+
 		hostBuffer.clear();
 		for (auto n: nodes) {
 			assert(data[n].size() == K);
@@ -841,6 +881,10 @@ protected:
 				}
 				std::cerr << std::endl;
 			}
+		}
+
+		if (numNeighbors == 0) {
+			return;
 		}
 
 		::size_t n = numNeighbors / stride * size;
@@ -882,6 +926,10 @@ protected:
 	}
 
 	void sample_neighbor_nodes(const std::vector<int> &nodes) {
+
+		if (nodes.size() == 0) {
+			return;
+		}
 
 		clContext.queue.enqueueWriteBuffer(clNodes, CL_FALSE, 0, nodes.size() * sizeof(cl_int), nodes.data());
 
@@ -934,6 +982,9 @@ protected:
 	}
 
 	void update_pi(const std::vector<int> &nodes) {
+		if (nodes.size() == 0) {
+			return;
+		}
 
 		int Idx = 0;
 		update_pi_kernel.setArg(Idx++, clBuffers);

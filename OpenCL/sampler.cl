@@ -598,6 +598,9 @@ kernel void update_beta_calculate_theta_sum(
 	size_t gsize = get_global_size(0);
 	for (int k = gid; k < K; k += gsize) {
 		theta_sum[k] = theta[k].x + theta[k].y;
+		// if (isnan(theta_sum[k])) {
+			// printf((__constant char *)"Oopps, theta_sum[%d] isNaN\n", k);
+		// }
 	}
 }
 
@@ -664,11 +667,18 @@ kernel void update_beta_calculate_theta(
 	size_t gid = get_global_id(0);
 	ulong2 randomSeed = bufs->bufs.RandomSeed[gid];
 	global double2 *ggrads = (global double2 *)bufs->bufs.Scratch;
-	for (int i = 1; i < count_partial_sums; ++i) {
-		global double2 *grads = (global double2 *)bufs->bufs.Scratch + i * K;
+	if (count_partial_sums == 0) {
 		for (int k = 0; k < K; ++k) {
-			ggrads[k].x += grads[k].x;
-			ggrads[k].y += grads[k].y;
+			ggrads[k].x = 0.0;
+			ggrads[k].y = 0.0;
+		}
+	} else {
+		for (int i = 1; i < count_partial_sums; ++i) {
+			global double2 *grads = (global double2 *)bufs->bufs.Scratch + i * K;
+			for (int k = 0; k < K; ++k) {
+				ggrads[k].x += grads[k].x;
+				ggrads[k].y += grads[k].y;
+			}
 		}
 	}
 	for (int k = 0; k < K; ++k) {
@@ -683,6 +693,12 @@ kernel void update_beta_calculate_theta(
 				* (eta.y - bufs->bufs.Theta[k].y
 						+ scale * ggrads[k].y)
 				+ sqrt(eps_t * bufs->bufs.Theta[k].y) * randn(&randomSeed));
+		if (isnan(bufs->bufs.Theta[k].x)) {
+			printf((__constant char *)"Oopps, theta[%d].x isNaN\n", k);
+		}
+		if (isnan(bufs->bufs.Theta[k].y)) {
+			printf((__constant char *)"Oopps, theta[%d].y isNaN\n", k);
+		}
 	}
 	bufs->bufs.RandomSeed[gid] = randomSeed;
 }

@@ -110,6 +110,8 @@ public:
 		}
 		std::cerr << "num_node_sample " << num_node_sample << " a " << a << " b " << b << " c " << c << " alpha " << alpha << " eta (" << eta[0] << "," << eta[1] << ")" << std::endl;
 
+		info(std::cout);
+
         // model parameters and re-parameterization
         // since the model parameter - \pi and \beta should stay in the simplex,
         // we need to restrict the sum of probability equals to 1.  The way we
@@ -171,8 +173,6 @@ public:
 				std::cerr << std::endl;
 			}
 		}
-
-		info(std::cout);
 	}
 
 	virtual ~MCMCSamplerStochastic() {
