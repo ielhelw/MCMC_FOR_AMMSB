@@ -54,7 +54,11 @@ public:
 		return (xorshift_state[1] = (s1 ^ s0 ^ (s1 >> 17) ^ (s0 >> 26))) + s0;
 	}
 
-	inline uint64_t rand() {return xorshift_128plus();}
+	inline uint64_t rand() {
+		uint64_t r = xorshift_128plus();
+		// std::cerr << "0: rand/X() " << r << std::endl;
+		return r;
+	}
 #else
 	// use system ::rand()
 #endif
@@ -510,6 +514,18 @@ gsl_ran_gamma (const gsl_rng * r, double a, double b)
   }
 }
 #endif	// def RANDOM_SYSTEM
+
+
+public:
+	std::string state() {
+#ifndef RANDOM_SYSTEM
+		std::ostringstream s;
+		s << "(" << xorshift_state[0] << "," << xorshift_state[1] << ")";
+		return s.str();
+#else
+		return "<nope>";
+#endif
+	}
 
 
 protected:

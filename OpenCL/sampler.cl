@@ -86,7 +86,6 @@ kernel void init_buffers(
 #ifdef RANDOM_FOLLOWS_SCALABLE_GRAPH
 	bufs->bufs.stored_random = stored_random;
 #endif
-printf((__constant char *)"HERE %d edges %p\n", __LINE__, bufs->bufs.Edges);
 }
 
 void report_first_error(global Buffers *bufs, constant char *msg) {
@@ -197,6 +196,7 @@ random_gamma_dummy(global Buffers *bufs,
 	size_t gid = get_global_id(0);
 	size_t gsize = get_global_size(0);
 	ulong2 randomSeed = bufs->bufs.RandomSeed[gid];
+if (gid != 0) printf((__constant char *)"OOOOOOPPPPPPPPPPPSSSSSSSSS %s\n", "random_gamma_dummy");
 
 	for (int i = gid; i < X; i += gsize) {
 		for (int j = 0; j < Y; j++) {
@@ -219,6 +219,7 @@ random_gamma(global Buffers *bufs,
 	size_t gid = get_global_id(0);
 	size_t gsize = get_global_size(0);
 	ulong2 randomSeed = bufs->bufs.RandomSeed[gid];
+if (gid != 0) printf((__constant char *)"OOOOOOPPPPPPPPPPPSSSSSSSSS %s\n", "random_gamma");
 
 	for (int i = gid; i < X; i += gsize) {
 		for (int j = 0; j < Y; j++) {
@@ -343,6 +344,7 @@ inline int sample_neighbor_nodes_of(
 		global int* neighbor_nodes_hash,
 		ulong2* randomSeed)
 {
+#if 0
 	if (bufs->bufs.Nodes[node] == 1218) {
 		int2 desc = hg->_g.node_edges[node];
 		const global int *p = hg->_g.edges + desc.y;
@@ -352,6 +354,7 @@ inline int sample_neighbor_nodes_of(
 		}
 		printf((__constant char *)"]\n");
 	}
+#endif
 
 	for (int i = 0; i < NEIGHBOR_SAMPLE_SIZE; ++i) {
 		int neighborId;
@@ -393,20 +396,20 @@ inline int sample_neighbor_nodes_of(
 #endif
 
 #ifdef RANDOM_FOLLOWS_SCALABLE_GRAPH
-	printf((__constant char *)"Store an extra %d randoms\n", NEIGHBOR_SAMPLE_SIZE);
-	for (int i = 0; i < NEIGHBOR_SAMPLE_SIZE; ++i) {
-		bufs->bufs.stored_random[node * NEIGHBOR_SAMPLE_SIZE + i] = random(randomSeed);
+	printf((__constant char *)"Store an extra %d randn()\n", K);
+	for (int i = 0; i < K; ++i) {
+		bufs->bufs.stored_random[node * K + i] = randn(randomSeed);
 	}
 #endif
 
-	if (0) {
+#if 0
 		printf((__constant char *)"Neighbors: ");
 		for (int i = 0; i < NEIGHBOR_SAMPLE_SIZE; ++i) {
 			int x = neighbor_nodes[i];
 			printf((__constant char *)"%d ", neighbor_nodes_hash[x]);
 		}
 		printf((__constant char *)"\n");
-	}
+#endif
 
 	for (int i = 0; i < NEIGHBOR_SAMPLE_SIZE; ++i) {
 		int x = neighbor_nodes[i];
@@ -424,6 +427,7 @@ kernel void sample_neighbor_nodes(
 	size_t gid = get_global_id(0);
 	size_t gsize = get_global_size(0);
 	ulong2 randomSeed = bufs->bufs.RandomSeed[gid];
+if (gid != 0) printf((__constant char *)"OOOOOOPPPPPPPPPPPSSSSSSSSS %s\n", "sample_neighbor_nodes");
 
 	for (int i = gid; i < N; i += gsize) {
 		// int node = bufs->bufs.Nodes[i];
@@ -458,8 +462,34 @@ void update_phi_for_node_(global Buffers *bufs,
 		ulong2 *randomSeed
 		) {
 	const global double *beta = bufs->bufs.Beta;
+	double noise[K];
 
-	if (false && bufs->bufs.Nodes[node] == 5) {
+	global double *pi_a = pi + node * K;
+
+#if 0
+		printf((__constant char *)"update_phi pre phi[%d] ", bufs->bufs.Nodes[node]);
+		for (int k = 0; k < K; k++) {
+			printf((__constant char *)"%.12f ", phi[k]);
+		}
+		printf((__constant char *)"\n");
+		printf((__constant char *)"node %d=%d pi %p pi_a %p\n", node, bufs->bufs.Nodes[node], pi, pi_a);
+		printf((__constant char *)"pi[%d] ", bufs->bufs.Nodes[node]);
+		for (int k = 0; k < K; k++) {
+			printf((__constant char *)"%.12f ", pi_a[k]);
+		}
+		printf((__constant char *)"\n");
+		for (int n = 0; n < NEIGHBOR_SAMPLE_SIZE; n++) {
+			printf((__constant char *)"pi[%d] ", neighbor_nodes[n]);
+			global double *pi_b = pi + (N + node * neighbors + n) * K;
+			for (int k = 0; k < K; k++) {
+				printf((__constant char *)"%.12f ", pi_b[k]);
+			}
+			printf((__constant char *)"\n");
+		}
+#endif
+
+#if 0
+	if (bufs->bufs.Nodes[node] == 5) {
 		printf((__constant char *)"phi[%d]: ", bufs->bufs.Nodes[node]);
 		for (int i = 0; i < K; i++) {
 			printf((__constant char *)"%.12f ", phi[i]);
@@ -467,8 +497,8 @@ void update_phi_for_node_(global Buffers *bufs,
 		}
 		printf((__constant char *)"\n");
 	}
+#endif
 
-	global double *pi_a = pi + node * K;
 	double phi_i_sum = 0;
 	for (int k = 0; k < K; k++) phi_i_sum += phi[k];
 	for (int k = 0; k < K; k++) {
@@ -494,20 +524,51 @@ void update_phi_for_node_(global Buffers *bufs,
 		}
 	}
 	// printf((__constant char *)"Node %d Random seed: (%lu,%lu)\n", bufs->bufs.Nodes[node], (*randomSeed).x, (*randomSeed).y);
+	double Nn = (1.0 * MAX_NODE_ID) / (NEIGHBOR_SAMPLE_SIZE - 1);
 	for (int k = 0; k < K; ++k) {
 		if (isnan(phi[k])) {
 			printf((__constant char *)"%d Oops, phi[%d] NaN\n", __LINE__, k);
 		}
+
+#ifdef RANDOM_FOLLOWS_SCALABLE_GRAPH
+		noise[k] = bufs->bufs.stored_random[node * K + k];
+#else
+		// FIXME no need to retain noise
+		noise[k] = randn(randomSeed);
+#endif
 		double phi_star_k = fabs(phi[k] + eps_t / 2.0
-				* (alpha - phi[k] + (1.0 * MAX_NODE_ID) / NEIGHBOR_SAMPLE_SIZE * grads[k])
-				+ sqrt(eps_t * phi[k]) * randn(randomSeed));
+				* (alpha - phi[k] + Nn * grads[k])
+				+ sqrt(eps_t * phi[k]) * noise[k]);
 		phi[k] = phi_star_k;
 		if (isnan(phi[k])) {
 			printf((__constant char *)"%d Oops, phi[%d] NaN\n", __LINE__, k);
 		}
 	}
-	printf((__constant char *)"Write phi %p..%p\n", phi, phi + K);
+	// printf((__constant char *)"Write phi %p..%p\n", phi, phi + K);
 	// EMIT({bufs->bufs.Nodes[node], phi[node]})
+
+#if 0
+		printf((__constant char *)"update_phi post Nn %.12f phi[%d] ", Nn, bufs->bufs.Nodes[node]);
+		for (int k = 0; k < K; k++) {
+			printf((__constant char *)"%.12f ", phi[k]);
+		}
+		printf((__constant char *)"\n");
+		printf((__constant char *)"pi[%d] ", bufs->bufs.Nodes[node]);
+		for (int k = 0; k < K; k++) {
+			printf((__constant char *)"%.12f ", pi[k]);
+		}
+		printf((__constant char *)"\n");
+		printf((__constant char *)"grads ");
+		for (int k = 0; k < K; k++) {
+			printf((__constant char *)"%.12f ", grads[k]);
+		}
+		printf((__constant char *)"\n");
+		printf((__constant char *)"noise ");
+		for (int k = 0; k < K; k++) {
+			printf((__constant char *)"%.12f ", noise[k]);
+		}
+		printf((__constant char *)"\n");
+#endif
 }
 
 
@@ -521,9 +582,9 @@ kernel void update_phi(
 	size_t gid = get_global_id(0);
 	size_t gsize = get_global_size(0);
 	global double *grads = bufs->bufs.Scratch + 2 * gid * K;
-	global double *prods = bufs->bufs.Scratch + (2 * gid + 1) * K;
+	global double *prods = bufs->bufs.Scratch + (2 * N + gid) * K;
 	ulong2 randomSeed = bufs->bufs.RandomSeed[gid];
-	printf((__constant char *)"phi %p N %d max phi %p\n", bufs->bufs.Phi, N, bufs->bufs.Phi + K * N);
+if (gid != 0) printf((__constant char *)"OOOOOOPPPPPPPPPPPSSSSSSSSS %s\n", "update_phi");
 	// printf((__constant char *)"seed (%lu,%lu)\n", randomSeed.x, randomSeed.y);
 	for (int i = gid; i < N; i += gsize) {
 		// int node = bufs->bufs.Nodes[i];
@@ -563,6 +624,7 @@ void update_pi_for_node(
 	for (int k = 0; k < K; k++) {
 		pi_a[k] = phi_a[k] / phi_i_sum;
 	}
+#if 0
 	printf((__constant char *)"phi[%d] ", node);
 	for (int k = 0; k < K; k++) {
 		printf((__constant char *)"%.12f ", phi_a[k]);
@@ -573,6 +635,7 @@ void update_pi_for_node(
 		printf((__constant char *)"%.12f ", pi_a[k]);
 	}
 	printf((__constant char *)"\n");
+#endif
 }
 
 
@@ -582,6 +645,8 @@ kernel void update_pi(
 {
 	size_t gid = get_global_id(0);
 	size_t gsize = get_global_size(0);
+if (gid != 0) printf((__constant char *)"OOOOOOPPPPPPPPPPPSSSSSSSSS %s\n", "update_pi");
+
 	for (int i = gid; i < N; i += gsize) {
 		int node = i;
 		update_pi_for_node(bufs, node, bufs->bufs.Pi, bufs->bufs.Phi);
@@ -596,6 +661,7 @@ kernel void update_beta_calculate_theta_sum(
 {
 	size_t gid = get_global_id(0);
 	size_t gsize = get_global_size(0);
+
 	for (int k = gid; k < K; k += gsize) {
 		theta_sum[k] = theta[k].x + theta[k].y;
 		// if (isnan(theta_sum[k])) {
@@ -613,12 +679,13 @@ kernel void update_beta_calculate_grads(
 		const double epsilon
 		) {
 	size_t gid = get_global_id(0);
+if (gid != 0) printf((__constant char *)"OOOOOOPPPPPPPPPPPSSSSSSSSS %s\n", "update_beta_calculate_grads");
+
 	if (gid < count_partial_sums) {
 		size_t gsize = get_global_size(0);
 		global double *beta = bufs->bufs.Beta;
 		global double2 *grads = (global double2 *)bufs->bufs.Scratch + gid * K;
 		global double *probs = (global double *)(grads + count_partial_sums * K) + gid * K;
-		printf((__constant char *)"HERE %d\n", __LINE__);
 
 		for (int k = 0; k < K; ++k) {
 			grads[k].x = 0;
@@ -627,14 +694,12 @@ kernel void update_beta_calculate_grads(
 		for (int e = gid; e < E; e += gsize) {
 			int i = bufs->bufs.Edges[e].x;
 			int j = bufs->bufs.Edges[e].y;
-printf((__constant char *)"HERE %d edge[%d] (%d,[%d]=%d)\n", __LINE__, e, i, j, bufs->bufs.Nodes[j]);
 			int y_ab = graph_has_peer(bufs->bufs.G, i, bufs->bufs.Nodes[j]);
 
 			double pi_sum = 0.0;
 			double prob_sum = 0.0;
 			global double *pi_i = bufs->bufs.Pi + i * K;
 			global double *pi_j = bufs->bufs.Pi + j * K;
-			printf((__constant char *)"Access pi[%d..%d], pi[%d..%d]\n", i * K, (i + 1) * K, j * K, (j + 1) * K);
 			for (int k = 0; k < K; k++) {
 				double f = pi_i[k] * pi_j[k];
 				pi_sum += f;
@@ -667,6 +732,8 @@ kernel void update_beta_calculate_theta(
 	size_t gid = get_global_id(0);
 	ulong2 randomSeed = bufs->bufs.RandomSeed[gid];
 	global double2 *ggrads = (global double2 *)bufs->bufs.Scratch;
+if (gid != 0) printf((__constant char *)"OOOOOOPPPPPPPPPPPSSSSSSSSS %s\n", "update_beta_calculate_theta");
+
 	if (count_partial_sums == 0) {
 		for (int k = 0; k < K; ++k) {
 			ggrads[k].x = 0.0;
@@ -713,9 +780,9 @@ kernel void update_beta_calculate_beta(
 {
 	global double *beta = bufs->bufs.Beta;
 	global double2 *theta = bufs->bufs.Theta;
-
 	size_t gid = get_global_id(0);
 	size_t gsize = get_global_size(0);
+
 	for (int k = gid; k < K; k += gsize) {
 		beta[k] = theta[k].y / (theta[k].x + theta[k].y);
 	}

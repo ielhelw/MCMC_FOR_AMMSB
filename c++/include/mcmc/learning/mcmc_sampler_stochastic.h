@@ -31,6 +31,13 @@ typedef std::unordered_map<Edge, int>   EdgeMapZ;
 #endif
 #endif
 
+#ifdef RANDOM_FOLLOWS_SCALABLE_GRAPH
+#  define NEIGHBOR_SET_IS_VECTOR
+typedef std::vector<int> NeighborSet;
+#else
+typedef OrderedVertexSet NeighborSet;
+#endif
+
 
 class MCMCSamplerStochastic : public Learner {
 public:
@@ -130,11 +137,21 @@ public:
 		std::transform(temp.begin(), temp.end(), beta.begin(), np::SelectColumn<double>(1));
 
 		phi = kernelRandom->gamma(1, 1, N, K);					// parameterization for \pi
+		std::cerr << "Done host random for phi" << std::endl;
         // self._pi = self.__phi/np.sum(self.__phi,1)[:,np.newaxis]
 		pi.resize(phi.size(), std::vector<double>(phi[0].size()));
 		np::row_normalize(&pi, phi);
 
-		std::cout << "beta[0] " << beta[0] << std::endl;
+		if (false) {
+			std::cout << "beta[0] " << beta[0] << std::endl;
+		} else {
+			std::cerr << "beta ";
+			for (::size_t k = 0; k < K; k++) {
+				std::cerr << beta[k] << " ";
+			}
+			std::cerr << std::endl;
+		}
+
 		if (false) {
 			std::cout << "theta[*][0]: ";
 			for (::size_t k = 0; k < K; k++) {
@@ -173,6 +190,8 @@ public:
 				std::cerr << std::endl;
 			}
 		}
+
+		std::cerr << "Done constructor" << std::endl;
 	}
 
 	virtual ~MCMCSamplerStochastic() {
@@ -284,9 +303,11 @@ public:
              */
 
             // (mini_batch, scale) = self._network.sample_mini_batch(self._mini_batch_size, "stratified-random-node")
+			std::cerr << "Invoke sample_mini_batch" << std::endl;
 			t_mini_batch.start();
 			EdgeSample edgeSample = network.sample_mini_batch(mini_batch_size, strategy::STRATIFIED_RANDOM_NODE);
 			t_mini_batch.stop();
+			std::cerr << "Done sample_mini_batch" << std::endl;
 			const OrderedEdgeSet &mini_batch = *edgeSample.first;
 			double scale = edgeSample.second;
 
@@ -304,12 +325,13 @@ public:
 			// double eps_t = std::pow(1024+step_count, -0.5);
 #endif
 
+			std::cerr << "Sample neighbor nodes" << std::endl;
 			for (auto node = nodes.begin();
 				 	node != nodes.end();
 					node++) {
 				t_sample_neighbor_nodes.start();
 				// sample a mini-batch of neighbors
-				OrderedVertexSet neighbors = sample_neighbor_nodes(num_node_sample, *node);
+				NeighborSet neighbors = sample_neighbor_nodes(num_node_sample, *node);
 				t_sample_neighbor_nodes.stop();
 
 				t_update_phi.start();
@@ -495,7 +517,7 @@ protected:
 	}
 
 
-    void update_phi(int i, const OrderedVertexSet &neighbors
+    void update_phi(int i, const NeighborSet &neighbors
 #ifndef EFFICIENCY_FOLLOWS_CPP_WENZHE
 						   , double eps_t
 #endif
@@ -504,6 +526,26 @@ protected:
 		double eps_t  = a * std::pow(1 + step_count / b, -c);	// step size
 		// double eps_t = std::pow(1024+step_count, -0.5);
 #endif
+
+		if (false) {
+			std::cerr << "update_phi pre phi[" << i << "] ";
+			for (::size_t k = 0; k < K; k++) {
+				std::cerr << std::fixed << std::setprecision(12) << phi[i][k] << " ";
+			}
+			std::cerr << std::endl;
+			std::cerr << "pi[" << i << "] ";
+			for (::size_t k = 0; k < K; k++) {
+				std::cerr << std::fixed << std::setprecision(12) << pi[i][k] << " ";
+			}
+			std::cerr << std::endl;
+			for (auto n: neighbors) {
+				std::cerr << "pi[" << n << "] ";
+				for (::size_t k = 0; k < K; k++) {
+					std::cerr << std::fixed << std::setprecision(12) << pi[n][k] << " ";
+				}
+				std::cerr << std::endl;
+			}
+		}
 
 		double phi_i_sum = np::sum(phi[i]);
         std::vector<double> grads(K, 0.0);	// gradient for K classes
@@ -560,6 +602,29 @@ protected:
 #endif
 		}
 
+		if (false) {
+			std::cerr << std::fixed << std::setprecision(12) << "update_phi post Nn " << Nn << " phi[" << i << "] ";
+			for (::size_t k = 0; k < K; k++) {
+				std::cerr << std::fixed << std::setprecision(12) << phi[i][k] << " ";
+			}
+			std::cerr << std::endl;
+			std::cerr << "pi[" << i << "] ";
+			for (::size_t k = 0; k < K; k++) {
+				std::cerr << std::fixed << std::setprecision(12) << pi[i][k] << " ";
+			}
+			std::cerr << std::endl;
+			std::cerr << "grads ";
+			for (::size_t k = 0; k < K; k++) {
+				std::cerr << std::fixed << std::setprecision(12) << grads[k] << " ";
+			}
+			std::cerr << std::endl;
+			std::cerr << "noise ";
+			for (::size_t k = 0; k < K; k++) {
+				std::cerr << std::fixed << std::setprecision(12) << noise[k] << " ";
+			}
+			std::cerr << std::endl;
+		}
+
 		// assign back to phi.
 		//phi[i] = phi_star;
 	}
@@ -591,12 +656,12 @@ protected:
 #endif
 
 	// TODO FIXME make VertexSet an out parameter
-    OrderedVertexSet sample_neighbor_nodes(::size_t sample_size, int nodeId) {
+    NeighborSet sample_neighbor_nodes(::size_t sample_size, int nodeId) {
         /**
         Sample subset of neighborhood nodes.
          */
         int p = (int)sample_size;
-        OrderedVertexSet neighbor_nodes;
+        NeighborSet neighbor_nodes;
         const EdgeMap &held_out_set = network.get_held_out_set();
         const EdgeMap &test_set = network.get_test_set();
 
@@ -623,11 +688,21 @@ protected:
 				}
 				// check condition, and insert into mini_batch_set if it is valid.
 				Edge edge(std::min(nodeId, *neighborId), std::max(nodeId, *neighborId));
-				if (edge.in(held_out_set) || edge.in(test_set) || neighbor_nodes.find(*neighborId) != neighbor_nodes.end()) {
+				if (edge.in(held_out_set) || edge.in(test_set) ||
+#ifdef RANDOM_FOLLOWS_SCALABLE_GRAPH
+						find(neighbor_nodes.begin(), neighbor_nodes.end(), neighborId) != neighbor_nodes.end()
+#else
+						neighbor_nodes.find(*neighborId) != neighbor_nodes.end()
+#endif
+						) {
 					continue;
 				} else {
 					// add it into mini_batch_set
+#ifdef RANDOM_FOLLOWS_SCALABLE_GRAPH
+					neighbor_nodes.push_back(*neighborId);
+#else
 					neighbor_nodes.insert(*neighborId);
+#endif
 					p -= 1;
 				}
 			}
@@ -641,13 +716,31 @@ protected:
 			do {
 				neighborId = kernelRandom->randint(0, N - 1);
 				edge = Edge(std::min(nodeId, neighborId), std::max(nodeId, neighborId));
+				// std::cerr << std::fixed << std::setprecision(12) << "node " << nodeId << " neighbor " << neighborId << " peer " << ! (edge.in(held_out_set) || edge.in(test_set)) << " randint " << neighborId << " seed " << kernelRandom->state() << std::endl;
 			} while (neighborId == nodeId
 					|| edge.in(held_out_set)
 					|| edge.in(test_set)
-					|| neighbor_nodes.find(neighborId) != neighbor_nodes.end());
+#ifdef RANDOM_FOLLOWS_SCALABLE_GRAPH
+					|| find(neighbor_nodes.begin(), neighbor_nodes.end(), neighborId) != neighbor_nodes.end()
+#else
+					|| neighbor_nodes.find(neighborId) != neighbor_nodes.end()
+#endif
+					);
+#ifdef RANDOM_FOLLOWS_SCALABLE_GRAPH
+			neighbor_nodes.push_back(neighborId);
+#else
 			neighbor_nodes.insert(neighborId);
+#endif
 		}
 #endif
+		if (false) {
+			std::cerr << "Neighbors: ";
+			for (auto n : neighbor_nodes) {
+				std::cerr << n << " ";
+			}
+			std::cerr << std::endl;
+		}
+
 		return neighbor_nodes;
 	}
 

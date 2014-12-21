@@ -13,7 +13,9 @@ inline ulong xorshift_128plus(ulong2 *s) {
 }
 
 inline ulong rand(ulong2 *s) {
-	return xorshift_128plus(s);
+	ulong r = xorshift_128plus(s);
+	// printf((__constant char *)"%zd: rand/x() %llu\n", get_global_id(0), r);
+	return r;
 }
 
 inline double random(ulong2 *s) {

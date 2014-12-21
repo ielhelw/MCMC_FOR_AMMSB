@@ -268,7 +268,7 @@ public:
 				);
 #ifdef RANDOM_FOLLOWS_SCALABLE_GRAPH
 		clStoredRandom = createBuffer("clStoredRandom", CL_MEM_READ_WRITE,
-									  num_nodes_in_batch * real_num_node_sample() * sizeof(cl_double));
+									  num_nodes_in_batch * K * sizeof(cl_double));
 #endif
 
 		int Idx = 0;
@@ -326,6 +326,15 @@ public:
 		random_gamma_kernel.setArg(Idx++, 2);
 		clContext.queue.enqueueNDRangeKernel(random_gamma_kernel, cl::NullRange, cl::NDRange(K_workers), cl::NDRange(1));
 
+#ifdef RANDOM_FOLLOWS_SCALABLE_GRAPH
+		// Advance the random state, so device random and host kernelRandom are in sync
+		// (void)kernelRandom.gamma(100.0, 0.01, K, 2);		// parameterization for \beta
+		clContext.queue.finish();
+		std::cerr << "Grab another K " << K << " host dummy randoms" << std::endl;
+		(void)kernelRandom.gamma(eta[0], eta[1], K, 2);		// parameterization for \beta
+		std::cerr << "Done K = " << K << " host dummy randoms" << std::endl;
+#endif
+
         // model parameters and re-parameterization
         // since the model parameter - \pi and \beta should stay in the simplex,
         // we need to restrict the sum of probability equals to 1.  The way we
@@ -333,8 +342,16 @@ public:
         // introduce another set of variables, and update them first followed by
         // updating \pi and \beta.
 		// phi = Random::random->gamma(1, 1, N, K);					// parameterization for \pi
+		phi = kernelRandom.gamma(1, 1, N, K);					// parameterization for \pi
+		std::cerr << "Done host random for phi" << std::endl;
+        // self._pi = self.__phi/np.sum(self.__phi,1)[:,np.newaxis]
+		pi.resize(phi.size(), std::vector<double>(phi[0].size()));
+		np::row_normalize(&pi, phi);
+
 #ifdef RANDOM_FOLLOWS_SCALABLE_GRAPH
-		// Advance the random state, so device random and host kernelRandom are in sync
+		// Advance the device random state, so device random and host kernelRandom are in sync
+		clContext.queue.finish();
+		std::cerr << "Grab another N * K = " << (N * K) << " device dummy randoms" << std::endl;
 		Idx = 0;
 		random_gamma_dummy_kernel.setArg(Idx++, clBuffers);
 		random_gamma_dummy_kernel.setArg(Idx++, (double)1.0);
@@ -342,18 +359,8 @@ public:
 		random_gamma_dummy_kernel.setArg(Idx++, (int)N);
 		random_gamma_dummy_kernel.setArg(Idx++, (int)K);
 		clContext.queue.enqueueNDRangeKernel(random_gamma_dummy_kernel, cl::NullRange, cl::NDRange(globalThreads), cl::NDRange(1));
-#endif
-
-#ifndef INITIALIZE_PHI_ON_DEVICE
-#ifdef RANDOM_FOLLOWS_SCALABLE_GRAPH
-		// Advance the random state, so device random and host kernelRandom are in sync
-		// (void)kernelRandom.gamma(100.0, 0.01, K, 2);		// parameterization for \beta
-		(void)kernelRandom.gamma(eta[0], eta[1], K, 2);		// parameterization for \beta
-#endif
-		phi = kernelRandom.gamma(1, 1, N, K);					// parameterization for \pi
-        // self._pi = self.__phi/np.sum(self.__phi,1)[:,np.newaxis]
-		pi.resize(phi.size(), std::vector<double>(phi[0].size()));
-		np::row_normalize(&pi, phi);
+		clContext.queue.finish();
+		std::cerr << "Done N * K = " << (N * K) << " device dummy randoms" << std::endl;
 #endif
 
 #if 0
@@ -441,9 +448,8 @@ public:
 		clContext.queue.finish();
 		t_kernel_calculate_beta.stop();
 		clContext.queue.enqueueReadBuffer(clBeta, CL_FALSE, 0, K * sizeof(cl_double), beta.data());
-		if (true) {
+		if (false) {
 			clContext.queue.finish();
-			std::cerr << __func__ << std::endl;
 			std::cerr << "beta ";
 			for (::size_t k = 0; k < K; k++) {
 				std::cerr << beta[k] << " ";
@@ -487,6 +493,8 @@ public:
 		clNonLinkCount = createBuffer("clNonLinkCount", CL_MEM_READ_WRITE, globalThreads * sizeof(cl_int));
 
 		clContext.queue.finish();
+
+		std::cerr << "Done constructor" << std::endl;
 	}
 
 	virtual ~MCMCClSamplerStochastic() {
@@ -510,9 +518,11 @@ public:
 			t_outer.start();
 
 			// (mini_batch, scale) = self._network.sample_mini_batch(self._mini_batch_size, "stratified-random-node")
+			std::cerr << "Invoke sample_mini_batch" << std::endl;
 			t_mini_batch.start();
 			EdgeSample edgeSample = network.sample_mini_batch(mini_batch_size, strategy);
 			t_mini_batch.stop();
+			std::cerr << "Done sample_mini_batch" << std::endl;
 			const OrderedEdgeSet &mini_batch = *edgeSample.first;
 			double scale = edgeSample.second;
 
@@ -530,6 +540,7 @@ public:
 			stage_subgraph(&clSubHeldOutGraph, nodes);
 			t_stage_held_out.stop();
 
+			std::cerr << "Sample neighbor nodes" << std::endl;
 			t_sample_neighbor_nodes.start();
 			sample_neighbor_nodes(nodes);
 			t_sample_neighbor_nodes.stop();
@@ -550,7 +561,7 @@ public:
 			clContext.queue.finish();
 			t_stage_phi.stop();
 
-			if (true) {
+			if (false) {
 				std::unordered_set<int> unique;
 				for (auto i = hostNeighbors.begin(); i < hostNeighbors.begin() + nodes.size() * real_num_node_sample(); i++) {
 					unique.insert(*i);
@@ -680,7 +691,7 @@ protected:
 			edges[i].s[1] = node_index[e.second];
 			i++;
 		}
-		if (true) {
+		if (false) {
 			std::cerr << "Edges: ";
 			for (auto e: edges) {
 				std::cerr << e << " ";
@@ -754,7 +765,7 @@ protected:
 		clContext.queue.enqueueTask(update_beta_calculate_theta_kernel);
 		clContext.queue.finish();
 
-		if (true) {
+		if (false) {
 			std::vector<cl_double2> theta(K);
 			clContext.queue.enqueueReadBuffer(clTheta, CL_TRUE, 0, K * sizeof(cl_double2), theta.data());
 			std::cerr << __func__ << std::endl;
@@ -775,7 +786,7 @@ protected:
 
 		clContext.queue.enqueueReadBuffer(clBeta, CL_FALSE, 0, K * sizeof(cl_double), beta.data());
 		clContext.queue.finish();
-		if (true) {
+		if (false) {
 			std::cerr << __func__ << std::endl;
 			std::cerr << "beta ";
 			for (::size_t k = 0; k < K; k++) {
