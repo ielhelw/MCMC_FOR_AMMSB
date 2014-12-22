@@ -506,6 +506,9 @@ public:
 
 		while (step_count < max_iteration && ! is_converged()) {
 
+			// auto l1 = std::chrono::system_clock::now();
+			t_outer.start();
+
 			if (step_count % interval == 0) {
 				t_perplexity.start();
 				double ppx_score = cal_perplexity_held_out();
@@ -514,15 +517,12 @@ public:
 				ppxs_held_out.push_back(ppx_score);
 			}
 
-			auto l1 = std::chrono::system_clock::now();
-			t_outer.start();
-
 			// (mini_batch, scale) = self._network.sample_mini_batch(self._mini_batch_size, "stratified-random-node")
-			std::cerr << "Invoke sample_mini_batch" << std::endl;
+			// std::cerr << "Invoke sample_mini_batch" << std::endl;
 			t_mini_batch.start();
 			EdgeSample edgeSample = network.sample_mini_batch(mini_batch_size, strategy);
 			t_mini_batch.stop();
-			std::cerr << "Done sample_mini_batch" << std::endl;
+			// std::cerr << "Done sample_mini_batch" << std::endl;
 			const OrderedEdgeSet &mini_batch = *edgeSample.first;
 			double scale = edgeSample.second;
 
@@ -535,17 +535,17 @@ public:
 			const std::vector<int> nodes = nodes_in_batch(mini_batch);
 			t_nodes_in_mini_batch.stop();
 
-			std::cerr << "Stage clSubHeldOutGraph" << std::endl;
+			// std::cerr << "Stage clSubHeldOutGraph" << std::endl;
 			t_stage_held_out.start();
 			stage_subgraph(&clSubHeldOutGraph, nodes);
 			t_stage_held_out.stop();
 
-			std::cerr << "Sample neighbor nodes" << std::endl;
+			// std::cerr << "Sample neighbor nodes" << std::endl;
 			t_sample_neighbor_nodes.start();
 			sample_neighbor_nodes(nodes);
 			t_sample_neighbor_nodes.stop();
 
-			std::cerr << "Stage clSubGraph" << std::endl;
+			// std::cerr << "Stage clSubGraph" << std::endl;
 			t_stage_graph.start();
 			stage_subgraph(&clSubGraph, nodes);
 			t_stage_graph.stop();
@@ -620,8 +620,8 @@ public:
 
 			step_count++;
 			t_outer.stop();
-			auto l2 = std::chrono::system_clock::now();
-			std::cout << "LOOP  = " << (l2-l1).count() << std::endl;
+			// auto l2 = std::chrono::system_clock::now();
+			// std::cout << "LOOP  = " << (l2-l1).count() << std::endl;
 		}
 
 		timer::Timer::printHeader(std::cout);
@@ -819,13 +819,18 @@ protected:
 			graph->h_subNodes[i].s[1] = offset;
 			i++;
 			offset += neighbors.size();
-			if (node == 1218 || node == 918) {
+			if (false && (node == 1218 || node == 918)) {
 				std::cerr << "Insert node " << node << " neighbors [";
 				for (::size_t i = offset - neighbors.size(); i < offset; i++) {
 					std::cerr << graph->h_subEdges[i] << " ";
 				}
 				std::cerr << "] offset becomes " << offset << std::endl;
 			}
+		}
+
+		if (graph->h_subEdges.size() == 0) {
+			// std::cerr << "Non-empty minibatch but no neighbors" << std::endl;
+			return;
 		}
 
 		assert(graph->h_subNodes.size() <= graph->num_nodes_in_batch);

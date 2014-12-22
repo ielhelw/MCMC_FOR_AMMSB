@@ -196,7 +196,7 @@ random_gamma_dummy(global Buffers *bufs,
 	size_t gid = get_global_id(0);
 	size_t gsize = get_global_size(0);
 	ulong2 randomSeed = bufs->bufs.RandomSeed[gid];
-if (gid != 0) printf((__constant char *)"OOOOOOPPPPPPPPPPPSSSSSSSSS %s\n", "random_gamma_dummy");
+// if (gid != 0) printf((__constant char *)"OOOOOOPPPPPPPPPPPSSSSSSSSS %s\n", "random_gamma_dummy");
 
 	for (int i = gid; i < X; i += gsize) {
 		for (int j = 0; j < Y; j++) {
@@ -219,7 +219,7 @@ random_gamma(global Buffers *bufs,
 	size_t gid = get_global_id(0);
 	size_t gsize = get_global_size(0);
 	ulong2 randomSeed = bufs->bufs.RandomSeed[gid];
-if (gid != 0) printf((__constant char *)"OOOOOOPPPPPPPPPPPSSSSSSSSS %s\n", "random_gamma");
+// if (gid != 0) printf((__constant char *)"OOOOOOPPPPPPPPPPPSSSSSSSSS %s\n", "random_gamma");
 
 	for (int i = gid; i < X; i += gsize) {
 		for (int j = 0; j < Y; j++) {
@@ -427,7 +427,7 @@ kernel void sample_neighbor_nodes(
 	size_t gid = get_global_id(0);
 	size_t gsize = get_global_size(0);
 	ulong2 randomSeed = bufs->bufs.RandomSeed[gid];
-if (gid != 0) printf((__constant char *)"OOOOOOPPPPPPPPPPPSSSSSSSSS %s\n", "sample_neighbor_nodes");
+// if (gid != 0) printf((__constant char *)"OOOOOOPPPPPPPPPPPSSSSSSSSS %s\n", "sample_neighbor_nodes");
 
 	for (int i = gid; i < N; i += gsize) {
 		// int node = bufs->bufs.Nodes[i];
@@ -584,7 +584,7 @@ kernel void update_phi(
 	global double *grads = bufs->bufs.Scratch + 2 * gid * K;
 	global double *prods = bufs->bufs.Scratch + (2 * N + gid) * K;
 	ulong2 randomSeed = bufs->bufs.RandomSeed[gid];
-if (gid != 0) printf((__constant char *)"OOOOOOPPPPPPPPPPPSSSSSSSSS %s\n", "update_phi");
+// if (gid != 0) printf((__constant char *)"OOOOOOPPPPPPPPPPPSSSSSSSSS %s\n", "update_phi");
 	// printf((__constant char *)"seed (%lu,%lu)\n", randomSeed.x, randomSeed.y);
 	for (int i = gid; i < N; i += gsize) {
 		// int node = bufs->bufs.Nodes[i];
@@ -645,7 +645,7 @@ kernel void update_pi(
 {
 	size_t gid = get_global_id(0);
 	size_t gsize = get_global_size(0);
-if (gid != 0) printf((__constant char *)"OOOOOOPPPPPPPPPPPSSSSSSSSS %s\n", "update_pi");
+// if (gid != 0) printf((__constant char *)"OOOOOOPPPPPPPPPPPSSSSSSSSS %s\n", "update_pi");
 
 	for (int i = gid; i < N; i += gsize) {
 		int node = i;
@@ -679,7 +679,7 @@ kernel void update_beta_calculate_grads(
 		const double epsilon
 		) {
 	size_t gid = get_global_id(0);
-if (gid != 0) printf((__constant char *)"OOOOOOPPPPPPPPPPPSSSSSSSSS %s\n", "update_beta_calculate_grads");
+// if (gid != 0) printf((__constant char *)"OOOOOOPPPPPPPPPPPSSSSSSSSS %s\n", "update_beta_calculate_grads");
 
 	if (gid < count_partial_sums) {
 		size_t gsize = get_global_size(0);
@@ -732,7 +732,7 @@ kernel void update_beta_calculate_theta(
 	size_t gid = get_global_id(0);
 	ulong2 randomSeed = bufs->bufs.RandomSeed[gid];
 	global double2 *ggrads = (global double2 *)bufs->bufs.Scratch;
-if (gid != 0) printf((__constant char *)"OOOOOOPPPPPPPPPPPSSSSSSSSS %s\n", "update_beta_calculate_theta");
+// if (gid != 0) printf((__constant char *)"OOOOOOPPPPPPPPPPPSSSSSSSSS %s\n", "update_beta_calculate_theta");
 
 	if (count_partial_sums == 0) {
 		for (int k = 0; k < K; ++k) {
