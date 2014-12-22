@@ -53,8 +53,6 @@ public:
 		num_total_edges = linked_edges->size(); // number of total edges.
 	   	this->held_out_ratio = held_out_ratio;	// percentage of held-out data size
 
-		calc_max_fan_out();
-
 		// Based on the a-MMSB paper, it samples equal number of
 		// linked edges and non-linked edges.
 		held_out_size = held_out_ratio * linked_edges->size();
@@ -64,6 +62,8 @@ public:
 		// randomly sample hold-out and test sets.
 		init_held_out_set();
 		init_test_set();
+
+		calc_max_fan_out();
 	}
 
 	virtual ~Network() {
@@ -102,8 +102,11 @@ public:
 		case strategy::STRATIFIED_RANDOM_PAIR:
 			return stratified_random_pair_sampling(mini_batch_size);
 		case strategy::STRATIFIED_RANDOM_NODE:
-			// std::cerr << "Set stratified random node sampling divisor to " << (N / mini_batch_size) << std::endl;
-			return stratified_random_node_sampling(N / mini_batch_size);
+			{
+				::size_t num_pieces = (N + mini_batch_size - 1) / mini_batch_size;
+				// std::cerr << "Set stratified random node sampling divisor to " << num_pieces << std::endl;
+				return stratified_random_node_sampling(num_pieces);
+			}
 		default:
 			throw MCMCException("Invalid sampling strategy");
 		}
@@ -133,7 +136,7 @@ public:
 		case strategy::STRATIFIED_RANDOM_PAIR:
 			return mini_batch_size + 1;
 		case strategy::STRATIFIED_RANDOM_NODE:
-			return mini_batch_size + 1;
+			return std::max(mini_batch_size + 1, get_max_fan_out(1));
 			// return fan_out_cumul_distro[mini_batch_size];
 		default:
 			throw MCMCException("Invalid sampling strategy");
@@ -512,31 +515,11 @@ protected:
 
 	void calc_max_fan_out() {
 		std::unordered_map<int, ::size_t> fan_out;
-		std::unordered_map<int, ::size_t> fan_in;
 
-		for (auto e: *linked_edges) {
-			if (! fan_out[e.first]) {
-				fan_out[e.first] = 1;
-			} else {
-				fan_out[e.first]++;
-			}
-			if (! fan_in[e.first]) {
-				fan_in[e.first] = 1;
-			} else {
-				fan_in[e.first]++;
-			}
-		}
-
-		max_fan_out = 0;
-		for (auto v: fan_out) {
-			if (v.second > max_fan_out) {
-				max_fan_out = v.second;
-			}
-		}
-		for (auto v: fan_in) {
-			if (v.second > max_fan_out) {
-				max_fan_out = v.second;
-			}
+		::size_t i = 0;
+		for (auto e: train_link_map) {
+			fan_out[i] = e.size();
+			i++;
 		}
 
 		std::transform(fan_out.begin(), fan_out.end(),
@@ -546,17 +529,21 @@ protected:
 		std::partial_sum(fan_out_cumul_distro.begin(), fan_out_cumul_distro.end(),
 						 fan_out_cumul_distro.begin());
 
-		std::cerr << "max_fan_out " << max_fan_out << std::endl;
+		std::cerr << "max_fan_out " << get_max_fan_out() << std::endl;
 	}
 
 public:
 	::size_t get_max_fan_out() const {
-		return max_fan_out;
+		return get_max_fan_out(1);
 	}
 
 
 	::size_t get_max_fan_out(::size_t batch_size) const {
-		return fan_out_cumul_distro[batch_size];
+		if (batch_size == 0) {
+			return 0;
+		}
+
+		return fan_out_cumul_distro[batch_size - 1];
 	}
 
 
@@ -638,8 +625,6 @@ protected:
 	EdgeMap test_map;				// store all test edges
 
 	::size_t	num_pieces;
-
-	::size_t	max_fan_out;
 
 	std::vector< ::size_t> fan_out_cumul_distro;
 };

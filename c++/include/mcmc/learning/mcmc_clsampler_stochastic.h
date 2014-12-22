@@ -176,9 +176,9 @@ public:
 
 		std::cout << "COMPILE OPTS: " << progOpts << std::endl;
 
-		std::cerr << "FIXME FIXME FIXME redo max. edges for strategy" << std::endl;
-		::size_t num_edges_in_batch = network.minibatch_edges_for_strategy(mini_batch_size, strategy);
-		::size_t num_nodes_in_batch = network.minibatch_nodes_for_strategy(mini_batch_size, strategy);
+		num_edges_in_batch = network.minibatch_edges_for_strategy(mini_batch_size, strategy);
+		num_nodes_in_batch = network.minibatch_nodes_for_strategy(mini_batch_size, strategy);
+		num_outgoing_edges_from_batch = network.get_max_fan_out(num_nodes_in_batch);
 
 		const ::size_t deviceMem = clContext.device.getInfo<CL_DEVICE_MAX_MEM_ALLOC_SIZE>();
 		bufferSize = args.openclBufferSize;
@@ -524,10 +524,14 @@ public:
 			t_mini_batch.stop();
 			// std::cerr << "Done sample_mini_batch" << std::endl;
 			const OrderedEdgeSet &mini_batch = *edgeSample.first;
+			assert(mini_batch.size() <= num_edges_in_batch);
 			double scale = edgeSample.second;
 
 			if (mini_batch.size() == 0) {
 				std::cerr << "Empty mini batch; who cares nowadays?" << std::endl;
+			}
+			if (mini_batch.size() > num_edges_in_batch) {
+				throw MCMCException("Mini batch outsize");
 			}
 
 			// iterate through each node in the mini batch.
@@ -889,7 +893,7 @@ protected:
 									const std::vector<std::vector<double> > &data,
 									std::vector<double> &hostBuffer,
 									const std::vector<int> &neighbors,
-									::size_t mini_batch_size,
+									::size_t numNodes,
 									::size_t offset, ::size_t stride, ::size_t size,
 									::size_t bufferOffset) {
 		static int first = 1;
@@ -900,14 +904,14 @@ protected:
 			std::cerr << "FIXME: " << __func__ << "(): if this is mapped memory: no need for intermediate copy" << std::endl;
 		}
 
-		if (mini_batch_size == 0) {
+		if (numNodes == 0) {
 			return;
 		}
 
 		::size_t n = std::min(size - offset, stride);
 
 		if (false) {
-			for (auto i = neighbors.begin() + offset; i < neighbors.begin() + mini_batch_size * size; i += size) {
+			for (auto i = neighbors.begin() + offset; i < neighbors.begin() + numNodes * size; i += size) {
 				std::cerr << "Neighbors: ";
 				for (auto b = i; b < i + n; b++) {
 					std::cerr << *b << " ";
@@ -918,7 +922,7 @@ protected:
 
 		hostBuffer.clear();
 		t_stage_pi_neighbors_gather.start();
-		for (auto i = neighbors.begin() + offset; i < neighbors.begin() + mini_batch_size * size; i += size) {
+		for (auto i = neighbors.begin() + offset; i < neighbors.begin() + numNodes * size; i += size) {
 			for (auto b = i; b < i + n; b++) {
 				assert(data[*b].size() == K);
 				// t_stage_pi_neighbors_gather.start();
@@ -935,13 +939,13 @@ protected:
 		}
 		t_stage_pi_neighbors_gather.stop();
 
-		total_data_stage_pi_neighbors += mini_batch_size * n * K * sizeof(cl_double);
+		total_data_stage_pi_neighbors += numNodes * n * K * sizeof(cl_double);
 
-		assert(hostBuffer.size() == mini_batch_size * n * K);
+		assert(hostBuffer.size() == numNodes * n * K);
 		// std::cerr << "Stage hostBuffer size " << hostBuffer.size() << " must be " << (n * K) << std::endl;
 		clContext.queue.enqueueWriteBuffer(buffer, CL_FALSE,
 										   bufferOffset,
-										   mini_batch_size * n * K * sizeof(cl_double),
+										   numNodes * n * K * sizeof(cl_double),
 										   hostBuffer.data());
 		clContext.queue.finish();
 	}
@@ -987,7 +991,7 @@ protected:
 
 		t_stage_pi_neighbors.start();
 		stage_sub_neighbor_vectors(clPi, pi, hostPiBuffer, hostNeighbors,
-								   nodes.size(),							// mini_batch_size
+								   nodes.size(),							// numNodes
 								   offset,									// offset
 								   stride,									// stride
 								   real_num_node_sample(),					// size = numNeighbors
@@ -1175,11 +1179,7 @@ protected:
 			linkedMap[e.first].push_back(e.second);
 			linkedMap[e.second].push_back(e.first);
 		}
-
-		::size_t num_edges_in_batch = network.minibatch_edges_for_strategy(mini_batch_size, strategy);
-		::size_t num_nodes_in_batch = network.minibatch_nodes_for_strategy(mini_batch_size, strategy);
-		num_edges_in_batch = std::max(num_edges_in_batch, network.get_max_fan_out(num_nodes_in_batch));
-		clSubGraph.init(*this, &clGraph, linkedMap, N, num_nodes_in_batch, num_edges_in_batch);
+		clSubGraph.init(*this, &clGraph, linkedMap, N, num_nodes_in_batch, num_outgoing_edges_from_batch);
 
 		linkedMap.clear();
 
@@ -1263,6 +1263,11 @@ protected:
 		v += 1;
 		return v;
 	}
+
+protected:
+	::size_t num_edges_in_batch;
+	::size_t num_nodes_in_batch;
+	::size_t num_outgoing_edges_from_batch;
 
 	std::vector<double> hostPiBuffer;
 	std::vector<double> hostPhiBuffer;
