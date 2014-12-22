@@ -242,7 +242,7 @@ public:
 		timer::Timer t_perplexity("  perplexity");
 		timer::Timer t_mini_batch("  sample_mini_batch");
 		timer::Timer t_nodes_in_mini_batch("  nodes_in_mini_batch");
-		timer::Timer t_sample_neighbor_nodes("  sample_sample_neighbor_nodes");
+		timer::Timer t_sample_neighbor_nodes("  sample_neighbor_nodes");
 		timer::Timer t_update_phi("  update_phi");
 		timer::Timer t_update_pi("  update_pi");
 		timer::Timer t_update_beta("  update_beta");
@@ -303,11 +303,11 @@ public:
              */
 
             // (mini_batch, scale) = self._network.sample_mini_batch(self._mini_batch_size, "stratified-random-node")
-			std::cerr << "Invoke sample_mini_batch" << std::endl;
+			// std::cerr << "Invoke sample_mini_batch" << std::endl;
 			t_mini_batch.start();
 			EdgeSample edgeSample = network.sample_mini_batch(mini_batch_size, strategy::STRATIFIED_RANDOM_NODE);
 			t_mini_batch.stop();
-			std::cerr << "Done sample_mini_batch" << std::endl;
+			// std::cerr << "Done sample_mini_batch" << std::endl;
 			const OrderedEdgeSet &mini_batch = *edgeSample.first;
 			double scale = edgeSample.second;
 
@@ -325,7 +325,7 @@ public:
 			// double eps_t = std::pow(1024+step_count, -0.5);
 #endif
 
-			std::cerr << "Sample neighbor nodes" << std::endl;
+			// std::cerr << "Sample neighbor nodes" << std::endl;
 			for (auto node = nodes.begin();
 				 	node != nodes.end();
 					node++) {

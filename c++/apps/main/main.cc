@@ -6,6 +6,12 @@ using namespace mcmc::learning;
 
 int main(int argc, char *argv[]) {
 	try {
+		std::cout << "Command line: ";
+		for (int i = 0; i < argc; i++) {
+			std::cout << argv[i] << " ";
+		}
+		std::cout << std::endl;
+
 		Options args(argc, argv);
 
 #ifdef ENABLE_OPENCL

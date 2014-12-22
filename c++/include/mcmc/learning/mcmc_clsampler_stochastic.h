@@ -162,6 +162,9 @@ public:
 			 << " -DK=" << K
 			 << " -DMAX_NODE_ID=" << N
 			 << " -DRAND_MAX=" << std::numeric_limits<uint64_t>::max() << "ULL"
+#ifdef NDEBUG
+			 << " -DNDEBUG"
+#endif
 #ifdef RANDOM_FOLLOWS_CPP
 			 << " -DRANDOM_FOLLOWS_CPP"
 #endif
@@ -195,6 +198,7 @@ public:
 			std::cout << "pi/phi submatrix does not fit in device. Limit neighbor subset size to " << subNeighbors << std::endl;
 			nodes_neighbors = num_nodes_in_batch * (1 + subNeighbors);
 		}
+		std::cerr << "OpenCL group size " << groupSize << " num " << numGroups << " buffer size " << bufferSize << " neighbor subset size " << subNeighbors << std::endl;
 
 		hostPiBuffer = std::vector<double>(nodes_neighbors * K);
 		hostPhiBuffer = std::vector<double>(nodes_neighbors * K);
@@ -266,10 +270,8 @@ public:
 		clErrorMsg = createBuffer("clErrorMsg", CL_MEM_READ_WRITE,
 				ERROR_MESSAGE_LENGTH
 				);
-#ifdef RANDOM_FOLLOWS_SCALABLE_GRAPH
 		clStoredRandom = createBuffer("clStoredRandom", CL_MEM_READ_WRITE,
 									  num_nodes_in_batch * K * sizeof(cl_double));
-#endif
 
 		int Idx = 0;
 		init_buffers_kernel.setArg(Idx++, clBuffers);
@@ -289,9 +291,7 @@ public:
 		init_buffers_kernel.setArg(Idx++, clRandomSeed);
 		init_buffers_kernel.setArg(Idx++, clErrorCtrl);
 		init_buffers_kernel.setArg(Idx++, clErrorMsg);
-#ifdef RANDOM_FOLLOWS_SCALABLE_GRAPH
 		init_buffers_kernel.setArg(Idx++, clStoredRandom);
-#endif
 		try {
 			clContext.queue.enqueueTask(init_buffers_kernel);
 		} catch (cl::Error &e) {
@@ -586,7 +586,7 @@ public:
 				}
 
 				t_update_phi.start();
-				update_phi(nodes, offset, size);
+				update_phi(nodes, offset, subNeighbors);
 				t_update_phi.stop();
 
 				offset += size;
@@ -874,12 +874,23 @@ protected:
 		clContext.queue.enqueueWriteBuffer(buffer, CL_FALSE, 0, nodes.size() * K * sizeof(cl_double), hostBuffer.data());
 	}
 
+	/*
+	 * Strided layout:
+	 *  - neighbors is flattened vector of neighbors, real_num_node_sample() per node in the minibatch
+	 *  - then offset is the offset into the first chunk of neighbors (so, per node)
+	 *  - stride is the size of the current subset of neighbors per node
+	 *  - size is real_num_node_sample()
+	 * So to gather the data in this subset:
+	 *     for each node
+	 *         push pi for neighbor[offset .. offset + stride]
+	 * and these pi lie contiguously in device memory, after the pi for the nodes themselves.
+	 */
 	void stage_sub_neighbor_vectors(cl::Buffer &buffer,
 									const std::vector<std::vector<double> > &data,
 									std::vector<double> &hostBuffer,
 									const std::vector<int> &neighbors,
-									::size_t numNeighbors,
-									::size_t offset, ::size_t size, ::size_t stride,
+									::size_t mini_batch_size,
+									::size_t offset, ::size_t stride, ::size_t size,
 									::size_t bufferOffset) {
 		static int first = 1;
 		if (first) {
@@ -889,33 +900,33 @@ protected:
 			std::cerr << "FIXME: " << __func__ << "(): if this is mapped memory: no need for intermediate copy" << std::endl;
 		}
 
+		if (mini_batch_size == 0) {
+			return;
+		}
+
+		::size_t n = std::min(size - offset, stride);
+
 		if (false) {
-			for (auto i = neighbors.begin() + offset; i < neighbors.begin() + numNeighbors; i += stride) {
+			for (auto i = neighbors.begin() + offset; i < neighbors.begin() + mini_batch_size * size; i += size) {
 				std::cerr << "Neighbors: ";
-				for (auto n = i; n < i + size; n++) {
-					std::cerr << *n << " ";
+				for (auto b = i; b < i + n; b++) {
+					std::cerr << *b << " ";
 				}
 				std::cerr << std::endl;
 			}
 		}
 
-		if (numNeighbors == 0) {
-			return;
-		}
-
-		::size_t n = numNeighbors / stride * size;
-
 		hostBuffer.clear();
 		t_stage_pi_neighbors_gather.start();
-		for (auto i = neighbors.begin() + offset; i < neighbors.begin() + numNeighbors; i += stride) {
-			for (auto n = i; n < i + size; n++) {
-				assert(data[*n].size() == K);
+		for (auto i = neighbors.begin() + offset; i < neighbors.begin() + mini_batch_size * size; i += size) {
+			for (auto b = i; b < i + n; b++) {
+				assert(data[*b].size() == K);
 				// t_stage_pi_neighbors_gather.start();
-				hostBuffer.insert(hostBuffer.end(), data[*n].begin(), data[*n].end());
+				hostBuffer.insert(hostBuffer.end(), data[*b].begin(), data[*b].end());
 				// t_stage_pi_neighbors_gather.stop();
 				if (false) {
 					std::cerr << "pi_b: ";
-					for (auto k: data[*n]) {
+					for (auto k: data[*b]) {
 						std::cerr << std::fixed << std::setprecision(12) << k << " ";
 					}
 					std::cerr << std::endl;
@@ -924,13 +935,13 @@ protected:
 		}
 		t_stage_pi_neighbors_gather.stop();
 
-		total_data_stage_pi_neighbors += n * K * sizeof(cl_double);
+		total_data_stage_pi_neighbors += mini_batch_size * n * K * sizeof(cl_double);
 
-		assert(hostBuffer.size() == n * K);
+		assert(hostBuffer.size() == mini_batch_size * n * K);
 		// std::cerr << "Stage hostBuffer size " << hostBuffer.size() << " must be " << (n * K) << std::endl;
 		clContext.queue.enqueueWriteBuffer(buffer, CL_FALSE,
 										   bufferOffset,
-										   n * K * sizeof(cl_double),
+										   mini_batch_size * n * K * sizeof(cl_double),
 										   hostBuffer.data());
 		clContext.queue.finish();
 	}
@@ -968,20 +979,27 @@ protected:
 		}
 	}
 
-	void update_phi(const std::vector<int> &nodes, ::size_t offset, ::size_t size) {
+	void update_phi(const std::vector<int> &nodes, ::size_t offset, ::size_t stride) {
 
 		// Pi is staged in two contiguous sections:
 		// 1) pi(i) for i in nodes, before the loop that calls us
 		// 2) pi(n'(i)) for n'(i): the subset [offset:size] of neighbors n(i) of node i
 
 		t_stage_pi_neighbors.start();
-		stage_sub_neighbor_vectors(clPi, pi, hostPiBuffer, hostNeighbors, nodes.size() * real_num_node_sample(), offset, size, real_num_node_sample(), nodes.size() * K * sizeof(cl_double));
+		stage_sub_neighbor_vectors(clPi, pi, hostPiBuffer, hostNeighbors,
+								   nodes.size(),							// mini_batch_size
+								   offset,									// offset
+								   stride,									// stride
+								   real_num_node_sample(),					// size = numNeighbors
+								   nodes.size() * K * sizeof(cl_double));	// bufferOffset
 		t_stage_pi_neighbors.stop();
 
 		cl_double eps_t = a * std::pow(1 + step_count / b, -c);   // step size
 		int Idx = 0;
+		::size_t n = std::min(real_num_node_sample() - offset, stride);
 		update_phi_kernel.setArg(Idx++, clBuffers);
-		update_phi_kernel.setArg(Idx++, (cl_int)size);
+		update_phi_kernel.setArg(Idx++, (cl_int)offset);
+		update_phi_kernel.setArg(Idx++, (cl_int)n);
 		update_phi_kernel.setArg(Idx++, (cl_int)nodes.size());
 		// TODO FIXME put alpha, a, b, c, epsilon into global device struct
 		update_phi_kernel.setArg(Idx++, (cl_double)alpha);
@@ -1297,9 +1315,7 @@ protected:
 	cl::Buffer clRandomSeed;
 	cl::Buffer clErrorCtrl;
 	cl::Buffer clErrorMsg;
-#ifdef RANDOM_FOLLOWS_SCALABLE_GRAPH
 	cl::Buffer clStoredRandom;
-#endif
 
 	::size_t hash_table_size;
 
