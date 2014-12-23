@@ -270,8 +270,10 @@ public:
 		clErrorMsg = createBuffer("clErrorMsg", CL_MEM_READ_WRITE,
 				ERROR_MESSAGE_LENGTH
 				);
+#ifdef RANDOM_FOLLOWS_SCALABLE_GRAPH
 		clStoredRandom = createBuffer("clStoredRandom", CL_MEM_READ_WRITE,
 									  num_nodes_in_batch * K * sizeof(cl_double));
+#endif
 
 		int Idx = 0;
 		init_buffers_kernel.setArg(Idx++, clBuffers);
@@ -291,7 +293,9 @@ public:
 		init_buffers_kernel.setArg(Idx++, clRandomSeed);
 		init_buffers_kernel.setArg(Idx++, clErrorCtrl);
 		init_buffers_kernel.setArg(Idx++, clErrorMsg);
+#ifdef RANDOM_FOLLOWS_SCALABLE_GRAPH
 		init_buffers_kernel.setArg(Idx++, clStoredRandom);
+#endif
 		try {
 			clContext.queue.enqueueTask(init_buffers_kernel);
 		} catch (cl::Error &e) {
@@ -1320,7 +1324,9 @@ protected:
 	cl::Buffer clRandomSeed;
 	cl::Buffer clErrorCtrl;
 	cl::Buffer clErrorMsg;
+#ifdef RANDOM_FOLLOWS_SCALABLE_GRAPH
 	cl::Buffer clStoredRandom;
+#endif
 
 	::size_t hash_table_size;
 

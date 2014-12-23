@@ -41,7 +41,9 @@ typedef struct {
 		global ulong2 *RandomSeed;
 		global int *errCtrl;
 		global char *errMsg;
+#ifdef RANDOM_FOLLOWS_SCALABLE_GRAPH
 		global double *stored_random;
+#endif
 	} bufs;
 } Buffers;
 
@@ -61,8 +63,10 @@ kernel void init_buffers(
 		global double *Scratch,
 		global ulong2 *RandomSeed,
 		global int *errCtrl,
-		global char *errMsg,
-		global double *stored_random
+		global char *errMsg
+#ifdef RANDOM_FOLLOWS_SCALABLE_GRAPH
+		, global double *stored_random
+#endif
 		) {
 	bufs->bufs.G = G;
 	bufs->bufs.HG = HG;
@@ -79,7 +83,9 @@ kernel void init_buffers(
 	bufs->bufs.RandomSeed = RandomSeed;
 	bufs->bufs.errCtrl = errCtrl;
 	bufs->bufs.errMsg = errMsg;
+#ifdef RANDOM_FOLLOWS_SCALABLE_GRAPH
 	bufs->bufs.stored_random = stored_random;
+#endif
 }
 
 void report_first_error(global Buffers *bufs, constant char *msg) {
@@ -498,9 +504,6 @@ void update_phi_for_node_(global Buffers *bufs,
 	if (offset == 0) {
 		for (int k = 0; k < K; k++) {
 			grads[k] = 0.0;
-#ifndef RANDOM_FOLLOWS_SCALABLE_GRAPH
-			bufs->bufs.stored_random[node * K + k] = randn(randomSeed);
-#endif
 		}
 	}
 	for (int i = 0; i < neighbors; i++) {
@@ -532,7 +535,7 @@ void update_phi_for_node_(global Buffers *bufs,
 	}
 
 	// printf((__constant char *)"Node %d Random seed: (%lu,%lu)\n", bufs->bufs.Nodes[node], (*randomSeed).x, (*randomSeed).y);
-	if (offset + neighbors == N * NEIGHBOR_SAMPLE_SIZE) {
+	if (offset + neighbors == NEIGHBOR_SAMPLE_SIZE) {
 		double Nn = (1.0 * MAX_NODE_ID) / (NEIGHBOR_SAMPLE_SIZE - 1);
 		for (int k = 0; k < K; ++k) {
 #ifndef NDEBUG
@@ -540,7 +543,11 @@ void update_phi_for_node_(global Buffers *bufs,
 				printf((__constant char *)"%d Oops, phi[%d] NaN\n", __LINE__, k);
 			}
 #endif
+#ifdef RANDOM_FOLLOWS_SCALABLE_GRAPH
 			double rns = bufs->bufs.stored_random[node * K + k];
+#else
+			double rns = randn(randomSeed);
+#endif
 			double phi_star_k = fabs(phi[k] + eps_t / 2.0
 					* (alpha - phi[k] + Nn * grads[k])
 					+ sqrt(eps_t * phi[k]) * rns);
@@ -572,9 +579,11 @@ void update_phi_for_node_(global Buffers *bufs,
 		}
 		printf((__constant char *)"\n");
 		printf((__constant char *)"noise ");
+#ifdef RANDOM_FOLLOWS_SCALABLE_GRAPH
 		for (int k = 0; k < K; k++) {
 			printf((__constant char *)"%.12f ", bufs->bufs.stored_random[node * K + k]);
 		}
+#endif
 		printf((__constant char *)"\n");
 #endif
 	}
