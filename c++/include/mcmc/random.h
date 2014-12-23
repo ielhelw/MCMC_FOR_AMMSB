@@ -374,7 +374,7 @@ public:
 #endif
 #else
 		for (::size_t i = 0; i < K; i++) {
-			r[i] = gsl_ran_gaussian_ziggurat(NULL, 0.5);
+			r[i] = gsl_ran_gaussian_ziggurat(NULL, 1.0);
 		}
 #endif
 
