@@ -255,7 +255,7 @@ gsl_ran_gaussian_ziggurat (gsl_rng *randomState, const double sigma)
 
 inline double randn(gsl_rng *randomSeed) {
 	// FIXME: width parameter 0.5, or better 0.1?
-	return gsl_ran_gaussian_ziggurat(randomSeed, 0.5);
+	return gsl_ran_gaussian_ziggurat(randomSeed, 1.0);
 }
 
 
