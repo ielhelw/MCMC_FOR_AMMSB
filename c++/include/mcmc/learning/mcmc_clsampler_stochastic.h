@@ -102,6 +102,11 @@ public:
 #else
 		std::cout << "Randomness is NOT compatible with nonscaling graph version" << std::endl;
 #endif
+#ifdef RANDOM_FOLLOWS_GLASSWING
+		std::cout << "Randomness IS compatible with Glasswing" << std::endl;
+#else
+		std::cout << "Randomness is NOT compatible with Glasswing" << std::endl;
+#endif
 
         // step size parameters.
         this->a = args.a;
@@ -211,7 +216,7 @@ public:
 
 		sampler_program = this->clContext.createProgram(BOOST_STRINGIZE(PROJECT_HOME) "/../OpenCL/sampler.cl", progOpts);
 		random_gamma_kernel = cl::Kernel(sampler_program, "random_gamma");
-#ifdef RANDOM_FOLLOWS_SCALABLE_GRAPH
+#if defined RANDOM_FOLLOWS_SCALABLE_GRAPH || defined RANDOM_FOLLOWS_GLASSWING
 		random_gamma_dummy_kernel = cl::Kernel(sampler_program, "random_gamma_dummy");
 #endif
 		row_normalize_kernel = cl::Kernel(sampler_program, "row_normalize");
@@ -330,7 +335,7 @@ public:
 		random_gamma_kernel.setArg(Idx++, 2);
 		clContext.queue.enqueueNDRangeKernel(random_gamma_kernel, cl::NullRange, cl::NDRange(K_workers), cl::NDRange(1));
 
-#ifdef RANDOM_FOLLOWS_SCALABLE_GRAPH
+#if defined RANDOM_FOLLOWS_SCALABLE_GRAPH || defined RANDOM_FOLLOWS_GLASSWING
 		// Advance the random state, so device random and host kernelRandom are in sync
 		// (void)kernelRandom.gamma(100.0, 0.01, K, 2);		// parameterization for \beta
 		clContext.queue.finish();
@@ -352,7 +357,7 @@ public:
 		pi.resize(phi.size(), std::vector<double>(phi[0].size()));
 		np::row_normalize(&pi, phi);
 
-#ifdef RANDOM_FOLLOWS_SCALABLE_GRAPH
+#if defined RANDOM_FOLLOWS_SCALABLE_GRAPH || defined RANDOM_FOLLOWS_GLASSWING
 		// Advance the device random state, so device random and host kernelRandom are in sync
 		clContext.queue.finish();
 		std::cerr << "Grab another N * K = " << (N * K) << " device dummy randoms" << std::endl;
@@ -456,7 +461,7 @@ public:
 			clContext.queue.finish();
 			std::cerr << "beta ";
 			for (::size_t k = 0; k < K; k++) {
-				std::cerr << beta[k] << " ";
+				std::cerr << std::fixed << std::setprecision(12) << beta[k] << " ";
 			}
 			std::cerr << std::endl;
 		}
@@ -504,6 +509,14 @@ public:
 	virtual ~MCMCClSamplerStochastic() {
 	}
 
+#ifdef RANDOM_FOLLOWS_GLASSWING
+protected:
+    static bool GlasswingOrder(cl_int i, cl_int j) {
+      return (memcmp(&i, &j, sizeof i) < 0);
+    }
+#endif
+
+public:
 	virtual void run() {
 		/** run mini-batch based MCMC sampler, based on the sungjin's note */
 		timer::Timer::setTabular(true);
@@ -542,6 +555,14 @@ public:
 			t_nodes_in_mini_batch.start();
 			const std::vector<int> nodes = nodes_in_batch(mini_batch);
 			t_nodes_in_mini_batch.stop();
+
+            if (true) {
+              std::cerr << "Minibatch: ";
+              for (auto e : mini_batch) {
+                std::cerr << e << " ";
+              }
+              std::cerr << std::endl;
+            }
 
 			// std::cerr << "Stage clSubHeldOutGraph" << std::endl;
 			t_stage_held_out.start();
@@ -754,6 +775,7 @@ protected:
 		}
 
 		double eps_t = a * std::pow(1.0 + step_count / b, -c);
+        std::cerr << __func__ << ": a " << a << " b " << b << " c " << c << " step_count " << step_count << " eps_t " << eps_t << std::endl;
 		cl_double2 clEta;
 		clEta.s[0] = this->eta[0];
 		clEta.s[1] = this->eta[1];
@@ -985,6 +1007,20 @@ protected:
 			first = 0;
 			std::cerr << "FIXME FIXME FIXME: shuffle/indirect/restage neighbor table" << std::endl;
 		}
+
+        if (false) {
+          clContext.queue.finish();
+          ::size_t i = 0;
+          for (auto n : nodes) {
+            std::cerr << "Node " << n << ": neighbors ";
+            for (::size_t j = 0; j < real_num_node_sample(); j++) {
+              Edge e(n, hostNeighbors[i * real_num_node_sample() + j]);
+              std::cerr << hostNeighbors[i * real_num_node_sample() + j] << "(" << e.in(network.get_linked_edges()) <<  ") ";
+            }
+            std::cerr << std::endl;
+            i++;
+          }
+        }
 	}
 
 	void update_phi(const std::vector<int> &nodes, ::size_t offset, ::size_t stride) {
@@ -1003,6 +1039,7 @@ protected:
 		t_stage_pi_neighbors.stop();
 
 		cl_double eps_t = a * std::pow(1 + step_count / b, -c);   // step size
+        std::cerr << __func__ << ": a " << a << " b " << b << " c " << c << " step_count " << step_count << " eps_t " << eps_t << std::endl;
 		int Idx = 0;
 		::size_t n = std::min(real_num_node_sample() - offset, stride);
 		update_phi_kernel.setArg(Idx++, clBuffers);
@@ -1072,8 +1109,30 @@ protected:
             node_set.insert(edge->second);
 		}
 
-        return std::vector<int>(node_set.begin(), node_set.end());
-	}
+        std::vector<int> nodes(node_set.begin(), node_set.end());
+#ifdef RANDOM_FOLLOWS_GLASSWING
+        std::cerr << "Unsorted nodes: ";
+        for (auto n : nodes) {
+          std::cerr << n << " ";
+        }
+        std::cerr << std::endl;
+        if (true) {
+          std::sort(nodes.begin(), nodes.end(), GlasswingOrder);
+          // std::sort(nodes.begin(), nodes.end());
+          std::cerr << "Sorted nodes: ";
+          for (auto n : nodes) {
+            std::cerr << n << " ";
+          }
+          std::cerr << std::endl;
+          std::cerr << std::hex << "Sorted nodes: ";
+          for (auto n : nodes) {
+            std::cerr << "0x" << n << " ";
+          }
+          std::cerr << std::endl << std::dec;
+        }
+#endif
+        return nodes;
+    }
 
 	double deviceSumDouble(cl::Buffer &xBuffer) {
 		vex::backend::opencl::device_vector<double> xDev(xBuffer);
@@ -1288,7 +1347,7 @@ protected:
 
 	cl::Kernel graph_init_kernel;
 	cl::Kernel random_gamma_kernel;
-#ifdef RANDOM_FOLLOWS_SCALABLE_GRAPH
+#if defined RANDOM_FOLLOWS_SCALABLE_GRAPH || defined RANDOM_FOLLOWS_GLASSWING
 	cl::Kernel random_gamma_dummy_kernel;
 #endif
 	cl::Kernel row_normalize_kernel;

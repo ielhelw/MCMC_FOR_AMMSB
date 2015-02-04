@@ -54,12 +54,21 @@ public:
 		return (xorshift_state[1] = (s1 ^ s0 ^ (s1 >> 17) ^ (s0 >> 26))) + s0;
 	}
 
+    const uint64_t seed(int x) const {
+      return xorshift_state[x];
+    }
+
 	inline uint64_t rand() {
 		uint64_t r = xorshift_128plus();
 		// std::cerr << "0: rand/X() " << r << std::endl;
 		return r;
 	}
 #else
+
+    const uint64_t seed(int x) const {
+      return 0;
+    }
+
 	// use system ::rand()
 #endif
 

@@ -59,7 +59,7 @@ public:
 
 		stepsize_switch = false;
 
-		ppx_for_heldout = std::vector<double>(network.get_held_out_size());
+		ppx_for_heldout = std::vector<double>(network.get_held_out_size(), 0.0);
 
 		if (args.strategy == "unspecified") {
 			strategy = strategy::STRATIFIED_RANDOM_NODE;

@@ -138,16 +138,23 @@ public:
 
 		phi = kernelRandom->gamma(1, 1, N, K);					// parameterization for \pi
 		std::cerr << "Done host random for phi" << std::endl;
+#ifndef NDEBUG
+        for (auto pph : phi) {
+          for (auto ph : pph) {
+            assert(ph >= 0.0);
+          }
+        }
+#endif
         // self._pi = self.__phi/np.sum(self.__phi,1)[:,np.newaxis]
 		pi.resize(phi.size(), std::vector<double>(phi[0].size()));
 		np::row_normalize(&pi, phi);
 
 		if (false) {
-			std::cout << "beta[0] " << beta[0] << std::endl;
+			std::cout << std::fixed << std::setprecision(12) << "beta[0] " << beta[0] << std::endl;
 		} else {
 			std::cerr << "beta ";
 			for (::size_t k = 0; k < K; k++) {
-				std::cerr << beta[k] << " ";
+				std::cerr << std::fixed << std::setprecision(12) << beta[k] << " ";
 			}
 			std::cerr << std::endl;
 		}
@@ -155,12 +162,12 @@ public:
 		if (false) {
 			std::cout << "theta[*][0]: ";
 			for (::size_t k = 0; k < K; k++) {
-				std::cout << theta[k][0] << " ";
+				std::cout << std::fixed << std::setprecision(12) << theta[k][0] << " ";
 			}
 			std::cout << std::endl;
 			std::cout << "theta[*][1]: ";
 			for (::size_t k = 0; k < K; k++) {
-				std::cout << theta[k][1] << " ";
+				std::cout << std::fixed << std::setprecision(12) << theta[k][1] << " ";
 			}
 			std::cout << std::endl;
 		}
@@ -173,16 +180,13 @@ public:
 			std::cout << std::endl;
 		}
 
-		if (false) {
+		if (true) {
 			for (::size_t i = 0; i < 10; i++) {
 				std::cerr << "phi[" << i << "]: ";
 				for (::size_t k = 0; k < 10; k++) {
 					std::cerr << std::fixed << std::setprecision(12) << phi[i][k] << " ";
 				}
 				std::cerr << std::endl;
-			}
-
-			for (::size_t i = 0; i < 10; i++) {
 				std::cerr << "pi[" << i << "]: ";
 				for (::size_t k = 0; k < 10; k++) {
 					std::cerr << std::fixed << std::setprecision(12) << pi[i][k] << " ";
@@ -191,6 +195,7 @@ public:
 			}
 		}
 
+        std::cerr << "Random seed " << std::hex << "0x" << kernelRandom->seed(0) << ",0x" << kernelRandom->seed(1) << std::endl << std::dec;
 		std::cerr << "Done constructor" << std::endl;
 	}
 
@@ -307,6 +312,13 @@ public:
 			t_mini_batch.start();
 			EdgeSample edgeSample = network.sample_mini_batch(mini_batch_size, strategy::STRATIFIED_RANDOM_NODE);
 			t_mini_batch.stop();
+            if (true) {
+              std::cerr << "Minibatch: ";
+              for (auto e : *edgeSample.first) {
+                std::cerr << e << " ";
+              }
+              std::cerr << std::endl;
+            }
 			// std::cerr << "Done sample_mini_batch" << std::endl;
 			const OrderedEdgeSet &mini_batch = *edgeSample.first;
 			double scale = edgeSample.second;
@@ -334,6 +346,7 @@ public:
 				NeighborSet neighbors = sample_neighbor_nodes(num_node_sample, *node);
 				t_sample_neighbor_nodes.stop();
 
+                std::cerr << "Random seed " << std::hex << "0x" << kernelRandom->seed(0) << ",0x" << kernelRandom->seed(1) << std::endl << std::dec;
 				t_update_phi.start();
 				update_phi(*node, neighbors
 #ifndef EFFICIENCY_FOLLOWS_CPP_WENZHE
@@ -514,6 +527,21 @@ protected:
 		std::vector<std::vector<double> > temp(theta.size(), std::vector<double>(theta[0].size()));
 		np::row_normalize(&temp, theta);
 		std::transform(temp.begin(), temp.end(), beta.begin(), np::SelectColumn<double>(1));
+
+        if (true) {
+          for (auto n : noise) {
+            std::cerr << "noise ";
+            for (auto b : n) {
+              std::cerr << std::fixed << std::setprecision(12) << b << " ";
+            }  
+            std::cerr << std::endl;
+          }
+          std::cerr << "beta ";
+          for (auto b : beta) {
+            std::cerr << std::fixed << std::setprecision(12) << b << " ";
+          }
+          std::cerr << std::endl;
+        }
 	}
 
 
@@ -585,6 +613,9 @@ protected:
 		}
 
 		std::vector<double> noise = kernelRandom->randn(K);	// random gaussian noise.
+        for (::size_t k = 0; k < K; ++k) {
+          std::cerr << "randn " << std::fixed << std::setprecision(12) << noise[k] << std::endl;
+        }
 #ifndef EFFICIENCY_FOLLOWS_CPP_WENZHE
 		double Nn = (1.0 * N) / num_node_sample;
 #endif
@@ -733,8 +764,8 @@ protected:
 #endif
 		}
 #endif
-		if (false) {
-			std::cerr << "Neighbors: ";
+		if (true) {
+			std::cerr << "Node " << nodeId << ": neighbors ";
 			for (auto n : neighbor_nodes) {
 				std::cerr << n << " ";
 			}

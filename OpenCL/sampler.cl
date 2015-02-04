@@ -185,7 +185,6 @@ inline int hash_put(const int key, global int* buckets, const int n_buckets) {
 }
 
 
-#ifdef RANDOM_FOLLOWS_SCALABLE_GRAPH
 kernel void
 random_gamma_dummy(global Buffers *bufs,
 				   double eta0,
@@ -205,7 +204,6 @@ random_gamma_dummy(global Buffers *bufs,
 	}
 	bufs->bufs.RandomSeed[gid] = randomSeed;
 }
-#endif
 
 
 kernel void
@@ -443,7 +441,7 @@ kernel void sample_neighbor_nodes(
 		if (ret) break;
 	}
 	bufs->bufs.RandomSeed[gid] = randomSeed;
-	// printf((__constant char *)"seed (%lu,%lu)\n", randomSeed.x, randomSeed.y);
+	// printf((__constant char *)"seed (0x%llx,0x%llx)\n", randomSeed.x, randomSeed.y);
 }
 
 
@@ -513,6 +511,7 @@ void update_phi_for_node_(global Buffers *bufs,
 		}
 
 		int y_ab = graph_has_peer(g, node, neighbor);
+        // printf((__constant char *)"node %d neighbor %d in %d\n", bufs->bufs.Nodes[node], neighbor, y_ab);
 		double e = (y_ab == 1) ? epsilon : 1.0 - epsilon;
 		double probs_sum = 0.0;
 		global double *pi_b = pi + (N + node * neighbors + i) * K;
@@ -530,7 +529,14 @@ void update_phi_for_node_(global Buffers *bufs,
 			probs_sum += probs[k];
 		}
 		for (int k = 0; k < K; k++) {
-			grads[k] += (probs[k] / probs_sum) / phi[k] - 1.0 / phi_i_sum;
+			// grads[k] += (probs[k] / probs_sum) / phi[k] - 1.0 / phi_i_sum;
+            // double phi_k = pi_a[k] * phi_i_sum;
+			// grads[k] += (probs[k] / probs_sum) / phi_k - 1.0 / phi_i_sum;
+			double grads_k = ((probs[k] / probs_sum) / pi_a[k] - 1.0) / phi_i_sum;
+			grads[k] += grads_k;
+            if (false && bufs->bufs.Nodes[node] == 545) {
+              printf((__constant char *)"node %d neighbor %d y %d grads[%d] %.12f probs %.12f probs_sum %.12f pi_a %.12f pi_b %.12f y %d phi_i_sum %.12f beta %.12f\n", bufs->bufs.Nodes[node], neighbor, y_ab, k, grads_k, probs[k], probs_sum, pi_a[k], pi_b[k], y_ab, phi_i_sum, beta[k]);
+            }
 		}
 	}
 
@@ -543,14 +549,20 @@ void update_phi_for_node_(global Buffers *bufs,
 				printf((__constant char *)"%d Oops, phi[%d] NaN\n", __LINE__, k);
 			}
 #endif
+// printf((__constant char *)"node %d random seed (0x%llx,0x%llx) Nn %.12f eps_t %.12f alpha %.12f", bufs->bufs.Nodes[node], (*randomSeed).x, (*randomSeed).y, Nn, eps_t, alpha);
 #ifdef RANDOM_FOLLOWS_SCALABLE_GRAPH
 			double rns = bufs->bufs.stored_random[node * K + k];
 #else
 			double rns = randn(randomSeed);
 #endif
-			double phi_star_k = fabs(phi[k] + eps_t / 2.0
-					* (alpha - phi[k] + Nn * grads[k])
-					+ sqrt(eps_t * phi[k]) * rns);
+			// double phi_star_k = fabs(phi[k] + eps_t / 2.0
+			//		* (alpha - phi[k] + Nn * grads[k])
+			//		+ sqrt(eps_t * phi[k]) * rns);
+            double phi_k = pi_a[k] * phi_i_sum;
+			double phi_star_k = fabs(phi_k + eps_t / 2.0
+					* (alpha - phi_k + Nn * grads[k])
+					+ sqrt(eps_t * phi_k) * rns);
+// printf((__constant char *)" randn %.12f pi[k] %.12f phi[k] %.12f grads[k] %.12f phi*[k] %.12f\n", rns, pi_a[k], phi_k, grads[k], phi_star_k);
 			phi[k] = phi_star_k;
 #ifndef NDEBUG
 			if (isnan(phi[k])) {
@@ -626,7 +638,7 @@ kernel void update_phi(
 				);
 	}
 	bufs->bufs.RandomSeed[gid] = randomSeed;
-	// printf((__constant char *)"seed (%lu,%lu)\n", randomSeed.x, randomSeed.y);
+	// printf((__constant char *)"seed (0x%llx.0x%llx)\n", randomSeed.x, randomSeed.y);
 }
 
 
@@ -650,7 +662,9 @@ void update_pi_for_node(
 		printf((__constant char *)"%.12f ", phi_a[k]);
 	}
 	printf((__constant char *)"\n");
-	printf((__constant char *)"pi[%d] ", node);
+#endif
+#if 0
+	printf((__constant char *)"update_pi pi[%d] ", bufs->bufs.Nodes[node]);
 	for (int k = 0; k < K; k++) {
 		printf((__constant char *)"%.12f ", pi_a[k]);
 	}
@@ -681,6 +695,12 @@ kernel void update_beta_calculate_theta_sum(
 {
 	size_t gid = get_global_id(0);
 	size_t gsize = get_global_size(0);
+
+#if 0
+    for (int k = 0; k < K; ++k) {
+      printf((__constant char *)"before: theta %.12f %.12f\n", theta[k].x, theta[k].y);
+    }
+#endif
 
 	for (int k = gid; k < K; k += gsize) {
 		theta_sum[k] = theta[k].x + theta[k].y;
@@ -715,6 +735,7 @@ kernel void update_beta_calculate_grads(
 			int i = bufs->bufs.Edges[e].x;
 			int j = bufs->bufs.Edges[e].y;
 			int y_ab = graph_has_peer(bufs->bufs.G, i, bufs->bufs.Nodes[j]);
+            // printf((__constant char *)"node %d neighbor %d in %d epsilon %.12f\n", bufs->bufs.Nodes[i], bufs->bufs.Nodes[j], y_ab, epsilon);
 
 			double pi_sum = 0.0;
 			double prob_sum = 0.0;
@@ -731,6 +752,25 @@ kernel void update_beta_calculate_grads(
 				prob_sum += probs[k];
 			}
 
+#if 0
+            printf((__constant char *)"pi[i] ");
+            for (int k = 0; k < K; k++) {
+              printf((__constant char *)"%.12f ", pi_i[k]);
+            }
+            printf((__constant char *)"%.12f ", pi_sum);
+            printf((__constant char *)"\n");
+            printf((__constant char *)"pi[j] ");
+            for (int k = 0; k < K; k++) {
+              printf((__constant char *)"%.12f ", pi_j[k]);
+            }
+            printf((__constant char *)"\n");
+            printf((__constant char *)"theta_sum ");
+            for (int k = 0; k < K; k++) {
+              printf((__constant char *)"%.12f ", bufs->bufs.ThetaSum[k]);
+            }
+            printf((__constant char *)"\n");
+#endif
+
 			double prob_0 = (y_ab ? epsilon : (1.0 - epsilon)) * (1.0 - pi_sum);
 			prob_sum += prob_0;
 			for (int k = 0; k < K; k++) {
@@ -738,8 +778,36 @@ kernel void update_beta_calculate_grads(
 				grads[k].x += f * ((1-y_ab) / bufs->bufs.Theta[k].x - 1.0 / bufs->bufs.ThetaSum[k]);
 				grads[k].y += f * (y_ab / bufs->bufs.Theta[k].y - 1.0 / bufs->bufs.ThetaSum[k]);
 			}
+
+#if 0
+            printf((__constant char *)"probs ");
+            for (int k = 0; k < K; ++k) {
+              printf((__constant char *)"%.12f ", probs[k]);
+            }
+            printf((__constant char *)"\n");
+            for (int k = 0; k < K; ++k) {
+              printf((__constant char *)"grads %.12f %.12f\n", grads[k].x, grads[k].y);
+            }
+#endif
 		}
-	}
+
+#if 0
+        printf((__constant char *)"before: theta ");
+        for (int k = 0; k < K; ++k) {
+          printf((__constant char *)"%.12f %.12f\n", bufs->bufs.Theta[k].x, bufs->bufs.Theta[k].y);
+        }
+        printf((__constant char *)"theta_sum ");
+        for (int k = 0; k < K; ++k) {
+          printf((__constant char *)"%.12f ", bufs->bufs.ThetaSum[k]);
+        }
+        printf((__constant char *)"\n");
+        printf((__constant char *)"probs ");
+        for (int k = 0; k < K; ++k) {
+          printf((__constant char *)"%.12f ", probs[k]);
+        }
+        printf((__constant char *)"\n");
+#endif
+    }
 }
 
 kernel void update_beta_calculate_theta(
@@ -768,18 +836,31 @@ kernel void update_beta_calculate_theta(
 			}
 		}
 	}
+
+#if 0
+    printf((__constant char *)"a %.12f b %.12f c %.12f step_count %d epsilon %.12f eps_t %.12f scale %.12f\n", 0.0, 0.0, 0.0, 0, 0.0, eps_t, scale);
+    for (int k = 0; k < K; ++k) {
+      printf((__constant char *)"grads %.12f %.12f\n", ggrads[k].x, ggrads[k].y);
+    }
+#endif
+
 	for (int k = 0; k < K; ++k) {
 		// Ugly: opencl compiler does not recognise the other double2 union fields(.s[i])
+        // printf((__constant char *)"random seed (0x%llx,0x%llx)\n", randomSeed.x, randomSeed.y);
+        double r0 = randn(&randomSeed);
 		bufs->bufs.Theta[k].x = fabs(
 				bufs->bufs.Theta[k].x + eps_t / 2.0
 				* (eta.x - bufs->bufs.Theta[k].x
 						+ scale * ggrads[k].x)
-				+ sqrt(eps_t * bufs->bufs.Theta[k].x) * randn(&randomSeed));
+				+ sqrt(eps_t * bufs->bufs.Theta[k].x) * r0);
+        // printf((__constant char *)"random seed (0x%llx,0x%llx)\n", randomSeed.x, randomSeed.y);
+        double r1 = randn(&randomSeed);
+        // printf((__constant char *)"noise %.12f %.12f\n", r0, r1);
 		bufs->bufs.Theta[k].y = fabs(
 				bufs->bufs.Theta[k].y + eps_t / 2.0
 				* (eta.y - bufs->bufs.Theta[k].y
 						+ scale * ggrads[k].y)
-				+ sqrt(eps_t * bufs->bufs.Theta[k].y) * randn(&randomSeed));
+				+ sqrt(eps_t * bufs->bufs.Theta[k].y) * r1);
 #ifndef NDEBUG
 		if (isnan(bufs->bufs.Theta[k].x)) {
 			printf((__constant char *)"Oopps, theta[%d].x isNaN\n", k);
@@ -804,6 +885,12 @@ kernel void update_beta_calculate_beta(
 	global double2 *theta = bufs->bufs.Theta;
 	size_t gid = get_global_id(0);
 	size_t gsize = get_global_size(0);
+
+#if 0
+      for (int k = 0; k < K; ++k) {
+        printf((__constant char *)"after: theta %.12f %.12f\n", theta[k].x, theta[k].y);
+      }
+#endif
 
 	for (int k = gid; k < K; k += gsize) {
 		beta[k] = theta[k].y / (theta[k].x + theta[k].y);
