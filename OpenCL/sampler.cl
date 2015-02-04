@@ -657,7 +657,7 @@ void update_pi_for_node(
 		pi_a[k] = phi_a[k] / phi_i_sum;
 	}
 #if 0
-	printf((__constant char *)"phi[%d] ", node);
+	printf((__constant char *)"update_pi phi[%d] ", node);
 	for (int k = 0; k < K; k++) {
 		printf((__constant char *)"%.12f ", phi_a[k]);
 	}

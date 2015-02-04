@@ -653,6 +653,14 @@ public:
 			// std::cout << "LOOP  = " << (l2-l1).count() << std::endl;
 		}
 
+        if (step_count % interval == 0) {
+            t_perplexity.start();
+            double ppx_score = cal_perplexity_held_out();
+            t_perplexity.stop();
+            std::cout << std::fixed << std::setprecision(12) << "step count: " << step_count << " perplexity for hold out set: " << ppx_score << std::endl;
+            ppxs_held_out.push_back(ppx_score);
+        }
+
 		timer::Timer::printHeader(std::cout);
 		std::cout << t_outer << std::endl;
 		std::cout << t_perplexity << std::endl;
