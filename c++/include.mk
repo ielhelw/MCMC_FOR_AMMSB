@@ -5,6 +5,13 @@ PROJECT_HOME = $(shell cd $(PROJECT); pwd)
 
 include $(PROJECT_HOME)/config.mk
 
+ifeq (1, $(CONFIG_OPENMP))
+CXXFLAGS		+= -fopenmp
+LDFLAGS			+= -fopenmp
+else
+CXXFLAGS		+= -Wno-unknown-pragmas
+endif
+
 LD = $(CXX)
 LDSHARED = $(CXX)
 

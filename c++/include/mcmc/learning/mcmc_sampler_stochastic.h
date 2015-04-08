@@ -149,7 +149,7 @@ public:
 		pi.resize(phi.size(), std::vector<double>(phi[0].size()));
 		np::row_normalize(&pi, phi);
 
-		if (false) {
+		if (true) {
 			std::cout << std::fixed << std::setprecision(12) << "beta[0] " << beta[0] << std::endl;
 		} else {
 			std::cerr << "beta ";
@@ -312,13 +312,13 @@ public:
 			t_mini_batch.start();
 			EdgeSample edgeSample = network.sample_mini_batch(mini_batch_size, strategy::STRATIFIED_RANDOM_NODE);
 			t_mini_batch.stop();
-            if (true) {
-              std::cerr << "Minibatch: ";
-              for (auto e : *edgeSample.first) {
-                std::cerr << e << " ";
-              }
-              std::cerr << std::endl;
-            }
+			if (false) {
+				std::cerr << "Minibatch: ";
+				for (auto e : *edgeSample.first) {
+					std::cerr << e << " ";
+				}
+				std::cerr << std::endl;
+			}
 			// std::cerr << "Done sample_mini_batch" << std::endl;
 			const OrderedEdgeSet &mini_batch = *edgeSample.first;
 			double scale = edgeSample.second;
@@ -337,18 +337,18 @@ public:
 			// double eps_t = std::pow(1024+step_count, -0.5);
 #endif
 
+			// ************ do in parallel at each host
 			// std::cerr << "Sample neighbor nodes" << std::endl;
-			for (auto node = nodes.begin();
-				 	node != nodes.end();
-					node++) {
+#pragma omp parallel for
+			for (::size_t node = 0; node < nodes.size(); ++node) {
 				t_sample_neighbor_nodes.start();
 				// sample a mini-batch of neighbors
-				NeighborSet neighbors = sample_neighbor_nodes(num_node_sample, *node);
+				NeighborSet neighbors = sample_neighbor_nodes(num_node_sample, node);
 				t_sample_neighbor_nodes.stop();
 
-                std::cerr << "Random seed " << std::hex << "0x" << kernelRandom->seed(0) << ",0x" << kernelRandom->seed(1) << std::endl << std::dec;
+                // std::cerr << "Random seed " << std::hex << "0x" << kernelRandom->seed(0) << ",0x" << kernelRandom->seed(1) << std::endl << std::dec;
 				t_update_phi.start();
-				update_phi(*node, neighbors
+				update_phi(node, neighbors
 #ifndef EFFICIENCY_FOLLOWS_CPP_WENZHE
 						   , eps_t
 #endif
@@ -356,6 +356,7 @@ public:
 				t_update_phi.stop();
 			}
 
+			// ************ do in parallel at each host
 			t_update_pi.start();
 #if defined EFFICIENCY_FOLLOWS_CPP_WENZHE
 			// std::cerr << __func__ << ":" << __LINE__ << ":  FIXME" << std::endl;
@@ -528,7 +529,7 @@ protected:
 		np::row_normalize(&temp, theta);
 		std::transform(temp.begin(), temp.end(), beta.begin(), np::SelectColumn<double>(1));
 
-        if (true) {
+        if (false) {
           for (auto n : noise) {
             std::cerr << "noise ";
             for (auto b : n) {
@@ -613,9 +614,11 @@ protected:
 		}
 
 		std::vector<double> noise = kernelRandom->randn(K);	// random gaussian noise.
-        for (::size_t k = 0; k < K; ++k) {
-          std::cerr << "randn " << std::fixed << std::setprecision(12) << noise[k] << std::endl;
-        }
+		if (false) {
+			for (::size_t k = 0; k < K; ++k) {
+				std::cerr << "randn " << std::fixed << std::setprecision(12) << noise[k] << std::endl;
+			}
+		}
 #ifndef EFFICIENCY_FOLLOWS_CPP_WENZHE
 		double Nn = (1.0 * N) / num_node_sample;
 #endif
@@ -764,7 +767,7 @@ protected:
 #endif
 		}
 #endif
-		if (true) {
+		if (false) {
 			std::cerr << "Node " << nodeId << ": neighbors ";
 			for (auto n : neighbor_nodes) {
 				std::cerr << n << " ";

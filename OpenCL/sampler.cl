@@ -580,6 +580,8 @@ void update_phi_for_node_(global Buffers *bufs,
 			printf((__constant char *)"%.12f ", phi[k]);
 		}
 		printf((__constant char *)"\n");
+#endif
+#if 0
 		printf((__constant char *)"pi[%d] ", bufs->bufs.Nodes[node]);
 		for (int k = 0; k < K; k++) {
 			printf((__constant char *)"%.12f ", pi[k]);

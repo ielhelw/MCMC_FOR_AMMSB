@@ -169,7 +169,7 @@ protected:
 
 			//cout<<"AVERAGE COUNT: " <<average_count;
 			ppx_for_heldout[i] = (ppx_for_heldout[i] * (average_count-1) + edge_likelihood)/(average_count);
-			// std::cerr << std::fixed << std::setprecision(12) << e << " in? " << (e.in(network.get_linked_edges()) ? "True" : "False") << " -> " << edge_likelihood << std::endl;
+			// std::cerr << std::fixed << std::setprecision(12) << e << " in? " << (e.in(network.get_linked_edges()) ? "True" : "False") << " -> " << edge_likelihood << " av. " << average_count << " ppx[" << i << "] " << ppx_for_heldout[i] << std::endl;
 			// FIXME FIXME should not test again if we already know
 			// assert(edge->second == e.in(network.get_linked_edges()));
 			if (edge->second) {
