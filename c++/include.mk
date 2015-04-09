@@ -143,11 +143,9 @@ $(TARGET_LIBS):	$(TARGET_LIBS_STATIC)
 # LDFLAGS	+= -static-libgcc
 
 $(TARGET_LIBS_STATIC): $(CXX_OBJECTS)
-	@mkdir -p $(LIBDIR)
 	$(AR) $(AR_FLAGS) $@ $^
 
 $(TARGET_LIBS_SHARED): $(CXX_OBJECTS)
-	@mkdir -p $(LIBDIR)
 	$(LDSHARED) $(LD_FLAGS_LIB_SHARED) $^ -o $@.$(MAJOR).$(MINOR) -Wl,-soname,$@.$(MAJOR).$(MINOR)
 	rm -f $@.$(MAJOR) $@
 	ln -s $@.$(MAJOR).$(MINOR) $@.$(MAJOR)

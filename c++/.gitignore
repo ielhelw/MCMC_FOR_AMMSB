@@ -29,7 +29,6 @@ Makefile.config
 
 # lib/obj directories, created on demand
 obj
-lib
 
 # Generated stuff
 
