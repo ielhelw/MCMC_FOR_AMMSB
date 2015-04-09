@@ -71,13 +71,13 @@ public:
     */
     MCMCSamplerStochastic(const Options &args, const Network &graph)
 			: Learner(args, graph),
+			args(args),
 #ifdef RANDOM_FOLLOWS_CPP_WENZHE
 			kernelRandom(Random::random)
 #else
 			kernelRandom(new Random::Random(42))
 #endif
 	{
-
 #ifdef RANDOM_FOLLOWS_CPP
 		std::cerr << "RANDOM_FOLLOWS_CPP enabled" << std::endl;
 #endif
@@ -118,7 +118,9 @@ public:
 		std::cerr << "num_node_sample " << num_node_sample << " a " << a << " b " << b << " c " << c << " alpha " << alpha << " eta (" << eta[0] << "," << eta[1] << ")" << std::endl;
 
 		info(std::cout);
+	}
 
+	virtual void init() {
         // model parameters and re-parameterization
         // since the model parameter - \pi and \beta should stay in the simplex,
         // we need to restrict the sum of probability equals to 1.  The way we
@@ -339,8 +341,11 @@ public:
 
 			// ************ do in parallel at each host
 			// std::cerr << "Sample neighbor nodes" << std::endl;
+			// FIXME: nodes_in_batch should generate a vector, not an OrderedVertexSet
+			std::vector<int> node_vector(nodes.begin(), nodes.end());
 #pragma omp parallel for
-			for (::size_t node = 0; node < nodes.size(); ++node) {
+			for (::size_t n = 0; n < node_vector.size(); ++n) {
+				int node = node_vector[n];
 				t_sample_neighbor_nodes.start();
 				// sample a mini-batch of neighbors
 				NeighborSet neighbors = sample_neighbor_nodes(num_node_sample, node);
@@ -580,15 +585,13 @@ protected:
         std::vector<double> grads(K, 0.0);	// gradient for K classes
 		// std::vector<double> phi_star(K);					// temp vars
 
-		for (auto neighbor = neighbors.begin();
-			 	neighbor != neighbors.end();
-				neighbor++) {
-			if (i == *neighbor) {
+		for (auto neighbor: neighbors) {
+			if (i == neighbor) {
 				continue;
 			}
 
 			int y_ab = 0;		// observation
-			Edge edge(std::min(i, *neighbor), std::max(i, *neighbor));
+			Edge edge(std::min(i, neighbor), std::max(i, neighbor));
 			if (edge.in(network.get_linked_edges())) {
 				y_ab = 1;
 			}
@@ -599,11 +602,11 @@ protected:
 #endif
 			for (::size_t k = 0; k < K; k++) {
 #if defined EFFICIENCY_FOLLOWS_CPP_WENZHE
-				probs[k] = std::pow(beta[k], y_ab) * std::pow(1 - beta[k], 1 - y_ab) * pi[i][k] * pi[*neighbor][k];
-				probs[k] += std::pow(epsilon, y_ab) * std::pow(1 - epsilon, 1 - y_ab) * pi[i][k] * (1 - pi[*neighbor][k]);
+				probs[k] = std::pow(beta[k], y_ab) * std::pow(1 - beta[k], 1 - y_ab) * pi[i][k] * pi[neighbor][k];
+				probs[k] += std::pow(epsilon, y_ab) * std::pow(1 - epsilon, 1 - y_ab) * pi[i][k] * (1 - pi[neighbor][k]);
 #else
 				double f = (y_ab == 1) ? (beta[k] - epsilon) : (epsilon - beta[k]);
-				probs[k] = pi[i][k] * (pi[*neighbor][k] * f + e);
+				probs[k] = pi[i][k] * (pi[neighbor][k] * f + e);
 #endif
 			}
 
@@ -872,6 +875,7 @@ protected:
 
 	std::vector<std::vector<double> > theta;		// parameterization for \beta
 	std::vector<std::vector<double> > phi;			// parameterization for \pi
+	const Options &args;
 	Random::Random *kernelRandom;
 };
 

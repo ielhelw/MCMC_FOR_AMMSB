@@ -5,7 +5,10 @@
 
 #include "mcmc/exception.h"
 
+#pragma GCC diagnostic ignored "-Wunused-local-typedefs"
+#pragma GCC diagnostic push
 #include <boost/program_options.hpp>
+#pragma GCC diagnostic pop
 
 
 namespace mcmc {
@@ -199,6 +202,9 @@ public:
 			("mcmc-st-cl,S", "MCMC Stochastical OpenCL")
 			("mcmc-b-cl,T", "MCMC Batch OpenCL")
 #endif
+#ifdef ENABLE_DISTRIBUTED
+			("mcmc-st-d,D", "MCMC Stochastical Distributed")
+#endif
 
 			("alpha", po::value<double>(&alpha)->default_value(0.01), "alpha")
 			("eta0", po::value<double>(&eta0)->default_value(1.0), "eta0")
@@ -248,6 +254,9 @@ public:
 		run.mcmc_stochastical_cl = vm.count("mcmc-st-cl") > 0;
 		run.mcmc_batch_cl = vm.count("mcmc-b-cl") > 0;
 #endif
+#ifdef ENABLE_DISTRIBUTED
+		run.mcmc_stochastical_distr = vm.count("mcmc-st-d") > 0;
+#endif
 	}
 
 public:
@@ -289,6 +298,9 @@ public:
 #ifdef ENABLE_OPENCL
 		bool	mcmc_stochastical_cl;
 		bool	mcmc_batch_cl;
+#endif
+#ifdef ENABLE_DISTRIBUTED
+		bool	mcmc_stochastical_distr;
 #endif
 	} run;
 };

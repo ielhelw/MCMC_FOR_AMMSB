@@ -15,7 +15,10 @@
 #include <vector>
 #include <string>
 
+#pragma GCC diagnostic ignored "-Wunused-local-typedefs"
+#pragma GCC diagnostic push
 #include <boost/algorithm/string/predicate.hpp>
+#pragma GCC diagnostic pop
 
 #ifdef HAVE_HADOOP
 #include <hdfs.h>

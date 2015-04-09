@@ -20,9 +20,13 @@
 #include <string.h>
 #include <assert.h>
 
+#pragma GCC diagnostic ignored "-Wunused-local-typedefs"
+#pragma GCC diagnostic push
 #include <boost/filesystem.hpp>
-#include <boost/algorithm/string/predicate.hpp>
+#ifdef HAVE_S3
 #include <boost/thread.hpp>
+#endif
+#pragma GCC diagnostic pop
 
 #ifdef HAVE_HADOOP
 #  include <hdfs.h>
@@ -34,14 +38,17 @@
 #include <sys/mman.h>
 #endif
 
-#include "mr/exception.h"
-#include "mr/util.h"
+#include "mcmc/exception.h"
+// #include "mr/util.h"
 #include "mr/fileio.h"
-#include "mr/log.h"
+// #include "mr/log.h"
 // #include "mr/interdata.h"
 
 using std::vector;
 using std::string;
+using mcmc::FileException;
+using mcmc::InvalidArgumentException;
+
 
 namespace mr {
 
@@ -186,6 +193,11 @@ void HDFSFileReader::close() {
  * class FdFileWriter
  *
  */
+
+
+void mkdir_p(const char *dir) {
+	boost::filesystem::create_directories(dir);
+}
 
 
 FdFileWriter::FdFileWriter(const string &filename, int flags, int mode)

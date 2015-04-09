@@ -13,7 +13,6 @@ CXXFLAGS		+= -Wno-unknown-pragmas
 endif
 
 LD = $(CXX)
-LDSHARED = $(CXX)
 
 CXXFLAGS += -std=c++0x
 CXXFLAGS += -fPIC
@@ -46,8 +45,6 @@ CXXFLAGS += -Wextra
 # CXXFLAGS += -pedantic
 # CXXFLAGS += -fmessage-length=0
 CXXFLAGS += -Wno-unused-parameter
-CXXFLAGS += -Wno-ignored-qualifiers
-CXXFLAGS += -Wno-unused-local-typedefs	# for boost 1.54.0 on DAS
 CXXFLAGS += -I$(PROJECT_HOME)/include
 CXXFLAGS += -I$(PROJECT_HOME)/3rdparty/tinyxml2/include
 ifneq (, $(OPENCL_ROOT))
@@ -59,12 +56,20 @@ ifneq (, $(BOOST_INCLUDE))
 CXXFLAGS += -I$(BOOST_INCLUDE)
 BOOST_ROOT = $(dir $(BOOST_INCLUDE))
 endif
+ifeq (1, $(CONFIG_DISTRIBUTED))
+CXXFLAGS += -DENABLE_DISTRIBUTED
+endif
 
+ifneq (, $(OPENCL_ROOT))
 VEXCL		= $(PROJECT)/3rdparty/vexcl
 CXXFLAGS	+= -I$(VEXCL)
+endif
 
 LDFLAGS += -L$(PROJECT_HOME)/lib -l mcmc
+LDFLAGS	+= -Wl,-rpath,$(PROJECT_HOME)/lib
 LDFLAGS += -L$(PROJECT_HOME)/3rdparty/tinyxml2/lib -ltinyxml2
+LDFLAGS	+= -Wl,-rpath,$(PROJECT_HOME)/3rdparty/tinyxml2/lib
+# export LD_RUN_PATH := $(PROJECT_HOME)/lib
 ifneq (, $(OPENCL_ROOT))
 LDFLAGS += -L$(OPENCL_ROOT)/lib -L$(OPENCL_ROOT)/lib/x86_64 -lOpenCL
 endif
@@ -88,6 +93,13 @@ LIBS	+= -lboost_system$(BOOST_SUFFIX)
 LIBS	+= -lboost_thread$(BOOST_SUFFIX)
 LIBS	+= -lboost_filesystem$(BOOST_SUFFIX)
 LIBS	+= -lboost_program_options$(BOOST_SUFFIX)
+
+ifneq (, $(CONFIG_RAMCLOUD_ROOT))
+LDFLAGS += -L$(CONFIG_RAMCLOUD_ROOT)/obj.master
+LDFLAGS	+= -Wl,-rpath,$(CONFIG_RAMCLOUD_ROOT)/obj.master
+LIBS    += -lramcloud
+# export LD_RUN_PATH := $(LD_RUN_PATH):$(CONFIG_RAMCLOUD_ROOT)/obj.master
+endif
 
 vpath lib%.so	$(LD_LIBRARY_PATH) $(subst -L,,$(LDFLAGS))
 vpath lib%.a	$(LD_LIBRARY_PATH) $(subst -L,,$(LDFLAGS))
@@ -116,18 +128,15 @@ $(OBJDIR)/%.o: %.cpp
 	$(CXX) $(CXXFLAGS) -MMD -c $< -o $@
 
 $(TARGETS): % : $(OBJDIR)/%.o $(CXX_OBJECTS) $(LIBS)
+	@echo LD_RUN_PATH $(LD_RUN_PATH)
 	$(LD) $< $(CXX_OBJECTS) $(LDFLAGS) $(LIBS) -o $@
 
 TARGET_LIBS_SHARED	= $(TARGET_LIBS:%=$(LIBDIR)/%.so)
 TARGET_LIBS_STATIC	= $(TARGET_LIBS:%=$(LIBDIR)/%.a)
 
-ifeq (1, $(CONFIG_STATIC_LIB))
 $(TARGET_LIBS):	$(TARGET_LIBS_STATIC)
 # LDFLAGS	+= -static
-LDFLAGS	+= -static-libgcc
-else
-$(TARGET_LIBS):	$(TARGET_LIBS_SHARED)
-endif
+# LDFLAGS	+= -static-libgcc
 
 $(TARGET_LIBS_STATIC): $(CXX_OBJECTS)
 	@mkdir -p $(LIBDIR)

@@ -10,7 +10,10 @@
 
 #include <cassert>
 
+#pragma GCC diagnostic ignored "-Wunused-local-typedefs"
+#pragma GCC diagnostic push
 #include <boost/program_options.hpp>
+#pragma GCC diagnostic pop
 
 #include <mr/fileio.h>
 

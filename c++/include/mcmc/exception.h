@@ -51,6 +51,7 @@ public:
 			: MCMCException(reason) {
 	}
 };
+#endif
 
 
 class InvalidArgumentException : public MCMCException {
@@ -62,7 +63,6 @@ public:
 			: MCMCException(reason) {
 	}
 };
-#endif
 
 
 class BufferSizeException : public MCMCException {
