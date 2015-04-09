@@ -11,6 +11,8 @@
 #include <mpi.h>
 
 #include <d-kv-store/DKVStore.h>
+#include <d-kv-store/file/DKVStoreFile.h>
+#include <d-kv-store/ramcloud/DKVStoreRamCloud.h>
 
 #include "mcmc/np.h"
 #include "mcmc/random.h"
@@ -47,7 +49,9 @@ typedef OrderedVertexSet NeighborSet;
 /**
  * The distributed version differs in these aspects from the parallel version:
  *  - the minibatch is distributed
- *  - pi/phi is distributed
+ *  - pi/phi is distributed. It is not necessary to store both phi and pi since
+ *    the two are equivalent. We store pi + sum(phi), and we can restore phi
+ *    as phi[i] = pi[i] * phi_sum.
  *
  * Algorithm:
  * LOOP:
@@ -98,11 +102,25 @@ public:
     This method is great marriage between MCMC and stochastic methods.
     */
     MCMCSamplerStochasticDistributed(const Options &args, const Network &graph)
-			: MCMCSamplerStochastic(args, graph) {
+			: MCMCSamplerStochastic(args, graph), args(args) {
 		// FIXME FIXME FIXME
 		// TODO TODO TODO
-		// Make kernelRandom init depend on mpi_rank
+		std::cerr << "Make kernelRandom init depend on mpi_rank" << std::endl;
 		// FIXME FIXME FIXME
+
+#ifdef RANDOM_FOLLOWS_CPP_WENZHE
+		throw MCMCException("No support for Wenzhe Random compatibility");
+#endif
+#ifdef RANDOM_FOLLOWS_SCALABLE_GRAPH
+		throw MCMCException("No support for Scalable-Graph Random compatibility");
+#endif
+#ifdef EFFICIENCY_FOLLOWS_CPP_WENZHE
+		throw MCMCException("No support for Wenzhe Efficiency compatibility");
+#endif
+#ifdef EFFICIENCY_FOLLOWS_PYTHON
+		throw MCMCException("No support for Python Efficiency compatibility");
+#endif
+
 		t_outer = timer::Timer("  outer");
 		t_perplexity = timer::Timer("  perplexity");
 		t_mini_batch = timer::Timer("  sample_mini_batch");
@@ -111,6 +129,8 @@ public:
 		t_update_phi = timer::Timer("  update_phi");
 		t_update_pi = timer::Timer("  update_pi");
 		t_update_beta = timer::Timer("  update_beta");
+		t_pi_read_node = timer::Timer("  load minibatch pi");
+		t_pi_read_neighbor = timer::Timer("  load neighbor pi");
 		timer::Timer::setTabular(true);
 	}
 
@@ -138,15 +158,20 @@ public:
 		r = MPI_Comm_rank(MPI_COMM_WORLD, &mpi_rank);
 		mpi_error_test(r, "MPI_Comm_rank() fails");
 
-#ifdef RANDOM_FOLLOWS_CPP_WENZHE
-#  error No support for Wenzhe Random compatibility
-#endif
 		kernelRandom = new Random::Random(mpi_rank * 42);
+
+		// d_kv_store = new DKV::DKVRamCloud::DKVStoreRamCloud();
+		d_kv_store = new DKV::DKVFile::DKVStoreFile();
+
+		::size_t num_edges_in_batch = network.minibatch_edges_for_strategy(mini_batch_size, strategy);
+		::size_t num_nodes_in_batch = network.minibatch_nodes_for_strategy(mini_batch_size, strategy);
+		::size_t num_outgoing_edges_from_batch = network.get_max_fan_out(num_nodes_in_batch);
+
+		d_kv_store->Init(K + 1, N, (num_outgoing_edges_from_batch + mpi_size - 1) / mpi_size, args.getRemains());
 
 		if (mpi_rank == mpi_master) {
 			init_beta();
 		}
-		// TODO Master broadcasts beta
 
 		init_pi();
 		std::cout << "phi[0][0] " << phi[0][0] << std::endl;
@@ -177,14 +202,17 @@ public:
 		std::cerr << "Done constructor" << std::endl;
 	}
 
+
     virtual void run() {
         /** run mini-batch based MCMC sampler, based on the sungjin's note */
 
         using namespace std::chrono;
 
-		clock_t t1, t2;
-		std::vector<double> timings;
-		t1 = clock();
+		std::vector<std::vector<double>> phi_node;
+		std::vector<double *> pi_node;
+		std::vector<std::vector<double *>> pi_neighbor;
+
+		t_start = clock();
         while (step_count < max_iteration && ! is_converged()) {
 
 			t_outer.start();
@@ -193,50 +221,7 @@ public:
 				//interval = 2;
 			//}
 			if (mpi_rank == mpi_master) {
-				if (step_count % interval == 0) {
-					// TODO Only at the Master
-					t_perplexity.start();
-					double ppx_score = cal_perplexity_held_out();
-					t_perplexity.stop();
-					std::cout << std::fixed << std::setprecision(12) << "step count: " << step_count << " perplexity for hold out set: " << ppx_score << std::endl;
-					ppxs_held_out.push_back(ppx_score);
-
-					t2 = clock();
-					double diff = (double)t2 - (double)t1;
-					double seconds = diff / CLOCKS_PER_SEC;
-					timings.push_back(seconds);
-					iterations.push_back(step_count);
-#if 0
-					if (ppx_score < 5.0) {
-						stepsize_switch = true;
-						//print "switching to smaller step size mode!"
-					}
-#endif
-					// TODO Master broadcasts result to the workers
-				}
-
-				// write into file
-				if (step_count % 2000 == 1) {
-					if (false) {
-						std::ofstream myfile;
-						std::string file_name = "mcmc_stochastic_" + std::to_string (K) + "_num_nodes_" + std::to_string(num_node_sample) + "_us_air.txt";
-						myfile.open (file_name);
-						int size = ppxs_held_out.size();
-						for (int i = 0; i < size; i++){
-
-							//int iteration = i * 100 + 1;
-							myfile <<iterations[i]<<"    "<<timings[i]<<"    "<<ppxs_held_out[i]<<"\n";
-						}
-
-						myfile.close();
-					}
-				}
-
-				//print "step: " + str(self._step_count)
-				/**
-				  pr = cProfile.Profile()
-				  pr.enable()
-				  */
+				check_perplexity();
 			}
 
 			int r = MPI_Bcast(beta.data(), beta.size() * sizeof beta[0], MPI_DOUBLE, mpi_master, MPI_COMM_WORLD);
@@ -245,53 +230,73 @@ public:
 			std::vector<int32_t> nodes_vector;
 			EdgeSample edgeSample = deploy_mini_batch(&nodes_vector);
 
-#ifndef EFFICIENCY_FOLLOWS_CPP_WENZHE
 			double eps_t  = a * std::pow(1 + step_count / b, -c);	// step size
 			// double eps_t = std::pow(1024+step_count, -0.5);
-#endif
 
+			// ************ load our pi from D-KV store **************
+			pi_node.resize(nodes_vector.size(), NULL);
+            for (auto &p : pi_node) {
+              if (p == NULL) {
+				  p = new double[K + 1];
+			  }
+            }
+            t_pi_read_node.start();
+            d_kv_store->ReadKVRecords(pi_node, nodes_vector, DKV::RW_MODE::READ_ONLY);
+            t_pi_read_node.stop();
 			// ************ do in parallel at each host
 			// std::cerr << "Sample neighbor nodes" << std::endl;
 			// FIXME: nodes_in_batch should generate a vector, not an OrderedVertexSet
+			phi_node.resize(nodes_vector.size());
+            pi_neighbor.resize(nodes_vector.size());
 #pragma omp parallel for
-			for (::size_t n = 0; n < nodes_vector.size(); ++n) {
-				int node = nodes_vector[n];
+			for (::size_t i = 0; i < nodes_vector.size(); ++i) {
+				int node = nodes_vector[i];
 				t_sample_neighbor_nodes.start();
 				// sample a mini-batch of neighbors
 				NeighborSet neighbors = sample_neighbor_nodes(num_node_sample, node);
 				t_sample_neighbor_nodes.stop();
 
+                // ************ load neighor pi from D-KV store **********
+                pi_neighbor[i].resize(K + 1, NULL);
+				for (auto &p : pi_neighbor[i]) {
+					if (p == NULL) {
+						p = new double[K + 1];
+					}
+				}
+                t_pi_read_neighbor.start();
+#ifdef NEIGHBOR_SET_IS_VECTOR
+                d_kv_store->ReadKVRecords(pi_neighbor[i], neighbors, DKV::RW_MODE::READ_ONLY);
+#else
+				std::vector<int32_t> neighbor_vector(neighbors.begin(), neighbors.end());
+                d_kv_store->ReadKVRecords(pi_neighbor[i], neighbor_vector, DKV::RW_MODE::READ_ONLY);
+#endif
+                t_pi_read_neighbor.stop();
+
                 // std::cerr << "Random seed " << std::hex << "0x" << kernelRandom->seed(0) << ",0x" << kernelRandom->seed(1) << std::endl << std::dec;
 				t_update_phi.start();
-				update_phi(node, neighbors
-#ifndef EFFICIENCY_FOLLOWS_CPP_WENZHE
-						   , eps_t
-#endif
-						   );
+				phi_node[i].resize(K + 1);
+				update_phi(&phi_node[i], node, pi_node[i], neighbors, pi_neighbor[i], eps_t);
 				t_update_phi.stop();
 			}
 
-			// TODO calculate and store updated values for pi/phi
-			// ************ do in parallel at each host
-			t_update_pi.start();
-#if defined EFFICIENCY_FOLLOWS_CPP_WENZHE
-			// std::cerr << __func__ << ":" << __LINE__ << ":  FIXME" << std::endl;
-			np::row_normalize(&pi, phi);	// update pi from phi.
-#else
-			// No need to update pi where phi is unchanged
-			for (auto i: nodes_vector) {
-				np::normalize(&pi[i], phi[i]);
+			// all synchronize with barrier: ensure we read pi/phi_sum from current iteration
+			MPI_Barrier(MPI_COMM_WORLD);
+			mpi_error_test(r, "MPI_Barrier fails");
+
+			// TODO calculate and store updated values for pi/phi_sum
+#pragma omp parallel for
+			for (::size_t i = 0; i < pi_node.size(); i++) {
+				pi_from_phi(pi_node[i], phi_node[i]);
 			}
-#endif
-			t_update_pi.stop();
-			std::cerr << "FIXME FIXME: write back phi/pi after update" << std::endl;
+			// std::cerr << "write back phi/pi after update" << std::endl;
+			d_kv_store->WriteKVRecords(nodes_vector, constify(pi_node));
 
-			// TODO
 			// all synchronize with barrier
+			MPI_Barrier(MPI_COMM_WORLD);
+			mpi_error_test(r, "MPI_Barrier fails");
 
-			// TODO
-			// Only at the Master
 			if (mpi_rank == mpi_master) {
+				// TODO load pi/phi values for the minibatch nodes
 				t_update_beta.start();
 				update_beta(*edgeSample.first, edgeSample.second);
 				t_update_beta.stop();
@@ -308,6 +313,10 @@ public:
 			}
 		}
 
+		if (mpi_rank == mpi_master) {
+			check_perplexity();
+		}
+
 		timer::Timer::printHeader(std::cout);
 		std::cout << t_outer << std::endl;
 		std::cout << t_perplexity << std::endl;
@@ -317,10 +326,22 @@ public:
 		std::cout << t_update_phi << std::endl;
 		std::cout << t_update_pi << std::endl;
 		std::cout << t_update_beta << std::endl;
+		std::cout << t_pi_read_node << std::endl;
+		std::cout << t_pi_read_neighbor << std::endl;
 	}
 
 
 protected:
+	template <typename T>
+	std::vector<const T*>& constify(std::vector<T*>& v) {
+		// Compiler doesn't know how to automatically convert
+		// std::vector<T*> to std::vector<T const*> because the way
+		// the template system works means that in theory the two may
+		// be specialised differently.  This is an explicit conversion.
+		return reinterpret_cast<std::vector<const T*>&>(v);
+	}
+
+
 	void init_beta() {
 		// TODO only at the Master
 		// model parameters and re-parameterization
@@ -365,7 +386,19 @@ protected:
 	}
 
 
+	// Calculate pi[0..K> ++ phi_sum from phi[0..K>
+	void pi_from_phi(double *pi, const std::vector<double> &phi) {
+		double phi_sum = std::accumulate(phi.begin(), phi.begin() + K, 0.0);
+		for (::size_t k = 0; k < K; ++k) {
+			pi[k] = phi[k] / phi_sum;
+		}
+
+		pi[K] = phi_sum;
+	}
+
+
 	void init_pi() {
+		double pi[K + 1];
 		for (int32_t i = mpi_rank; i < static_cast<int32_t>(N); i += mpi_size) {
 			std::vector<double> phi_pi = kernelRandom->gamma(1, 1, 1, K)[0];
 			if (true) {
@@ -383,28 +416,69 @@ protected:
 			}
 #endif
 
-			double phi_sum = std::accumulate(phi_pi.begin(), phi_pi.end(), 0.0);
-			std::transform(phi_pi.begin(), phi_pi.end(), phi_pi.begin(),
-						   [phi_sum](double p) {
-							   return p / phi_sum;
-						   });
+			pi_from_phi(pi, phi_pi);
 			if (true) {
 				if (i < 10) {
 					std::cerr << "pi[" << i << "]: ";
 					for (::size_t k = 0; k < std::min(K, 10UL); k++) {
-						std::cerr << std::fixed << std::setprecision(12) << phi_pi[k] << " ";
+						std::cerr << std::fixed << std::setprecision(12) << pi[k] << " ";
 					}
 					std::cerr << std::endl;
 				}
 			}
 
-			phi_pi.resize(K + 1);
-			phi_pi[K] = phi_sum;
 			std::vector<int32_t> node(1, i);
-			std::vector<const double *> pi(1, phi_pi.data());
-			d_kv_store->WriteKVRecords(node, pi);
+			std::vector<const double *> pi_wrapper(1, pi);
+			d_kv_store->WriteKVRecords(node, pi_wrapper);
 		}
 	};
+
+
+	void check_perplexity() {
+		if (step_count % interval == 0) {
+			t_perplexity.start();
+			// TODO load pi for the held-out set to calculate perplexity
+			double ppx_score = cal_perplexity_held_out();
+			t_perplexity.stop();
+			std::cout << std::fixed << std::setprecision(12) << "step count: " << step_count << " perplexity for hold out set: " << ppx_score << std::endl;
+			ppxs_held_out.push_back(ppx_score);
+
+			clock_t t2 = clock();
+			double diff = (double)t2 - (double)t_start;
+			double seconds = diff / CLOCKS_PER_SEC;
+			timings.push_back(seconds);
+			iterations.push_back(step_count);
+#if 0
+			if (ppx_score < 5.0) {
+				stepsize_switch = true;
+				//print "switching to smaller step size mode!"
+			}
+#endif
+		}
+
+		// write into file
+		if (step_count % 2000 == 1) {
+			if (false) {
+				std::ofstream myfile;
+				std::string file_name = "mcmc_stochastic_" + std::to_string (K) + "_num_nodes_" + std::to_string(num_node_sample) + "_us_air.txt";
+				myfile.open (file_name);
+				int size = ppxs_held_out.size();
+				for (int i = 0; i < size; i++){
+
+					//int iteration = i * 100 + 1;
+					myfile <<iterations[i]<<"    "<<timings[i]<<"    "<<ppxs_held_out[i]<<"\n";
+				}
+
+				myfile.close();
+			}
+		}
+
+		//print "step: " + str(self._step_count)
+		/**
+		  pr = cProfile.Profile()
+		  pr.enable()
+		  */
+	}
 
 
 	EdgeSample deploy_mini_batch(std::vector<int32_t> *nodes_vector) {
@@ -458,7 +532,7 @@ protected:
 			for (auto n: unassigned) {
 				while (subminibatch[i].size() == upper_bound) {
 					i++;
-					assert(i < mpi_size);
+					assert(i < static_cast<::size_t>(mpi_size));
 				}
 				subminibatch[i].push_back(n);
 			}
@@ -506,6 +580,106 @@ protected:
 		return edgeSample;
 	}
 
+
+    void update_phi(std::vector<double> *phi_node,	// out parameter
+					int i, const double *pi_node,
+					const NeighborSet &neighbors, const std::vector<double *> &pi,
+                    double eps_t) {
+		if (false) {
+			std::cerr << "update_phi pre ";
+			std::cerr << "phi[" << i << "] ";
+			for (::size_t k = 0; k < K; k++) {
+				std::cerr << std::fixed << std::setprecision(12) << (pi_node[k] * pi_node[K]) << " ";
+			}
+			std::cerr << std::endl;
+			std::cerr << "pi[" << i << "] ";
+			for (::size_t k = 0; k < K; k++) {
+				std::cerr << std::fixed << std::setprecision(12) << pi_node[k] << " ";
+			}
+			std::cerr << std::endl;
+			::size_t ix = 0;
+			for (auto n: neighbors) {
+				std::cerr << "pi[" << n << "] ";
+				for (::size_t k = 0; k < K; k++) {
+					std::cerr << std::fixed << std::setprecision(12) << pi[ix][k] << " ";
+				}
+				std::cerr << std::endl;
+				ix++;
+			}
+		}
+
+		double phi_i_sum = pi_node[K];
+        std::vector<double> grads(K, 0.0);	// gradient for K classes
+		// std::vector<double> phi_star(K);					// temp vars
+
+		::size_t ix = 0;
+		for (auto neighbor: neighbors) {
+			if (i != neighbor) {
+				int y_ab = 0;		// observation
+				Edge edge(std::min(i, neighbor), std::max(i, neighbor));
+				if (edge.in(network.get_linked_edges())) {
+					y_ab = 1;
+				}
+
+				std::vector<double> probs(K);
+				double e = (y_ab == 1) ? epsilon : 1.0 - epsilon;
+				for (::size_t k = 0; k < K; k++) {
+					double f = (y_ab == 1) ? (beta[k] - epsilon) : (epsilon - beta[k]);
+					probs[k] = pi_node[k] * (pi[ix][k] * f + e);
+				}
+
+				double prob_sum = np::sum(probs);
+				for (::size_t k = 0; k < K; k++) {
+					// grads[k] += (probs[k] / prob_sum) / phi[i][k] - 1.0 / phi_i_sum;
+					grads[k] += ((probs[k] / prob_sum) / pi_node[k] - 1.0) / phi_i_sum;
+				}
+			}
+			ix++;
+		}
+
+		std::vector<double> noise = kernelRandom->randn(K);	// random gaussian noise.
+		if (false) {
+			for (::size_t k = 0; k < K; ++k) {
+				std::cerr << "randn " << std::fixed << std::setprecision(12) << noise[k] << std::endl;
+			}
+		}
+		double Nn = (1.0 * N) / num_node_sample;
+        // update phi for node i
+        for (::size_t k = 0; k < K; k++) {
+			double phi_node_k = pi_node[k] * phi_i_sum;
+			(*phi_node)[k] = std::abs(phi_node_k + eps_t / 2 * (alpha - phi_node_k + \
+															 Nn * grads[k]) +
+								   sqrt(eps_t * phi_node_k) * noise[k]);
+		}
+
+		if (false) {
+			std::cerr << std::fixed << std::setprecision(12) << "update_phi post Nn " << Nn << " phi[" << i << "] ";
+			for (::size_t k = 0; k < K; k++) {
+				std::cerr << std::fixed << std::setprecision(12) << (*phi_node)[k] << " ";
+			}
+			std::cerr << std::endl;
+			std::cerr << "pi[" << i << "] ";
+			for (::size_t k = 0; k < K; k++) {
+				std::cerr << std::fixed << std::setprecision(12) << pi_node[k] << " ";
+			}
+			std::cerr << std::endl;
+			std::cerr << "grads ";
+			for (::size_t k = 0; k < K; k++) {
+				std::cerr << std::fixed << std::setprecision(12) << grads[k] << " ";
+			}
+			std::cerr << std::endl;
+			std::cerr << "noise ";
+			for (::size_t k = 0; k < K; k++) {
+				std::cerr << std::fixed << std::setprecision(12) << noise[k] << " ";
+			}
+			std::cerr << std::endl;
+		}
+
+		// assign back to phi.
+		//phi[i] = phi_star;
+	}
+
+
 	int node_owner(int node) const {
 		return node % mpi_size;
 	}
@@ -523,6 +697,8 @@ protected:
 	int		mpi_size;
 	int		mpi_rank;
 
+	const Options &args;
+
 	DKV::DKVStoreInterface *d_kv_store;
 
 	timer::Timer t_outer;
@@ -533,6 +709,11 @@ protected:
 	timer::Timer t_update_phi;
 	timer::Timer t_update_pi;
 	timer::Timer t_update_beta;
+	timer::Timer t_pi_read_node;
+	timer::Timer t_pi_read_neighbor;
+
+	clock_t	t_start;
+	std::vector<double> timings;
 };
 
 }	// namespace learning

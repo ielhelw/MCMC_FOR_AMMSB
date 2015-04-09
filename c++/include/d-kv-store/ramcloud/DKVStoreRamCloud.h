@@ -16,6 +16,7 @@
 #define APPS_MCMC_D_KV_STORE_RAMCLOUD_DKV_STORE_H__
 
 #pragma GCC diagnostic ignored "-Wunused-local-typedefs"
+#pragma GCC diagnostic ignored "-Wunused-variable"
 #pragma GCC diagnostic push
 #include <RamCloud.h>
 #pragma GCC diagnostic pop
@@ -31,27 +32,28 @@ class DKVStoreRamCloud : public DKVStoreInterface {
   typedef DKVStoreInterface::KeyType KeyType;
   typedef DKVStoreInterface::ValueType ValueType;
 
-  virtual ~DKVStoreRamCloud() {
-    delete client_;
-  }
+  ~DKVStoreRamCloud();
 
   virtual void Init(::size_t value_size, ::size_t total_values,
+                    ::size_t max_capacity,
                     const std::vector<std::string> &args);
 
-  /*
-   * Populate the cache area with the values belonging to @argument keys,
-   * in the same order
-   */
-  virtual void ReadKVRecords(const std::vector<KeyType> &keys,
-                             const std::vector<ValueType *> &cache);
+  virtual void ReadKVRecords(std::vector<ValueType *> &cache,
+							 const std::vector<KeyType> &key,
+                             RW_MODE::RWMode rw_mode) = 0;
 
   virtual void WriteKVRecords(const std::vector<KeyType> &key,
-                              const std::vector<const ValueType *> &cached);
+                              const std::vector<const ValueType *> &value);
+
+  virtual void FlushKVRecords(const std::vector<KeyType> &key);
+
+  virtual void PurgeKVRecords();
 
  private:
   RAMCloud::RamCloud *client_ = NULL;
   uint64_t table_id_;
   std::string table_ = "table1";
+  std::unordered_map<KeyType, RAMCloud::Tub<RAMCloud::ObjectBuffer>*> obj_buffer_map_;
 };
 
 } // namespace DKVRamCloud

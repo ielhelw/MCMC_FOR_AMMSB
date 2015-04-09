@@ -28,24 +28,22 @@ class DKVStoreFile : public DKVStoreInterface {
   typedef DKVStoreInterface::KeyType KeyType;
   typedef DKVStoreInterface::ValueType ValueType;
 
-  virtual ~DKVStoreFile() {
-    if (inputFileSystem_ != NULL) {
-      inputFileSystem_->close();
-    }
-  }
+  virtual ~DKVStoreFile();
 
   virtual void Init(::size_t value_size, ::size_t total_values,
+                    ::size_t max_capacity,
                     const std::vector<std::string> &args);
 
-  /*
-   * Populate the cache area with the values belonging to @argument keys,
-   * in the same order
-   */
-  virtual void ReadKVRecords(const std::vector<KeyType> &keys,
-                             const std::vector<ValueType *> &cache);
+  virtual void ReadKVRecords(std::vector<ValueType *> &cache,
+							 const std::vector<KeyType> &key,
+                             RW_MODE::RWMode rw_mode);
 
   virtual void WriteKVRecords(const std::vector<KeyType> &key,
-                              const std::vector<const ValueType *> &cached);
+                              const std::vector<const ValueType *> &value);
+
+  virtual void FlushKVRecords(const std::vector<KeyType> &key);
+
+  virtual void PurgeKVRecords();
 
  private:
   const std::string PiFileName(KeyType node) const;

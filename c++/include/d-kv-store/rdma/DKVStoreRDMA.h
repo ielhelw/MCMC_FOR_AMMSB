@@ -25,13 +25,22 @@ class DKVStoreRDMA : public DKVStoreInterface {
   }
 
   virtual void Init(::size_t value_size, ::size_t total_values,
+                    ::size_t max_capacity,
                     const std::vector<std::string> &args);
 
-  virtual void ReadKVRecords(const std::vector<KeyType> &keys,
-                             const std::vector<ValueType *> &cache);
+  virtual void ReadKVRecords(std::vector<ValueType *> &cache,
+							 const std::vector<KeyType> &key,
+                             RW_MODE::RWMode rw_mode);
 
   virtual void WriteKVRecords(const std::vector<KeyType> &key,
-                              const std::vector<const ValueType *> &cached);
+                              const std::vector<const ValueType *> &value);
+
+  virtual void FlushKVRecords(const std::vector<KeyType> &key);
+
+  /**
+   * Purge the cache area
+   */
+  virtual void PurgeKVRecords() = 0;
 
  private:
   int32_t HostOf(KeyType key);

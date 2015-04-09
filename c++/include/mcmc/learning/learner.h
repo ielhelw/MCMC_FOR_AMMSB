@@ -194,8 +194,10 @@ protected:
 		// std::cerr << std::setprecision(12) << "ratio " << link_ratio << " count: link " << link_count << " " << link_likelihood << " non-link " << non_link_count << " " << non_link_likelihood << std::endl;
 
 		// weight each part proportionally.
-		// avg_likelihood = self._link_ratio*(link_likelihood/link_count) + \
-		//         (1-self._link_ratio)*(non_link_likelihood/non_link_count)
+		/*
+		avg_likelihood = self._link_ratio*(link_likelihood/link_count) + \
+		         (1-self._link_ratio)*(non_link_likelihood/non_link_count)
+		*/
 
 		// direct calculation.
 		double avg_likelihood = 0.0;

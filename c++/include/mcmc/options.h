@@ -2,6 +2,7 @@
 #define MCMC_OPTIONS_H__
 
 #include <iostream>
+#include <fstream>
 
 #include "mcmc/exception.h"
 
@@ -43,30 +44,30 @@ inline ::size_t parse_size_t(const std::string &argString) {
 				assert(*arg >= 'A' && *arg <= 'F');
 				a = *arg - 'A' + 10;
 			}
-			if ((std::numeric_limits< ::size_t>::max() - a) / base < n) {
+			if ((std::numeric_limits<::size_t>::max() - a) / base < n) {
 				throw mcmc::NumberFormatException("Overflow in parse_size_t");
 			}
 			n = a + n * base;
 		} else if (base <= 10 && isdigit(*arg)) {
 			int a = *arg - '0';
-			if ((std::numeric_limits< ::size_t>::max() - a) / base < n) {
+			if ((std::numeric_limits<::size_t>::max() - a) / base < n) {
 				throw mcmc::NumberFormatException("Overflow in parse_size_t");
 			}
 			n = a + n * base;
 		} else if (strcasecmp(arg, "g") == 0 || strcasecmp(arg, "gb") == 0) {
-			if ((std::numeric_limits< ::size_t>::max() >> 30) < n) {
+			if ((std::numeric_limits<::size_t>::max() >> 30) < n) {
 				throw mcmc::NumberFormatException("Overflow in parse_size_t");
 			}
 			n *= 1ULL << 30;
 			break;
 		} else if (strcasecmp(arg, "m") == 0 || strcasecmp(arg, "mb") == 0) {
-			if ((std::numeric_limits< ::size_t>::max() >> 20) < n) {
+			if ((std::numeric_limits<::size_t>::max() >> 20) < n) {
 				throw mcmc::NumberFormatException("Overflow in parse_size_t");
 			}
 			n *= 1ULL << 20;
 			break;
 		} else if (strcasecmp(arg, "k") == 0 || strcasecmp(arg, "kb") == 0) {
-			if ((std::numeric_limits< ::size_t>::max() >> 10) < n) {
+			if ((std::numeric_limits<::size_t>::max() >> 10) < n) {
 				throw mcmc::NumberFormatException("Overflow in parse_size_t");
 			}
 			n *= 1ULL << 10;
@@ -191,58 +192,70 @@ namespace po = ::boost::program_options;
 class Options {
 public:
 	Options(int argc, char *argv[]) {
+		std::string config_file;
+
 		po::options_description desc("Options");
 
 		desc.add_options()
 			("help,?", "help")
+			("config", po::value<std::string>(&config_file), "config file")
 
-			("mcmc-st,s", "MCMC Stochastical C++")
-			("mcmc-b,t", "MCMC Batch C++")
+			("run:stochastical,s", "MCMC Stochastical C++")
+			("run:batch,t", "MCMC Batch C++")
 #ifdef ENABLE_OPENCL
-			("mcmc-st-cl,S", "MCMC Stochastical OpenCL")
-			("mcmc-b-cl,T", "MCMC Batch OpenCL")
+			("run:stochastical-opencl,S", "MCMC Stochastical OpenCL")
+			("run:batch-opencl,T", "MCMC Batch OpenCL")
 #endif
 #ifdef ENABLE_DISTRIBUTED
-			("mcmc-st-d,D", "MCMC Stochastical Distributed")
+			("run:stochastical-distributed,D", "MCMC Stochastical Distributed")
 #endif
 
-			("alpha", po::value<double>(&alpha)->default_value(0.01), "alpha")
-			("eta0", po::value<double>(&eta0)->default_value(1.0), "eta0")
-			("eta1", po::value<double>(&eta1)->default_value(1.0), "eta1")
+			("mcmc:alpha", po::value<double>(&alpha)->default_value(0.01), "alpha")
+			("mcmc:eta0", po::value<double>(&eta0)->default_value(1.0), "eta0")
+			("mcmc:eta1", po::value<double>(&eta1)->default_value(1.0), "eta1")
 
-			("K,K", po::value< ::size_t>(&K)->default_value(300), "K")
-			("mini-batch-size,m", po::value< ::size_t>(&mini_batch_size)->default_value(0), "mini_batch_size")
-			("num-node-sample,n", po::value< ::size_t>(&num_node_sample)->default_value(0), "neighbor sample size")
-			("strategy", po::value<std::string>(&strategy)->default_value("unspecified"), "sampling strategy")
+			("mcmc:K,K", po::value<::size_t>(&K)->default_value(300), "K")
+			("mcmc:mini-batch-size,m", po::value<::size_t>(&mini_batch_size)->default_value(0), "mini_batch_size")
+			("mcmc:num-node-sample,n", po::value<::size_t>(&num_node_sample)->default_value(0), "neighbor sample size")
+			("mcmc:strategy", po::value<std::string>(&strategy)->default_value("unspecified"), "sampling strategy")
 
-			("epsilon,e", po::value<double>(&epsilon)->default_value(0.0000001), "epsilon")
-			("max-iteration,x", po::value< ::size_t>(&max_iteration)->default_value(10000000), "max_iteration")
-			("interval,i", po::value< ::size_t>(&interval)->default_value(0), "perplexity interval")
+			("mcmc:epsilon,e", po::value<double>(&epsilon)->default_value(0.0000001), "epsilon")
+			("mcmc:max-iteration,x", po::value<::size_t>(&max_iteration)->default_value(10000000), "max_iteration")
+			("mcmc:interval,i", po::value<::size_t>(&interval)->default_value(0), "perplexity interval")
 
-			("a", po::value<double>(&a)->default_value(0.01), "a")
-			("b", po::value<double>(&b)->default_value(1024), "b")
-			("c", po::value<double>(&c)->default_value(0.55), "c")
+			("mcmc:a", po::value<double>(&a)->default_value(0.01), "a")
+			("mcmc:b", po::value<double>(&b)->default_value(1024), "b")
+			("mcmc:c", po::value<double>(&c)->default_value(0.55), "c")
 
-			("num-updates,u", po::value< ::size_t>(&num_updates)->default_value(1000), "num_updates")
-			("held-out-ratio,h", po::value<double>(&held_out_ratio)->default_value(0.0), "held_out_ratio")
-			("output-dir,o", po::value<std::string>(&output_dir)->default_value("."), "output_dir")
+			("mcmc:num-updates,u", po::value<::size_t>(&num_updates)->default_value(1000), "num_updates")
+			("mcmc:held-out-ratio,h", po::value<double>(&held_out_ratio)->default_value(0.0), "held_out_ratio")
 
-			("input-file,f", po::value<std::string>(&filename)->default_value(""), "input file")
-			("class,c", po::value<std::string>(&dataset_class)->default_value("netscience"), "input class")
-			("contiguous,C", po::value<bool>(&contiguous)->default_value(false), "contiguous input data")
+			("output:dir,o", po::value<std::string>(&output_dir)->default_value("."), "output_dir")
+
+			("input:file,f", po::value<std::string>(&filename)->default_value(""), "input file")
+			("input:class,c", po::value<std::string>(&dataset_class)->default_value("netscience"), "input class")
+			("input:contiguous,C", po::value<bool>(&contiguous)->default_value(false), "contiguous input data")
 
 #ifdef ENABLE_OPENCL
-			("platform,p", po::value<std::string>(&openClPlatform), "OpenCL platform")
-			("device,d", po::value<std::string>(&openClDevice), "OpenCL device")
-			("thread-group-size,G", po::value< ::size_t>(&openclGroupSize)->default_value(1), "OpenCL thread group size")
-			("num-thread-groups,g", po::value< ::size_t>(&openclNumGroups)->default_value(1), "num OpenCL thread groups")
-			("buffer-size,b", po::value< ::size_t>(&openclBufferSize)->default_value(0), "OpenCL buffer size");
+			("cl:platform,p", po::value<std::string>(&openClPlatform), "OpenCL platform")
+			("cl:device,d", po::value<std::string>(&openClDevice), "OpenCL device")
+			("cl:thread-group-size,G", po::value<::size_t>(&openclGroupSize)->default_value(1), "OpenCL thread group size")
+			("cl:num-thread-groups,g", po::value<::size_t>(&openclNumGroups)->default_value(1), "num OpenCL thread groups")
+			("cl:buffer-size,b", po::value<::size_t>(&openclBufferSize)->default_value(0), "OpenCL buffer size")
 #endif
 			;
 
 		po::variables_map vm;
-		po::store(po::parse_command_line(argc, argv, desc), vm);
+		po::parsed_options parsed = po::command_line_parser(argc, argv).options(desc).allow_unregistered().run();
+		po::store(parsed, vm);
 		po::notify(vm);
+		if (vm.count("config") > 0) {
+			std::ifstream file(config_file);
+			po::store(po::parse_config_file(file, desc), vm);
+			po::notify(vm);
+		}
+
+		remains = po::collect_unrecognized(parsed.options, po::include_positional);
 
 		if (vm.count("help") > 0) {
 			std::cout << desc << std::endl;
@@ -257,6 +270,10 @@ public:
 #ifdef ENABLE_DISTRIBUTED
 		run.mcmc_stochastical_distr = vm.count("mcmc-st-d") > 0;
 #endif
+	}
+
+	const std::vector<std::string> &getRemains() const {
+		return remains;
 	}
 
 public:
@@ -303,6 +320,8 @@ public:
 		bool	mcmc_stochastical_distr;
 #endif
 	} run;
+
+	std::vector<std::string> remains;
 };
 
 };	// namespace mcmc

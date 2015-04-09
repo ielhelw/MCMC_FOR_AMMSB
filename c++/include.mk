@@ -31,6 +31,7 @@ ifeq (1, $(CONFIG_PROFILE))
 	CONFIG_STATIC_LIB	= 1
 	export GMON_OUT_PREFIX=gmon.out	# document: will save to gmon.out.<PID>
 endif
+
 CXXFLAGS += -Wall
 ifneq (icpc, $(CXX))
 CXXFLAGS += -Werror
@@ -39,12 +40,12 @@ CXXFLAGS += -no-gcc
 endif
 # may need to do this without -Werror:
 # CXXFLAGS += -Wconversion
-CXXFLAGS += -Wno-comment
 CXXFLAGS += -Wunused
 CXXFLAGS += -Wextra
 # CXXFLAGS += -pedantic
 # CXXFLAGS += -fmessage-length=0
 CXXFLAGS += -Wno-unused-parameter
+
 CXXFLAGS += -I$(PROJECT_HOME)/include
 CXXFLAGS += -I$(PROJECT_HOME)/3rdparty/tinyxml2/include
 ifneq (, $(OPENCL_ROOT))
@@ -65,7 +66,7 @@ VEXCL		= $(PROJECT)/3rdparty/vexcl
 CXXFLAGS	+= -I$(VEXCL)
 endif
 
-LDFLAGS += -L$(PROJECT_HOME)/lib -l mcmc
+LDFLAGS += -L$(PROJECT_HOME)/lib -lmcmc
 LDFLAGS	+= -Wl,-rpath,$(PROJECT_HOME)/lib
 LDFLAGS += -L$(PROJECT_HOME)/3rdparty/tinyxml2/lib -ltinyxml2
 LDFLAGS	+= -Wl,-rpath,$(PROJECT_HOME)/3rdparty/tinyxml2/lib
@@ -74,7 +75,7 @@ ifneq (, $(OPENCL_ROOT))
 LDFLAGS += -L$(OPENCL_ROOT)/lib -L$(OPENCL_ROOT)/lib/x86_64 -lOpenCL
 endif
 ifdef USE_MUDFLAP
-LIBS	+= -lmudflapth -rdynamic
+LDLIBS	+= -lmudflapth -rdynamic
 CXXFLAGS += -fmudflap -fmudflapth -funwind-tables
 endif
 
@@ -89,15 +90,18 @@ AR_FLAGS	= rc
 ifneq (, $(BOOST_ROOT))
 LDFLAGS += -L$(BOOST_ROOT)/lib
 endif
-LIBS	+= -lboost_system$(BOOST_SUFFIX)
-LIBS	+= -lboost_thread$(BOOST_SUFFIX)
-LIBS	+= -lboost_filesystem$(BOOST_SUFFIX)
-LIBS	+= -lboost_program_options$(BOOST_SUFFIX)
+LDLIBS	+= -lboost_system$(BOOST_SUFFIX)
+LDLIBS	+= -lboost_thread$(BOOST_SUFFIX)
+LDLIBS	+= -lboost_filesystem$(BOOST_SUFFIX)
+LDLIBS	+= -lboost_program_options$(BOOST_SUFFIX)
 
 ifneq (, $(CONFIG_RAMCLOUD_ROOT))
+CXXFLAGS += -I$(CONFIG_RAMCLOUD_ROOT)/src
+CXXFLAGS += -I$(CONFIG_RAMCLOUD_ROOT)/obj.master
+CXXFLAGS += -I$(CONFIG_RAMCLOUD_ROOT)/gtest/include
 LDFLAGS += -L$(CONFIG_RAMCLOUD_ROOT)/obj.master
 LDFLAGS	+= -Wl,-rpath,$(CONFIG_RAMCLOUD_ROOT)/obj.master
-LIBS    += -lramcloud
+LDLIBS  += -lramcloud
 # export LD_RUN_PATH := $(LD_RUN_PATH):$(CONFIG_RAMCLOUD_ROOT)/obj.master
 endif
 
@@ -127,9 +131,9 @@ $(OBJDIR)/%.o: %.cpp
 	@mkdir -p $(dir $@)
 	$(CXX) $(CXXFLAGS) -MMD -c $< -o $@
 
-$(TARGETS): % : $(OBJDIR)/%.o $(CXX_OBJECTS) $(LIBS)
+$(TARGETS): % : $(OBJDIR)/%.o $(CXX_OBJECTS) $(LDLIBS)
 	@echo LD_RUN_PATH $(LD_RUN_PATH)
-	$(LD) $< $(CXX_OBJECTS) $(LDFLAGS) $(LIBS) -o $@
+	$(LD) $< $(CXX_OBJECTS) $(LDFLAGS) $(LDLIBS) -o $@
 
 TARGET_LIBS_SHARED	= $(TARGET_LIBS:%=$(LIBDIR)/%.so)
 TARGET_LIBS_STATIC	= $(TARGET_LIBS:%=$(LIBDIR)/%.a)

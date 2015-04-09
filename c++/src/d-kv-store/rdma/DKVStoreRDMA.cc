@@ -15,19 +15,26 @@ namespace DKV {
 namespace DKVRDMA {
 
 void DKVStoreRDMA::Init(::size_t value_size, ::size_t total_values,
+                        ::size_t max_capacity,
                         const std::vector<std::string> &args) {
   value_size_ = value_size;
   total_values_ = total_values;
+  max_capacity_ = max_capacity;
 }
 
-void DKVStoreRDMA::ReadKVRecords(
-    const std::vector<DKVStoreRDMA::KeyType> &keys,
-    const std::vector<DKVStoreRDMA::ValueType *> &cache) {
+void DKVStoreRDMA::ReadKVRecords(std::vector<ValueType *> &cache,
+                                 const std::vector<KeyType> &key,
+                                 RW_MODE::RWMode rw_mode) {
 }
 
-void DKVStoreRDMA::WriteKVRecords(
-    const std::vector<DKVStoreRDMA::KeyType> &key,
-    const std::vector<const DKVStoreRDMA::ValueType *> &cached) {
+void DKVStoreRDMA::FlushKVRecords(const std::vector<KeyType> &key) {
+}
+
+void DKVStoreRDMA::WriteKVRecords(const std::vector<KeyType> &key,
+                                  const std::vector<const ValueType *> &value) {
+}
+
+void DKVStoreRDMA::PurgeKVRecords() {
 }
 
 int DKVStoreRDMA::HostOf(DKVStoreRDMA::KeyType key) {
