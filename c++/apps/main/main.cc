@@ -91,6 +91,8 @@ int main(int argc, char *argv[]) {
 			sviSampler.run();
 		}
 
+		delete const_cast<Data *>(data);
+
 		return 0;
 #ifdef ENABLE_OPENCL
 	} catch (cl::Error &e) {

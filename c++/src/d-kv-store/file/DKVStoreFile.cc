@@ -62,6 +62,7 @@ void DKVStoreFile::ReadKVRecords(std::vector<ValueType *> &cache,
                                  const std::vector<KeyType> &key,
                                  RW_MODE::RWMode rw_mode) {
   assert(next_free_ + key.size() <= max_capacity_);
+  assert(cache.size() >= key.size());
   for (::size_t i = 0; i < key.size(); i++) {
     ValueType *cache_pointer = cache_ + next_free_ * value_size_;
     next_free_++;
@@ -69,12 +70,14 @@ void DKVStoreFile::ReadKVRecords(std::vector<ValueType *> &cache,
     reader->readFully(cache_pointer, value_size_ * sizeof(ValueType));
     cache[i] = cache_pointer;
     value_of_[key[i]] = cache_pointer;
+	assert(value_of_.size() <= max_capacity_);
     delete reader;
   }
 }
 
 void DKVStoreFile::WriteKVRecords(const std::vector<KeyType> &key,
                                   const std::vector<const ValueType *> &value) {
+  assert(value.size() >= key.size());
   for (::size_t i = 0; i < key.size(); ++i) {
     WriteKVRecord(key[i], value[i]);
   }

@@ -20,6 +20,8 @@ public:
 	}
 
 	const mcmc::Data *get_data() const {
+		// FIXME: who will delete dataObj?
+		// FIXME: solve with.... !!! templating !!! FIXME
 		DataSet *dataObj = NULL;
 		if (false) {
 		} else if (dataset_name == "netscience") {

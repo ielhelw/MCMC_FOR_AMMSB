@@ -138,6 +138,8 @@ public:
 	virtual ~MCMCSamplerStochasticDistributed() {
 		(void)MPI_Finalize();
 		std::cerr << "FIXME: close off d-kv-store" << std::endl;
+
+		delete d_kv_store;
 	}
 
 
@@ -148,8 +150,12 @@ public:
 		r = MPI_Init_thread(NULL, NULL, MPI_THREAD_MULTIPLE, &provided);
 		mpi_error_test(r, "MPI_Init_thread() fails");
 		if (provided < MPI_THREAD_MULTIPLE) {
+#ifdef NOT_NOW_NEED_TO_RUN_VALGRIND
 			mpi_error_test(MPI_ERR_ARG, "No multithreaded support: provide " +
 						   boost::lexical_cast<std::string>(provided));
+#else
+			std::cerr << "No multithread MPI support. Works only for sequential runs" << std::endl;
+#endif
 		}
 
 		r = MPI_Comm_set_errhandler(MPI_COMM_WORLD, MPI_ERRORS_RETURN);
@@ -215,9 +221,11 @@ public:
 
         using namespace std::chrono;
 
-		std::vector<std::vector<double>> phi_node;
+		std::vector<std::vector<double>> phi_node(max_minibatch_nodes, std::vector<double>(K + 1));
 		std::vector<double *> pi_node;
-		std::vector<std::vector<double *>> pi_neighbor;
+		std::vector<std::vector<double *>> pi_neighbor(max_minibatch_nodes,
+													   std::vector<double *>(real_num_node_sample(),
+																			 new double[K + 1]));
 
 		t_start = clock();
         while (step_count < max_iteration && ! is_converged()) {
@@ -241,20 +249,13 @@ public:
 			// double eps_t = std::pow(1024+step_count, -0.5);
 
 			// ************ load our pi from D-KV store **************
-			pi_node.resize(nodes_vector.size(), NULL);
-            for (auto &p : pi_node) {
-              if (p == NULL) {
-				  p = new double[K + 1];
-			  }
-            }
             t_pi_read_node.start();
+			pi_node.resize(nodes_vector.size());
             d_kv_store->ReadKVRecords(pi_node, nodes_vector, DKV::RW_MODE::READ_ONLY);
             t_pi_read_node.stop();
 			// ************ do in parallel at each host
 			// std::cerr << "Sample neighbor nodes" << std::endl;
 			// FIXME: nodes_in_batch should generate a vector, not an OrderedVertexSet
-			phi_node.resize(nodes_vector.size());
-            pi_neighbor.resize(nodes_vector.size());
 #pragma omp parallel for
 			for (::size_t i = 0; i < nodes_vector.size(); ++i) {
 				int node = nodes_vector[i];
@@ -264,12 +265,6 @@ public:
 				t_sample_neighbor_nodes.stop();
 
                 // ************ load neighor pi from D-KV store **********
-                pi_neighbor[i].resize(K + 1, NULL);
-				for (auto &p : pi_neighbor[i]) {
-					if (p == NULL) {
-						p = new double[K + 1];
-					}
-				}
                 t_pi_read_neighbor.start();
 #ifdef NEIGHBOR_SET_IS_VECTOR
                 d_kv_store->ReadKVRecords(pi_neighbor[i], neighbors, DKV::RW_MODE::READ_ONLY);
@@ -281,7 +276,6 @@ public:
 
                 // std::cerr << "Random seed " << std::hex << "0x" << kernelRandom->seed(0) << ",0x" << kernelRandom->seed(1) << std::endl << std::dec;
 				t_update_phi.start();
-				phi_node[i].resize(K + 1);
 				update_phi(&phi_node[i], node, pi_node[i], neighbors, pi_neighbor[i], eps_t);
 				t_update_phi.stop();
 			}
@@ -323,6 +317,12 @@ public:
 
 		if (mpi_rank == mpi_master) {
 			check_perplexity();
+		}
+
+		for (auto &p : pi_neighbor) {
+			for (auto &n : p) {
+				delete[] n;
+			}
 		}
 
 		timer::Timer::printHeader(std::cout);

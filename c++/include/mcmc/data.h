@@ -190,7 +190,7 @@ public:
 	}
 
 	~Data() {
-		// delete const_cast<void *>(V);
+		// delete const_cast<void *>(V); FIXME: somebody must delete V; the 'owner' of this dataset, I presume
 		delete const_cast<EdgeSet *>(E);
 	}
 

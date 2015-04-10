@@ -59,6 +59,7 @@ BOOST_ROOT = $(dir $(BOOST_INCLUDE))
 endif
 ifeq (1, $(CONFIG_DISTRIBUTED))
 CXXFLAGS += -DENABLE_DISTRIBUTED
+CXXFLAGS += -Wno-literal-suffix		# OpenMPI requires this
 endif
 
 ifneq (, $(OPENCL_ROOT))
