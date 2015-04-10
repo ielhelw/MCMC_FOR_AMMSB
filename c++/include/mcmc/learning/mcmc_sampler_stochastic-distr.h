@@ -12,7 +12,12 @@
 
 #include <d-kv-store/DKVStore.h>
 #include <d-kv-store/file/DKVStoreFile.h>
+#ifdef ENABLE_RAMCLOUD
 #include <d-kv-store/ramcloud/DKVStoreRamCloud.h>
+#endif
+#ifdef ENABLE_RDMA
+#include <d-kv-store/ramcloud/DKVStoreRamCloud.h>
+#endif
 
 #include "mcmc/np.h"
 #include "mcmc/random.h"
@@ -103,11 +108,6 @@ public:
     */
     MCMCSamplerStochasticDistributed(const Options &args, const Network &graph)
 			: MCMCSamplerStochastic(args, graph), args(args) {
-		// FIXME FIXME FIXME
-		// TODO TODO TODO
-		std::cerr << "Make kernelRandom init depend on mpi_rank" << std::endl;
-		// FIXME FIXME FIXME
-
 #ifdef RANDOM_FOLLOWS_CPP_WENZHE
 		throw MCMCException("No support for Wenzhe Random compatibility");
 #endif
@@ -134,10 +134,12 @@ public:
 		timer::Timer::setTabular(true);
 	}
 
+
 	virtual ~MCMCSamplerStochasticDistributed() {
 		(void)MPI_Finalize();
 		std::cerr << "FIXME: close off d-kv-store" << std::endl;
 	}
+
 
 	virtual void init() {
 		int r;
@@ -158,22 +160,27 @@ public:
 		r = MPI_Comm_rank(MPI_COMM_WORLD, &mpi_rank);
 		mpi_error_test(r, "MPI_Comm_rank() fails");
 
-		kernelRandom = new Random::Random(mpi_rank * 42);
+		// Make kernelRandom init depend on mpi_rank
+		kernelRandom = new Random::Random((mpi_rank + 1) * 42);
 
 		// d_kv_store = new DKV::DKVRamCloud::DKVStoreRamCloud();
 		d_kv_store = new DKV::DKVFile::DKVStoreFile();
 
-		::size_t num_edges_in_batch = network.minibatch_edges_for_strategy(mini_batch_size, strategy);
-		::size_t num_nodes_in_batch = network.minibatch_nodes_for_strategy(mini_batch_size, strategy);
-		::size_t num_outgoing_edges_from_batch = network.get_max_fan_out(num_nodes_in_batch);
+		max_minibatch_nodes = network.minibatch_nodes_for_strategy(mini_batch_size, strategy);
+		max_minibatch_neighbors = max_minibatch_nodes * real_num_node_sample();
+		std::cerr << "minibatch size param " << mini_batch_size << " max " << max_minibatch_nodes << " #neighbors(total) " << max_minibatch_neighbors << std::endl;
 
-		d_kv_store->Init(K + 1, N, (num_outgoing_edges_from_batch + mpi_size - 1) / mpi_size, args.getRemains());
+		d_kv_store->Init(K + 1,
+						 N,
+						 (max_minibatch_nodes + max_minibatch_neighbors + mpi_size - 1) / mpi_size,
+						 args.getRemains());
 
 		if (mpi_rank == mpi_master) {
 			init_beta();
 		}
 
 		init_pi();
+#ifdef DOESNT_WORK_FOR_DISTRIBUTED
 		std::cout << "phi[0][0] " << phi[0][0] << std::endl;
 		if (false) {
 			std::cout << "pi[0] ";
@@ -197,11 +204,11 @@ public:
 				std::cerr << std::endl;
 			}
 		}
+#endif
 
         std::cerr << "Random seed " << std::hex << "0x" << kernelRandom->seed(0) << ",0x" << kernelRandom->seed(1) << std::endl << std::dec;
 		std::cerr << "Done constructor" << std::endl;
 	}
-
 
     virtual void run() {
         /** run mini-batch based MCMC sampler, based on the sungjin's note */
@@ -290,6 +297,7 @@ public:
 			}
 			// std::cerr << "write back phi/pi after update" << std::endl;
 			d_kv_store->WriteKVRecords(nodes_vector, constify(pi_node));
+			d_kv_store->PurgeKVRecords();
 
 			// all synchronize with barrier
 			MPI_Barrier(MPI_COMM_WORLD);
@@ -339,6 +347,11 @@ protected:
 		// the template system works means that in theory the two may
 		// be specialised differently.  This is an explicit conversion.
 		return reinterpret_cast<std::vector<const T*>&>(v);
+	}
+
+
+	::size_t real_num_node_sample() const {
+		return num_node_sample + 1;
 	}
 
 
@@ -431,7 +444,7 @@ protected:
 			std::vector<const double *> pi_wrapper(1, pi);
 			d_kv_store->WriteKVRecords(node, pi_wrapper);
 		}
-	};
+	}
 
 
 	void check_perplexity() {
@@ -496,15 +509,15 @@ protected:
 			t_mini_batch.start();
 			edgeSample = network.sample_mini_batch(mini_batch_size, strategy::STRATIFIED_RANDOM_NODE);
 			t_mini_batch.stop();
-			if (false) {
-				std::cerr << "Minibatch: ";
-				for (auto e : *edgeSample.first) {
+			const OrderedEdgeSet &mini_batch = *edgeSample.first;
+			if (true) {
+				std::cerr << "Minibatch[" << mini_batch.size() << "]: ";
+				for (auto e : mini_batch) {
 					std::cerr << e << " ";
 				}
 				std::cerr << std::endl;
 			}
 			// std::cerr << "Done sample_mini_batch" << std::endl;
-			const OrderedEdgeSet &mini_batch = *edgeSample.first;
 
 			//std::unordered_map<int, std::vector<int> > latent_vars;
 			//std::unordered_map<int, ::size_t> size;
@@ -515,7 +528,7 @@ protected:
 			t_nodes_in_mini_batch.stop();
 // std::cerr << "mini_batch size " << mini_batch.size() << " num_node_sample " << num_node_sample << std::endl;
 
-			std::vector<std::vector<int>> subminibatch;
+			std::vector<std::vector<int>> subminibatch(mpi_size);
 
 			::size_t upper_bound = (nodes.size() + 1 - mpi_size) / mpi_size;
 			std::unordered_set<int> unassigned;
@@ -527,6 +540,7 @@ protected:
 					subminibatch[owner].push_back(n);
 				}
 			}
+			std::cerr << "#nodes " << nodes.size() << " #unassigned " << unassigned.size() << std::endl;
 
 			::size_t i = 0;
 			for (auto n: unassigned) {
@@ -680,6 +694,215 @@ protected:
 	}
 
 
+    void update_beta(const OrderedEdgeSet &mini_batch, double scale) {
+
+		std::vector<std::vector<double> > grads(K, std::vector<double>(2, 0.0));	// gradients K*2 dimension
+		std::vector<double> probs(K);
+        // sums = np.sum(self.__theta,1)
+		std::vector<double> theta_sum(theta.size());
+		std::transform(theta.begin(), theta.end(), theta_sum.begin(), np::sum<double>);
+
+		std::unordered_map<int, int> node_rank;
+		std::vector<int> nodes;
+		for (auto e : mini_batch) {
+			int i = e.first;
+			int j = e.second;
+			if (node_rank.find(i) == node_rank.end()) {
+				::size_t next = node_rank.size();
+				node_rank[i] = next;
+				nodes.push_back(i);
+			}
+			if (node_rank.find(j) == node_rank.end()) {
+				::size_t next = node_rank.size();
+				node_rank[j] = next;
+				nodes.push_back(j);
+			}
+			assert(node_rank.size() == nodes.size());
+		}
+		std::vector<double *> pi(node_rank.size());
+		d_kv_store->ReadKVRecords(pi, nodes, DKV::RW_MODE::READ_ONLY);
+
+		// update gamma, only update node in the grad
+		double eps_t = a * std::pow(1.0 + step_count / b, -c);
+		//double eps_t = std::pow(1024+step_count, -0.5);
+		for (auto edge = mini_batch.begin(); edge != mini_batch.end(); edge++) {
+            int y = 0;
+            if (edge->in(network.get_linked_edges())) {
+                y = 1;
+			}
+			int i = node_rank[edge->first];
+			int j = node_rank[edge->second];
+
+			double pi_sum = 0.0;
+			for (::size_t k = 0; k < K; k++) {
+				// Note: this is the KV-store cached pi, not the Learner item
+				pi_sum += pi[i][k] * pi[j][k];
+				double f = pi[i][k] * pi[j][k];
+				if (y == 1) {
+					probs[k] = beta[k] * f;
+				} else {
+					probs[k] = (1.0 - beta[k]) * f;
+				}
+			}
+
+			double prob_0 = ((y == 1) ? epsilon : (1.0 - epsilon)) * (1.0 - pi_sum);
+			double prob_sum = np::sum(probs) + prob_0;
+			for (::size_t k = 0; k < K; k++) {
+				double f = probs[k] / prob_sum;
+				double one_over_theta_sum = 1.0 / theta_sum[k];
+				grads[k][0] += f * ((1 - y) / theta[k][0] - one_over_theta_sum);
+				grads[k][1] += f * (y / theta[k][1] - one_over_theta_sum);
+			}
+		}
+
+        // update theta
+		std::vector<std::vector<double> > noise = kernelRandom->randn(K, 2);	// random noise.
+		// std::vector<std::vector<double> > theta_star(theta);
+        for (::size_t k = 0; k < K; k++) {
+            for (::size_t i = 0; i < 2; i++) {
+				double f = std::sqrt(eps_t * theta[k][i]);
+				theta[k][i] = std::abs(theta[k][i] +
+									   eps_t / 2.0 * (eta[i] - theta[k][i] +
+													  scale * grads[k][i]) +
+									   f * noise[k][i]);
+			}
+		}
+
+		// temp = self.__theta/np.sum(self.__theta,1)[:,np.newaxis]
+		// self._beta = temp[:,1]
+		std::vector<std::vector<double> > temp(theta.size(), std::vector<double>(theta[0].size()));
+		np::row_normalize(&temp, theta);
+		std::transform(temp.begin(), temp.end(), beta.begin(), np::SelectColumn<double>(1));
+
+		d_kv_store->PurgeKVRecords();
+
+        if (false) {
+          for (auto n : noise) {
+            std::cerr << "noise ";
+            for (auto b : n) {
+              std::cerr << std::fixed << std::setprecision(12) << b << " ";
+            }  
+            std::cerr << std::endl;
+          }
+          std::cerr << "beta ";
+          for (auto b : beta) {
+            std::cerr << std::fixed << std::setprecision(12) << b << " ";
+          }
+          std::cerr << std::endl;
+        }
+	}
+
+
+	/**
+	 * calculate the perplexity for data.
+	 * perplexity defines as exponential of negative average log likelihood. 
+	 * formally:
+	 *     ppx = exp(-1/N * \sum){i}^{N}log p(y))
+	 * 
+	 * we calculate average log likelihood for link and non-link separately, with the 
+	 * purpose of weighting each part proportionally. (the reason is that we sample 
+	 * the equal number of link edges and non-link edges for held out data and test data,
+	 * which is not true representation of actual data set, which is extremely sparse.
+	 */
+	double cal_perplexity_held_out() {
+		const EdgeMap &data = network.get_held_out_set();
+
+		double link_likelihood = 0.0;
+		double non_link_likelihood = 0.0;
+		::size_t link_count = 0;
+		::size_t non_link_count = 0;
+
+		// FIXME code duplication w/ update_beta
+		// Is there also code duplication w/ update_phi?
+		std::unordered_map<int, int> node_rank;
+		std::vector<int> nodes;
+		for (auto edge : data) {
+			const Edge &e = edge.first;
+			int i = e.first;
+			int j = e.second;
+			if (node_rank.find(i) == node_rank.end()) {
+				::size_t next = node_rank.size();
+				node_rank[i] = next;
+				nodes.push_back(i);
+			}
+			if (node_rank.find(j) == node_rank.end()) {
+				::size_t next = node_rank.size();
+				node_rank[j] = next;
+				nodes.push_back(j);
+			}
+			assert(node_rank.size() == nodes.size());
+		}
+		std::vector<double *> pi(node_rank.size());
+		d_kv_store->ReadKVRecords(pi, nodes, DKV::RW_MODE::READ_ONLY);
+
+		::size_t i = 0;
+		for (auto edge : data) {
+			const Edge &e = edge.first;
+			int a = node_rank[e.first];
+			int b = node_rank[e.second];
+			double edge_likelihood = cal_edge_likelihood(pi[a], pi[b],
+														 edge.second, beta);
+			if (std::isnan(edge_likelihood)) {
+				std::cerr << "edge_likelihood is NaN; potential bug" << std::endl;
+			}
+
+			//cout<<"AVERAGE COUNT: " <<average_count;
+			ppx_for_heldout[i] = (ppx_for_heldout[i] * (average_count-1) + edge_likelihood)/(average_count);
+			// std::cerr << std::fixed << std::setprecision(12) << e << " in? " << (e.in(network.get_linked_edges()) ? "True" : "False") << " -> " << edge_likelihood << " av. " << average_count << " ppx[" << i << "] " << ppx_for_heldout[i] << std::endl;
+			// assert(edge->second == e.in(network.get_linked_edges()));
+			if (edge.second) {
+				link_count++;
+				link_likelihood += std::log(ppx_for_heldout[i]);
+				//link_likelihood += edge_likelihood;
+
+				if (std::isnan(link_likelihood)){
+					std::cerr << "link_likelihood is NaN; potential bug" << std::endl;
+				}
+			} else {
+				assert(! present(network.get_linked_edges(), e));
+				non_link_count++;
+				//non_link_likelihood += edge_likelihood;
+				non_link_likelihood += std::log(ppx_for_heldout[i]);
+				if (std::isnan(non_link_likelihood)){
+					std::cerr << "non_link_likelihood is NaN; potential bug" << std::endl;
+				}
+			}
+			i++;
+		}
+
+		d_kv_store->PurgeKVRecords();
+
+		// std::cerr << std::setprecision(12) << "ratio " << link_ratio << " count: link " << link_count << " " << link_likelihood << " non-link " << non_link_count << " " << non_link_likelihood << std::endl;
+
+		// weight each part proportionally.
+		/*
+		avg_likelihood = self._link_ratio*(link_likelihood/link_count) + \
+		         (1-self._link_ratio)*(non_link_likelihood/non_link_count)
+		*/
+
+		// direct calculation.
+		double avg_likelihood = 0.0;
+		if (link_count + non_link_count != 0){
+			avg_likelihood = (link_likelihood + non_link_likelihood) / (link_count + non_link_count);
+		}
+		if (true) {
+			double avg_likelihood1 = link_ratio * (link_likelihood / link_count) + \
+										 (1.0 - link_ratio) * (non_link_likelihood / non_link_count);
+			std::cerr << std::fixed << std::setprecision(12) << avg_likelihood << " " << (link_likelihood / link_count) << " " << link_count << " " << \
+				(non_link_likelihood / non_link_count) << " " << non_link_count << " " << avg_likelihood1 << std::endl;
+			// std::cerr << "perplexity score is: " << exp(-avg_likelihood) << std::endl;
+		}
+
+		// return std::exp(-avg_likelihood);
+
+
+		//if (step_count > 1000000)
+		average_count = average_count + 1;
+		std::cerr << "average_count is: " << average_count << " ";
+		return (-avg_likelihood);
+	}
+
+
 	int node_owner(int node) const {
 		return node % mpi_size;
 	}
@@ -693,6 +916,9 @@ protected:
 
 
 protected:
+	::size_t	max_minibatch_nodes;
+	::size_t	max_minibatch_neighbors;
+
 	const int mpi_master = 0;
 	int		mpi_size;
 	int		mpi_rank;

@@ -243,8 +243,9 @@ protected:
 	 * such that:  p(y|*) = \sum_{z_ab,z_ba}^{} p(y, z_ab,z_ba|pi_a, pi_b, beta)
 	 * but this calculation can be done in O(K), by using some trick.
 	 */
-	double cal_edge_likelihood(const std::vector<double> &pi_a,
-							   const std::vector<double> &pi_b,
+	template <typename T>
+	double cal_edge_likelihood(const T &pi_a,
+							   const T &pi_b,
 							   bool y,
 							   const std::vector<double> &beta) const {
 		double s = 0.0;

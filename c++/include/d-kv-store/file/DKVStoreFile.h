@@ -28,6 +28,9 @@ class DKVStoreFile : public DKVStoreInterface {
   typedef DKVStoreInterface::KeyType KeyType;
   typedef DKVStoreInterface::ValueType ValueType;
 
+  DKVStoreFile() {
+  }
+
   virtual ~DKVStoreFile();
 
   virtual void Init(::size_t value_size, ::size_t total_values,

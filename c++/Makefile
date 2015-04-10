@@ -8,7 +8,9 @@ SUBDIRS += test
 
 include $(PROJECT)/include.mk
 
-apps test: src
+.PHONY: src lib apps test
+
+apps test: lib
 src: 3rdparty
 lib: src
 

@@ -34,7 +34,7 @@ void DKVStoreFile::Init(::size_t value_size, ::size_t total_values,
                         const std::vector<std::string> &args) {
   value_size_ = value_size;
   total_values_ = total_values;
-  max_capacity_ = max_capacity_;
+  max_capacity_ = max_capacity;
 
   std::cerr << "DKVStoreFile::Init args ";
   for (auto a : args) {
@@ -44,8 +44,8 @@ void DKVStoreFile::Init(::size_t value_size, ::size_t total_values,
 
   po::options_description desc("D-KV File options");
   desc.add_options()
-    ("filebase,b", po::value<std::string>(&file_base_)->default_value(""), "File base")
-    ("dir,d", po::value<std::string>(&dir_)->default_value("pi"), "Directory")
+    ("dkv:file:filebase,b", po::value<std::string>(&file_base_)->default_value(""), "File base")
+    ("dkv:file:dir,d", po::value<std::string>(&dir_)->default_value("pi"), "Directory")
     ;
 
   po::variables_map vm;
@@ -66,7 +66,7 @@ void DKVStoreFile::ReadKVRecords(std::vector<ValueType *> &cache,
     ValueType *cache_pointer = cache_ + next_free_ * value_size_;
     next_free_++;
     mr::FileReader *reader = inputFileSystem_->createReader(PiFileName(key[i]));
-    reader->read(cache_pointer, value_size_ * sizeof(ValueType));
+    reader->readFully(cache_pointer, value_size_ * sizeof(ValueType));
     cache[i] = cache_pointer;
     value_of_[key[i]] = cache_pointer;
     delete reader;

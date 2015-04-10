@@ -20,7 +20,7 @@ ifeq (1, $(CONFIG_OPTIMIZE))
 	CXXFLAGS += -g3 -O3 # -finline-functions
 	CXXFLAGS += -DNDEBUG
 else
-	CXXFLAGS += -g3
+	CXXFLAGS += -g3 -O0
 	CXXFLAGS += -fno-inline-functions
 endif
 ifeq (1, $(CONFIG_PROFILE))
@@ -99,6 +99,7 @@ ifneq (, $(CONFIG_RAMCLOUD_ROOT))
 CXXFLAGS += -I$(CONFIG_RAMCLOUD_ROOT)/src
 CXXFLAGS += -I$(CONFIG_RAMCLOUD_ROOT)/obj.master
 CXXFLAGS += -I$(CONFIG_RAMCLOUD_ROOT)/gtest/include
+CXXFLAGS += -DENABLE_RAMCLOUD
 LDFLAGS += -L$(CONFIG_RAMCLOUD_ROOT)/obj.master
 LDFLAGS	+= -Wl,-rpath,$(CONFIG_RAMCLOUD_ROOT)/obj.master
 LDLIBS  += -lramcloud

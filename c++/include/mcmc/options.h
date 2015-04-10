@@ -213,19 +213,18 @@ public:
 			("mcmc:alpha", po::value<double>(&alpha)->default_value(0.01), "alpha")
 			("mcmc:eta0", po::value<double>(&eta0)->default_value(1.0), "eta0")
 			("mcmc:eta1", po::value<double>(&eta1)->default_value(1.0), "eta1")
+			("mcmc:epsilon,e", po::value<double>(&epsilon)->default_value(0.0000001), "epsilon")
+			("mcmc:a", po::value<double>(&a)->default_value(0.01), "a")
+			("mcmc:b", po::value<double>(&b)->default_value(1024), "b")
+			("mcmc:c", po::value<double>(&c)->default_value(0.55), "c")
 
 			("mcmc:K,K", po::value<::size_t>(&K)->default_value(300), "K")
 			("mcmc:mini-batch-size,m", po::value<::size_t>(&mini_batch_size)->default_value(0), "mini_batch_size")
 			("mcmc:num-node-sample,n", po::value<::size_t>(&num_node_sample)->default_value(0), "neighbor sample size")
 			("mcmc:strategy", po::value<std::string>(&strategy)->default_value("unspecified"), "sampling strategy")
 
-			("mcmc:epsilon,e", po::value<double>(&epsilon)->default_value(0.0000001), "epsilon")
 			("mcmc:max-iteration,x", po::value<::size_t>(&max_iteration)->default_value(10000000), "max_iteration")
 			("mcmc:interval,i", po::value<::size_t>(&interval)->default_value(0), "perplexity interval")
-
-			("mcmc:a", po::value<double>(&a)->default_value(0.01), "a")
-			("mcmc:b", po::value<double>(&b)->default_value(1024), "b")
-			("mcmc:c", po::value<double>(&c)->default_value(0.55), "c")
 
 			("mcmc:num-updates,u", po::value<::size_t>(&num_updates)->default_value(1000), "num_updates")
 			("mcmc:held-out-ratio,h", po::value<double>(&held_out_ratio)->default_value(0.0), "held_out_ratio")
@@ -261,14 +260,14 @@ public:
 			std::cout << desc << std::endl;
 		}
 
-		run.mcmc_stochastical = vm.count("mcmc-st") > 0;
-		run.mcmc_batch = vm.count("mcmc-b") > 0;
+		run.mcmc_stochastical = vm.count("run:stochastical") > 0;
+		run.mcmc_batch = vm.count("run:batch") > 0;
 #ifdef ENABLE_OPENCL
-		run.mcmc_stochastical_cl = vm.count("mcmc-st-cl") > 0;
-		run.mcmc_batch_cl = vm.count("mcmc-b-cl") > 0;
+		run.mcmc_stochastical_cl = vm.count("run:stochastical-opencl") > 0;
+		run.mcmc_batch_cl = vm.count("run:batch-opencl") > 0;
 #endif
 #ifdef ENABLE_DISTRIBUTED
-		run.mcmc_stochastical_distr = vm.count("mcmc-st-d") > 0;
+		run.mcmc_stochastical_distr = vm.count("run:stochastical-distributed") > 0;
 #endif
 	}
 
