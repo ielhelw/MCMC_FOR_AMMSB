@@ -141,14 +141,14 @@ public:
 
 
 	virtual ~MCMCSamplerStochasticDistributed() {
-		(void)MPI_Finalize();
-		std::cerr << "FIXME: close off d-kv-store" << std::endl;
-
+		// std::cerr << "FIXME: close off d-kv-store" << std::endl;
 		delete d_kv_store;
 
 		for (auto r : threadRandom) {
 			delete r;
 		}
+
+		(void)MPI_Finalize();
 	}
 
 
@@ -552,7 +552,7 @@ protected:
 
 			std::vector<std::vector<int>> subminibatch(mpi_size);
 
-			::size_t upper_bound = (nodes.size() + 1 - mpi_size) / mpi_size;
+			::size_t upper_bound = (nodes.size() + mpi_size - 1) / mpi_size;
 			std::unordered_set<int> unassigned;
 			for (auto n: nodes) {
 				::size_t owner = node_owner(n);
@@ -562,7 +562,13 @@ protected:
 					subminibatch[owner].push_back(n);
 				}
 			}
-			std::cerr << "#nodes " << nodes.size() << " #unassigned " << unassigned.size() << std::endl;
+			std::cerr << "#nodes " << nodes.size() << " #unassigned " << unassigned.size() << " upb " << upper_bound << std::endl;
+
+			std::cerr << "subminibatch[" << subminibatch.size() << "] = [";
+			for (auto s : subminibatch) {
+				std::cerr << s.size() << " ";
+			}
+			std::cerr << "]" << std::endl;
 
 			::size_t i = 0;
 			for (auto n: unassigned) {
