@@ -59,7 +59,8 @@ BOOST_ROOT = $(dir $(BOOST_INCLUDE))
 endif
 ifeq (1, $(CONFIG_DISTRIBUTED))
 CXXFLAGS += -DENABLE_DISTRIBUTED
-CXXFLAGS += -Wno-literal-suffix		# OpenMPI requires this
+# OpenMPI requires this
+CXXFLAGS += -Wno-literal-suffix
 endif
 
 ifneq (, $(OPENCL_ROOT))
@@ -86,13 +87,17 @@ ifdef USE_MUDFLAP
 LD_FLAGS_LIB_SHARED += -lmudflapth -rdynamic
 endif
 
+ifdef USE_ADDRESS_SANTIZER
+CXXFLAGS += -fsanitize=address
+LDFLAGS += -fsanitize=address
+endif
+
 AR_FLAGS	= rc
 
 ifneq (, $(BOOST_ROOT))
 LDFLAGS += -L$(BOOST_ROOT)/lib
 endif
 LDLIBS	+= -lboost_system$(BOOST_SUFFIX)
-LDLIBS	+= -lboost_thread$(BOOST_SUFFIX)
 LDLIBS	+= -lboost_filesystem$(BOOST_SUFFIX)
 LDLIBS	+= -lboost_program_options$(BOOST_SUFFIX)
 

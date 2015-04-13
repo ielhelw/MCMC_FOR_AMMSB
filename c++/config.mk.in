@@ -5,6 +5,7 @@ CONFIG_OPENMP		= 0
 CONFIG_RAMCLOUD_ROOT	=
 CONFIG_RDMA		=
 CONFIG_DISTRIBUTED	=
+USE_ADDRESS_SANITIZER	=
 # DAS:
 # module load gcc/4.8.1
 # module load boost/1.54.0

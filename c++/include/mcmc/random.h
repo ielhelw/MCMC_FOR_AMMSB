@@ -39,7 +39,17 @@ public:
 		xorshift_state[1] = seed + 1;
 #endif
 		srand(seed);
-		std::cerr << "Random seed " << seed << std::endl;
+		std::cerr << "Random seed [" << xorshift_state[0] << "," << xorshift_state[1] << "]" << std::endl;
+	}
+
+	Random(unsigned int seed_hi, unsigned int seed_lo) {
+#ifndef RANDOM_SYSTEM
+		if (seed_lo == 0) throw NumberFormatException("Random seed value 0 not allowed"); // zero value not allowed
+		xorshift_state[0] = seed_lo;
+		xorshift_state[1] = seed_hi;
+#endif
+		srand(seed_lo ^ seed_hi);
+		std::cerr << "Random seed [" << xorshift_state[0] << "," << xorshift_state[1] << "]" << std::endl;
 	}
 
 	virtual ~Random() {

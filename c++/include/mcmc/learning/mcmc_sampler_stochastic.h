@@ -348,7 +348,7 @@ public:
 				int node = node_vector[n];
 				t_sample_neighbor_nodes.start();
 				// sample a mini-batch of neighbors
-				NeighborSet neighbors = sample_neighbor_nodes(num_node_sample, node);
+				NeighborSet neighbors = sample_neighbor_nodes(num_node_sample, node, kernelRandom);
 				t_sample_neighbor_nodes.stop();
 
                 // std::cerr << "Random seed " << std::hex << "0x" << kernelRandom->seed(0) << ",0x" << kernelRandom->seed(1) << std::endl << std::dec;
@@ -693,7 +693,7 @@ protected:
 #endif
 
 	// TODO FIXME make VertexSet an out parameter
-    NeighborSet sample_neighbor_nodes(::size_t sample_size, int nodeId) {
+    NeighborSet sample_neighbor_nodes(::size_t sample_size, int nodeId, Random::Random *rnd) {
         /**
         Sample subset of neighborhood nodes.
          */
@@ -751,7 +751,7 @@ protected:
 			int neighborId;
 			Edge edge(0, 0);
 			do {
-				neighborId = kernelRandom->randint(0, N - 1);
+				neighborId = rnd->randint(0, N - 1);
 				edge = Edge(std::min(nodeId, neighborId), std::max(nodeId, neighborId));
 				// std::cerr << std::fixed << std::setprecision(12) << "node " << nodeId << " neighbor " << neighborId << " peer " << ! (edge.in(held_out_set) || edge.in(test_set)) << " randint " << neighborId << " seed " << kernelRandom->state() << std::endl;
 			} while (neighborId == nodeId

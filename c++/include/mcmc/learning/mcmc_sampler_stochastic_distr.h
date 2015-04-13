@@ -121,6 +121,8 @@ public:
 		throw MCMCException("No support for Python Efficiency compatibility");
 #endif
 
+		std::cerr << "***************** FIXME: make an array of kernelRandoms, one for each of the OpenMP threads" << std::endl;
+
 		t_outer = timer::Timer("  outer");
 		t_perplexity = timer::Timer("  perplexity");
 		t_mini_batch = timer::Timer("  sample_mini_batch");
@@ -129,8 +131,11 @@ public:
 		t_update_phi = timer::Timer("  update_phi");
 		t_update_pi = timer::Timer("  update_pi");
 		t_update_beta = timer::Timer("  update_beta");
-		t_pi_read_node = timer::Timer("  load minibatch pi");
-		t_pi_read_neighbor = timer::Timer("  load neighbor pi");
+		t_load_pi_minibatch = timer::Timer("  load minibatch pi");
+		t_load_pi_neighbor = timer::Timer("  load neighbor pi");
+		t_store_pi_minibatch = timer::Timer("  store minibatch pi");
+		t_broadcast_beta = timer::Timer("  broadcast beta");
+		t_deploy_minibatch = timer::Timer("  deploy minibatch");
 		timer::Timer::setTabular(true);
 	}
 
@@ -140,23 +145,19 @@ public:
 		std::cerr << "FIXME: close off d-kv-store" << std::endl;
 
 		delete d_kv_store;
+
+		for (auto r : threadRandom) {
+			delete r;
+		}
 	}
 
 
 	virtual void init() {
 		int r;
 
-		int provided;
-		r = MPI_Init_thread(NULL, NULL, MPI_THREAD_MULTIPLE, &provided);
-		mpi_error_test(r, "MPI_Init_thread() fails");
-		if (provided < MPI_THREAD_MULTIPLE) {
-#ifdef NOT_NOW_NEED_TO_RUN_VALGRIND
-			mpi_error_test(MPI_ERR_ARG, "No multithreaded support: provide " +
-						   boost::lexical_cast<std::string>(provided));
-#else
-			std::cerr << "No multithread MPI support. Works only for sequential runs" << std::endl;
-#endif
-		}
+		// In an OpenMP program: no need for thread support
+		r = MPI_Init(NULL, NULL);
+		mpi_error_test(r, "MPI_Init() fails");
 
 		r = MPI_Comm_set_errhandler(MPI_COMM_WORLD, MPI_ERRORS_RETURN);
 		mpi_error_test(r, "MPI_Comm_set_errhandler fails");
@@ -165,9 +166,6 @@ public:
 		mpi_error_test(r, "MPI_Comm_size() fails");
 		r = MPI_Comm_rank(MPI_COMM_WORLD, &mpi_rank);
 		mpi_error_test(r, "MPI_Comm_rank() fails");
-
-		// Make kernelRandom init depend on mpi_rank
-		kernelRandom = new Random::Random((mpi_rank + 1) * 42);
 
 		// d_kv_store = new DKV::DKVRamCloud::DKVStoreRamCloud();
 		d_kv_store = new DKV::DKVFile::DKVStoreFile();
@@ -183,6 +181,14 @@ public:
 
 		if (mpi_rank == mpi_master) {
 			init_beta();
+		}
+
+		// Make kernelRandom init depend on mpi_rank
+		delete kernelRandom;
+		kernelRandom = new Random::Random((mpi_rank + 1) * 42);
+		threadRandom.resize(max_minibatch_nodes);
+		for (::size_t i = 0; i < threadRandom.size(); i++) {
+			threadRandom[i] = new Random::Random(i, (mpi_rank + 1) * 42);
 		}
 
 		init_pi();
@@ -221,11 +227,10 @@ public:
 
         using namespace std::chrono;
 
+		std::vector<int32_t> flat_neighbors(max_minibatch_nodes * real_num_node_sample());
 		std::vector<std::vector<double>> phi_node(max_minibatch_nodes, std::vector<double>(K + 1));
 		std::vector<double *> pi_node;
-		std::vector<std::vector<double *>> pi_neighbor(max_minibatch_nodes,
-													   std::vector<double *>(real_num_node_sample(),
-																			 new double[K + 1]));
+		std::vector<double *> pi_neighbor(max_minibatch_nodes * real_num_node_sample());
 
 		t_start = clock();
         while (step_count < max_iteration && ! is_converged()) {
@@ -239,46 +244,64 @@ public:
 				check_perplexity();
 			}
 
+			t_broadcast_beta.start();
 			int r = MPI_Bcast(beta.data(), beta.size() * sizeof beta[0], MPI_DOUBLE, mpi_master, MPI_COMM_WORLD);
 			mpi_error_test(r, "MPI_Bcast of beta fails");
+			t_broadcast_beta.stop();
 
+			t_deploy_minibatch.start();
 			std::vector<int32_t> nodes_vector;
 			EdgeSample edgeSample = deploy_mini_batch(&nodes_vector);
+			t_deploy_minibatch.stop();
+
+			// ************ load minibatch node pi from D-KV store **************
+            t_load_pi_minibatch.start();
+			pi_node.resize(nodes_vector.size());
+            d_kv_store->ReadKVRecords(pi_node, nodes_vector, DKV::RW_MODE::READ_ONLY);
+            t_load_pi_minibatch.stop();
+
+			// ************ do in parallel at each host
+			// std::cerr << "Sample neighbor nodes" << std::endl;
+			// FIXME: nodes_in_batch should generate a vector, not an OrderedVertexSet
+			t_sample_neighbor_nodes.start();
+			pi_neighbor.resize(nodes_vector.size() * real_num_node_sample());
+			flat_neighbors.resize(nodes_vector.size() * real_num_node_sample());
+#pragma omp parallel for
+			for (::size_t i = 0; i < nodes_vector.size(); ++i) {
+				int node = nodes_vector[i];
+				// sample a mini-batch of neighbors
+				NeighborSet neighbors = sample_neighbor_nodes(num_node_sample, node,
+															  threadRandom[i]);
+				assert(neighbors.size() == real_num_node_sample());
+				flat_neighbors.insert(flat_neighbors.begin() + i * real_num_node_sample(),
+									  neighbors.begin(), neighbors.end());
+				assert(flat_neighbors.size() >= nodes_vector.size() * real_num_node_sample());
+			}
+			t_sample_neighbor_nodes.stop();
+			// Why: ?????
+			flat_neighbors.resize(nodes_vector.size() * real_num_node_sample());
+
+			// ************ load neighor pi from D-KV store **********
+			t_load_pi_neighbor.start();
+			d_kv_store->ReadKVRecords(pi_neighbor,
+									  flat_neighbors,
+									  DKV::RW_MODE::READ_ONLY);
+			t_load_pi_neighbor.stop();
 
 			double eps_t  = a * std::pow(1 + step_count / b, -c);	// step size
 			// double eps_t = std::pow(1024+step_count, -0.5);
 
-			// ************ load our pi from D-KV store **************
-            t_pi_read_node.start();
-			pi_node.resize(nodes_vector.size());
-            d_kv_store->ReadKVRecords(pi_node, nodes_vector, DKV::RW_MODE::READ_ONLY);
-            t_pi_read_node.stop();
-			// ************ do in parallel at each host
-			// std::cerr << "Sample neighbor nodes" << std::endl;
-			// FIXME: nodes_in_batch should generate a vector, not an OrderedVertexSet
+			t_update_phi.start();
 #pragma omp parallel for
 			for (::size_t i = 0; i < nodes_vector.size(); ++i) {
 				int node = nodes_vector[i];
-				t_sample_neighbor_nodes.start();
-				// sample a mini-batch of neighbors
-				NeighborSet neighbors = sample_neighbor_nodes(num_node_sample, node);
-				t_sample_neighbor_nodes.stop();
-
-                // ************ load neighor pi from D-KV store **********
-                t_pi_read_neighbor.start();
-#ifdef NEIGHBOR_SET_IS_VECTOR
-                d_kv_store->ReadKVRecords(pi_neighbor[i], neighbors, DKV::RW_MODE::READ_ONLY);
-#else
-				std::vector<int32_t> neighbor_vector(neighbors.begin(), neighbors.end());
-                d_kv_store->ReadKVRecords(pi_neighbor[i], neighbor_vector, DKV::RW_MODE::READ_ONLY);
-#endif
-                t_pi_read_neighbor.stop();
-
                 // std::cerr << "Random seed " << std::hex << "0x" << kernelRandom->seed(0) << ",0x" << kernelRandom->seed(1) << std::endl << std::dec;
-				t_update_phi.start();
-				update_phi(&phi_node[i], node, pi_node[i], neighbors, pi_neighbor[i], eps_t);
-				t_update_phi.stop();
+				update_phi(&phi_node[i], node, pi_node[i],
+						   flat_neighbors.begin() + i + real_num_node_sample(),
+						   pi_neighbor.begin() + i * real_num_node_sample(),
+						   eps_t);
 			}
+			t_update_phi.stop();
 
 			// all synchronize with barrier: ensure we read pi/phi_sum from current iteration
 			MPI_Barrier(MPI_COMM_WORLD);
@@ -290,7 +313,9 @@ public:
 				pi_from_phi(pi_node[i], phi_node[i]);
 			}
 			// std::cerr << "write back phi/pi after update" << std::endl;
+			t_store_pi_minibatch.start();
 			d_kv_store->WriteKVRecords(nodes_vector, constify(pi_node));
+			t_store_pi_minibatch.stop();
 			d_kv_store->PurgeKVRecords();
 
 			// all synchronize with barrier
@@ -319,12 +344,6 @@ public:
 			check_perplexity();
 		}
 
-		for (auto &p : pi_neighbor) {
-			for (auto &n : p) {
-				delete[] n;
-			}
-		}
-
 		timer::Timer::printHeader(std::cout);
 		std::cout << t_outer << std::endl;
 		std::cout << t_perplexity << std::endl;
@@ -334,8 +353,11 @@ public:
 		std::cout << t_update_phi << std::endl;
 		std::cout << t_update_pi << std::endl;
 		std::cout << t_update_beta << std::endl;
-		std::cout << t_pi_read_node << std::endl;
-		std::cout << t_pi_read_neighbor << std::endl;
+		std::cout << t_load_pi_minibatch << std::endl;
+		std::cout << t_load_pi_neighbor << std::endl;
+		std::cout << t_store_pi_minibatch << std::endl;
+		std::cout << t_broadcast_beta << std::endl;
+		std::cout << t_deploy_minibatch << std::endl;
 	}
 
 
@@ -597,7 +619,8 @@ protected:
 
     void update_phi(std::vector<double> *phi_node,	// out parameter
 					int i, const double *pi_node,
-					const NeighborSet &neighbors, const std::vector<double *> &pi,
+					const std::vector<int32_t>::iterator &neighbors,
+					const std::vector<double *>::iterator &pi,
                     double eps_t) {
 		if (false) {
 			std::cerr << "update_phi pre ";
@@ -611,9 +634,9 @@ protected:
 				std::cerr << std::fixed << std::setprecision(12) << pi_node[k] << " ";
 			}
 			std::cerr << std::endl;
-			::size_t ix = 0;
-			for (auto n: neighbors) {
-				std::cerr << "pi[" << n << "] ";
+			for (::size_t ix = 0; ix < real_num_node_sample(); ix++) {
+				int32_t neighbor = neighbors[ix];
+				std::cerr << "pi[" << neighbor << "] ";
 				for (::size_t k = 0; k < K; k++) {
 					std::cerr << std::fixed << std::setprecision(12) << pi[ix][k] << " ";
 				}
@@ -626,8 +649,8 @@ protected:
         std::vector<double> grads(K, 0.0);	// gradient for K classes
 		// std::vector<double> phi_star(K);					// temp vars
 
-		::size_t ix = 0;
-		for (auto neighbor: neighbors) {
+		for (::size_t ix = 0; ix < real_num_node_sample(); ix++) {
+			int32_t neighbor = neighbors[ix];
 			if (i != neighbor) {
 				int y_ab = 0;		// observation
 				Edge edge(std::min(i, neighbor), std::max(i, neighbor));
@@ -927,6 +950,8 @@ protected:
 
 	DKV::DKVStoreInterface *d_kv_store;
 
+	std::vector<Random::Random *> threadRandom;
+
 	timer::Timer t_outer;
 	timer::Timer t_perplexity;
 	timer::Timer t_mini_batch;
@@ -935,8 +960,11 @@ protected:
 	timer::Timer t_update_phi;
 	timer::Timer t_update_pi;
 	timer::Timer t_update_beta;
-	timer::Timer t_pi_read_node;
-	timer::Timer t_pi_read_neighbor;
+	timer::Timer t_load_pi_minibatch;
+	timer::Timer t_load_pi_neighbor;
+	timer::Timer t_store_pi_minibatch;
+	timer::Timer t_broadcast_beta;
+	timer::Timer t_deploy_minibatch;
 
 	clock_t	t_start;
 	std::vector<double> timings;

@@ -50,6 +50,7 @@ class DKVStoreInterface {
    * Populate the cache area with the values belonging to @argument keys,
    * in the same order.
    * @return pointers into our cached area.
+   * @reentrant: no
    */
   virtual void ReadKVRecords(std::vector<ValueType *> &cache,
 							 const std::vector<KeyType> &key,
@@ -57,17 +58,20 @@ class DKVStoreInterface {
 
   /**
    * Write the values that belong to new keys
+   * @reentrant: no
    */
   virtual void WriteKVRecords(const std::vector<KeyType> &key,
                               const std::vector<const ValueType *> &value) = 0;
 
   /**
    * Write back the values that belong to rw-cached keys
+   * @reentrant: no
    */
   virtual void FlushKVRecords(const std::vector<KeyType> &key) = 0;
 
   /**
    * Purge the cache area
+   * @reentrant: no
    */
   virtual void PurgeKVRecords() = 0;
 

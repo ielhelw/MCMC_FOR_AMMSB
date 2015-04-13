@@ -10,7 +10,7 @@
 #include "mcmc/learning/mcmc_clsampler_stochastic.h"
 #endif
 #ifdef ENABLE_DISTRIBUTED
-#include "mcmc/learning/mcmc_sampler_stochastic-distr.h"
+#include "mcmc/learning/mcmc_sampler_stochastic_distr.h"
 #endif
 #include "mcmc/learning/mcmc_sampler_batch.h"
 #include "mcmc/learning/variational_inference_stochastic.h"
