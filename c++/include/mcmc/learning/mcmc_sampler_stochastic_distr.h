@@ -245,7 +245,7 @@ public:
 			}
 
 			t_broadcast_beta.start();
-			int r = MPI_Bcast(beta.data(), beta.size() * sizeof beta[0], MPI_DOUBLE, mpi_master, MPI_COMM_WORLD);
+			int r = MPI_Bcast(beta.data(), beta.size(), MPI_DOUBLE, mpi_master, MPI_COMM_WORLD);
 			mpi_error_test(r, "MPI_Bcast of beta fails");
 			t_broadcast_beta.stop();
 
