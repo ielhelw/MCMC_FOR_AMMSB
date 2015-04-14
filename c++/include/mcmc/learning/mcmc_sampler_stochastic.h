@@ -343,7 +343,6 @@ public:
 			// std::cerr << "Sample neighbor nodes" << std::endl;
 			// FIXME: nodes_in_batch should generate a vector, not an OrderedVertexSet
 			std::vector<int> node_vector(nodes.begin(), nodes.end());
-#pragma omp parallel for
 			for (::size_t n = 0; n < node_vector.size(); ++n) {
 				int node = node_vector[n];
 				t_sample_neighbor_nodes.start();

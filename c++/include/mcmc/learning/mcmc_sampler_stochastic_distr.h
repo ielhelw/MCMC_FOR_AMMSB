@@ -8,7 +8,91 @@
 #include <algorithm>	// min, max
 #include <chrono>
 
-#include <mpi.h>
+#ifdef ENABLE_DISTRIBUTED
+#  include <mpi.h>
+#else
+
+#define MPI_SUCCESS		0
+
+typedef int MPI_Comm;
+#define MPI_COMM_WORLD	0
+
+enum MPI_ERRORS {
+   	MPI_ERRORS_RETURN,
+   	MPI_ERRORS_ARE_FATAL,
+};
+
+enum MPI_Datatype {
+	MPI_INT                    = 0x4c000405,
+	MPI_LONG                   = 0x4c000407,
+	MPI_DOUBLE                 = 0x4c00080b,
+	MPI_BYTE                   = 0x4c00010d,
+};
+
+int MPI_Init(int *argc, char ***argv) {
+	return MPI_SUCCESS;
+}
+
+int MPI_Finalize() {
+	return MPI_SUCCESS;
+}
+
+int MPI_Bcast(void *buffer, int count, MPI_Datatype datatype,
+			  int root, MPI_Comm comm) {
+	return MPI_SUCCESS;
+}
+
+int MPI_Barrier(MPI_Comm comm) {
+	return MPI_SUCCESS;
+}
+
+int MPI_Comm_set_errhandler(MPI_Comm comm, int mode) {
+	return MPI_SUCCESS;
+}
+
+int MPI_Comm_size(MPI_Comm comm, int *mpi_size) {
+	*mpi_size = 1;
+	return MPI_SUCCESS;
+}
+
+int MPI_Comm_rank(MPI_Comm comm, int *mpi_rank) {
+	*mpi_rank = 0;
+	return MPI_SUCCESS;
+}
+
+::size_t mpi_datatype_size(MPI_Datatype type) {
+	switch (type) {
+	case MPI_INT:
+		return sizeof(int32_t);
+	case MPI_LONG:
+		return sizeof(int64_t);
+	case MPI_DOUBLE:
+		return sizeof(double);
+	case MPI_BYTE:
+		return 1;
+	default:
+		std::cerr << "Unknown MPI datatype" << std::cerr;
+		return 0;
+	}
+}
+
+int MPI_Scatter(void *sendbuf, int sendcount, MPI_Datatype sendtype,
+				void *recvbuf, int recvcount, MPI_Datatype recvtype,
+				int root, MPI_Comm comm) {
+	memcpy(recvbuf, sendbuf, sendcount * mpi_datatype_size(sendtype));
+	return MPI_SUCCESS;
+}
+
+int MPI_Scatterv(void *sendbuf, int *sendcounts, int *displs, MPI_Datatype sendtype,
+				 void *recvbuf, int recvcount, MPI_Datatype recvtype,
+				 int root, MPI_Comm comm) {
+	return MPI_Scatter((char *)sendbuf + displs[0] * mpi_datatype_size(sendtype),
+					   sendcounts[0], sendtype,
+					   recvbuf, recvcount, recvtype,
+					   root, comm);
+}
+
+#endif
 
 #include <d-kv-store/DKVStore.h>
 #include <d-kv-store/file/DKVStoreFile.h>

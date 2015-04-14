@@ -26,9 +26,7 @@ int main(int argc, char *argv[]) {
 			&& ! args.run.mcmc_batch_cl
 #endif
 #endif
-#ifdef ENABLE_DISTRIBUTED
 			&& ! args.run.mcmc_stochastical_distr
-#endif
 			) {
 			std::cerr << "No compute device selected. Is that what you wanted?" << std::endl;
 		}
@@ -70,14 +68,12 @@ int main(int argc, char *argv[]) {
 #endif
 #endif
 
-#ifdef ENABLE_DISTRIBUTED
 		if (args.run.mcmc_stochastical_distr) {
 			std::cout << "start MCMC stochastical distributed " << std::endl;
 			MCMCSamplerStochasticDistributed mcmcSampler(args, network);
 			mcmcSampler.init();
 			mcmcSampler.run();
 		}
-#endif
 
 		if (false) {
 			std::cout << "start variational inference batch" << std::endl;

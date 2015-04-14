@@ -206,9 +206,7 @@ public:
 			("run:stochastical-opencl,S", "MCMC Stochastical OpenCL")
 			("run:batch-opencl,T", "MCMC Batch OpenCL")
 #endif
-#ifdef ENABLE_DISTRIBUTED
 			("run:stochastical-distributed,D", "MCMC Stochastical Distributed")
-#endif
 
 			("mcmc:alpha", po::value<double>(&alpha)->default_value(0.01), "alpha")
 			("mcmc:eta0", po::value<double>(&eta0)->default_value(1.0), "eta0")
@@ -266,9 +264,7 @@ public:
 		run.mcmc_stochastical_cl = vm.count("run:stochastical-opencl") > 0;
 		run.mcmc_batch_cl = vm.count("run:batch-opencl") > 0;
 #endif
-#ifdef ENABLE_DISTRIBUTED
 		run.mcmc_stochastical_distr = vm.count("run:stochastical-distributed") > 0;
-#endif
 	}
 
 	const std::vector<std::string> &getRemains() const {
@@ -315,9 +311,7 @@ public:
 		bool	mcmc_stochastical_cl;
 		bool	mcmc_batch_cl;
 #endif
-#ifdef ENABLE_DISTRIBUTED
 		bool	mcmc_stochastical_distr;
-#endif
 	} run;
 
 	std::vector<std::string> remains;
