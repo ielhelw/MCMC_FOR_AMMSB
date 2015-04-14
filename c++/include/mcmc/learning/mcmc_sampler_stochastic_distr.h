@@ -359,13 +359,24 @@ public:
 				NeighborSet neighbors = sample_neighbor_nodes(num_node_sample, node,
 															  threadRandom[i]);
 				assert(neighbors.size() == real_num_node_sample());
+#if 1
+				// Cannot use flat_neighbors.insert() because it may (concurrently)
+				// attempt to resize flat_neighbors.
+				::size_t j = i * real_num_node_sample();
+				for (auto n : neighbors) {
+					memcpy(flat_neighbors.data() + j, &n, sizeof n);
+					j++;
+				}
+#else
 				flat_neighbors.insert(flat_neighbors.begin() + i * real_num_node_sample(),
 									  neighbors.begin(), neighbors.end());
+#endif
 				assert(flat_neighbors.size() >= nodes_vector.size() * real_num_node_sample());
 			}
 			t_sample_neighbor_nodes.stop();
 			// Why: ?????
-			flat_neighbors.resize(nodes_vector.size() * real_num_node_sample());
+			// flat_neighbors.resize(nodes_vector.size() * real_num_node_sample());
+			assert(flat_neighbors.size() == nodes_vector.size() * real_num_node_sample());
 
 			// ************ load neighor pi from D-KV store **********
 			t_load_pi_neighbor.start();
