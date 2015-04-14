@@ -44,8 +44,8 @@ void DKVStoreFile::Init(::size_t value_size, ::size_t total_values,
 
   po::options_description desc("D-KV File options");
   desc.add_options()
-    ("dkv:file:filebase,b", po::value<std::string>(&file_base_)->default_value(""), "File base")
-    ("dkv:file:dir,d", po::value<std::string>(&dir_)->default_value("pi"), "Directory")
+    ("dkv:file:filebase,b", po::value<std::string>(&file_base_)->default_value("pi"), "File base")
+    ("dkv:file:dir,d", po::value<std::string>(&dir_)->default_value(""), "Directory")
     ;
 
   po::variables_map vm;
@@ -107,7 +107,7 @@ const std::string DKVStoreFile::PiFileName(KeyType node) const {
   if (dir_ != "") {
     s << dir_ << "/";
   }
-  s << file_base_;
+  s << file_base_ << "/";
   for (int digit = kMaxDigits - 1; digit > 0; --digit) {
     int h_digit = (node >> (4 * digit)) & 0xF;
     s << std::hex << h_digit << "/";
