@@ -136,6 +136,8 @@ public:
 		t_store_pi_minibatch = timer::Timer("  store minibatch pi");
 		t_broadcast_beta = timer::Timer("  broadcast beta");
 		t_deploy_minibatch = timer::Timer("  deploy minibatch");
+		t_barrier_phi = timer::Timer("  barrier to update phi");
+		t_barrier_pi = timer::Timer("  barrier to update pi");
 		timer::Timer::setTabular(true);
 	}
 
@@ -304,14 +306,18 @@ public:
 			t_update_phi.stop();
 
 			// all synchronize with barrier: ensure we read pi/phi_sum from current iteration
+			t_barrier_phi.start();
 			MPI_Barrier(MPI_COMM_WORLD);
 			mpi_error_test(r, "MPI_Barrier fails");
+			t_barrier_phi.stop();
 
 			// TODO calculate and store updated values for pi/phi_sum
+			t_update_pi.start();
 #pragma omp parallel for
 			for (::size_t i = 0; i < pi_node.size(); i++) {
 				pi_from_phi(pi_node[i], phi_node[i]);
 			}
+			t_update_pi.stop();
 			// std::cerr << "write back phi/pi after update" << std::endl;
 			t_store_pi_minibatch.start();
 			d_kv_store->WriteKVRecords(nodes_vector, constify(pi_node));
@@ -319,8 +325,10 @@ public:
 			d_kv_store->PurgeKVRecords();
 
 			// all synchronize with barrier
+			t_barrier_pi.start();
 			MPI_Barrier(MPI_COMM_WORLD);
 			mpi_error_test(r, "MPI_Barrier fails");
+			t_barrier_pi.stop();
 
 			if (mpi_rank == mpi_master) {
 				// TODO load pi/phi values for the minibatch nodes
@@ -358,6 +366,8 @@ public:
 		std::cout << t_store_pi_minibatch << std::endl;
 		std::cout << t_broadcast_beta << std::endl;
 		std::cout << t_deploy_minibatch << std::endl;
+		std::cout << t_barrier_phi << std::endl;
+		std::cout << t_barrier_pi << std::endl;
 	}
 
 
@@ -971,6 +981,8 @@ protected:
 	timer::Timer t_store_pi_minibatch;
 	timer::Timer t_broadcast_beta;
 	timer::Timer t_deploy_minibatch;
+   	timer::Timer t_barrier_phi;
+	timer::Timer t_barrier_pi;
 
 	clock_t	t_start;
 	std::vector<double> timings;
