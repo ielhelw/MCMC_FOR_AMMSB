@@ -161,7 +161,7 @@ $(TARGET_LIBS_SHARED): $(CXX_OBJECTS)
 subdirs: $(SUBDIRS)
 
 $(SUBDIRS):
-	$(MAKE) -C $@
+	$(MAKE) $(MFLAGS) -C $@
 
 runtests:
 ifeq (apps, $(findstring apps, $(SUBDIRS)))
@@ -175,7 +175,7 @@ endif
 cleansubdirs: $(CLEANSUBDIRS)
 
 $(CLEANSUBDIRS):
-	$(MAKE) -C $(@:%.clean=%) clean
+	$(MAKE) $(MFLAGS) -C $(@:%.clean=%) clean
 
 clean: cleansubdirs
 	rm -rf $(TARGETS) $(TARGETS:%=%.o) $(TARGET_LIBS_SHARED) $(TARGET_LIBS_STATIC) $(CXX_OBJECTS) $(DEPENDS) $(OBJDIR)
