@@ -110,6 +110,18 @@ int MPI_Scatterv(void *sendbuf, int *sendcounts, int *displs, MPI_Datatype sendt
 #include "mcmc/learning/learner.h"
 #include "mcmc/learning/mcmc_sampler_stochastic.h"
 
+namespace DKV { namespace TYPE {
+	enum DKV_TYPE {
+		FILE,
+#ifdef ENABLE_RAMCLOUD
+		RAMCLOUD,
+#endif
+#ifdef ENABLE_RDMA
+		RDMA,
+#endif
+	};
+} }
+
 namespace mcmc {
 namespace learning {
 
@@ -253,8 +265,58 @@ public:
 		r = MPI_Comm_rank(MPI_COMM_WORLD, &mpi_rank);
 		mpi_error_test(r, "MPI_Comm_rank() fails");
 
+		DKV::TYPE::DKV_TYPE dkv_type = DKV::TYPE::FILE;
+
+		const std::vector<std::string> &a = args.getRemains();
+		std::vector<std::string> dkv_args;
+		for (::size_t i = 0; i < a.size(); i++) {
+			if (false) {
+			} else if (i < a.size() - 1 && a[i] == "--dkv:type") {
+				i++;
+				if (false) {
+				} else if (a[i] == "file") {
+					dkv_type = DKV::TYPE::FILE;
+#ifdef ENABLE_RAMCLOUD
+				} else if (a[i] == "ramcloud") {
+					dkv_type = DKV::TYPE::RAMCLOUD;
+#endif
+#ifdef ENABLE_RDMA
+				} else if (a[i] == "rdma") {
+					dkv_type = DKV::TYPE::RDMA;
+#endif
+				} else {
+					std::cerr << "Possible values for dkv:file:" << std::endl;
+					std::cerr << "   " << "file" << std::endl;
+#ifdef ENABLE_RAMCLOUD
+					std::cerr << "   " << "ramcloud" << std::endl;
+#endif
+#ifdef ENABLE_RDMA
+					std::cerr << "   " << "rdma" << std::endl;
+#endif
+					throw mcmc::InvalidArgumentException("Unknown value \"" + a[i] +
+														 "\" for dkv:type option");
+				}
+			} else {
+				dkv_args.push_back(a[i]);
+			}
+		}
+
 		// d_kv_store = new DKV::DKVRamCloud::DKVStoreRamCloud();
-		d_kv_store = new DKV::DKVFile::DKVStoreFile();
+		switch (dkv_type) {
+		case DKV::TYPE::FILE:
+			d_kv_store = new DKV::DKVFile::DKVStoreFile();
+			break;
+#ifdef ENABLE_RAMCLOUD
+		case DKV::TYPE::RAMCLOUD:
+			d_kv_store = new DKV::DKVRamCloud::DKVStoreRamCloud();
+			break;
+#endif
+#ifdef ENABLE_RDMA
+		case DKV::TYPE::RDMA:
+			d_kv_store = new DKV::DKVRDMA::DKVStoreRDMA();
+			break;
+#endif
+		}
 
 		max_minibatch_nodes = network.minibatch_nodes_for_strategy(mini_batch_size, strategy);
 		max_minibatch_neighbors = max_minibatch_nodes * real_num_node_sample();
@@ -263,7 +325,7 @@ public:
 		d_kv_store->Init(K + 1,
 						 N,
 						 (max_minibatch_nodes + max_minibatch_neighbors + mpi_size - 1) / mpi_size,
-						 args.getRemains());
+						 dkv_args);
 
 		if (mpi_rank == mpi_master) {
 			init_beta();
@@ -352,7 +414,7 @@ public:
 			t_sample_neighbor_nodes.start();
 			pi_neighbor.resize(nodes_vector.size() * real_num_node_sample());
 			flat_neighbors.resize(nodes_vector.size() * real_num_node_sample());
-#pragma omp parallel for
+#pragma omp parallel for // num_threads (16)
 			for (::size_t i = 0; i < nodes_vector.size(); ++i) {
 				int node = nodes_vector[i];
 				// sample a mini-batch of neighbors
@@ -389,14 +451,14 @@ public:
 			// double eps_t = std::pow(1024+step_count, -0.5);
 
 			t_update_phi.start();
-#pragma omp parallel for
+#pragma omp parallel for // num_threads (16)
 			for (::size_t i = 0; i < nodes_vector.size(); ++i) {
 				int node = nodes_vector[i];
                 // std::cerr << "Random seed " << std::hex << "0x" << kernelRandom->seed(0) << ",0x" << kernelRandom->seed(1) << std::endl << std::dec;
 				update_phi(&phi_node[i], node, pi_node[i],
 						   flat_neighbors.begin() + i + real_num_node_sample(),
 						   pi_neighbor.begin() + i * real_num_node_sample(),
-						   eps_t);
+						   eps_t, threadRandom[i]);
 			}
 			t_update_phi.stop();
 
@@ -408,7 +470,7 @@ public:
 
 			// TODO calculate and store updated values for pi/phi_sum
 			t_update_pi.start();
-#pragma omp parallel for
+#pragma omp parallel for // num_threads (16)
 			for (::size_t i = 0; i < pi_node.size(); i++) {
 				pi_from_phi(pi_node[i], phi_node[i]);
 			}
@@ -732,7 +794,7 @@ protected:
 					int i, const double *pi_node,
 					const std::vector<int32_t>::iterator &neighbors,
 					const std::vector<double *>::iterator &pi,
-                    double eps_t) {
+                    double eps_t, Random::Random *rnd) {
 		if (false) {
 			std::cerr << "update_phi pre ";
 			std::cerr << "phi[" << i << "] ";
@@ -785,7 +847,7 @@ protected:
 			ix++;
 		}
 
-		std::vector<double> noise = kernelRandom->randn(K);	// random gaussian noise.
+		std::vector<double> noise = rnd->randn(K);	// random gaussian noise.
 		if (false) {
 			for (::size_t k = 0; k < K; ++k) {
 				std::cerr << "randn " << std::fixed << std::setprecision(12) << noise[k] << std::endl;
