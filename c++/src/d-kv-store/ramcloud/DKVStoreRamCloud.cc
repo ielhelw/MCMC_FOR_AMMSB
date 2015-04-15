@@ -68,12 +68,13 @@ void DKVStoreRamCloud::Init(::size_t value_size, ::size_t total_values,
 void DKVStoreRamCloud::ReadKVRecords(std::vector<ValueType *> &cache,
                                      const std::vector<KeyType> &key,
                                      RW_MODE::RWMode rw_mode) {
-  std::vector<RAMCloud::Tub<RAMCloud::ObjectBuffer> *> bufs;
   // vals place holder
-  for (auto k : key) {
-    bufs[k] = new RAMCloud::Tub<RAMCloud::ObjectBuffer>();
+  std::vector<RAMCloud::Tub<RAMCloud::ObjectBuffer> *> bufs(key.size());
+  for (::size_t i = 0; i < key.size(); ++i) {
+	// FIXME: what if key[i] is already in the cache?
+    bufs[i] = new RAMCloud::Tub<RAMCloud::ObjectBuffer>();
     if (rw_mode == RW_MODE::READ_ONLY) {
-      obj_buffer_map_[k] = bufs[k];
+      obj_buffer_map_[key[i]] = bufs[i];
     }
   }
   // batch requests
@@ -105,7 +106,7 @@ void DKVStoreRamCloud::ReadKVRecords(std::vector<ValueType *> &cache,
   for (auto e : reqs) {
     delete e;
   }
-  if (rw_mode == RW_MODE::READ_ONLY) {
+  if (rw_mode != RW_MODE::READ_ONLY) {
     for (auto b : bufs) {
       delete b;
     }
