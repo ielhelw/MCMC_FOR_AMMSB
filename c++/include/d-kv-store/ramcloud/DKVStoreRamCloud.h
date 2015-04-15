@@ -40,7 +40,7 @@ class DKVStoreRamCloud : public DKVStoreInterface {
 
   virtual void ReadKVRecords(std::vector<ValueType *> &cache,
 							 const std::vector<KeyType> &key,
-                             RW_MODE::RWMode rw_mode) = 0;
+                             RW_MODE::RWMode rw_mode);
 
   virtual void WriteKVRecords(const std::vector<KeyType> &key,
                               const std::vector<const ValueType *> &value);
