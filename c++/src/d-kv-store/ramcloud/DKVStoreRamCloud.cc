@@ -39,10 +39,10 @@ void DKVStoreRamCloud::Init(::size_t value_size, ::size_t total_values,
 
   po::options_description desc("Ramcloud options");
   desc.add_options()
-    ("ramcloud.table,t", po::value<std::string>(&table)->default_value("0.0.0.0"), "Coordinator table")
-    ("ramcloud.coordinator,c", po::value<std::string>(&host)->default_value("0.0.0.0"), "Coordinator host")
-    ("ramcloud.port,p", po::value<std::string>(&port)->default_value("1100"), "Coordinator port")
-    ("ramcloud.protocol,P", po::value<std::string>(&proto)->default_value("infrc"), "Coordinator protocol") 
+    ("ramcloud:table,t", po::value<std::string>(&table)->default_value("0.0.0.0"), "Coordinator table")
+    ("ramcloud:coordinator,c", po::value<std::string>(&host)->default_value("0.0.0.0"), "Coordinator host")
+    ("ramcloud:port,p", po::value<std::string>(&port)->default_value("1100"), "Coordinator port")
+    ("ramcloud:protocol,P", po::value<std::string>(&proto)->default_value("infrc"), "Coordinator protocol") 
     ;
 
   po::variables_map vm;

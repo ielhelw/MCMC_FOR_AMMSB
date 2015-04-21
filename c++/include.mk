@@ -111,6 +111,10 @@ LDFLAGS	+= -Wl,-rpath,$(CONFIG_RAMCLOUD_ROOT)/obj.master
 LDLIBS  += -lramcloud
 # export LD_RUN_PATH := $(LD_RUN_PATH):$(CONFIG_RAMCLOUD_ROOT)/obj.master
 endif
+ifeq (1, $(CONFIG_RDMA))
+CXXFLAGS += -DENABLE_RDMA
+LDLIBS	+= -libverbs
+endif
 
 vpath lib%.so	$(LD_LIBRARY_PATH) $(subst -L,,$(LDFLAGS))
 vpath lib%.a	$(LD_LIBRARY_PATH) $(subst -L,,$(LDFLAGS))

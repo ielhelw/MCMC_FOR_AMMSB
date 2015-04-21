@@ -217,7 +217,7 @@ protected:
 
 		//if (step_count > 1000000)
 		average_count = average_count + 1;
-		std::cerr << "average_count is: " << average_count << " ";
+		std::cout << "average_count is: " << average_count << " ";
 		return (-avg_likelihood);
 	}
 

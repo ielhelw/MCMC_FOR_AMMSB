@@ -100,7 +100,7 @@ int MPI_Scatterv(void *sendbuf, int *sendcounts, int *displs, MPI_Datatype sendt
 #include <d-kv-store/ramcloud/DKVStoreRamCloud.h>
 #endif
 #ifdef ENABLE_RDMA
-#include <d-kv-store/ramcloud/DKVStoreRamCloud.h>
+#include <d-kv-store/rdma/DKVStoreRDMA.h>
 #endif
 
 #include "mcmc/np.h"
@@ -220,20 +220,25 @@ public:
 		std::cerr << "***************** FIXME: make an array of kernelRandoms, one for each of the OpenMP threads" << std::endl;
 
 		t_outer = timer::Timer("  outer");
-		t_perplexity = timer::Timer("  perplexity");
-		t_mini_batch = timer::Timer("  sample_mini_batch");
-		t_nodes_in_mini_batch = timer::Timer("  nodes_in_mini_batch");
+		t_populate_pi           = timer::Timer("  populate pi");
+		t_perplexity            = timer::Timer("  perplexity");
+		t_rank_pi_perp          = timer::Timer("  rank pi perp");
+		t_cal_edge_likelihood   = timer::Timer("  calc edge likel");
+		t_mini_batch            = timer::Timer("  sample_mini_batch");
+		t_nodes_in_mini_batch   = timer::Timer("  nodes_in_mini_batch");
 		t_sample_neighbor_nodes = timer::Timer("  sample_neighbor_nodes");
-		t_update_phi = timer::Timer("  update_phi");
-		t_update_pi = timer::Timer("  update_pi");
-		t_update_beta = timer::Timer("  update_beta");
-		t_load_pi_minibatch = timer::Timer("  load minibatch pi");
-		t_load_pi_neighbor = timer::Timer("  load neighbor pi");
-		t_store_pi_minibatch = timer::Timer("  store minibatch pi");
-		t_broadcast_beta = timer::Timer("  broadcast beta");
-		t_deploy_minibatch = timer::Timer("  deploy minibatch");
-		t_barrier_phi = timer::Timer("  barrier to update phi");
-		t_barrier_pi = timer::Timer("  barrier to update pi");
+		t_update_phi            = timer::Timer("  update_phi");
+		t_update_pi             = timer::Timer("  update_pi");
+		t_update_beta           = timer::Timer("  update_beta");
+		t_load_pi_minibatch     = timer::Timer("  load minibatch pi");
+		t_load_pi_neighbor      = timer::Timer("  load neighbor pi");
+		t_load_pi_perp          = timer::Timer("  load perplexity pi");
+		t_store_pi_minibatch    = timer::Timer("  store minibatch pi");
+		t_purge_pi_perp         = timer::Timer("  purge perplexity pi");
+		t_broadcast_beta        = timer::Timer("  broadcast beta");
+		t_deploy_minibatch      = timer::Timer("  deploy minibatch");
+		t_barrier_phi           = timer::Timer("  barrier to update phi");
+		t_barrier_pi            = timer::Timer("  barrier to update pi");
 		timer::Timer::setTabular(true);
 	}
 
@@ -339,7 +344,9 @@ public:
 			threadRandom[i] = new Random::Random(i, (mpi_rank + 1) * 42);
 		}
 
+		t_populate_pi.start();
 		init_pi();
+		t_populate_pi.stop();
 #ifdef DOESNT_WORK_FOR_DISTRIBUTED
 		std::cout << "phi[0][0] " << phi[0][0] << std::endl;
 		if (false) {
@@ -380,6 +387,11 @@ public:
 		std::vector<double *> pi_node;
 		std::vector<double *> pi_neighbor(max_minibatch_nodes * real_num_node_sample());
 
+		int r;
+
+		r = MPI_Barrier(MPI_COMM_WORLD);
+		mpi_error_test(r, "MPI_Barrier(initial) fails");
+
 		t_start = clock();
         while (step_count < max_iteration && ! is_converged()) {
 
@@ -388,12 +400,10 @@ public:
 			//if (step_count > 200000){
 				//interval = 2;
 			//}
-			if (mpi_rank == mpi_master) {
-				check_perplexity();
-			}
+			check_perplexity();
 
 			t_broadcast_beta.start();
-			int r = MPI_Bcast(beta.data(), beta.size(), MPI_DOUBLE, mpi_master, MPI_COMM_WORLD);
+			r = MPI_Bcast(beta.data(), beta.size(), MPI_DOUBLE, mpi_master, MPI_COMM_WORLD);
 			mpi_error_test(r, "MPI_Bcast of beta fails");
 			t_broadcast_beta.stop();
 
@@ -414,7 +424,7 @@ public:
 			t_sample_neighbor_nodes.start();
 			pi_neighbor.resize(nodes_vector.size() * real_num_node_sample());
 			flat_neighbors.resize(nodes_vector.size() * real_num_node_sample());
-#pragma omp parallel for // num_threads (16)
+#pragma omp parallel for // num_threads (12)
 			for (::size_t i = 0; i < nodes_vector.size(); ++i) {
 				int node = nodes_vector[i];
 				// sample a mini-batch of neighbors
@@ -451,7 +461,7 @@ public:
 			// double eps_t = std::pow(1024+step_count, -0.5);
 
 			t_update_phi.start();
-#pragma omp parallel for // num_threads (16)
+#pragma omp parallel for // num_threads (12)
 			for (::size_t i = 0; i < nodes_vector.size(); ++i) {
 				int node = nodes_vector[i];
                 // std::cerr << "Random seed " << std::hex << "0x" << kernelRandom->seed(0) << ",0x" << kernelRandom->seed(1) << std::endl << std::dec;
@@ -464,13 +474,13 @@ public:
 
 			// all synchronize with barrier: ensure we read pi/phi_sum from current iteration
 			t_barrier_phi.start();
-			MPI_Barrier(MPI_COMM_WORLD);
-			mpi_error_test(r, "MPI_Barrier fails");
+			r = MPI_Barrier(MPI_COMM_WORLD);
+			mpi_error_test(r, "MPI_Barrier(post phi) fails");
 			t_barrier_phi.stop();
 
 			// TODO calculate and store updated values for pi/phi_sum
 			t_update_pi.start();
-#pragma omp parallel for // num_threads (16)
+#pragma omp parallel for // num_threads (12)
 			for (::size_t i = 0; i < pi_node.size(); i++) {
 				pi_from_phi(pi_node[i], phi_node[i]);
 			}
@@ -483,8 +493,8 @@ public:
 
 			// all synchronize with barrier
 			t_barrier_pi.start();
-			MPI_Barrier(MPI_COMM_WORLD);
-			mpi_error_test(r, "MPI_Barrier fails");
+			r = MPI_Barrier(MPI_COMM_WORLD);
+			mpi_error_test(r, "MPI_Barrier(post pi) fails");
 			t_barrier_pi.stop();
 
 			if (mpi_rank == mpi_master) {
@@ -505,13 +515,15 @@ public:
 			}
 		}
 
-		if (mpi_rank == mpi_master) {
-			check_perplexity();
-		}
+		check_perplexity();
 
 		timer::Timer::printHeader(std::cout);
+		std::cout << std::fixed << std::setprecision(12);
 		std::cout << t_outer << std::endl;
+		std::cout << t_populate_pi << std::endl;
 		std::cout << t_perplexity << std::endl;
+		std::cout << t_cal_edge_likelihood << std::endl;
+		std::cout << t_rank_pi_perp << std::endl;
 		std::cout << t_mini_batch << std::endl;
 		std::cout << t_nodes_in_mini_batch << std::endl;
 		std::cout << t_sample_neighbor_nodes << std::endl;
@@ -520,7 +532,9 @@ public:
 		std::cout << t_update_beta << std::endl;
 		std::cout << t_load_pi_minibatch << std::endl;
 		std::cout << t_load_pi_neighbor << std::endl;
+		std::cout << t_load_pi_perp << std::endl;
 		std::cout << t_store_pi_minibatch << std::endl;
+		std::cout << t_purge_pi_perp << std::endl;
 		std::cout << t_broadcast_beta << std::endl;
 		std::cout << t_deploy_minibatch << std::endl;
 		std::cout << t_barrier_phi << std::endl;
@@ -637,41 +651,43 @@ protected:
 
 
 	void check_perplexity() {
-		if (step_count % interval == 0) {
-			t_perplexity.start();
-			// TODO load pi for the held-out set to calculate perplexity
-			double ppx_score = cal_perplexity_held_out();
-			t_perplexity.stop();
-			std::cout << std::fixed << std::setprecision(12) << "step count: " << step_count << " perplexity for hold out set: " << ppx_score << std::endl;
-			ppxs_held_out.push_back(ppx_score);
+		if (mpi_rank == mpi_master) {
+			if (step_count % interval == 0) {
+				t_perplexity.start();
+				// TODO load pi for the held-out set to calculate perplexity
+				double ppx_score = cal_perplexity_held_out();
+				t_perplexity.stop();
+				std::cout << std::fixed << std::setprecision(12) << "step count: " << step_count << " perplexity for hold out set: " << ppx_score << std::endl;
+				ppxs_held_out.push_back(ppx_score);
 
-			clock_t t2 = clock();
-			double diff = (double)t2 - (double)t_start;
-			double seconds = diff / CLOCKS_PER_SEC;
-			timings.push_back(seconds);
-			iterations.push_back(step_count);
+				clock_t t2 = clock();
+				double diff = (double)t2 - (double)t_start;
+				double seconds = diff / CLOCKS_PER_SEC;
+				timings.push_back(seconds);
+				iterations.push_back(step_count);
 #if 0
-			if (ppx_score < 5.0) {
-				stepsize_switch = true;
-				//print "switching to smaller step size mode!"
-			}
-#endif
-		}
-
-		// write into file
-		if (step_count % 2000 == 1) {
-			if (false) {
-				std::ofstream myfile;
-				std::string file_name = "mcmc_stochastic_" + std::to_string (K) + "_num_nodes_" + std::to_string(num_node_sample) + "_us_air.txt";
-				myfile.open (file_name);
-				int size = ppxs_held_out.size();
-				for (int i = 0; i < size; i++){
-
-					//int iteration = i * 100 + 1;
-					myfile <<iterations[i]<<"    "<<timings[i]<<"    "<<ppxs_held_out[i]<<"\n";
+				if (ppx_score < 5.0) {
+					stepsize_switch = true;
+					//print "switching to smaller step size mode!"
 				}
+#endif
+			}
 
-				myfile.close();
+			// write into file
+			if (step_count % 2000 == 1) {
+				if (false) {
+					std::ofstream myfile;
+					std::string file_name = "mcmc_stochastic_" + std::to_string (K) + "_num_nodes_" + std::to_string(num_node_sample) + "_us_air.txt";
+					myfile.open (file_name);
+					int size = ppxs_held_out.size();
+					for (int i = 0; i < size; i++){
+
+						//int iteration = i * 100 + 1;
+						myfile <<iterations[i]<<"    "<<timings[i]<<"    "<<ppxs_held_out[i]<<"\n";
+					}
+
+					myfile.close();
+				}
 			}
 		}
 
@@ -785,6 +801,12 @@ protected:
 							 mpi_master, MPI_COMM_WORLD);
 			mpi_error_test(r, "MPI_Scatterv of minibatch fails");
 		}
+
+		std::cerr << "Master gives me minibatch nodes[" << my_minibatch_size << "] ";
+		for (auto n : *nodes_vector) {
+			std::cerr << n << " ";
+		}
+		std::cerr << std::endl;
 
 		return edgeSample;
 	}
@@ -1010,6 +1032,7 @@ protected:
 
 		// FIXME code duplication w/ update_beta
 		// Is there also code duplication w/ update_phi?
+		t_rank_pi_perp.start();
 		std::unordered_map<int, int> node_rank;
 		std::vector<int> nodes;
 		for (auto edge : data) {
@@ -1028,23 +1051,28 @@ protected:
 			}
 			assert(node_rank.size() == nodes.size());
 		}
+		t_rank_pi_perp.stop();
+		t_load_pi_perp.start();
 		std::vector<double *> pi(node_rank.size());
 		d_kv_store->ReadKVRecords(pi, nodes, DKV::RW_MODE::READ_ONLY);
+		t_load_pi_perp.stop();
 
 		::size_t i = 0;
 		for (auto edge : data) {
 			const Edge &e = edge.first;
 			int a = node_rank[e.first];
 			int b = node_rank[e.second];
+			t_cal_edge_likelihood.start();
 			double edge_likelihood = cal_edge_likelihood(pi[a], pi[b],
 														 edge.second, beta);
+			t_cal_edge_likelihood.stop();
 			if (std::isnan(edge_likelihood)) {
 				std::cerr << "edge_likelihood is NaN; potential bug" << std::endl;
 			}
 
 			//cout<<"AVERAGE COUNT: " <<average_count;
 			ppx_for_heldout[i] = (ppx_for_heldout[i] * (average_count-1) + edge_likelihood)/(average_count);
-			// std::cerr << std::fixed << std::setprecision(12) << e << " in? " << (e.in(network.get_linked_edges()) ? "True" : "False") << " -> " << edge_likelihood << " av. " << average_count << " ppx[" << i << "] " << ppx_for_heldout[i] << std::endl;
+			// std::cout << std::fixed << std::setprecision(12) << e << " in? " << (e.in(network.get_linked_edges()) ? "True" : "False") << " -> " << edge_likelihood << " av. " << average_count << " ppx[" << i << "] " << ppx_for_heldout[i] << std::endl;
 			// assert(edge->second == e.in(network.get_linked_edges()));
 			if (edge.second) {
 				link_count++;
@@ -1066,9 +1094,11 @@ protected:
 			i++;
 		}
 
+		t_purge_pi_perp.start();
 		d_kv_store->PurgeKVRecords();
+		t_purge_pi_perp.stop();
 
-		// std::cerr << std::setprecision(12) << "ratio " << link_ratio << " count: link " << link_count << " " << link_likelihood << " non-link " << non_link_count << " " << non_link_likelihood << std::endl;
+		// std::cout << std::setprecision(12) << "ratio " << link_ratio << " count: link " << link_count << " " << link_likelihood << " non-link " << non_link_count << " " << non_link_likelihood << std::endl;
 
 		// weight each part proportionally.
 		/*
@@ -1084,9 +1114,9 @@ protected:
 		if (true) {
 			double avg_likelihood1 = link_ratio * (link_likelihood / link_count) + \
 										 (1.0 - link_ratio) * (non_link_likelihood / non_link_count);
-			std::cerr << std::fixed << std::setprecision(12) << avg_likelihood << " " << (link_likelihood / link_count) << " " << link_count << " " << \
+			std::cout << std::fixed << std::setprecision(12) << avg_likelihood << " " << (link_likelihood / link_count) << " " << link_count << " " << \
 				(non_link_likelihood / non_link_count) << " " << non_link_count << " " << avg_likelihood1 << std::endl;
-			// std::cerr << "perplexity score is: " << exp(-avg_likelihood) << std::endl;
+			// std::cout << "perplexity score is: " << exp(-avg_likelihood) << std::endl;
 		}
 
 		// return std::exp(-avg_likelihood);
@@ -1094,7 +1124,7 @@ protected:
 
 		//if (step_count > 1000000)
 		average_count = average_count + 1;
-		std::cerr << "average_count is: " << average_count << " ";
+		std::cout << "average_count is: " << average_count << " ";
 		return (-avg_likelihood);
 	}
 
@@ -1126,7 +1156,10 @@ protected:
 	std::vector<Random::Random *> threadRandom;
 
 	timer::Timer t_outer;
+	timer::Timer t_populate_pi;
 	timer::Timer t_perplexity;
+	timer::Timer t_rank_pi_perp;
+	timer::Timer t_cal_edge_likelihood;
 	timer::Timer t_mini_batch;
 	timer::Timer t_nodes_in_mini_batch;
 	timer::Timer t_sample_neighbor_nodes;
@@ -1135,7 +1168,9 @@ protected:
 	timer::Timer t_update_beta;
 	timer::Timer t_load_pi_minibatch;
 	timer::Timer t_load_pi_neighbor;
+	timer::Timer t_load_pi_perp;
 	timer::Timer t_store_pi_minibatch;
+	timer::Timer t_purge_pi_perp;
 	timer::Timer t_broadcast_beta;
 	timer::Timer t_deploy_minibatch;
    	timer::Timer t_barrier_phi;

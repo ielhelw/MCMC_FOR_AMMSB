@@ -254,7 +254,8 @@ public:
 
 		remains = po::collect_unrecognized(parsed.options, po::include_positional);
 
-		if (vm.count("help") > 0) {
+		help = vm.count("help") > 0;
+		if (help) {
 			std::cout << desc << std::endl;
 		}
 
@@ -272,6 +273,8 @@ public:
 	}
 
 public:
+	bool		help;
+
 	double		alpha;
 	double		eta0;
 	double		eta1;
