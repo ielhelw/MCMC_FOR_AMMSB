@@ -61,6 +61,10 @@ static void mpi_error_test(int r, const std::string &message) {
 }
 
 
+DKVStoreRDMA::~DKVStoreRDMA() {
+}
+
+
 void DKVStoreRDMA::Init(::size_t value_size, ::size_t total_values,
                         ::size_t max_capacity,
                         const std::vector<std::string> &args) {
@@ -72,6 +76,8 @@ void DKVStoreRDMA::Init(::size_t value_size, ::size_t total_values,
 
 std::cerr << "FIXME MPI_Init reentrant" << std::endl;
   int r;
+  r = MPI_Init(NULL, NULL);
+  mpi_error_test(r, "MPI_Init() fails");
   int n;
   r = MPI_Comm_size(MPI_COMM_WORLD, &n);
   mpi_error_test(r, "MPI_Comm_size() fails");
@@ -102,31 +108,170 @@ std::cerr << "FIXME MPI_Init reentrant" << std::endl;
 
   /* connect the QPs */
   connect_qp (&res);
+
+  q_recv_front_.resize(num_servers_);
+  q_send_front_.resize(num_servers_);
+  recv_wr_.resize(max_capacity_);
+  recv_sge_.resize(max_capacity_);
 }
+
+
+void DKVStoreRDMA::check_ibv_status(int r, const struct ibv_send_wr *bad) {
+  if (r != 0) {
+    std::cerr << "IBV status " << r << " bad " << bad << std::endl;
+  }
+}
+
+
+void DKVStoreRDMA::finish_completion_queue(::size_t n) {
+  struct ibv_wc wc;
+  int r;
+  for (::size_t i = 0; i < n; i++) {
+    do {
+      r = ibv_poll_cq(res.cq, 1, &wc);
+      if (r < 0) {
+        std::cerr << "Oops, must handle wrong result cq poll" << std::endl;
+        break;
+      }
+    } while (r == 0);
+  }
+}
+
 
 void DKVStoreRDMA::ReadKVRecords(std::vector<ValueType *> &cache,
                                  const std::vector<KeyType> &key,
                                  RW_MODE::RWMode rw_mode) {
+  if (rw_mode != RW_MODE::READ_ONLY) {
+    std::cerr << "Ooppssss.......... writeable records not yet implemented" << std::endl;
+  }
+
+  // Fill the linked lists of WR requests
+  ValueType *target = cache_ + next_free_;
+  q_recv_front_.assign(num_servers_, NULL);
+  current_recv_req_ = 0;
+  assert(recv_wr_.capacity() >= key.size());
+  for (::size_t i = 0; i < key.size(); i++) {
+    ::size_t owner = HostOf(key[i]);
+    if (owner == my_rank_) {
+      // Read directly, without RDMA
+      cache[i] = res.value_.area_ + OffsetOf(key[i]);
+
+    } else {
+      cache[i] = target;
+
+      struct ibv_send_wr *wr = &recv_wr_[current_recv_req_];
+      struct ibv_sge *sge = &recv_sge_[current_recv_req_];
+      current_recv_req_++;
+
+      wr->num_sge = 1;
+      wr->sg_list = sge;
+      sge->addr   = static_cast<uint64_t>(reinterpret_cast<uintptr_t>(target));
+      sge->length = value_size_ * sizeof(ValueType);
+      sge->lkey   = res.cache_.mr_->lkey;
+
+      wr->opcode = IBV_WR_RDMA_READ;
+      wr->send_flags = 0;
+      wr->wr.rdma.remote_addr = res.peer_[i].props.value +
+                                 OffsetOf(key[i]) * sizeof(ValueType);
+      wr->wr.rdma.rkey = res.peer_[i].props.value_rkey;
+
+      wr->next = q_recv_front_[owner];
+      q_recv_front_[owner] = wr;
+
+      target += value_size_;
+    }
+  }
+
+  next_free_ += value_size_ * key.size();
+
+  // Post the linked list of WR requests
+  for (::size_t i = 0; i < num_servers_; ++i) {
+    struct ibv_send_wr *bad;
+
+    ::size_t sent_items = 0;
+    for (auto r = q_recv_front_[i]; r != NULL; r = r->next) {
+      sent_items++;
+    }
+
+    int r = ibv_post_send(res.peer_[i].qp, q_recv_front_[i], &bad);
+    check_ibv_status(r, bad);
+
+    finish_completion_queue(sent_items);
+  }
+
+  std::cerr << "FIXME: should I GC the recv/send queue items? " << std::endl;
 }
 
 void DKVStoreRDMA::FlushKVRecords(const std::vector<KeyType> &key) {
+  std::cerr << "Ooppssss.......... writeable records not yet implemented" << std::endl;
 }
 
 void DKVStoreRDMA::WriteKVRecords(const std::vector<KeyType> &key,
                                   const std::vector<const ValueType *> &value) {
+  // Fill the linked lists of SGE requests
+  q_send_front_.assign(num_servers_, NULL);
+  std::cerr << "FIXME: statically determine UPB for send items" << std::endl;
+  if (send_wr_.capacity() < key.size()) {
+    send_wr_.reserve(key.size());
+    send_sge_.reserve(key.size());
+  }
+  current_send_req_ = 0;
+  for (::size_t i = 0; i < key.size(); i++) {
+    ::size_t owner = HostOf(key[i]);
+    if (owner == my_rank_) {
+      // Write directly, without RDMA
+      ValueType *target = res.value_.area_ + OffsetOf(key[i]);
+      memcpy(target, value[i], value_size_ * sizeof(ValueType));
+
+    } else {
+      struct ibv_send_wr *wr = &send_wr_[current_send_req_];
+      struct ibv_sge *sge = &recv_sge_[current_send_req_];
+      current_send_req_++;
+
+      wr->num_sge = 1;
+      wr->sg_list = sge;
+      sge->addr = static_cast<uint64_t>(reinterpret_cast<uintptr_t>(value[i]));
+      sge->length = value_size_ * sizeof(ValueType);
+      sge->lkey = res.cache_.mr_->lkey;
+
+      wr->opcode = IBV_WR_RDMA_WRITE;
+      wr->send_flags = 0;
+      wr->wr.rdma.remote_addr = res.peer_[i].props.value +
+                                OffsetOf(key[i]) * sizeof(ValueType);
+      wr->wr.rdma.rkey = res.peer_[i].props.value_rkey;
+
+      wr->next = q_send_front_[owner];
+      q_send_front_[owner] = wr;
+    }
+  }
+
+  for (::size_t i = 0; i < num_servers_; ++i) {
+    struct ibv_send_wr *bad;
+
+    ::size_t sent_items = 0;
+    for (auto r = q_send_front_[i]; r != NULL; r = r->next) {
+      sent_items++;
+    }
+
+    int r = ibv_post_send(res.peer_[i].qp, q_send_front_[i], &bad);
+    check_ibv_status(r, bad);
+
+    finish_completion_queue(sent_items);
+  }
+
+  std::cerr << "FIXME: should I GC the recv/send queue items? " << std::endl;
 }
 
 void DKVStoreRDMA::PurgeKVRecords() {
+  next_free_ = 0;
 }
 
 int DKVStoreRDMA::HostOf(DKVStoreRDMA::KeyType key) {
   return key % num_servers_;
 }
 
-void DKVStoreRDMA::ExchangePorts() {
-}
-
-void DKVStoreRDMA::InitRDMA() {
+uint64_t DKVStoreRDMA::OffsetOf(DKVStoreRDMA::KeyType key) {
+  return key / num_servers_;
 }
 
 /******************************************************************************

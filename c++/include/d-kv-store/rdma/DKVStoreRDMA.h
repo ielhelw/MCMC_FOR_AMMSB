@@ -298,6 +298,18 @@ struct resources {
   friend class DKVStoreRDMA;
 };
 
+
+struct q_item_t {
+  q_item_t() {
+    wr.sg_list = &sg_list;
+  }
+
+  struct ibv_send_wr    wr;
+  struct ibv_sge        sg_list;
+  q_item_t             *next;
+};
+
+
 /*
  * Class description
  */
@@ -307,8 +319,7 @@ class DKVStoreRDMA : public DKVStoreInterface {
   typedef DKVStoreInterface::KeyType   KeyType;
   typedef DKVStoreInterface::ValueType ValueType;
 
-  virtual ~DKVStoreRDMA() {
-  }
+  virtual ~DKVStoreRDMA();
 
   virtual void Init(::size_t value_size, ::size_t total_values,
                     ::size_t max_capacity,
@@ -330,6 +341,7 @@ class DKVStoreRDMA : public DKVStoreInterface {
 
  private:
   int32_t HostOf(KeyType key);
+  uint64_t OffsetOf(KeyType key);
   void ExchangePorts();
   void InitRDMA();
   void modify_qp_to_init(struct ibv_qp *qp);
@@ -338,12 +350,23 @@ class DKVStoreRDMA : public DKVStoreInterface {
   void modify_qp_to_rts(struct ibv_qp *qp);
   void post_receive(struct rdma_area<ValueType> *res, struct ibv_qp *qp);
   void connect_qp(resources<ValueType> *res);
+  void check_ibv_status(int r, const struct ibv_send_wr *bad);
+  void finish_completion_queue(::size_t n);
 
   ::size_t num_servers_;
   ::size_t my_rank_;
   
   config_t config;
   resources<ValueType> res;
+
+  std::vector<ibv_send_wr> send_wr_;
+  std::vector<ibv_sge> send_sge_;
+  std::vector<ibv_send_wr> recv_wr_;
+  std::vector<ibv_sge> recv_sge_;
+  ::size_t current_recv_req_;
+  ::size_t current_send_req_;
+  std::vector<ibv_send_wr *> q_recv_front_;
+  std::vector<ibv_send_wr *> q_send_front_;
 };
 
 }   // namespace DKVRDMA
