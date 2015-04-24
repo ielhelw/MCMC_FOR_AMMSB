@@ -10,7 +10,10 @@
 
 #include <sys/uio.h>	// struct iovec
 
+#pragma GCC diagnostic ignored "-Wunused-variable"
+#pragma GCC diagnostic push
 #include <boost/thread/mutex.hpp>
+#pragma GCC diagnostic pop
 
 #include "mcmc/exception.h"
 
