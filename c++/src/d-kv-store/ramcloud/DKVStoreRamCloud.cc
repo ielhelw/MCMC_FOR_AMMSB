@@ -16,16 +16,15 @@ namespace DKVRamCloud {
 
 DKVStoreRamCloud::~DKVStoreRamCloud() {
   delete client_;
-  delete[] cache_;
 }
 
 void DKVStoreRamCloud::Init(::size_t value_size, ::size_t total_values,
-                            ::size_t max_capacity,
+                            ::size_t max_cache_capacity,
+                            ::size_t max_write_capacity,
                             const std::vector<std::string> &args) {
-  value_size_ = value_size;
-  total_values_ = total_values;
-  max_capacity_ = max_capacity;
-
+  ::DKV::DKVStoreInterface::Init(value_size, total_values,
+                                 max_cache_capacity, max_write_capacity,
+                                 args);
   std::string table;
   std::string proto;
   std::string host;
@@ -54,8 +53,6 @@ void DKVStoreRamCloud::Init(::size_t value_size, ::size_t total_values,
   std::ostringstream coordinator;
   coordinator << proto << ":host=" << host << ",port=" << port;
   std::cerr << "coordinator description: " << coordinator.str() << std::endl;
-
-  cache_ = new ValueType[max_capacity_ * value_size];
 
   client_ = new RAMCloud::RamCloud(coordinator.str().c_str());
   try {
@@ -95,8 +92,7 @@ void DKVStoreRamCloud::ReadKVRecords(std::vector<ValueType *> &cache,
     if (rw_mode == RW_MODE::READ_ONLY) {
       cache[i] = (ValueType *)(*bufs[i])->getValue();
     } else {
-      ValueType *cache_pointer = cache_ + next_free_ * value_size_;
-      next_free_++;
+      ValueType *cache_pointer = cache_buffer_.get(value_size_);
       cache[i] = cache_pointer;
       value_of_[key[i]] = cache_pointer;
       memcpy(cache[i], (*bufs[i])->getValue(), value_size_ * sizeof(ValueType));
@@ -129,12 +125,22 @@ void DKVStoreRamCloud::WriteKVRecords(const std::vector<KeyType> &key,
   }
 }
 
+std::vector<DKVStoreRamCloud::ValueType *> DKVStoreRamCloud::GetWriteKVRecords(::size_t n) {
+  std::vector<ValueType *> w(n);
+  for (::size_t i = 0; i < n; i++) {
+    w[i] = write_buffer_.get(value_size_);
+  }
+
+  return w;
+}
+
 void DKVStoreRamCloud::FlushKVRecords(const std::vector<KeyType> &key) {
   std::vector<const ValueType *> value(key.size());
   for (::size_t i = 0; i < key.size(); i++) {
     value[i] = value_of_[key[i]];
   }
   DKVStoreRamCloud::WriteKVRecords(key, value);
+  write_buffer_.reset();
 }
 
 void DKVStoreRamCloud::PurgeKVRecords() {
@@ -145,7 +151,8 @@ void DKVStoreRamCloud::PurgeKVRecords() {
   obj_buffer_map_.clear();
 
   // Clear the copied read/write buffer(s)
-  next_free_ = 0;
+  cache_buffer_.reset();
+  write_buffer_.reset();
   value_of_.clear();
 }
 

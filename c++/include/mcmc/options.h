@@ -14,6 +14,17 @@
 
 namespace mcmc {
 
+
+/**
+ * For want of a better place...
+ */
+template <typename T>
+std::string to_string(T value) {
+  std::ostringstream s;
+  s << value;
+  return s.str();
+}
+
 /**
  * utility function to parse a size_t.
  * @throw NumberFormatException if arg is malformed or out of range
@@ -44,30 +55,30 @@ inline ::size_t parse_size_t(const std::string &argString) {
 				assert(*arg >= 'A' && *arg <= 'F');
 				a = *arg - 'A' + 10;
 			}
-			if ((std::numeric_limits<::size_t>::max() - a) / base < n) {
+			if ((std::numeric_limits< ::size_t>::max() - a) / base < n) {
 				throw mcmc::NumberFormatException("Overflow in parse_size_t");
 			}
 			n = a + n * base;
 		} else if (base <= 10 && isdigit(*arg)) {
 			int a = *arg - '0';
-			if ((std::numeric_limits<::size_t>::max() - a) / base < n) {
+			if ((std::numeric_limits< ::size_t>::max() - a) / base < n) {
 				throw mcmc::NumberFormatException("Overflow in parse_size_t");
 			}
 			n = a + n * base;
 		} else if (strcasecmp(arg, "g") == 0 || strcasecmp(arg, "gb") == 0) {
-			if ((std::numeric_limits<::size_t>::max() >> 30) < n) {
+			if ((std::numeric_limits< ::size_t>::max() >> 30) < n) {
 				throw mcmc::NumberFormatException("Overflow in parse_size_t");
 			}
 			n *= 1ULL << 30;
 			break;
 		} else if (strcasecmp(arg, "m") == 0 || strcasecmp(arg, "mb") == 0) {
-			if ((std::numeric_limits<::size_t>::max() >> 20) < n) {
+			if ((std::numeric_limits< ::size_t>::max() >> 20) < n) {
 				throw mcmc::NumberFormatException("Overflow in parse_size_t");
 			}
 			n *= 1ULL << 20;
 			break;
 		} else if (strcasecmp(arg, "k") == 0 || strcasecmp(arg, "kb") == 0) {
-			if ((std::numeric_limits<::size_t>::max() >> 10) < n) {
+			if ((std::numeric_limits< ::size_t>::max() >> 10) < n) {
 				throw mcmc::NumberFormatException("Overflow in parse_size_t");
 			}
 			n *= 1ULL << 10;
@@ -216,15 +227,15 @@ public:
 			("mcmc:b", po::value<double>(&b)->default_value(1024), "b")
 			("mcmc:c", po::value<double>(&c)->default_value(0.55), "c")
 
-			("mcmc:K,K", po::value<::size_t>(&K)->default_value(300), "K")
-			("mcmc:mini-batch-size,m", po::value<::size_t>(&mini_batch_size)->default_value(0), "mini_batch_size")
-			("mcmc:num-node-sample,n", po::value<::size_t>(&num_node_sample)->default_value(0), "neighbor sample size")
+			("mcmc:K,K", po::value< ::size_t>(&K)->default_value(300), "K")
+			("mcmc:mini-batch-size,m", po::value< ::size_t>(&mini_batch_size)->default_value(0), "mini_batch_size")
+			("mcmc:num-node-sample,n", po::value< ::size_t>(&num_node_sample)->default_value(0), "neighbor sample size")
 			("mcmc:strategy", po::value<std::string>(&strategy)->default_value("unspecified"), "sampling strategy")
 
-			("mcmc:max-iteration,x", po::value<::size_t>(&max_iteration)->default_value(10000000), "max_iteration")
-			("mcmc:interval,i", po::value<::size_t>(&interval)->default_value(0), "perplexity interval")
+			("mcmc:max-iteration,x", po::value< ::size_t>(&max_iteration)->default_value(10000000), "max_iteration")
+			("mcmc:interval,i", po::value< ::size_t>(&interval)->default_value(0), "perplexity interval")
 
-			("mcmc:num-updates,u", po::value<::size_t>(&num_updates)->default_value(1000), "num_updates")
+			("mcmc:num-updates,u", po::value< ::size_t>(&num_updates)->default_value(1000), "num_updates")
 			("mcmc:held-out-ratio,h", po::value<double>(&held_out_ratio)->default_value(0.0), "held_out_ratio")
 
 			("output:dir,o", po::value<std::string>(&output_dir)->default_value("."), "output_dir")
@@ -236,9 +247,9 @@ public:
 #ifdef ENABLE_OPENCL
 			("cl:platform,p", po::value<std::string>(&openClPlatform), "OpenCL platform")
 			("cl:device,d", po::value<std::string>(&openClDevice), "OpenCL device")
-			("cl:thread-group-size,G", po::value<::size_t>(&openclGroupSize)->default_value(1), "OpenCL thread group size")
-			("cl:num-thread-groups,g", po::value<::size_t>(&openclNumGroups)->default_value(1), "num OpenCL thread groups")
-			("cl:buffer-size,b", po::value<::size_t>(&openclBufferSize)->default_value(0), "OpenCL buffer size")
+			("cl:thread-group-size,G", po::value< ::size_t>(&openclGroupSize)->default_value(1), "OpenCL thread group size")
+			("cl:num-thread-groups,g", po::value< ::size_t>(&openclNumGroups)->default_value(1), "num OpenCL thread groups")
+			("cl:buffer-size,b", po::value< ::size_t>(&openclBufferSize)->default_value(0), "OpenCL buffer size")
 #endif
 			;
 

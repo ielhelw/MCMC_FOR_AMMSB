@@ -26,15 +26,15 @@ DKVStoreFile::~DKVStoreFile() {
   if (inputFileSystem_ != NULL) {
     inputFileSystem_->close();
   }
-  delete[] cache_;
 }
 
 void DKVStoreFile::Init(::size_t value_size, ::size_t total_values,
-                        ::size_t max_capacity,
+                        ::size_t max_cache_capacity,
+                        ::size_t max_write_capacity,
                         const std::vector<std::string> &args) {
-  value_size_ = value_size;
-  total_values_ = total_values;
-  max_capacity_ = max_capacity;
+  ::DKV::DKVStoreInterface::Init(value_size, total_values,
+                                 max_cache_capacity, max_write_capacity,
+                                 args);
 
   std::cerr << "DKVStoreFile::Init args ";
   for (auto a : args) {
@@ -55,22 +55,19 @@ void DKVStoreFile::Init(::size_t value_size, ::size_t total_values,
   po::notify(vm);
 
   inputFileSystem_ = mr::FileSystem::openFileSystem(mr::FILESYSTEM::REGULAR);
-  cache_ = new ValueType[max_capacity_ * value_size];
 }
 
 void DKVStoreFile::ReadKVRecords(std::vector<ValueType *> &cache,
                                  const std::vector<KeyType> &key,
                                  RW_MODE::RWMode rw_mode) {
-  assert(next_free_ + key.size() <= max_capacity_);
   assert(cache.size() >= key.size());
   for (::size_t i = 0; i < key.size(); i++) {
-    ValueType *cache_pointer = cache_ + next_free_ * value_size_;
-    next_free_++;
+    ValueType *cache_pointer = cache_buffer_.get(value_size_);
+
     mr::FileReader *reader = inputFileSystem_->createReader(PiFileName(key[i]));
     reader->readFully(cache_pointer, value_size_ * sizeof(ValueType));
     cache[i] = cache_pointer;
     value_of_[key[i]] = cache_pointer;
-	assert(value_of_.size() <= max_capacity_);
     delete reader;
   }
 }
@@ -83,6 +80,15 @@ void DKVStoreFile::WriteKVRecords(const std::vector<KeyType> &key,
   }
 }
 
+std::vector<DKVStoreFile::ValueType *> DKVStoreFile::GetWriteKVRecords(::size_t n) {
+  std::vector<ValueType *> w(n);
+  for (::size_t i = 0; i < n; i++) {
+    w[i] = write_buffer_.get(value_size_);
+  }
+
+  return w;
+}
+
 void DKVStoreFile::FlushKVRecords(const std::vector<KeyType> &key) {
   for (::size_t i = 0; i < key.size(); ++i) {
     WriteKVRecord(key[i], value_of_[key[i]]);
@@ -90,7 +96,8 @@ void DKVStoreFile::FlushKVRecords(const std::vector<KeyType> &key) {
 }
 
 void DKVStoreFile::PurgeKVRecords() {
-  next_free_ = 0;
+  cache_buffer_.reset();
+  write_buffer_.reset();
   value_of_.clear();
 }
 

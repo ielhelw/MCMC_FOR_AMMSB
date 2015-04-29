@@ -13,12 +13,12 @@ include $(PROJECT)/include.mk
 # for clean
 TARGET_LIBS_SHARED	:= $(TARGET_SHARED) $(TARGET_SHARED).$(MAJOR) $(TARGET_SHARED).$(MAJOR).$(MINOR)
 
-.PHONY: objects
-objects:
+.PHONY: ar_obj
+ar_obj:
 	-mkdir -p $(OBJECT_DIR)
 	(cd $(OBJECT_DIR); $(AR) x ../$(TARGET_STATIC))
 
-$(TARGET_SHARED):	objects
+$(TARGET_SHARED):	ar_obj
 	$(LDSHARED) $(LD_FLAGS_LIB_SHARED) $(wildcard $(OBJECT_DIR)/*.o) -o $@.$(MAJOR).$(MINOR) -Wl,-soname,$@.$(MAJOR).$(MINOR)
 	-rm -rf $(OBJECT_DIR)
 	rm -f $@.$(MAJOR) $@

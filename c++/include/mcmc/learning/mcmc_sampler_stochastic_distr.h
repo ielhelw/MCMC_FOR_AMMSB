@@ -146,7 +146,6 @@ typedef std::vector<int> NeighborSet;
 typedef OrderedVertexSet NeighborSet;
 #endif
 
-
 /**
  * The distributed version differs in these aspects from the parallel version:
  *  - the minibatch is distributed
@@ -330,6 +329,7 @@ public:
 		d_kv_store->Init(K + 1,
 						 N,
 						 (max_minibatch_nodes + max_minibatch_neighbors + mpi_size - 1) / mpi_size,
+                         (max_minibatch_nodes + mpi_size - 1) / mpi_size,
 						 dkv_args);
 
 		if (mpi_rank == mpi_master) {
@@ -677,7 +677,7 @@ protected:
 			if (step_count % 2000 == 1) {
 				if (false) {
 					std::ofstream myfile;
-					std::string file_name = "mcmc_stochastic_" + std::to_string (K) + "_num_nodes_" + std::to_string(num_node_sample) + "_us_air.txt";
+					std::string file_name = "mcmc_stochastic_" + to_string (K) + "_num_nodes_" + to_string(num_node_sample) + "_us_air.txt";
 					myfile.open (file_name);
 					int size = ppxs_held_out.size();
 					for (int i = 0; i < size; i++){
@@ -757,7 +757,7 @@ protected:
 			for (auto n: unassigned) {
 				while (subminibatch[i].size() == upper_bound) {
 					i++;
-					assert(i < static_cast<::size_t>(mpi_size));
+					assert(i < static_cast< ::size_t>(mpi_size));
 				}
 				subminibatch[i].push_back(n);
 			}

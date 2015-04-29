@@ -140,7 +140,9 @@ class DKVWrapper {
   CHECK_DEV_LIST();
   d_kv_store_.PurgeKVRecords();
   CHECK_DEV_LIST();
-  d_kv_store_.Init(K, N, my_m * n, remains);
+  d_kv_store_.Init(K, N, my_m * n, my_m, remains);
+
+  d_kv_store_.barrier();
 
   mcmc::Random::Random random(seed);
 
@@ -154,7 +156,7 @@ class DKVWrapper {
   if (! no_populate) {
       ::size_t from = rank;
       ::size_t to   = N;
-      std::cerr << "Populate with keys " << from << ".." << to << " step " << n_hosts << std::endl;
+      std::cerr << "********* Populate with keys " << from << ".." << to << " step " << n_hosts << std::endl;
       for (::size_t i = from; i < to; i += n_hosts) {
           std::vector<double> pi = random.randn(K);
           std::vector<int32_t> k(1, static_cast<int32_t>(i));
@@ -172,14 +174,14 @@ class DKVWrapper {
   std::vector<std::vector<double *>> cache(my_m, std::vector<double *>(n));
   for (::size_t iter = 0; iter < iterations; ++iter) {
     // Vector for the neighbors
-    std::cerr << "Sample the neighbors" << std::endl;
+    std::cerr << "********* " << iter << ": Sample the neighbors" << std::endl;
     std::vector<std::vector<int32_t> *> neighbor(my_m);
     for (::size_t i = 0; i < my_m; ++i) {
       neighbor[i] = random.sampleRange(N, n);
     }
 
     {
-      std::cout << "Start reading KVs... " << std::endl;
+      std::cout << "*********" << iter << ":  Start reading KVs... " << std::endl;
       // Read the values for the neighbors
       auto t = hires::now();
       for (::size_t i = 0; i < my_m; ++i) {
@@ -190,8 +192,14 @@ class DKVWrapper {
         " thrp " << (GB(my_m * n, K) / dur.count()) << " GB/s" << std::endl;
     }
 
+    std::cout << "*********" << iter << ":  Sync... " << std::endl;
+    d_kv_store_.barrier();
+
     {
-      std::cout << "Start writing KVs... " << std::endl;
+      std::cout << "*********" << iter << ":  Start writing KVs... " << std::endl;
+      // FIXME FIXME use the cache_ area_ to store these overwrites; that is
+      // mapped at least... FIXME FIXME
+      //
       // Write new values to the KV-store
       auto t = hires::now();
       std::vector<const double *> overwrite(minibatch->size());
@@ -212,6 +220,7 @@ class DKVWrapper {
       delete n;
     }
 
+    std::cout << "*********" << iter << ":  Sync... " << std::endl;
     d_kv_store_.barrier();
   }
 
@@ -299,8 +308,10 @@ int main(int argc, char *argv[]) {
     }
 #ifdef ENABLE_RAMCLOUD
 	case DKV_TYPE::RAMCLOUD: {
+#if 0
 		DKVWrapper<DKV::DKVRamCloud::DKVStoreRamCloud> dkv_store(options, remains);
         dkv_store.run();
+#endif
 		break;
     }
 #endif

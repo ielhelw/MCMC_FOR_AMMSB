@@ -1,5 +1,6 @@
 SOURCE_SUBDIRS	=
 SOURCE_SUBDIRS	+= tinyxml2
+SOURCE_SUBDIRS	+= daslib
 SUBDIRS		=
 SUBDIRS		+= vexcl
 

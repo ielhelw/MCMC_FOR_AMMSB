@@ -62,6 +62,13 @@ CXXFLAGS += -DENABLE_DISTRIBUTED
 # OpenMPI requires this
 CXXFLAGS += -Wno-literal-suffix
 endif
+ifeq (0, $(CONFIG_NETWORKING))
+CXXFLAGS += -DDISABLE_NETWORKING
+else
+CXXFLAGS += -I$(PROJECT_HOME)/3rdparty/daslib/include
+LDFLAGS += -L$(PROJECT_HOME)/3rdparty/daslib/lib/$(shell uname -m)_$(shell uname -s)
+LDLIBS += -ldas
+endif
 
 ifneq (, $(OPENCL_ROOT))
 VEXCL		= $(PROJECT)/3rdparty/vexcl
@@ -100,6 +107,11 @@ endif
 LDLIBS	+= -lboost_system$(BOOST_SUFFIX)
 LDLIBS	+= -lboost_filesystem$(BOOST_SUFFIX)
 LDLIBS	+= -lboost_program_options$(BOOST_SUFFIX)
+ifeq (1, $(CONFIG_RDMA))
+ifneq (1, $(CONFIG_NETWORKING))
+LDLIBS	+= -lboost_thread$(BOOST_SUFFIX)
+endif
+endif
 
 ifneq (, $(CONFIG_RAMCLOUD_ROOT))
 CXXFLAGS += -I$(CONFIG_RAMCLOUD_ROOT)/src
@@ -130,9 +142,12 @@ DEPENDS = $(CXX_OBJECTS:%.o=%.d) $(TARGETS:%=$(OBJDIR)/%.d)
 .PHONY: all clean subdirs $(SUBDIRS) cleansubdirs $(CLEANSUBDIRS) depends
 .PHONY: $(TARGET_LIBS)
 
-all: $(CXX_OBJECTS) $(TARGET_LIBS) $(TARGETS) subdirs
+all: objects $(TARGET_LIBS) $(TARGETS) subdirs
 
-lib: $(CXX_OBJECTS) $(TARGET_LIBS) $(TARGETS) $(filter-out test, $(filter-out apps, $(SUBDIRS)))
+lib: objects $(TARGET_LIBS) $(TARGETS) $(filter-out test, $(filter-out apps, $(SUBDIRS)))
+
+.PHONY: objects
+objects:	$(CXX_OBJECTS)
 
 $(OBJDIR)/%.o: %.cc
 	@mkdir -p $(dir $@)

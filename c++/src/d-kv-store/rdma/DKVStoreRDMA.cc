@@ -4,55 +4,35 @@
 
 #include "d-kv-store/rdma/DKVStoreRDMA.h"
 
-#include <stdlib.h>
-#include <errno.h>
-
+#ifndef OK_TO_DEFINE_IN_CC_FILE
 #pragma GCC diagnostic ignored "-Wunused-local-typedefs"
 #pragma GCC diagnostic push
 #include <boost/program_options.hpp>
 #pragma GCC diagnostic pop
-
-#include <infiniband/verbs.h>
 
 #include <iostream>
 #include <iomanip>
 
 #include <exception>
 
-#include <mpi.h>
+// #define USE_MPI
+#if defined ENABLE_NETWORKING
+#  ifdef USE_MPI
+#    include <mpi.h>
+#  else
+#    include <mr/net/netio.h>
+#  endif
+#endif
+#endif
+
 
 namespace DKV {
 namespace DKVRDMA {
 
-config_t::config_t() : dev_name(""), ib_port(1), gid_idx(-1) {
-}
+struct ibv_device **global_dev_list = NULL;
 
-std::ostream &config_t::put(std::ostream &s) const {
-  s << " ------------------------------------------------" << std::endl;
-  s << " Device name : " << dev_name << std::endl;
-  s << " IB port : " << ib_port << std::endl;
-  if (gid_idx >= 0)
-    s << " GID index : " << gid_idx << std::endl;
-  s << " ------------------------------------------------" << std::endl <<
-    std::endl;
-  return s;
-}
-
-std::ostream &gid_t::put(std::ostream &s) const {
-  std::ios_base::fmtflags flags = s.flags();
-  s << std::hex << std::setw(2) << std::setfill('0');
-
-  ::size_t upb = sizeof gid.raw / sizeof gid.raw[0];
-  for (::size_t i = 0; i < upb - 1; i++) {
-    s << "0x" << gid.raw[i] << ":";
-  }
-  s << "0x" << gid.raw[upb - 1];
-
-  s.flags(flags);
-
-  return s;
-}
-
+#ifdef OK_TO_DEFINE_IN_CC_FILE
+#ifdef USE_MPI
 
 static void mpi_error_test(int r, const std::string &message) {
   if (r != MPI_SUCCESS) {
@@ -60,21 +40,8 @@ static void mpi_error_test(int r, const std::string &message) {
   }
 }
 
-
-DKVStoreRDMA::~DKVStoreRDMA() {
-}
-
-
-void DKVStoreRDMA::Init(::size_t value_size, ::size_t total_values,
-                        ::size_t max_capacity,
-                        const std::vector<std::string> &args) {
-  namespace po = ::boost::program_options;
-
-  value_size_ = value_size;
-  total_values_ = total_values;
-  max_capacity_ = max_capacity;
-
-std::cerr << "FIXME MPI_Init reentrant" << std::endl;
+void DKVStoreRDMA::init_networking() {
+  std::cerr << "FIXME MPI_Init reentrant" << std::endl;
   int r;
   r = MPI_Init(NULL, NULL);
   mpi_error_test(r, "MPI_Init() fails");
@@ -85,6 +52,182 @@ std::cerr << "FIXME MPI_Init reentrant" << std::endl;
   r = MPI_Comm_rank(MPI_COMM_WORLD, &n);
   mpi_error_test(r, "MPI_Comm_rank() fails");
   my_rank_ = n;
+}
+
+void DKVStoreRDMA::alltoall(const void *sendbuf, ::size_t send_item_size,
+                            void *recvbuf, ::size_t recv_item_size) {
+  int r;
+  r = MPI_Alltoall(const_cast<void *>(sendbuf), send_item_size, MPI_BYTE,
+                   recvbuf, recv_item_size, MPI_BYTE,
+                   MPI_COMM_WORLD);
+  mpi_error_test(r, "MPI conn alltoall");
+}
+
+
+void DKVStoreRDMA::barrier() {
+  int r = MPI_Barrier(MPI_COMM_WORLD);
+  mpi_error_test(r, "barrier after qp exchange");
+}
+
+#else
+
+void DKVStoreRDMA::init_networking() {
+#ifndef DISABLE_NETWORKING
+  std::string network("socket");
+  // std::string interface("ib0");
+  std::string interface("br0");
+  std::cerr << "For now, hardwire network = " << network << ", interface = " << interface << std::endl;
+
+  mr::OptionList options;
+  options.push_back(mr::Option("interface", interface));
+  network_ = mr::net::NetworkImpl::createNetwork("socket", options);
+  network_->createAllToAllConnections(rw_list_, network_->getPeers(),
+                                      mr::net::network_type::INTERMEDIATE, true);
+  num_servers_ = rw_list_.size();
+  int i = 0;
+  for (auto & iter : rw_list_) {
+    if (iter.writer == NULL && iter.reader == NULL) {
+      my_rank_ = i;
+    }
+    i++;
+  }
+
+  broadcast_.Init(network_);
+#else
+  std::cerr << "Skip the network thingy" << std::endl;
+  const char *prun_cpu_rank = getenv("PRUN_CPU_RANK");
+  const char *nhosts = getenv("NHOSTS");
+  my_rank_ = atoi(prun_cpu_rank);
+  num_servers_ = atoi(nhosts);
+#endif
+}
+
+
+#ifndef DISABLE_NETWORKING
+void DKVStoreRDMA::alltoall_leaf(const char *sendbuf, ::size_t send_item_size,
+                                 char *recvbuf, ::size_t recv_item_size,
+                                 ::size_t me, ::size_t size,
+                                 ::size_t start, ::size_t size_2pow) {
+  const bool FAKE = false;
+
+  if (me < start + size_2pow) {
+    for (::size_t p = 0; p < size_2pow; p++) {
+      ::size_t peer = start + size_2pow + (me + p) % size_2pow;
+      if (FAKE) {
+        std::cerr << me << ": subsize " << size_2pow << " start " << start << " " << ((peer >= size) ? "dont" : "") << " read/write to " << peer << std::endl;
+      } else if (peer < size) {
+        rw_list_[peer].reader->readFully(recvbuf + peer * recv_item_size,
+                                         recv_item_size);
+        rw_list_[peer].writer->write(sendbuf + peer * send_item_size,
+                                     send_item_size);
+      }
+    }
+  } else {
+    for (::size_t p = 0; p < size_2pow; p++) {
+      ::size_t peer = start + (me - p) % size_2pow;
+      if (FAKE) {
+        std::cerr << me << ": subsize " << size_2pow << " start " << start << " " << std::string((peer >= size) ? "dont" : "") << " write/read to " << peer << std::endl;
+      } else if (peer < size) {
+        rw_list_[peer].writer->write(sendbuf + peer * send_item_size,
+                                     send_item_size);
+        rw_list_[peer].reader->readFully(recvbuf + peer * recv_item_size,
+                                         recv_item_size);
+      }
+    }
+  }
+}
+#endif
+
+
+#ifndef DISABLE_NETWORKING
+void DKVStoreRDMA::alltoall_DC(const char *sendbuf, ::size_t send_item_size,
+                               char *recvbuf, ::size_t recv_item_size,
+                               ::size_t me, ::size_t size,
+                               ::size_t start, ::size_t size_2pow) {
+  if (size_2pow < 2) {
+    return;
+  }
+
+  size_2pow /= 2;
+
+  alltoall_leaf(sendbuf, send_item_size,
+                recvbuf, recv_item_size,
+                me, size, start, size_2pow);
+
+  // Divide and conquer
+  if (me < start + size_2pow) {
+    alltoall_DC(sendbuf, send_item_size,
+                recvbuf, recv_item_size,
+                me, size, start, size_2pow);
+  } else {
+    alltoall_DC(sendbuf, send_item_size,
+                recvbuf, recv_item_size,
+                me, size, start + size_2pow, size_2pow);
+  }
+}
+#endif
+
+
+void DKVStoreRDMA::alltoall(const void *sendbuf, ::size_t send_item_size,
+                            void *recvbuf, ::size_t recv_item_size) {
+  CHECK_DEV_LIST();
+#ifndef DISABLE_NETWORKING
+  ::size_t size_2pow = mr::next_2_power(num_servers_);
+
+  alltoall_DC(static_cast<const char *>(sendbuf), send_item_size,
+              static_cast<char *>(recvbuf), recv_item_size,
+              my_rank_, num_servers_, 0, size_2pow);
+#endif
+
+  // copy our own contribution by hand
+  memcpy(static_cast<char *>(recvbuf) + my_rank_ * recv_item_size,
+         static_cast<const char *>(sendbuf) + my_rank_ * send_item_size,
+         recv_item_size);
+  CHECK_DEV_LIST();
+}
+
+
+void DKVStoreRDMA::barrier() {
+#ifndef DISABLE_NETWORKING
+  int32_t dummy;
+  if (my_rank_ == 0) {
+    broadcast_.bcast_send(dummy);
+    dummy = broadcast_.reduce_rcve<int32_t>();
+  } else {
+    broadcast_.bcast_rcve(&dummy);
+    broadcast_.reduce_send(dummy);
+  }
+#endif
+}
+
+#endif
+#endif
+
+
+
+void DKVStoreRDMA::Info() const {
+  CHECK_DEV_LIST();
+}
+
+#ifdef OK_TO_DEFINE_IN_CC_FILE
+DKVStoreRDMA::~DKVStoreRDMA() {
+#ifndef DISABLE_NETWORKING
+#  ifndef USE_MPI
+	delete network_;
+#  endif
+#endif
+}
+
+void DKVStoreRDMA::Init(::size_t value_size, ::size_t total_values,
+                        ::size_t max_capacity,
+                        const std::vector<std::string> &args) {
+  CHECK_DEV_LIST();
+  namespace po = ::boost::program_options;
+
+  value_size_ = value_size;
+  total_values_ = total_values;
+  max_capacity_ = max_capacity;
+  CHECK_DEV_LIST();
 
   po::options_description desc("RDMA options");
   desc.add_options()
@@ -93,18 +236,25 @@ std::cerr << "FIXME MPI_Init reentrant" << std::endl;
     ("rdma:port", po::value(&config.ib_port),  "RDMA device port")
     ("rdma:gid",  po::value(&config.gid_idx),  "RDMA GID index")
     ;
+  CHECK_DEV_LIST();
 
   po::variables_map vm;
   po::basic_command_line_parser<char> clp(args);
   clp.options(desc);
   po::store(clp.run(), vm);
   po::notify(vm);
+  CHECK_DEV_LIST();
 
   /* print the used parameters for info*/
   std::cout << config;
+
+  init_networking();
+  CHECK_DEV_LIST();
+
   /* init all of the resources, so cleanup will be easy */
   /* create resources before using them */
-  res.Init(&config, num_servers_, value_size_, total_values_, max_capacity_);
+  res.Init(&config, my_rank_, num_servers_,
+           value_size_, total_values_, max_capacity_);
 
   /* connect the QPs */
   connect_qp (&res);
@@ -116,7 +266,7 @@ std::cerr << "FIXME MPI_Init reentrant" << std::endl;
 }
 
 
-void DKVStoreRDMA::check_ibv_status(int r, const struct ibv_send_wr *bad) {
+void DKVStoreRDMA::check_ibv_status(int r, const struct ::ibv_send_wr *bad) {
   if (r != 0) {
     std::cerr << "IBV status " << r << " bad " << bad << std::endl;
   }
@@ -124,17 +274,19 @@ void DKVStoreRDMA::check_ibv_status(int r, const struct ibv_send_wr *bad) {
 
 
 void DKVStoreRDMA::finish_completion_queue(::size_t n) {
-  struct ibv_wc wc;
+#ifndef DISABLE_NETWORKING
+  struct ::ibv_wc wc;
   int r;
   for (::size_t i = 0; i < n; i++) {
     do {
-      r = ibv_poll_cq(res.cq, 1, &wc);
+      r = ::ibv_poll_cq(res.cq, 1, &wc);
       if (r < 0) {
         std::cerr << "Oops, must handle wrong result cq poll" << std::endl;
         break;
       }
     } while (r == 0);
   }
+#endif
 }
 
 
@@ -145,6 +297,7 @@ void DKVStoreRDMA::ReadKVRecords(std::vector<ValueType *> &cache,
     std::cerr << "Ooppssss.......... writeable records not yet implemented" << std::endl;
   }
 
+#ifndef DISABLE_NETWORKING
   // Fill the linked lists of WR requests
   ValueType *target = cache_ + next_free_;
   q_recv_front_.assign(num_servers_, NULL);
@@ -159,8 +312,8 @@ void DKVStoreRDMA::ReadKVRecords(std::vector<ValueType *> &cache,
     } else {
       cache[i] = target;
 
-      struct ibv_send_wr *wr = &recv_wr_[current_recv_req_];
-      struct ibv_sge *sge = &recv_sge_[current_recv_req_];
+      struct ::ibv_send_wr *wr = &recv_wr_[current_recv_req_];
+      struct ::ibv_sge *sge = &recv_sge_[current_recv_req_];
       current_recv_req_++;
 
       wr->num_sge = 1;
@@ -186,20 +339,27 @@ void DKVStoreRDMA::ReadKVRecords(std::vector<ValueType *> &cache,
 
   // Post the linked list of WR requests
   for (::size_t i = 0; i < num_servers_; ++i) {
-    struct ibv_send_wr *bad;
+    if (i == my_rank_) {
+      // already done the memcpy
+      std::cerr << "Skip the home reads" << std::endl;
+    } else {
+      struct ::ibv_send_wr *bad;
 
-    ::size_t sent_items = 0;
-    for (auto r = q_recv_front_[i]; r != NULL; r = r->next) {
-      sent_items++;
+      ::size_t sent_items = 0;
+      for (auto r = q_recv_front_[i]; r != NULL; r = r->next) {
+        sent_items++;
+      }
+      std::cerr << "post " << sent_items << " read requests to host " << i << std::endl;
+
+      int r = ::ibv_post_send(res.peer_[i].qp, q_recv_front_[i], &bad);
+      check_ibv_status(r, bad);
+
+      finish_completion_queue(sent_items);
     }
-
-    int r = ibv_post_send(res.peer_[i].qp, q_recv_front_[i], &bad);
-    check_ibv_status(r, bad);
-
-    finish_completion_queue(sent_items);
   }
 
   std::cerr << "FIXME: should I GC the recv/send queue items? " << std::endl;
+#endif
 }
 
 void DKVStoreRDMA::FlushKVRecords(const std::vector<KeyType> &key) {
@@ -208,6 +368,7 @@ void DKVStoreRDMA::FlushKVRecords(const std::vector<KeyType> &key) {
 
 void DKVStoreRDMA::WriteKVRecords(const std::vector<KeyType> &key,
                                   const std::vector<const ValueType *> &value) {
+#ifndef DISABLE_NETWORKING
   // Fill the linked lists of SGE requests
   q_send_front_.assign(num_servers_, NULL);
   std::cerr << "FIXME: statically determine UPB for send items" << std::endl;
@@ -224,8 +385,8 @@ void DKVStoreRDMA::WriteKVRecords(const std::vector<KeyType> &key,
       memcpy(target, value[i], value_size_ * sizeof(ValueType));
 
     } else {
-      struct ibv_send_wr *wr = &send_wr_[current_send_req_];
-      struct ibv_sge *sge = &recv_sge_[current_send_req_];
+      struct ::ibv_send_wr *wr = &send_wr_[current_send_req_];
+      struct ::ibv_sge *sge = &recv_sge_[current_send_req_];
       current_send_req_++;
 
       wr->num_sge = 1;
@@ -246,23 +407,31 @@ void DKVStoreRDMA::WriteKVRecords(const std::vector<KeyType> &key,
   }
 
   for (::size_t i = 0; i < num_servers_; ++i) {
-    struct ibv_send_wr *bad;
+    if (i == my_rank_) {
+      // already done the memcpy
+      std::cerr << "Skip the home writes" << std::endl;
+    } else {
+      struct ::ibv_send_wr *bad;
 
-    ::size_t sent_items = 0;
-    for (auto r = q_send_front_[i]; r != NULL; r = r->next) {
-      sent_items++;
+      ::size_t sent_items = 0;
+      for (auto r = q_send_front_[i]; r != NULL; r = r->next) {
+        sent_items++;
+      }
+      std::cerr << "post " << sent_items << " write requests to host " << i << std::endl;
+
+      int r = ::ibv_post_send(res.peer_[i].qp, q_send_front_[i], &bad);
+      check_ibv_status(r, bad);
+
+      finish_completion_queue(sent_items);
     }
-
-    int r = ibv_post_send(res.peer_[i].qp, q_send_front_[i], &bad);
-    check_ibv_status(r, bad);
-
-    finish_completion_queue(sent_items);
   }
 
   std::cerr << "FIXME: should I GC the recv/send queue items? " << std::endl;
+#endif
 }
 
 void DKVStoreRDMA::PurgeKVRecords() {
+  CHECK_DEV_LIST();
   next_free_ = 0;
 }
 
@@ -274,6 +443,7 @@ uint64_t DKVStoreRDMA::OffsetOf(DKVStoreRDMA::KeyType key) {
   return key / num_servers_;
 }
 
+
 /******************************************************************************
  * Function: modify_qp_to_init
  *
@@ -284,13 +454,13 @@ uint64_t DKVStoreRDMA::OffsetOf(DKVStoreRDMA::KeyType key) {
  * none
  *
  * @throws
- * RDMAException(ibv_modify_qp) failure
+ * RDMAException(::ibv_modify_qp) failure
  *
  * Description
  * Transition a QP from the RESET to INIT state
  ******************************************************************************/
-void DKVStoreRDMA::modify_qp_to_init (struct ibv_qp *qp) {
-  struct ibv_qp_attr attr;
+void DKVStoreRDMA::modify_qp_to_init (struct ::ibv_qp *qp) {
+  struct ::ibv_qp_attr attr;
   int flags;
   memset (&attr, 0, sizeof (attr));
   attr.qp_state = IBV_QPS_INIT;
@@ -300,7 +470,7 @@ void DKVStoreRDMA::modify_qp_to_init (struct ibv_qp *qp) {
     IBV_ACCESS_REMOTE_WRITE;
   flags = IBV_QP_STATE | IBV_QP_PKEY_INDEX | IBV_QP_PORT |
     IBV_QP_ACCESS_FLAGS;
-  int rc = ibv_modify_qp (qp, &attr, flags);
+  int rc = ::ibv_modify_qp (qp, &attr, flags);
   if (rc != 0) {
     throw RDMAException("failed to modify QP state to INIT");
   }
@@ -319,14 +489,14 @@ void DKVStoreRDMA::modify_qp_to_init (struct ibv_qp *qp) {
  * none
  *
  * @throws
- * RDMAException(ibv_modify_qp) failure
+ * RDMAException(::ibv_modify_qp) failure
  *
  * Description
  * Transition a QP from the INIT to RTR state, using the specified QP number
  ******************************************************************************/
-void DKVStoreRDMA::modify_qp_to_rtr(struct ibv_qp *qp, uint32_t remote_qpn, uint16_t dlid,
+void DKVStoreRDMA::modify_qp_to_rtr(struct ::ibv_qp *qp, uint32_t remote_qpn, uint16_t dlid,
                       const gid_t &dgid) {
-  struct ibv_qp_attr attr;
+  struct ::ibv_qp_attr attr;
   int flags;
   memset (&attr, 0, sizeof (attr));
   attr.qp_state = IBV_QPS_RTR;
@@ -351,7 +521,7 @@ void DKVStoreRDMA::modify_qp_to_rtr(struct ibv_qp *qp, uint32_t remote_qpn, uint
   }
   flags = IBV_QP_STATE | IBV_QP_AV | IBV_QP_PATH_MTU | IBV_QP_DEST_QPN |
     IBV_QP_RQ_PSN | IBV_QP_MAX_DEST_RD_ATOMIC | IBV_QP_MIN_RNR_TIMER;
-  int rc = ibv_modify_qp (qp, &attr, flags);
+  int rc = ::ibv_modify_qp (qp, &attr, flags);
   if (rc != 0) {
     throw RDMAException("failed to modify QP state to RTR");
   }
@@ -372,9 +542,9 @@ void DKVStoreRDMA::modify_qp_to_rtr(struct ibv_qp *qp, uint32_t remote_qpn, uint
  * Description
  * Transition a QP from the RTR to RTS state
  ******************************************************************************/
-void DKVStoreRDMA::modify_qp_to_rts (struct ibv_qp *qp)
+void DKVStoreRDMA::modify_qp_to_rts (struct ::ibv_qp *qp)
 {
-  struct ibv_qp_attr attr;
+  struct ::ibv_qp_attr attr;
   int flags;
   memset (&attr, 0, sizeof (attr));
   attr.qp_state = IBV_QPS_RTS;
@@ -385,7 +555,7 @@ void DKVStoreRDMA::modify_qp_to_rts (struct ibv_qp *qp)
   attr.max_rd_atomic = 1;
   flags = IBV_QP_STATE | IBV_QP_TIMEOUT | IBV_QP_RETRY_CNT |
     IBV_QP_RNR_RETRY | IBV_QP_SQ_PSN | IBV_QP_MAX_QP_RD_ATOMIC;
-  int  rc = ibv_modify_qp (qp, &attr, flags);
+  int  rc = ::ibv_modify_qp (qp, &attr, flags);
   if (rc != 0) {
     throw RDMAException("failed to modify QP state to RTS");
   }
@@ -405,10 +575,10 @@ void DKVStoreRDMA::modify_qp_to_rts (struct ibv_qp *qp)
  * Description
  *
  ******************************************************************************/
-void DKVStoreRDMA::post_receive(struct rdma_area<ValueType> *res, struct ibv_qp *qp) {
-  struct ibv_recv_wr rr;
-  struct ibv_sge sge;
-  struct ibv_recv_wr *bad_wr;
+void DKVStoreRDMA::post_receive(struct rdma_area<ValueType> *res, struct ::ibv_qp *qp) {
+  struct ::ibv_recv_wr rr;
+  struct ::ibv_sge sge;
+  struct ::ibv_recv_wr *bad_wr = NULL;
   int rc;
   /* prepare the scatter/gather entry */
   memset (&sge, 0, sizeof (sge));
@@ -424,7 +594,7 @@ void DKVStoreRDMA::post_receive(struct rdma_area<ValueType> *res, struct ibv_qp 
   rr.sg_list = &sge;
   rr.num_sge = 1;
   /* post the Receive Request to the RQ */
-  rc = ibv_post_recv (qp, &rr, &bad_wr);
+  rc = ::ibv_post_recv (qp, &rr, &bad_wr);
   if (rc != 0) {
     throw RDMAException("failed to post RR");
   }
@@ -447,80 +617,78 @@ void DKVStoreRDMA::post_receive(struct rdma_area<ValueType> *res, struct ibv_qp 
  ******************************************************************************/
 void DKVStoreRDMA::connect_qp(struct resources<ValueType> *res) {
   int rc = 0;
-  union ibv_gid my_gid;
+  union ::ibv_gid my_gid;
   if (config.gid_idx >= 0) {
-    rc = ibv_query_gid (res->ib_ctx, config.ib_port, config.gid_idx, &my_gid);
+    rc = ::ibv_query_gid (res->ib_ctx, config.ib_port, config.gid_idx, &my_gid);
     if (rc != 0) {
       throw RDMAException("could not get gid for port " +
-                          std::to_string(config.ib_port) + ", index " +
-                          std::to_string(config.gid_idx));
+                          to_string(config.ib_port) + ", index " +
+                          to_string(config.gid_idx));
     }
   } else {
     memset (&my_gid, 0, sizeof my_gid);
   }
 
   /* exchange using o-o-b network info required to connect QPs */
-std::cerr << "FIXME: no Bcast: the QP status is personalized" << std::endl;
   std::vector<cm_con_data_t> my_con_data(num_servers_);
   for (::size_t i = 0; i < num_servers_; ++i) {
     if (i == my_rank_) {
-      std::cerr << "FIXME: What about me?" << std::endl;
+      std::cerr << "FIXME " << __LINE__ << ": What about me?" << std::endl;
+    } else {
+      cm_con_data_t *con = &my_con_data[i];
+      con->value  = (uint64_t) res->value_.area_;
+      con->cache  = (uint64_t) res->cache_.area_;
+      con->value_rkey   = res->value_.mr_->rkey;
+if (0) {
+      con->cache_rkey   = res->cache_.mr_->rkey;
+} else {
+  std::cerr << "DEBUG: skip cache region" << std::endl;
+}
+      con->qp_num = res->peer_[i].qp->qp_num;
+      con->lid    = res->peer_[i].port_attr.lid;
+      con->gid    = my_gid;
+      fprintf (stdout, "\nLocal LID[%zd] = 0x%x\n", i, res->peer_[i].port_attr.lid);
     }
-    cm_con_data_t *con = &my_con_data[i];
-    con->value  = (uint64_t) res->value_.area_;
-    con->cache  = (uint64_t) res->cache_.area_;
-    con->value_rkey   = res->value_.mr_->rkey;
-    con->cache_rkey   = res->cache_.mr_->rkey;
-    con->qp_num = res->peer_[i].qp->qp_num;
-    con->lid    = res->peer_[i].port_attr.lid;
-    con->gid    = my_gid;
-    fprintf (stdout, "\nLocal LID[%zd] = 0x%x\n", i, res->peer_[i].port_attr.lid);
   }
 
   std::vector<cm_con_data_t> remote_con_data(num_servers_);
-  int r;
-  r = MPI_Alltoall(my_con_data.data(), sizeof my_con_data[0], MPI_BYTE,
-                   remote_con_data.data(), sizeof remote_con_data[0], MPI_BYTE,
-                   MPI_COMM_WORLD);
-  mpi_error_test(r, "MPI conn alltoall");
+  alltoall(my_con_data.data(), sizeof my_con_data[0],
+		   remote_con_data.data(), sizeof remote_con_data[0]);
 
   for (::size_t i = 0; i < num_servers_; ++i) {
     if (i == my_rank_) {
-      std::cerr << "FIXME: What about me?" << std::endl;
+      std::cerr << "FIXME " << __LINE__ << ": What about me?" << std::endl;
+    } else {
+      res->peer_[i].con_data = remote_con_data[i];
+      /* save the remote side attributes, we will need it for the post SR */
+      res->peer_[i].props = remote_con_data[i];
+
+      std::cout << "Peer " << i << std::endl;
+      std::cout << remote_con_data[i];
+      if (config.gid_idx >= 0) {
+        std::cout << "  gid " << gid_t(res->peer_[i].con_data.gid) << std::endl;
+      }
+      std::cout << std::dec;
     }
-    res->peer_[i].con_data = remote_con_data[i];
-    /* save the remote side attributes, we will need it for the post SR */
-    res->peer_[i].props = remote_con_data[i];
-    std::cout << std::hex;
-    std::cout << "Remote value address = 0x" << remote_con_data[i].value << std::endl;
-    std::cout << "Remote value rkey = 0x" << remote_con_data[i].value_rkey << std::endl;
-    std::cout << "Remote cache address = 0x" << remote_con_data[i].cache << std::endl;
-    std::cout << "Remote cache rkey = 0x" << remote_con_data[i].cache_rkey << std::endl;
-    std::cout << "Remote QP number = 0x" << remote_con_data[i].qp_num << std::endl;
-    std::cout << "Remote LID = 0x" << remote_con_data[i].lid << std::endl;
-    if (config.gid_idx >= 0) {
-      std::cout << gid_t(res->peer_[i].con_data.gid) << std::endl;
-    }
-    std::cout << std::dec;
   }
 
   /* modify the QP to init */
-  for (::size_t i = 0; i < my_rank_; ++i) {
-    if (i != my_rank_) {
-      modify_qp_to_init(res->peer_[i].qp);
+  for (::size_t i = 0; i < num_servers_; ++i) {
+    if (i == my_rank_) {
+      std::cerr << "FIXME " << __LINE__ << ": What about me?" << std::endl;
     } else {
-      std::cerr << "FIXME: What about me?" << std::endl;
+      modify_qp_to_init(res->peer_[i].qp);
     }
   }
 
   // FIXME: What should we do about this? Do we _ever_ receive?
   /* let the client post RR to be prepared for incoming messages */
-  for (::size_t i = 0; i < my_rank_; ++i) {
-    if (i != my_rank_) {
+  for (::size_t i = 0; i < num_servers_; ++i) {
+    if (i == my_rank_) {
+      std::cerr << "FIXME " << __LINE__ << ": What about me?" << std::endl;
+    } else {
       post_receive(&res->value_, res->peer_[i].qp);
       post_receive(&res->cache_, res->peer_[i].qp);
-    } else {
-      std::cerr << "FIXME: What about me?" << std::endl;
     }
   }
   fprintf (stderr, "Posted receive to QP\n");
@@ -528,132 +696,33 @@ std::cerr << "FIXME: no Bcast: the QP status is personalized" << std::endl;
   std::cerr << "FIXME: do we need a barrier here?" << std::endl;
 
   /* modify the QP to RTR */
-  for (::size_t i = 0; i < my_rank_; ++i) {
-    if (i != my_rank_) {
+  for (::size_t i = 0; i < num_servers_; ++i) {
+    if (i == my_rank_) {
+      std::cerr << "FIXME " << __LINE__ << ": What about me?" << std::endl;
+    } else {
       modify_qp_to_rtr(res->peer_[i].qp,
                        res->peer_[i].con_data.qp_num,
                        res->peer_[i].con_data.lid,
                        res->peer_[i].con_data.gid);
-    } else {
-      std::cerr << "FIXME: What about me?" << std::endl;
     }
   }
   fprintf (stderr, "Modified QP state to RTR\n");
 
   std::cerr << "FIXME: do we need a barrier here?" << std::endl;
 
-  for (::size_t i = 0; i < my_rank_; ++i) {
-    modify_qp_to_rts(res->peer_[i].qp);
+  for (::size_t i = 0; i < num_servers_; ++i) {
+    if (i == my_rank_) {
+      std::cerr << "FIXME " << __LINE__ << ": What about me?" << std::endl;
+    } else {
+      modify_qp_to_rts(res->peer_[i].qp);
+    }
   }
-  fprintf (stdout, "QP state was change to RTS\n");
+  fprintf (stderr, "QP state was change to RTS\n");
 
   /* sync to make sure that both sides are in states that they can connect to prevent packet loose */
-  r = MPI_Barrier(MPI_COMM_WORLD);
-  mpi_error_test(r, "barrier after qp exchange");
-}
-
-#ifdef COPIED_EVERYTHING
-/******************************************************************************
- * Function: main
- *
- * Input
- * argc number of items in argv
- * argv command line parameters
- *
- * Output
- * none
- *
- * Returns
- * 0 on success, 1 on failure
- *
- * Description
- * Main program code
- ******************************************************************************/
-int main (const std::vector<std::string> &args) {
-  /* let the server post the sr */
-  /*  if (!config.server_name)
-      if (post_send (&res, IBV_WR_SEND))
-      {
-      fprintf (stderr, "failed to post sr\n");
-      goto main_exit;
-      }*/
-  /* in both sides we expect to get a completion */
-  /*  if (poll_completion (&res))
-      {
-      fprintf (stderr, "poll completion failed\n");
-      goto main_exit;
-      }*/
-  /* after polling the completion we have the message in the client buffer too */
-  if (config.server_name)
-    fprintf (stdout, "Message is: '%s'\n", res.buf);
-  else
-  {
-    /* setup server buffer with read message */
-    strcpy (res.buf, RDMAMSGR);
-  }
-  /* Sync so we are sure server side has data ready before client tries to read it */
-  if (sock_sync_data (res.sock, 1, "R", &temp_char))	/* just send a dummy char back and forth */
-  {
-    fprintf (stderr, "sync error before RDMA ops\n");
-    rc = 1;
-    goto main_exit;
-  }
-  /* Now the client performs an RDMA read and then write on server.
-     Note that the server has no idea these events have occured */
-  if (config.server_name)
-  {
-    /* First we read contens of server's buffer */
-    if (post_send (&res, IBV_WR_RDMA_READ))
-    {
-      fprintf (stderr, "failed to post SR 2\n");
-      rc = 1;
-      goto main_exit;
-    }
-    if (poll_completion (&res))
-    {
-      fprintf (stderr, "poll completion failed 2\n");
-      rc = 1;
-      goto main_exit;
-    }
-    fprintf (stdout, "Contents of server's buffer: '%s'\n", res.buf);
-    /* Now we replace what's in the server's buffer */
-    strcpy (res.buf, RDMAMSGW);
-    fprintf (stdout, "Now replacing it with: '%s'\n", res.buf);
-    if (post_send (&res, IBV_WR_RDMA_WRITE))
-    {
-      fprintf (stderr, "failed to post SR 3\n");
-      rc = 1;
-      goto main_exit;
-    }
-    if (poll_completion (&res))
-    {
-      fprintf (stderr, "poll completion failed 3\n");
-      rc = 1;
-      goto main_exit;
-    }
-  }
-  /* Sync so server will know that client is done mucking with its memory */
-  if (sock_sync_data (res.sock, 1, "W", &temp_char))	/* just send a dummy char back and forth */
-  {
-    fprintf (stderr, "sync error after RDMA ops\n");
-    rc = 1;
-    goto main_exit;
-  }
-  if (!config.server_name)
-    fprintf (stdout, "Contents of server buffer: '%s'\n", res.buf);
-  rc = 0;
-main_exit:
-  if (resources_destroy (&res))
-  {
-    fprintf (stderr, "failed to destroy resources\n");
-    rc = 1;
-  }
-  if (config.dev_name)
-    free ((char *) config.dev_name);
-  fprintf (stdout, "\ntest result is %d\n", rc);
-  return rc;
+  barrier();
 }
 #endif
 
-}   // namespace DKVRDMA
-}   // namespace KDV
+}   // namespace DKV {
+}   // namespace DKVRDMA {

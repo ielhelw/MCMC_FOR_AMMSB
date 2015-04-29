@@ -19,6 +19,8 @@
 
 #include <vector>
 #include <unordered_map>
+#include <string>
+#include <exception>
 
 namespace DKV {
 
@@ -28,6 +30,67 @@ namespace RW_MODE {
     READ_WRITE,
   };
 }
+
+
+class DKVException : public std::exception {
+ public:
+  DKVException(const std::string &reason) throw() : reason_(reason) {
+  }
+
+  virtual ~DKVException() throw() {
+  }
+
+  virtual const char *what() const throw() {
+    return reason_.c_str();
+  }
+
+ protected:
+  const std::string &reason_;
+};
+
+
+template <typename ValueType>
+class Buffer {
+ public:
+  Buffer() : capacity_(0), next_free_(0), buffer_(NULL) {
+  }
+
+  Buffer(::size_t capacity) : capacity_(capacity) {
+    buffer_ = new ValueType[capacity];
+  }
+
+  ~Buffer() {
+    delete buffer_;
+  }
+
+  ValueType *get(::size_t n) {
+    if (n + next_free_ > capacity_) {
+      throw DKVException("Buffer: get() request exceeds capacity");
+    }
+
+    ValueType *v = buffer_ + next_free_;
+    next_free_ += n;
+
+    return v;
+  }
+
+  void reset() {
+    next_free_ = 0;
+  }
+
+  ValueType *buffer() const {
+    return buffer_;
+  }
+
+  ::size_t capacity() const {
+    return capacity_;
+  }
+
+ private:
+  ::size_t capacity_;
+  ::size_t next_free_;
+  ValueType *buffer_;
+};
 
 class DKVStoreInterface {
 
@@ -39,11 +102,12 @@ class DKVStoreInterface {
   }
 
   virtual void Init(::size_t value_size, ::size_t total_values,
-                    ::size_t max_capacity,
+                    ::size_t max_cache_capacity, ::size_t max_write_capacity,
                     const std::vector<std::string> &args) {
     value_size_ = value_size;
     total_values_ = total_values;
-    max_capacity_ = max_capacity;
+    cache_buffer_ = Buffer<ValueType>(value_size * max_cache_capacity);
+    write_buffer_ = Buffer<ValueType>(value_size * max_write_capacity);
   }
 
   /**
@@ -57,11 +121,22 @@ class DKVStoreInterface {
                              RW_MODE::RWMode rw_mode) = 0;
 
   /**
-   * Write the values that belong to new keys
+   * Write key/value pairs.
+   * @param value
+   *    may be a mix of user-allocated data and buffers obtained through
+   *    GetWriteKVRecords(); in the latter case, may be a zerocopy operation.
    * @reentrant: no
    */
   virtual void WriteKVRecords(const std::vector<KeyType> &key,
                               const std::vector<const ValueType *> &value) = 0;
+
+  /**
+   * Zerocopy write interface. Obtain a vector of value pointers to fill.
+   * Written out by a call to WriteKVRecords, which performs the binding from
+   * key to value.
+   * @reentrant: no
+   */
+  virtual std::vector<ValueType *> GetWriteKVRecords(::size_t n) = 0;
 
   /**
    * Write back the values that belong to rw-cached keys
@@ -78,13 +153,11 @@ class DKVStoreInterface {
  protected:
   ::size_t value_size_;
   ::size_t total_values_;
-  ::size_t max_capacity_;
 
-  ValueType *cache_ = NULL;
-  ::size_t next_free_ = 0;
+  Buffer<ValueType> cache_buffer_;
+  Buffer<ValueType> write_buffer_;
+
   std::unordered_map<KeyType, ValueType *> value_of_;
-
-  const ::size_t CACHE_INCREMENT = 1024;
 };
 
 } // namespace DKV

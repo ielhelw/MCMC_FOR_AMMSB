@@ -290,7 +290,7 @@ public:
 			if (step_count % 2000 == 1) {
 				if (false) {
 					std::ofstream myfile;
-					std::string file_name = "mcmc_stochastic_" + std::to_string (K) + "_num_nodes_" + std::to_string(num_node_sample) + "_us_air.txt";
+					std::string file_name = "mcmc_stochastic_" + to_string (K) + "_num_nodes_" + to_string(num_node_sample) + "_us_air.txt";
 					myfile.open (file_name);
 					int size = ppxs_held_out.size();
 					for (int i = 0; i < size; i++){
