@@ -248,6 +248,7 @@ class rdma_area {
     s << ", lkey=0x" << mr_->lkey;
     s << ", rkey=0x" << mr_->rkey;
     s << ", flags=0x" << mr_flags_;
+    s << ", mr=" << (void *)mr_;
     s.flags(flags);
 
     return s;
@@ -318,7 +319,8 @@ std::cerr << __FILE__ << "." << __LINE__ << ": cached dev_list[0] " << ibv_dev_l
     }
   }
 
-  void Init(config_t *config, ::size_t my_rank, ::size_t num_servers) {
+  void Init(config_t *config, ::size_t my_rank, ::size_t num_servers,
+            ::size_t max_requests) {
 
 CHECK_DEV_LIST();
     std::cerr << "RDMA: searching for IB devices in host" << std::endl;
@@ -398,7 +400,7 @@ CHECK_DEV_LIST();
       throw RDMAException(errno, "ibv_alloc_pd failed");
     }
 
-    cq_ = ::ibv_create_cq (ib_ctx_, num_servers, NULL, NULL, 0);
+    cq_ = ::ibv_create_cq (ib_ctx_, max_requests, NULL, NULL, 0);
     if (cq_ == NULL) {
       throw RDMAException(errno, "failed to create CQ with " +
                           to_string(num_servers) + "entries");
@@ -533,7 +535,8 @@ CHECK_DEV_LIST();
 #ifndef DISABLE_NETWORKING
     /* init all of the resources, so cleanup will be easy */
     /* create resources before using them */
-    res_.Init(&config_, my_rank_, num_servers_);
+    res_.Init(&config_, my_rank_, num_servers_,
+              std::max(max_cache_capacity, max_write_capacity));
 #endif
 
     ::DKV::DKVStoreInterface::Init(value_size, total_values,
@@ -637,7 +640,7 @@ CHECK_DEV_LIST();
           int r = ::ibv_post_send(res_.peer_[i].qp, q_recv_front_[i], &bad);
           check_ibv_status(r, bad);
 
-          finish_completion_queue(sent_items);
+          finish_completion_queue(sent_items, IBV_WC_RDMA_READ);
         }
       }
     }
@@ -666,21 +669,22 @@ CHECK_DEV_LIST();
         memcpy(target, value[i], value_size_ * sizeof(ValueType));
 
       } else {
+        assert(current_send_req_ < send_wr_.capacity());
+        assert(current_send_req_ < recv_sge_.capacity());
         struct ::ibv_send_wr *wr = &send_wr_[current_send_req_];
         struct ::ibv_sge *sge = &recv_sge_[current_send_req_];
         current_send_req_++;
 
         wr->num_sge = 1;
         wr->sg_list = sge;
-        if (cache_.contains(value[i])) {
+        if (write_.contains(value[i])) {
           sge->addr = reinterpret_cast<uint64_t>(value[i]);
-          sge->lkey = cache_.mr_->lkey;
         } else {
           ValueType *v = write_buffer_.get(value_size_);
           memcpy(v, value[i], value_size_ * sizeof(ValueType));
           sge->addr = reinterpret_cast<uint64_t>(v);
-          sge->lkey = write_.mr_->lkey;
         }
+        sge->lkey = write_.mr_->lkey;
         sge->length = value_size_ * sizeof(ValueType);
 
         wr->opcode = IBV_WR_RDMA_WRITE;
@@ -713,7 +717,7 @@ CHECK_DEV_LIST();
           int r = ::ibv_post_send(res_.peer_[i].qp, q_send_front_[i], &bad);
           check_ibv_status(r, bad);
 
-          finish_completion_queue(sent_items);
+          finish_completion_queue(sent_items, IBV_WC_RDMA_WRITE);
         }
       }
     }
@@ -753,7 +757,7 @@ CHECK_DEV_LIST();
   }
 
   uint64_t OffsetOf(DKVStoreRDMA::KeyType key) {
-    return key / num_servers_;
+    return key / num_servers_ * value_size_;
   }
 #endif
 
@@ -789,7 +793,7 @@ CHECK_DEV_LIST();
   void post_receive(struct rdma_area<ValueType> *area_, struct ::ibv_qp *qp);
   void connect_qp();
   void check_ibv_status(int r, const struct ::ibv_send_wr *bad);
-  void finish_completion_queue(::size_t n);
+  void finish_completion_queue(::size_t n, ::ibv_wc_opcode opcode);
 
   void init_networking();
 #ifndef USE_MPI
@@ -819,22 +823,29 @@ CHECK_DEV_LIST();
   }
 
 
-  void finish_completion_queue(::size_t n) {
+  void finish_completion_queue(::size_t n, ::ibv_wc_opcode opcode) {
 #ifndef DISABLE_NETWORKING
-    struct ::ibv_wc wc;
+    std::cerr << "FIXME -- lift this vector to be static" << std::endl;
+    std::vector<struct ::ibv_wc> wc(n);
     int r;
-    for (::size_t i = 0; i < n; i++) {
+    ::size_t seen = 0;
+    while (seen < n) {
       do {
-        r = ::ibv_poll_cq(res_.cq_, 1, &wc);
+        r = ::ibv_poll_cq(res_.cq_, wc.size(), wc.data());
         if (r < 0) {
           std::cerr << "Oops, must handle wrong result cq poll" << std::endl;
           break;
         }
       } while (r == 0);
-      if (wc.status != IBV_WC_SUCCESS) {
-        throw RDMAException("ibv_poll_cq status " + to_string(wc.status) + " " +
-                            std::string(ibv_wc_status_str(wc.status)));
+      for (int i = 0; i < r; i++) {
+        if (wc[i].status != IBV_WC_SUCCESS) {
+          throw RDMAException("ibv_poll_cq status " + to_string(wc[r].status) +
+                              " " +
+                              std::string(ibv_wc_status_str(wc[r].status)));
+        }
+        assert(wc[i].opcode == opcode);
       }
+      seen += r;
     }
 #endif
   }

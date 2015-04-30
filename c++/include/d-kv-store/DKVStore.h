@@ -55,12 +55,15 @@ class Buffer {
   Buffer() : capacity_(0), next_free_(0), buffer_(NULL) {
   }
 
-  Buffer(::size_t capacity) : capacity_(capacity) {
-    buffer_ = new ValueType[capacity];
+  ~Buffer() {
+    delete[] buffer_;
+    buffer_ = (ValueType *)0x55555555;
   }
 
-  ~Buffer() {
-    delete buffer_;
+  void Init(::size_t capacity) {
+    delete[] buffer_;
+    capacity_ = capacity;
+    buffer_ = new ValueType[capacity];
   }
 
   ValueType *get(::size_t n) {
@@ -106,8 +109,8 @@ class DKVStoreInterface {
                     const std::vector<std::string> &args) {
     value_size_ = value_size;
     total_values_ = total_values;
-    cache_buffer_ = Buffer<ValueType>(value_size * max_cache_capacity);
-    write_buffer_ = Buffer<ValueType>(value_size * max_write_capacity);
+    cache_buffer_.Init(value_size * max_cache_capacity);
+    write_buffer_.Init(value_size * max_write_capacity);
   }
 
   /**

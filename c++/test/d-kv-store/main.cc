@@ -47,6 +47,15 @@ extern struct ibv_device **global_dev_list;
 }
 }
 
+template <typename T>
+std::vector<const T*>& constify(std::vector<T*>& v) {
+  // Compiler doesn't know how to automatically convert
+  // std::vector<T*> to std::vector<T const*> because the way
+  // the template system works means that in theory the two may
+  // be specialised differently.  This is an explicit conversion.
+  return reinterpret_cast<std::vector<const T*>&>(v);
+}
+
 template <typename DKVStore>
 class DKVWrapper {
  public:
@@ -128,104 +137,117 @@ class DKVWrapper {
     CHECK_DEV_LIST();
     CHECK_DEV_LIST();
 
-  ::size_t K = options_.K;							// #communities
-  ::size_t m = options_.mini_batch_size;			// #nodes in minibatch, total
-  ::size_t n = options_.num_node_sample;			// #neighbors for each minibatch node
-  ::size_t iterations = options_.max_iteration;
+    ::size_t K = options_.K;							// #communities
+    ::size_t m = options_.mini_batch_size;			// #nodes in minibatch, total
+    ::size_t n = options_.num_node_sample;			// #neighbors for each minibatch node
+    ::size_t iterations = options_.max_iteration;
 
-  ::size_t my_m = (m + n_hosts - 1) / n_hosts;
+    ::size_t my_m = (m + n_hosts - 1) / n_hosts;
 
-  CHECK_DEV_LIST();
-  d_kv_store_.Info();
-  CHECK_DEV_LIST();
-  d_kv_store_.PurgeKVRecords();
-  CHECK_DEV_LIST();
-  d_kv_store_.Init(K, N, my_m * n, my_m, remains);
+CHECK_DEV_LIST();
+d_kv_store_.Info();
+CHECK_DEV_LIST();
+d_kv_store_.PurgeKVRecords();
+CHECK_DEV_LIST();
 
-  d_kv_store_.barrier();
+    d_kv_store_.Init(K, N, my_m * n, my_m, remains);
 
-  mcmc::Random::Random random(seed);
+    d_kv_store_.barrier();
 
-  std::cout << "N " << N << " K " << K <<
+    mcmc::Random::Random random(seed + rank);
+
+    std::cout << "N " << N << " K " << K <<
       " m " << m << " my_m " << my_m << " n " << n <<
       " hosts " << n_hosts << " rank " << rank <<
       " seed " << seed << std::endl;
 
-  auto t = hires::now();
-  // populate
-  if (! no_populate) {
+    auto t = hires::now();
+    // populate
+    if (! no_populate) {
       ::size_t from = rank;
       ::size_t to   = N;
       std::cerr << "********* Populate with keys " << from << ".." << to << " step " << n_hosts << std::endl;
       for (::size_t i = from; i < to; i += n_hosts) {
-          std::vector<double> pi = random.randn(K);
-          std::vector<int32_t> k(1, static_cast<int32_t>(i));
-          std::vector<const double *> v(1, pi.data());
-          d_kv_store_.WriteKVRecords(k, v);
+        // std::vector<double> pi = random.randn(K);
+        std::vector<double> pi(K);
+        for (::size_t k = 0; k < K; k++) {
+          pi[k] = i * 1000.0 + (k + 1) / 1000.0;
+        }
+        std::vector<int32_t> k(1, static_cast<int32_t>(i));
+        std::vector<const double *> v(1, pi.data());
+        d_kv_store_.WriteKVRecords(k, v);
       }
       duration dur = std::chrono::duration_cast<duration>(hires::now() - t);
       std::cout << "Populate " << N << "x" << K << " takes " << dur.count() <<
-          " thrp " << (GB(N, K) / dur.count()) << " GB/s" << std::endl;
-  }
-
-  std::vector<int32_t> *minibatch = random.sampleRange(N, my_m);
-
-  // std::vector<double *> cache = std::vector<double *>(my_m);
-  std::vector<std::vector<double *>> cache(my_m, std::vector<double *>(n));
-  for (::size_t iter = 0; iter < iterations; ++iter) {
-    // Vector for the neighbors
-    std::cerr << "********* " << iter << ": Sample the neighbors" << std::endl;
-    std::vector<std::vector<int32_t> *> neighbor(my_m);
-    for (::size_t i = 0; i < my_m; ++i) {
-      neighbor[i] = random.sampleRange(N, n);
+        " thrp " << (GB(N, K) / dur.count()) << " GB/s" << std::endl;
     }
 
-    {
-      std::cout << "*********" << iter << ":  Start reading KVs... " << std::endl;
-      // Read the values for the neighbors
-      auto t = hires::now();
+    std::vector<std::vector<double *>> cache(my_m, std::vector<double *>(n));
+    std::vector<double *> overwrite = d_kv_store_.GetWriteKVRecords(my_m);
+    for (::size_t iter = 0; iter < iterations; ++iter) {
+      std::vector<int32_t> *minibatch = random.sampleRange(N, my_m);
+
+      // Vector for the neighbors
+      std::cerr << "********* " << iter << ": Sample the neighbors" << std::endl;
+      std::vector<std::vector<int32_t> *> neighbor(my_m);
       for (::size_t i = 0; i < my_m; ++i) {
-        d_kv_store_.ReadKVRecords(cache[i], *neighbor[i], DKV::RW_MODE::READ_ONLY);
+        neighbor[i] = random.sampleRange(N, n);
       }
-      duration dur = std::chrono::duration_cast<duration>(hires::now() - t);
-      std::cout << my_m << " Read " << my_m << "x" << n << "x" << K << " takes " << dur.count() <<
-        " thrp " << (GB(my_m * n, K) / dur.count()) << " GB/s" << std::endl;
-    }
 
-    std::cout << "*********" << iter << ":  Sync... " << std::endl;
-    d_kv_store_.barrier();
-
-    {
-      std::cout << "*********" << iter << ":  Start writing KVs... " << std::endl;
-      // FIXME FIXME use the cache_ area_ to store these overwrites; that is
-      // mapped at least... FIXME FIXME
-      //
-      // Write new values to the KV-store
-      auto t = hires::now();
-      std::vector<const double *> overwrite(minibatch->size());
-      for (::size_t i = 0; i < minibatch->size(); i++) {
-        // Choose the first neighbor because this test has no cache for the
-        // minibatch pi
-        overwrite[i] = cache[i][0];
+      {
+        std::cout << "*********" << iter << ":  Start reading KVs... " << std::endl;
+        // Read the values for the neighbors
+        auto t = hires::now();
+        for (::size_t i = 0; i < my_m; ++i) {
+          d_kv_store_.ReadKVRecords(cache[i], *neighbor[i], DKV::RW_MODE::READ_ONLY);
+        }
+        duration dur = std::chrono::duration_cast<duration>(hires::now() - t);
+        std::cout << my_m << " Read " << my_m << "x" << n << "x" << K << " takes " << dur.count() <<
+          " thrp " << (GB(my_m * n, K) / dur.count()) << " GB/s" << std::endl;
+        for (::size_t i = 0; i < my_m; ++i) {
+          for (::size_t j = 0; j < n; j++) {
+            std::cerr << "Key " << (*neighbor[i])[j] << " pi = {";
+            for (::size_t k = 0; k < K; k++) {
+              std::cerr << cache[i][j][k] << " ";
+            }
+            std::cerr << "}" << std::endl;
+          }
+        }
       }
-      d_kv_store_.WriteKVRecords(*minibatch, overwrite);
-      duration dur = std::chrono::duration_cast<duration>(hires::now() - t);
-      std::cout << my_m << " Write " << my_m << "x" << K << " takes " << dur.count() <<
-        " thrp " << (GB(my_m, K) / dur.count()) << " GB/s" << std::endl;
+
+      std::cout << "*********" << iter << ":  Sync... " << std::endl;
+      d_kv_store_.barrier();
+
+      {
+        std::cout << "*********" << iter << ":  Start writing KVs... " << std::endl;
+        for (::size_t i = 0; i < minibatch->size(); i++) {
+          for (::size_t k = 0; k < K; k++) {
+            overwrite[i][k] = (*minibatch)[i] * 1000.0 + ((iter + 1) * (k + 1)) / 1000.0;
+          }
+        }
+        // FIXME FIXME use the cache_ area_ to store these overwrites; that is
+        // mapped at least... FIXME FIXME
+        //
+        // Write new values to the KV-store
+        auto t = hires::now();
+        d_kv_store_.WriteKVRecords(*minibatch, constify(overwrite));
+        duration dur = std::chrono::duration_cast<duration>(hires::now() - t);
+        std::cout << my_m << " Write " << my_m << "x" << K << " takes " << dur.count() <<
+          " thrp " << (GB(my_m, K) / dur.count()) << " GB/s" << std::endl;
+      }
+
+      d_kv_store_.PurgeKVRecords();
+
+      for (auto n : neighbor) {
+        delete n;
+      }
+
+      std::cout << "*********" << iter << ":  Sync... " << std::endl;
+      d_kv_store_.barrier();
+
+      delete minibatch;
     }
-
-    d_kv_store_.PurgeKVRecords();
-
-    for (auto n : neighbor) {
-      delete n;
-    }
-
-    std::cout << "*********" << iter << ":  Sync... " << std::endl;
-    d_kv_store_.barrier();
   }
-
-  delete minibatch;
-}
 
 protected:
   const mcmc::Options &options_;
