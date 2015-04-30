@@ -369,7 +369,7 @@ ClientSocket::ClientSocket(const SockAddr &peerAddr, const string &interface) {
 
 ClientSocket::~ClientSocket() {
 	delete peerAddr;
-	delete inputBuffer;
+	delete[] inputBuffer;
 }
 
 
@@ -916,10 +916,11 @@ nanosleep(&dt, NULL);
 }
 
 		socket->closeWriting();
-		tcp::Socket::discard(socket);
-		socket = NULL;
 
 		std::cerr << "Writer(peer=" << peer << ",type=" << type << ") sent " << stats.sent << std::endl;
+
+		tcp::Socket::discard(socket);
+		socket = NULL;
 	}
 }
 
@@ -981,6 +982,7 @@ void SocketAcceptThread::operator() () {
 		c->read_fully(&t, sizeof t);
 		switch ((ConnectionTags::Tag)t.tag) {
 		case ConnectionTags::STOP:
+            delete c;
 			return;
 		case ConnectionTags::NEW:
 			socketNetwork.registerConnection(t.from,
@@ -1165,7 +1167,6 @@ SocketNetwork::SocketNetwork(const OptionList &options) {
 		}
 		peers.push_back(p);
 	}
-
 
 	accepter = new SocketAcceptThread(*this, *serverSocket);
 	// start daemon to listen to serverSocket

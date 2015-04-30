@@ -50,6 +50,7 @@ namespace DKVRDMA {
 
 extern struct ibv_device **global_dev_list;
 
+#ifdef DEBUG_CC_FILE_H_FILE_FIASCO
 #define CHECK_DEV_LIST() \
   do { \
     int num; \
@@ -59,6 +60,11 @@ extern struct ibv_device **global_dev_list;
          " " << ::DKV::DKVRDMA::global_dev_list[0]->dev_name << std::endl; \
     /* check_dev_list(__FILE__, __LINE__); */ \
   } while (0)
+#else
+#define CHECK_DEV_LIST() \
+  do { } while (0)
+#endif
+
 
 template <typename T>
 std::string to_string(T value) {
@@ -294,7 +300,6 @@ std::cerr << __FILE__ << "." << __LINE__ << ": cached dev_list[0] " << ibv_dev_l
   }
 
   ~resources() {
-    std::cerr << "******************************* NOOOOOOOOOOO ******************" << std::cerr;
     for (auto & p : peer_) {
       if (p.qp != NULL) {
         if (::ibv_destroy_qp(p.qp) != 0) {
@@ -480,6 +485,16 @@ CHECK_DEV_LIST();
   virtual ~DKVStoreRDMA() {
 #ifndef DISABLE_NETWORKING
 #  ifndef USE_MPI
+    broadcast_.Finish();
+    for (auto & c : rw_list_) {
+      if (c.writer != NULL) {
+        c.writer->close();
+      }
+    }
+    for (auto & c : rw_list_) {
+      delete c.reader;
+      delete c.writer;
+    }
     delete network_;
 #  endif
 #endif
@@ -1283,7 +1298,7 @@ CHECK_DEV_LIST();
 
   void barrier() {
 #ifndef DISABLE_NETWORKING
-    int32_t dummy;
+    int32_t dummy = -1;
     if (my_rank_ == 0) {
       broadcast_.bcast_send(dummy);
       dummy = broadcast_.reduce_rcve<int32_t>();

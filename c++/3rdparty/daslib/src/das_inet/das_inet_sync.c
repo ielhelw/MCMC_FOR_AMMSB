@@ -175,6 +175,7 @@ das_inet_sync_send(int me, int nhosts, const struct sockaddr *server,
     char *white;
     char       *key = NULL;
     char       *das_prog_id;
+    char       *to_free = NULL;
     char       *prog;
     char       *login;
 #define IPV6_TEXT_SIZE	(8 * (4 + 1))
@@ -201,6 +202,7 @@ das_inet_sync_send(int me, int nhosts, const struct sockaddr *server,
 	} else {
 	    das_prog_id = malloc(strlen(key) + 1);
 	    strcpy(das_prog_id, key);
+            to_free = das_prog_id;
 	}
     } else {
 	das_prog_id = das_prog_preset_id;
@@ -282,6 +284,7 @@ das_inet_sync_send(int me, int nhosts, const struct sockaddr *server,
     fflush(das_srv_file);
     
     free(prog_id);
+    free(to_free);
 
     return 0;
 }

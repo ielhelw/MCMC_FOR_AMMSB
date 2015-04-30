@@ -243,6 +243,12 @@ public:
 	// Takes ownership of @param addr
 	SocketNetworkPeer(int peer, const SockAddr *addr);
 
+#if 1
+    virtual ~SocketNetworkPeer() {
+		delete addr;
+    }
+#endif
+
 	int getRank() const;
 
 	const SockAddr &getAddr() const;

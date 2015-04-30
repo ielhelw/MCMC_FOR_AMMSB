@@ -2,6 +2,28 @@
  * Copyright notice
  */
 
+#include <chrono>
+#pragma GCC diagnostic ignored "-Wunused-local-typedefs"
+#pragma GCC diagnostic push
+#include <boost/program_options.hpp>
+#pragma GCC diagnostic pop
+#include <boost/lexical_cast.hpp>
+
+#include <mcmc/random.h>
+#include <mcmc/options.h>
+
+#include <d-kv-store/file/DKVStoreFile.h>
+#ifdef ENABLE_RAMCLOUD
+#include <d-kv-store/ramcloud/DKVStoreRamCloud.h>
+#endif
+#ifdef ENABLE_RDMA
+#include <infiniband/verbs.h>
+#include <d-kv-store/rdma/DKVStoreRDMA.h>
+#endif
+
+typedef std::chrono::high_resolution_clock hires;
+typedef std::chrono::duration<double> duration;
+
 #include "d-kv-store/rdma/DKVStoreRDMA.h"
 
 #ifndef OK_TO_DEFINE_IN_CC_FILE

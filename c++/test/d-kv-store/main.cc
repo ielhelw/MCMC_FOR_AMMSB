@@ -204,13 +204,15 @@ CHECK_DEV_LIST();
         duration dur = std::chrono::duration_cast<duration>(hires::now() - t);
         std::cout << my_m << " Read " << my_m << "x" << n << "x" << K << " takes " << dur.count() <<
           " thrp " << (GB(my_m * n, K) / dur.count()) << " GB/s" << std::endl;
-        for (::size_t i = 0; i < my_m; ++i) {
-          for (::size_t j = 0; j < n; j++) {
-            std::cerr << "Key " << (*neighbor[i])[j] << " pi = {";
-            for (::size_t k = 0; k < K; k++) {
-              std::cerr << cache[i][j][k] << " ";
+        if (false) {
+          for (::size_t i = 0; i < my_m; ++i) {
+            for (::size_t j = 0; j < n; j++) {
+              std::cerr << "Key " << (*neighbor[i])[j] << " pi = {";
+              for (::size_t k = 0; k < K; k++) {
+                std::cerr << cache[i][j][k] << " ";
+              }
+              std::cerr << "}" << std::endl;
             }
-            std::cerr << "}" << std::endl;
           }
         }
       }

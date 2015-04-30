@@ -31,13 +31,33 @@ class Broadcast {
   }
 
   ~Broadcast() {
+    Finish();
+  }
+
+  /**
+   * Reentrant cleanup. Allow Broadcast to be finished before the
+   * Network itself is shut down.
+   */
+  void Finish() {
     if (rank != master) {
-      delete std::get<0>(parent);
-      delete std::get<1>(parent);
+      if (std::get<0>(parent) != NULL) {
+        delete std::get<0>(parent);
+        std::get<0>(parent) = NULL;
+      }
+      if (std::get<1>(parent) != NULL) {
+        delete std::get<1>(parent);
+        std::get<1>(parent) = NULL;
+      }
     }
-    for (auto c : children) {
-      delete std::get<0>(c);
-      delete std::get<1>(c);
+    for (auto & c : children) {
+      if (std::get<0>(c) != NULL) {
+        delete std::get<0>(c);
+        std::get<0>(c) = NULL;
+      }
+      if (std::get<1>(c) != NULL) {
+        delete std::get<1>(c);
+        std::get<1>(c) = NULL;
+      }
     }
   }
 
