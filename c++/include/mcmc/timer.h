@@ -22,11 +22,11 @@ public:
 		N++;
 	}
 
-	inline std::chrono::high_resolution_clock::duration total() {
+	inline std::chrono::high_resolution_clock::duration total() const {
 		return t_total;
 	}
 
-	inline ::size_t ticks() {
+	inline ::size_t ticks() const {
 		return N;
 	}
 
@@ -59,11 +59,11 @@ public:
 			if (tabular) {
 				s << std::setprecision(3) << std::right << std::setw(totalWidth) << (duration_cast<milliseconds>(t_total).count() / (double)MILLI);
 				s << std::right << std::setw(tickWidth) << N;
-				s << std::setprecision(3) << std::right << std::setw(perTickWidth) << (duration_cast<nanoseconds>(t_total).count() / (double)MILLI / N);
+				s << std::setprecision(3) << std::fixed << std::right << std::setw(perTickWidth) << (duration_cast<nanoseconds>(t_total).count() / (double)MILLI / N);
 			} else {
 				s << " total " << std::setprecision(3) << std::right << std::setw(totalWidth) << (duration_cast<milliseconds>(t_total).count() / (double)MILLI) << "s";
 				s << "; ticks " << std::right << std::setw(tickWidth) << N;
-				s << "; per tick " << std::setprecision(3) << std::right << std::setw(perTickWidth) << (duration_cast<nanoseconds>(t_total).count() / (double)MILLI / N) << "us";
+				s << "; per tick " << std::fixed << std::setprecision(3) << std::right << std::setw(perTickWidth) << (duration_cast<nanoseconds>(t_total).count() / (double)MILLI / N) << "us";
 			}
 		}
 

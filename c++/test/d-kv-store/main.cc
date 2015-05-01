@@ -24,8 +24,8 @@ typedef std::chrono::duration<double> duration;
 namespace po = boost::program_options;
 
 static double GB(::size_t n, ::size_t k) {
-	return static_cast<double>(n * (sizeof(int32_t) + k * sizeof(double))) /
-		(1 << 30);
+  return static_cast<double>(n * k * sizeof(double)) /
+    (1 << 30);
 }
 
 namespace DKV_TYPE {
@@ -178,8 +178,9 @@ CHECK_DEV_LIST();
         d_kv_store_.WriteKVRecords(k, v);
       }
       duration dur = std::chrono::duration_cast<duration>(hires::now() - t);
-      std::cout << "Populate " << N << "x" << K << " takes " << dur.count() <<
-        " thrp " << (GB(N, K) / dur.count()) << " GB/s" << std::endl;
+      std::cout << "Populate " << N << "x" << K << " takes " <<
+        (1000.0 * dur.count()) << "ms thrp " << (GB(N, K) / dur.count()) <<
+        " GB/s" << std::endl;
     }
 
     std::vector<std::vector<double *>> cache(my_m, std::vector<double *>(n));
@@ -188,22 +189,26 @@ CHECK_DEV_LIST();
       std::vector<int32_t> *minibatch = random.sampleRange(N, my_m);
 
       // Vector for the neighbors
-      std::cerr << "********* " << iter << ": Sample the neighbors" << std::endl;
+      std::cerr << "********* " << iter << ": Sample the neighbors" <<
+        std::endl;
       std::vector<std::vector<int32_t> *> neighbor(my_m);
       for (::size_t i = 0; i < my_m; ++i) {
         neighbor[i] = random.sampleRange(N, n);
       }
 
       {
-        std::cout << "*********" << iter << ":  Start reading KVs... " << std::endl;
+        std::cout << "*********" << iter << ":  Start reading KVs... " <<
+          std::endl;
         // Read the values for the neighbors
         auto t = hires::now();
         for (::size_t i = 0; i < my_m; ++i) {
-          d_kv_store_.ReadKVRecords(cache[i], *neighbor[i], DKV::RW_MODE::READ_ONLY);
+          d_kv_store_.ReadKVRecords(cache[i], *neighbor[i],
+                                    DKV::RW_MODE::READ_ONLY);
         }
         duration dur = std::chrono::duration_cast<duration>(hires::now() - t);
-        std::cout << my_m << " Read " << my_m << "x" << n << "x" << K << " takes " << dur.count() <<
-          " thrp " << (GB(my_m * n, K) / dur.count()) << " GB/s" << std::endl;
+        std::cout << my_m << " Read " << my_m << "x" << n << "x" << K <<
+          " takes " << (1000.0 * dur.count()) << "ms thrp " <<
+          (GB(my_m * n, K) / dur.count()) << " GB/s" << std::endl;
         if (false) {
           for (::size_t i = 0; i < my_m; ++i) {
             for (::size_t j = 0; j < n; j++) {
@@ -221,21 +226,22 @@ CHECK_DEV_LIST();
       d_kv_store_.barrier();
 
       {
-        std::cout << "*********" << iter << ":  Start writing KVs... " << std::endl;
+        std::cout << "*********" << iter << ":  Start writing KVs... " <<
+          std::endl;
         for (::size_t i = 0; i < minibatch->size(); i++) {
           for (::size_t k = 0; k < K; k++) {
-            overwrite[i][k] = (*minibatch)[i] * 1000.0 + ((iter + 1) * (k + 1)) / 1000.0;
+            overwrite[i][k] = (*minibatch)[i] * 1000.0 +
+                                ((iter + 1) * (k + 1)) / 1000.0;
           }
         }
-        // FIXME FIXME use the cache_ area_ to store these overwrites; that is
-        // mapped at least... FIXME FIXME
-        //
+
         // Write new values to the KV-store
         auto t = hires::now();
         d_kv_store_.WriteKVRecords(*minibatch, constify(overwrite));
         duration dur = std::chrono::duration_cast<duration>(hires::now() - t);
-        std::cout << my_m << " Write " << my_m << "x" << K << " takes " << dur.count() <<
-          " thrp " << (GB(my_m, K) / dur.count()) << " GB/s" << std::endl;
+        std::cout << my_m << " Write " << my_m << "x" << K << " takes " <<
+          (1000.0 * dur.count()) << " thrp " << (GB(my_m, K) / dur.count()) <<
+          " GB/s" << std::endl;
       }
 
       d_kv_store_.PurgeKVRecords();

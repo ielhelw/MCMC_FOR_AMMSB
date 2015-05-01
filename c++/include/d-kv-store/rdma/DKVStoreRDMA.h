@@ -18,6 +18,8 @@
 
 #include <infiniband/verbs.h>
 
+#include <mcmc/timer.h>
+
 #ifndef USE_MPI
 #ifndef DISABLE_NETWORKING
 #include <mr/net/netio.h>
@@ -420,11 +422,11 @@ CHECK_DEV_LIST();
         struct ::ibv_qp_init_attr qp_init_attr;
         memset (&qp_init_attr, 0, sizeof qp_init_attr);
         qp_init_attr.qp_type = IBV_QPT_RC;
-        qp_init_attr.sq_sig_all = 1;
+        qp_init_attr.sq_sig_all = 0;
         qp_init_attr.send_cq = cq_;
         qp_init_attr.recv_cq = cq_;
-        qp_init_attr.cap.max_send_wr = 1;
-        qp_init_attr.cap.max_recv_wr = 1;
+        qp_init_attr.cap.max_send_wr = max_requests;
+        qp_init_attr.cap.max_recv_wr = max_requests;
         qp_init_attr.cap.max_send_sge = 1;
         qp_init_attr.cap.max_recv_sge = 1;
         peer_[i].qp = ::ibv_create_qp (pd_, &qp_init_attr);
@@ -498,6 +500,27 @@ CHECK_DEV_LIST();
     delete network_;
 #  endif
 #endif
+    mcmc::timer::Timer::printHeader(std::cout);
+    std::cout << t_read << std::endl;
+    std::cout << t_local_read << std::endl;
+    std::cout << t_post_read << std::endl;
+    std::cout << t_finish_read << std::endl;
+    std::cout << t_write << std::endl;
+    std::cout << t_local_write << std::endl;
+    std::cout << t_post_write << std::endl;
+    std::cout << t_finish_write << std::endl;
+    std::cout << t_barrier << std::endl;
+    std::chrono::high_resolution_clock::duration dt;
+    std::cout << "Local read   " << bytes_local_read     << "B " <<
+      GBs_from_timer(t_local_read, bytes_local_read) << "GB/s" << std::endl;
+    dt = t_read.total() - t_local_read.total();
+    std::cout << "Remote read  " << bytes_remote_read    << "B " <<
+      GBs_from_time(dt, bytes_remote_read) << "GB/s" << std::endl;
+    std::cout << "Local write  " << bytes_local_written  << "B " <<
+      GBs_from_timer(t_local_write, bytes_local_read) << "GB/s" << std::endl;
+    dt = t_write.total() - t_local_write.total();
+    std::cout << "Remote write " << bytes_remote_written << "B " <<
+      GBs_from_time(dt, bytes_remote_read) << "GB/s" << std::endl;
   }
 #else
   virtual ~DKVStoreRDMA();
@@ -509,6 +532,149 @@ CHECK_DEV_LIST();
 
   virtual void Info() const;
 
+ private:
+  void post_linked_list(::ibv_qp *qp, ::ibv_send_wr *q_front,
+                        ::size_t peer, ::ibv_wc_opcode opcode) {
+    // Only for verbose
+    std::string action;
+    switch (opcode) {
+    case IBV_WC_RDMA_READ:
+      action = "read";
+      break;
+    case IBV_WC_RDMA_WRITE:
+      action = "write";
+      break;
+    default:
+      action = "<any old post>";
+      break;
+    }
+
+    if (peer == my_rank_) {
+      // already done the memcpy
+      // std::cerr << "Skip the home " << action << "s" << std::endl;
+      return;
+    }
+
+    if (true) {
+      if (false) {
+        ::size_t sent_items = 0;
+        for (auto p = q_front; p != NULL; p = p->next) {
+          sent_items++;
+        }
+
+        std::cerr << "post " << sent_items << " " << action << " requests to host " << peer << std::endl;
+      }
+
+      // std::cerr << "******** Do the " << action << "s in chunks of size " << post_send_chunk << std::endl;
+      ::ibv_send_wr *front = q_front;
+      while (front != NULL) {
+        ::ibv_send_wr *next_front;
+        ::ibv_send_wr *p = front;
+        ::size_t count = 0;
+        while (true) {
+          if (p == NULL) {
+            next_front = NULL;
+            break;
+          }
+          count++;
+          if (count == post_send_chunk) {
+            next_front = p->next;
+            p->send_flags |= IBV_SEND_SIGNALED;
+            p->next = NULL;
+            break;
+          }
+          // Why?
+          if (p->next == NULL) {
+            p->send_flags |= IBV_SEND_SIGNALED;
+          } else {
+            p->send_flags &= ~IBV_SEND_SIGNALED;
+          }
+          p = p->next;
+        }
+
+        // std::cerr << "post " << count << " subchunk requests to host " << peer << std::endl;
+
+        if (front != NULL) {
+          struct ::ibv_send_wr *bad;
+
+          if (opcode == IBV_WC_RDMA_READ) {
+            t_post_read.start();
+          } else {
+            t_post_write.start();
+          }
+          int r = ::ibv_post_send(qp, front, &bad);
+          check_ibv_status(r, bad);
+          if (opcode == IBV_WC_RDMA_READ) {
+            t_post_read.stop();
+            t_finish_read.start();
+          } else {
+            t_post_write.stop();
+            t_finish_write.start();
+          }
+
+          // finish_completion_queue(count, opcode);
+          finish_completion_queue(1, opcode);
+          if (opcode == IBV_WC_RDMA_READ) {
+            t_finish_read.stop();
+          } else {
+            t_finish_write.stop();
+          }
+        }
+
+        front = next_front;
+      }
+
+    } else if (false) {
+      ::size_t sent_items = 0;
+      for (auto p = q_front; p != NULL; p = p->next) {
+        sent_items++;
+      }
+
+      if (sent_items == 0) {
+        std::cerr << "skip posting " << sent_items << " " << action << " requests to host " << peer << std::endl;
+      } else {
+        std::cerr << "post " << sent_items << " " << action << " requests to host " << peer << std::endl;
+        struct ::ibv_send_wr *bad;
+
+        assert(q_front->wr.rdma.rkey != 0);
+        int r = ::ibv_post_send(qp, q_front, &bad);
+        check_ibv_status(r, bad);
+
+        finish_completion_queue(sent_items, opcode);
+      }
+
+    } else {
+      for (auto & p = q_front; p != NULL; p = p->next) {
+        struct ::ibv_send_wr *bad;
+
+        assert(q_front->wr.rdma.rkey != 0);
+        ::ibv_send_wr *next = p->next;
+        p->next = 0;
+        int r = ::ibv_post_send(qp, p, &bad);
+        check_ibv_status(r, bad);
+
+        finish_completion_queue(1, opcode);
+        p->next = next;
+      }
+    }
+  }
+
+  static double GBs_from_time(
+      const std::chrono::high_resolution_clock::duration &dt, int64_t bytes) {
+    double gbs;
+    double s = std::chrono::duration_cast<std::chrono::nanoseconds>(dt).count() / 1000000000.0;
+
+    gbs = bytes / s / (1LL << 30);
+
+    return gbs;
+  }
+
+  static double GBs_from_timer(const mcmc::timer::Timer &timer,
+                               int64_t bytes) {
+    return GBs_from_time(timer.total(), bytes);
+  }
+
+ public:
 #ifndef OK_TO_DEFINE_IN_CC_FILE
   /**
    * FIXME TODO FIXME TODO FIXME TODO FIXME TODO FIXME TODO FIXME
@@ -543,6 +709,18 @@ CHECK_DEV_LIST();
 
     /* print the used parameters for info*/
     std::cout << config_;
+
+    mcmc::timer::Timer::setTabular(true);
+
+    t_read = mcmc::timer::Timer("RDMA read");
+    t_local_read = mcmc::timer::Timer("     local read");
+    t_post_read = mcmc::timer::Timer("     post read");
+    t_finish_read = mcmc::timer::Timer("     finish read");
+    t_write = mcmc::timer::Timer("RDMA write");
+    t_local_write = mcmc::timer::Timer("     local write");
+    t_post_write = mcmc::timer::Timer("     post write");
+    t_finish_write = mcmc::timer::Timer("     finish write");
+    t_barrier = mcmc::timer::Timer("RDMA barrier");
 
     init_networking();  // along the way, defines my_rank_ and num_servers_
     CHECK_DEV_LIST();
@@ -596,6 +774,8 @@ CHECK_DEV_LIST();
       std::cerr << "Ooppssss.......... writeable records not yet implemented" << std::endl;
     }
 
+    t_read.start();
+
 #ifndef DISABLE_NETWORKING
     // Fill the linked lists of WR requests
     q_recv_front_.assign(num_servers_, NULL);
@@ -604,8 +784,12 @@ CHECK_DEV_LIST();
     for (::size_t i = 0; i < key.size(); i++) {
       ::size_t owner = HostOf(key[i]);
       if (owner == my_rank_) {
+        t_local_read.start();
         // Read directly, without RDMA
         cache[i] = value_.area_ + OffsetOf(key[i]);
+
+        bytes_local_read += value_size_ * sizeof(ValueType);
+        t_local_read.stop();
 
       } else {
         ValueType *target = cache_buffer_.get(value_size_);
@@ -630,47 +814,31 @@ CHECK_DEV_LIST();
 
         wr->next = q_recv_front_[owner];
         q_recv_front_[owner] = wr;
+
+        bytes_remote_read += value_size_ * sizeof(ValueType);
       }
     }
 
     // Post the linked list of WR requests
     for (::size_t i = 0; i < num_servers_; ++i) {
-      if (i == my_rank_) {
-        // already done the memcpy
-        std::cerr << "Skip the home reads" << std::endl;
-      } else {
-        struct ::ibv_send_wr *bad;
-
-        ::size_t sent_items = 0;
-        for (auto r = q_recv_front_[i]; r != NULL; r = r->next) {
-          sent_items++;
-        }
-
-        if (sent_items == 0) {
-          std::cerr << "skip posting " << sent_items << " read requests to host " << i << std::endl;
-        } else {
-          std::cerr << "post " << sent_items << " read requests to host " << i << std::endl;
-
-          assert(q_recv_front_[i]->wr.rdma.rkey != 0);
-          int r = ::ibv_post_send(res_.peer_[i].qp, q_recv_front_[i], &bad);
-          check_ibv_status(r, bad);
-
-          finish_completion_queue(sent_items, IBV_WC_RDMA_READ);
-        }
-      }
+        post_linked_list(res_.peer_[i].qp, q_recv_front_[i], i,
+                         IBV_WC_RDMA_READ);
     }
 
-    std::cerr << "FIXME: should I GC the recv/send queue items? " << std::endl;
+    // std::cerr << "FIXME: should I GC the recv/send queue items? " << std::endl;
+    // Answer: no
+
 #endif
+    t_read.stop();
   }
 
 
   virtual void WriteKVRecords(const std::vector<KeyType> &key,
                               const std::vector<const ValueType *> &value) {
+    t_write.start();
 #ifndef DISABLE_NETWORKING
     // Fill the linked lists of SGE requests
     q_send_front_.assign(num_servers_, NULL);
-    std::cerr << "FIXME: statically determine UPB for send items" << std::endl;
     if (send_wr_.capacity() < key.size()) {
       send_wr_.reserve(key.size());
       send_sge_.reserve(key.size());
@@ -679,9 +847,13 @@ CHECK_DEV_LIST();
     for (::size_t i = 0; i < key.size(); i++) {
       ::size_t owner = HostOf(key[i]);
       if (owner == my_rank_) {
+        t_local_write.start();
         // Write directly, without RDMA
         ValueType *target = value_.area_ + OffsetOf(key[i]);
         memcpy(target, value[i], value_size_ * sizeof(ValueType));
+        t_local_write.stop();
+
+        bytes_local_written += value_size_ * sizeof(ValueType);
 
       } else {
         assert(current_send_req_ < send_wr_.capacity());
@@ -710,35 +882,20 @@ CHECK_DEV_LIST();
 
         wr->next = q_send_front_[owner];
         q_send_front_[owner] = wr;
+
+        bytes_remote_written += value_size_ * sizeof(ValueType);
       }
     }
 
     for (::size_t i = 0; i < num_servers_; ++i) {
-      if (i == my_rank_) {
-        // already done the memcpy
-        std::cerr << "Skip the home writes" << std::endl;
-      } else {
-        struct ::ibv_send_wr *bad;
-
-        ::size_t sent_items = 0;
-        for (auto r = q_send_front_[i]; r != NULL; r = r->next) {
-          sent_items++;
-        }
-        if (sent_items == 0) {
-          std::cerr << "skip posting " << sent_items << " write requests to host " << i << std::endl;
-        } else {
-          std::cerr << "post " << sent_items << " write requests to host " << i << std::endl;
-
-          int r = ::ibv_post_send(res_.peer_[i].qp, q_send_front_[i], &bad);
-          check_ibv_status(r, bad);
-
-          finish_completion_queue(sent_items, IBV_WC_RDMA_WRITE);
-        }
-      }
+      post_linked_list(res_.peer_[i].qp, q_send_front_[i], i,
+                       IBV_WC_RDMA_WRITE);
     }
 
-    std::cerr << "FIXME: should I GC the recv/send queue items? " << std::endl;
+    // std::cerr << "FIXME: should I GC the recv/send queue items? " << std::endl;
+    // Answer: no
 #endif
+    t_write.stop();
   }
 
 
@@ -840,25 +997,26 @@ CHECK_DEV_LIST();
 
   void finish_completion_queue(::size_t n, ::ibv_wc_opcode opcode) {
 #ifndef DISABLE_NETWORKING
-    std::cerr << "FIXME -- lift this vector to be static" << std::endl;
-    std::vector<struct ::ibv_wc> wc(n);
+    if (wc_.capacity() < n) {
+      wc_.reserve(n);
+    }
     int r;
     ::size_t seen = 0;
     while (seen < n) {
       do {
-        r = ::ibv_poll_cq(res_.cq_, wc.size(), wc.data());
+        r = ::ibv_poll_cq(res_.cq_, n, wc_.data());
         if (r < 0) {
           std::cerr << "Oops, must handle wrong result cq poll" << std::endl;
           break;
         }
       } while (r == 0);
       for (int i = 0; i < r; i++) {
-        if (wc[i].status != IBV_WC_SUCCESS) {
-          throw RDMAException("ibv_poll_cq status " + to_string(wc[r].status) +
+        if (wc_[i].status != IBV_WC_SUCCESS) {
+          throw RDMAException("ibv_poll_cq status " + to_string(wc_[r].status) +
                               " " +
-                              std::string(ibv_wc_status_str(wc[r].status)));
+                              std::string(ibv_wc_status_str(wc_[r].status)));
         }
-        assert(wc[i].opcode == opcode);
+        assert(wc_[i].opcode == opcode);
       }
       seen += r;
     }
@@ -1176,7 +1334,7 @@ CHECK_DEV_LIST();
     mpi_error_test(r, "barrier after qp exchange");
   }
 
-#else
+#else   // def USE_MPI
 
   void init_networking() {
 #ifndef DISABLE_NETWORKING
@@ -1244,10 +1402,8 @@ CHECK_DEV_LIST();
       }
     }
   }
-#endif
 
 
-#ifndef DISABLE_NETWORKING
   void alltoall_DC(const char *sendbuf, ::size_t send_item_size,
                                  char *recvbuf, ::size_t recv_item_size,
                                  ::size_t me, ::size_t size,
@@ -1297,6 +1453,7 @@ CHECK_DEV_LIST();
 
 
   void barrier() {
+    t_barrier.start();
 #ifndef DISABLE_NETWORKING
     int32_t dummy = -1;
     if (my_rank_ == 0) {
@@ -1307,10 +1464,11 @@ CHECK_DEV_LIST();
       broadcast_.reduce_send(dummy);
     }
 #endif
+    t_barrier.stop();
   }
 
-#endif
-#endif
+#endif  // def USE_MPI
+#endif  // ndef OK_TO_USE_CC_FILE
 
  private:
   ::size_t num_servers_;
@@ -1327,6 +1485,9 @@ CHECK_DEV_LIST();
   std::vector<::ibv_sge> recv_sge_;
   ::size_t current_recv_req_;
   std::vector<::ibv_send_wr *> q_recv_front_;
+  std::vector<::ibv_wc> wc_;
+
+  const ::size_t post_send_chunk = 16;
 
   /* memory buffer pointers, used for RDMA and send ops */
   rdma_area<ValueType> value_;
@@ -1340,6 +1501,21 @@ CHECK_DEV_LIST();
   mr::net::Network::RWList rw_list_;
 #endif
 #endif
+
+  mcmc::timer::Timer t_read;
+  mcmc::timer::Timer t_local_read;
+  mcmc::timer::Timer t_post_read;
+  mcmc::timer::Timer t_finish_read;
+  mcmc::timer::Timer t_write;
+  mcmc::timer::Timer t_local_write;
+  mcmc::timer::Timer t_post_write;
+  mcmc::timer::Timer t_finish_write;
+  mcmc::timer::Timer t_barrier;
+
+  int64_t bytes_local_read = 0;
+  int64_t bytes_remote_read = 0;
+  int64_t bytes_local_written = 0;
+  int64_t bytes_remote_written = 0;
 };
 
 }   // namespace DKVRDMA
