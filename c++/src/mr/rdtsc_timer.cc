@@ -66,10 +66,13 @@ std::ostream &Timer::print(std::ostream &s) const
 			double us = total / CPU_speed_in_MHz;
 
 			std::ios_base::fmtflags flags = s.flags();
+            s << std::fixed;
 			s << std::setprecision(3) << std::right;
 			s << std::setprecision(3) << std::setw(totalWidth) << (us / 1000000.0);
 			s << std::setw(tickWidth) << count;
 			s << std::setprecision(3) << std::right << std::setw(perTickWidth) << (us / count);
+            us = max / CPU_speed_in_MHz;
+			s << std::setprecision(3) << std::right << std::setw(perTickWidth) << us;
 			s.flags(flags);
 
 		} else if (compact) {

@@ -74,6 +74,9 @@ class DKVWrapper {
 
   void run() {
 
+    mcmc::timer::Timer outer("Outer time");
+    outer.start();
+
 	int64_t seed;
 	::size_t N;   // #nodes in the graph
 	bool no_populate;
@@ -255,6 +258,9 @@ CHECK_DEV_LIST();
 
       delete minibatch;
     }
+
+    outer.stop();
+    std::cout << outer << std::endl;
   }
 
 protected:

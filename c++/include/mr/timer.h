@@ -8,6 +8,8 @@
 
 #define createTimer(a) timer a(#a)
 
+#define __PATHSCALE__
+
 namespace mr {
 namespace timer {
 
@@ -40,7 +42,8 @@ public:
 
 		asm volatile ("rdtsc" : "=a" (eax), "=d" (edx));
 
-		total_time -= ((uint64_t) edx << 32) + eax;
+		t_start = ((uint64_t) edx << 32) + eax;
+		total_time -= t_start;
 #elif (defined __GNUC__ || defined __INTEL_COMPILER) && (defined __i386 || defined __x86_64)
 		asm volatile
 		(
@@ -65,7 +68,11 @@ public:
 
 		asm volatile ("rdtsc" : "=a" (eax), "=d" (edx));
 
-		total_time += ((uint64_t) edx << 32) + eax;
+		int64_t t = ((uint64_t) edx << 32) + eax;
+		total_time += t;
+        if (t - t_start > max) {
+          max = t - t_start;
+        }
 #elif (defined __GNUC__ || defined __INTEL_COMPILER) && (defined __i386 || defined __x86_64)
 		asm volatile
 		(
@@ -98,6 +105,7 @@ public:
 			s << std::right << std::setw(totalWidth) << "total (s)";
 			s << std::right << std::setw(tickWidth) << "ticks";
 			s << std::right << std::setw(perTickWidth) << "per tick (us)";
+			s << std::right << std::setw(perTickWidth) << "max tick (us)";
 			s << std::right << std::endl;
 		}       
 	}
@@ -106,6 +114,13 @@ public:
 	std::ostream &print(std::ostream &) const;
 
 	double getTimeInSeconds() const;
+
+	/**
+	 * Alias for compatibility with mcmc::timer::Timer
+	 */
+	double total() const {
+		return getTimeInSeconds();
+	}
 
 	static inline uint64_t now() {
 		uint64_t	t;
@@ -150,9 +165,11 @@ private:
 		} two_int;
 	};
 
+    int64_t         t_start;
+    int64_t         max = 0;
 	uint64_t	 	count;
 	std::string		name;
-	std::ostream   *const write_on_exit;
+	std::ostream   *write_on_exit;
 
 	bool			compact;
 

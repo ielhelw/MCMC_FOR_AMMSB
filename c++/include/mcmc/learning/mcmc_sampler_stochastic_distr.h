@@ -8,6 +8,7 @@
 #include <algorithm>	// min, max
 #include <chrono>
 
+
 #ifdef ENABLE_DISTRIBUTED
 #  include <mpi.h>
 #else
@@ -106,6 +107,7 @@ int MPI_Scatterv(void *sendbuf, int *sendcounts, int *displs, MPI_Datatype sendt
 #include "mcmc/np.h"
 #include "mcmc/random.h"
 #include "mcmc/timer.h"
+#include <mr/timer.h>
 
 #include "mcmc/learning/learner.h"
 #include "mcmc/learning/mcmc_sampler_stochastic.h"
@@ -146,6 +148,8 @@ typedef std::vector<int> NeighborSet;
 typedef OrderedVertexSet NeighborSet;
 #endif
 
+using ::mr::timer::Timer;
+
 /**
  * The distributed version differs in these aspects from the parallel version:
  *  - the minibatch is distributed
@@ -172,6 +176,7 @@ typedef OrderedVertexSet NeighborSet;
  * END LOOP
  */
 class MCMCSamplerStochasticDistributed : public MCMCSamplerStochastic {
+
 public:
     /**
     Mini-batch based MCMC sampler for community overlapping problems. Basically, given a
@@ -218,27 +223,27 @@ public:
 
 		std::cerr << "***************** FIXME: make an array of kernelRandoms, one for each of the OpenMP threads" << std::endl;
 
-		t_outer = timer::Timer("  outer");
-		t_populate_pi           = timer::Timer("  populate pi");
-		t_perplexity            = timer::Timer("  perplexity");
-		t_rank_pi_perp          = timer::Timer("  rank pi perp");
-		t_cal_edge_likelihood   = timer::Timer("  calc edge likel");
-		t_mini_batch            = timer::Timer("  sample_mini_batch");
-		t_nodes_in_mini_batch   = timer::Timer("  nodes_in_mini_batch");
-		t_sample_neighbor_nodes = timer::Timer("  sample_neighbor_nodes");
-		t_update_phi            = timer::Timer("  update_phi");
-		t_update_pi             = timer::Timer("  update_pi");
-		t_update_beta           = timer::Timer("  update_beta");
-		t_load_pi_minibatch     = timer::Timer("  load minibatch pi");
-		t_load_pi_neighbor      = timer::Timer("  load neighbor pi");
-		t_load_pi_perp          = timer::Timer("  load perplexity pi");
-		t_store_pi_minibatch    = timer::Timer("  store minibatch pi");
-		t_purge_pi_perp         = timer::Timer("  purge perplexity pi");
-		t_broadcast_beta        = timer::Timer("  broadcast beta");
-		t_deploy_minibatch      = timer::Timer("  deploy minibatch");
-		t_barrier_phi           = timer::Timer("  barrier to update phi");
-		t_barrier_pi            = timer::Timer("  barrier to update pi");
-		timer::Timer::setTabular(true);
+		t_outer = Timer("  outer");
+		t_populate_pi           = Timer("  populate pi");
+		t_perplexity            = Timer("  perplexity");
+		t_rank_pi_perp          = Timer("  rank pi perp");
+		t_cal_edge_likelihood   = Timer("  calc edge likel");
+		t_mini_batch            = Timer("  sample_mini_batch");
+		t_nodes_in_mini_batch   = Timer("  nodes_in_mini_batch");
+		t_sample_neighbor_nodes = Timer("  sample_neighbor_nodes");
+		t_update_phi            = Timer("  update_phi");
+		t_update_pi             = Timer("  update_pi");
+		t_update_beta           = Timer("  update_beta");
+		t_load_pi_minibatch     = Timer("  load minibatch pi");
+		t_load_pi_neighbor      = Timer("  load neighbor pi");
+		t_load_pi_perp          = Timer("  load perplexity pi");
+		t_store_pi_minibatch    = Timer("  store minibatch pi");
+		t_purge_pi_perp         = Timer("  purge perplexity pi");
+		t_broadcast_beta        = Timer("  broadcast beta");
+		t_deploy_minibatch      = Timer("  deploy minibatch");
+		t_barrier_phi           = Timer("  barrier to update phi");
+		t_barrier_pi            = Timer("  barrier to update pi");
+		Timer::setTabular(true);
 	}
 
 
@@ -517,7 +522,7 @@ public:
 
 		check_perplexity();
 
-		timer::Timer::printHeader(std::cout);
+		Timer::printHeader(std::cout);
 		std::cout << std::fixed << std::setprecision(12);
 		std::cout << t_outer << std::endl;
 		std::cout << t_populate_pi << std::endl;
@@ -1155,26 +1160,26 @@ protected:
 
 	std::vector<Random::Random *> threadRandom;
 
-	timer::Timer t_outer;
-	timer::Timer t_populate_pi;
-	timer::Timer t_perplexity;
-	timer::Timer t_rank_pi_perp;
-	timer::Timer t_cal_edge_likelihood;
-	timer::Timer t_mini_batch;
-	timer::Timer t_nodes_in_mini_batch;
-	timer::Timer t_sample_neighbor_nodes;
-	timer::Timer t_update_phi;
-	timer::Timer t_update_pi;
-	timer::Timer t_update_beta;
-	timer::Timer t_load_pi_minibatch;
-	timer::Timer t_load_pi_neighbor;
-	timer::Timer t_load_pi_perp;
-	timer::Timer t_store_pi_minibatch;
-	timer::Timer t_purge_pi_perp;
-	timer::Timer t_broadcast_beta;
-	timer::Timer t_deploy_minibatch;
-   	timer::Timer t_barrier_phi;
-	timer::Timer t_barrier_pi;
+	Timer t_outer;
+	Timer t_populate_pi;
+	Timer t_perplexity;
+	Timer t_rank_pi_perp;
+	Timer t_cal_edge_likelihood;
+	Timer t_mini_batch;
+	Timer t_nodes_in_mini_batch;
+	Timer t_sample_neighbor_nodes;
+	Timer t_update_phi;
+	Timer t_update_pi;
+	Timer t_update_beta;
+	Timer t_load_pi_minibatch;
+	Timer t_load_pi_neighbor;
+	Timer t_load_pi_perp;
+	Timer t_store_pi_minibatch;
+	Timer t_purge_pi_perp;
+	Timer t_broadcast_beta;
+	Timer t_deploy_minibatch;
+   	Timer t_barrier_phi;
+	Timer t_barrier_pi;
 
 	clock_t	t_start;
 	std::vector<double> timings;

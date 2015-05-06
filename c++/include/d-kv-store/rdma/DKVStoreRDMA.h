@@ -19,6 +19,7 @@
 #include <infiniband/verbs.h>
 
 #include <mcmc/timer.h>
+#include <mr/timer.h>
 
 #ifndef USE_MPI
 #ifndef DISABLE_NETWORKING
@@ -49,6 +50,8 @@ inline void check_dev_list(const char *file, int line) {
 
 namespace DKV {
 namespace DKVRDMA {
+
+using ::mr::timer::Timer;
 
 extern struct ibv_device **global_dev_list;
 
@@ -106,7 +109,7 @@ class NetworkException : public RDMAException {
 
 
 struct config_t {
-  config_t() : dev_name(""), ib_port(1), gid_idx(-1) {
+  config_t() : dev_name(""), ib_port(1), gid_idx(-1), mtu(IBV_MTU_512) {
   }
 
   void setName(const char *name) {
@@ -116,9 +119,10 @@ struct config_t {
   std::ostream &put(std::ostream &s) const {
     s << " ------------------------------------------------" << std::endl;
     s << " Device name : " << dev_name << std::endl;
-    s << " IB port : " << ib_port << std::endl;
+    s << " IB port :     " << ib_port << std::endl;
     if (gid_idx >= 0)
       s << " GID index : " << gid_idx << std::endl;
+    s << " MTU :         " << mtu << std::endl;
     s << " ------------------------------------------------" << std::endl <<
       std::endl;
     return s;
@@ -127,6 +131,8 @@ struct config_t {
   std::string dev_name; /* IB device name */
   int32_t ib_port;      /* local IB port to work with */
   int32_t gid_idx;      /* gid index to use */
+  ibv_mtu mtu;
+  bool require_completion_channel = false;
 };
 
 inline std::ostream &operator<< (std::ostream &s, const config_t &c) {
@@ -297,11 +303,15 @@ struct resources {
   resources()
       : ib_ctx_(NULL), pd_(NULL), cq_(NULL) {
     CHECK_DEV_LIST();
-    ibv_dev_list_ = ::ibv_get_device_list(&ibv_num_devices_);
-std::cerr << __FILE__ << "." << __LINE__ << ": cached dev_list[0] " << ibv_dev_list_[0] << std::endl;
   }
 
   ~resources() {
+    if (comp_channel_ != NULL) {
+      int r = ibv_destroy_comp_channel(comp_channel_);
+      if (r != 0) {
+        std::cerr << "failed to destroy comp channel: " << strerror(r) << std::endl;
+      }
+    }
     for (auto & p : peer_) {
       if (p.qp != NULL) {
         if (::ibv_destroy_qp(p.qp) != 0) {
@@ -332,14 +342,11 @@ std::cerr << __FILE__ << "." << __LINE__ << ": cached dev_list[0] " << ibv_dev_l
 CHECK_DEV_LIST();
     std::cerr << "RDMA: searching for IB devices in host" << std::endl;
     /* get device names in the system */
-    // int num_devices;
-    // struct ::ibv_device **dev_list = ::ibv_get_device_list(&num_devices);
-    int num_devices = ibv_num_devices_;
-    struct ::ibv_device **dev_list = ibv_dev_list_;
+    int num_devices;
+    struct ::ibv_device **dev_list = ::ibv_get_device_list(&num_devices);
     if (!dev_list) {
       throw RDMAException(errno, "failed to get IB devices list");
     }
-CHECK_DEV_LIST();
     /* if there isn't any IB device in host */
     if (num_devices == 0) {
       throw RDMAException(errno, "found no IB devices");
@@ -348,7 +355,7 @@ CHECK_DEV_LIST();
 CHECK_DEV_LIST();
 
     /* search for the specific device we want to work with */
-struct ::ibv_device *ib_dev = NULL;
+    struct ::ibv_device *ib_dev = NULL;
     for (auto i = 0; i < num_devices; i++) {
       if (config->dev_name == "") {
         ib_dev = dev_list[i];
@@ -369,11 +376,6 @@ if (0) {
       throw RDMAException(errno, "IB device " + config->dev_name + " not found");
     }
 
-CHECK_DEV_LIST();
-    std::cerr << "dev_list " << (void *)dev_list << std::endl;
-    std::cerr << "dev_list[0] " << (void *)dev_list[0] << std::endl;
-    std::cerr << "ib_dev " << (void *)ib_dev << " ->dev_name " << ib_dev->dev_name << std::endl;
-CHECK_DEV_LIST();
     /* get device handle */
     ib_ctx_ = ::ibv_open_device(ib_dev);
     if (ib_ctx_ == NULL) {
@@ -393,7 +395,6 @@ CHECK_DEV_LIST();
         std::cerr << "FIXME ibv_query_port " << __LINE__ << ": What about me?" << std::endl;
       } else {
         std::cerr << __LINE__ << ": config->ib_port " << config->ib_port << std::endl;
-        memset(&peer_[i].port_attr, 0, sizeof peer_[i].port_attr);
         if (::ibv_query_port (ib_ctx_, config->ib_port, &peer_[i].port_attr)) {
           throw RDMAException(errno, "ibv_query_port on port " +
                               to_string(config->ib_port) + " failed");
@@ -401,13 +402,22 @@ CHECK_DEV_LIST();
       }
     }
 
-    /* allocate Protection Domain */
+    /* Allocate completion channel */
+    if (config->require_completion_channel) {
+      comp_channel_ = ibv_create_comp_channel(ib_ctx_);
+      if (comp_channel_ == NULL) {
+        throw RDMAException(errno, "failed to create comp channel");
+      }
+    }
+
+    /* Allocate protection domain */
     pd_ = ::ibv_alloc_pd(ib_ctx_);
     if (pd_ == NULL) {
       throw RDMAException(errno, "ibv_alloc_pd failed");
     }
 
-    cq_ = ::ibv_create_cq (ib_ctx_, max_requests, NULL, NULL, 0);
+    /* Create completion queue */
+    cq_ = ::ibv_create_cq(ib_ctx_, 2 * max_requests, NULL, comp_channel_, 0);
     if (cq_ == NULL) {
       throw RDMAException(errno, "failed to create CQ with " +
                           to_string(num_servers) + "entries");
@@ -445,14 +455,13 @@ CHECK_DEV_LIST();
   }
 
  private:
-  int ibv_num_devices_;
-  struct ::ibv_device **ibv_dev_list_;
-
   struct ::ibv_context *ib_ctx_;         /* device handle */
   struct ::ibv_pd *pd_;                  /* PD handle */
   struct ::ibv_cq *cq_;                  /* CQ handle */
 
   std::vector<rdma_peer> peer_;       /* state of connection to peer_[i] */
+
+  struct ibv_comp_channel *comp_channel_ = NULL;
 
   friend class DKVStoreRDMA;
 };
@@ -477,7 +486,6 @@ class DKVStoreRDMA : public DKVStoreInterface {
  public:
   DKVStoreRDMA() : DKVStoreInterface() {
 CHECK_DEV_LIST();
-CHECK_DEV_LIST();
   }
 
   typedef DKVStoreInterface::KeyType   KeyType;
@@ -500,7 +508,7 @@ CHECK_DEV_LIST();
     delete network_;
 #  endif
 #endif
-    mcmc::timer::Timer::printHeader(std::cout);
+    Timer::printHeader(std::cout);
     std::cout << t_read << std::endl;
     std::cout << t_local_read << std::endl;
     std::cout << t_post_read << std::endl;
@@ -510,17 +518,17 @@ CHECK_DEV_LIST();
     std::cout << t_post_write << std::endl;
     std::cout << t_finish_write << std::endl;
     std::cout << t_barrier << std::endl;
-    std::chrono::high_resolution_clock::duration dt;
+    // std::chrono::high_resolution_clock::duration dt;
     std::cout << "Local read   " << bytes_local_read     << "B " <<
       GBs_from_timer(t_local_read, bytes_local_read) << "GB/s" << std::endl;
-    dt = t_read.total() - t_local_read.total();
+    auto dt = t_read.total() - t_local_read.total();
     std::cout << "Remote read  " << bytes_remote_read    << "B " <<
       GBs_from_time(dt, bytes_remote_read) << "GB/s" << std::endl;
     std::cout << "Local write  " << bytes_local_written  << "B " <<
-      GBs_from_timer(t_local_write, bytes_local_read) << "GB/s" << std::endl;
+      GBs_from_timer(t_local_write, bytes_local_written) << "GB/s" << std::endl;
     dt = t_write.total() - t_local_write.total();
     std::cout << "Remote write " << bytes_remote_written << "B " <<
-      GBs_from_time(dt, bytes_remote_read) << "GB/s" << std::endl;
+      GBs_from_time(dt, bytes_remote_written) << "GB/s" << std::endl;
   }
 #else
   virtual ~DKVStoreRDMA();
@@ -583,11 +591,10 @@ CHECK_DEV_LIST();
             p->next = NULL;
             break;
           }
-          // Why?
           if (p->next == NULL) {
             p->send_flags |= IBV_SEND_SIGNALED;
           } else {
-            p->send_flags &= ~IBV_SEND_SIGNALED;
+            assert(! (p->send_flags & IBV_SEND_SIGNALED));
           }
           p = p->next;
         }
@@ -669,8 +676,14 @@ CHECK_DEV_LIST();
     return gbs;
   }
 
-  static double GBs_from_timer(const mcmc::timer::Timer &timer,
-                               int64_t bytes) {
+  static double GBs_from_time(const double &dt, int64_t bytes) {
+    double gbs;
+    gbs = bytes / dt / (1LL << 30);
+
+    return gbs;
+  }
+
+  static double GBs_from_timer(const Timer &timer, int64_t bytes) {
     return GBs_from_time(timer.total(), bytes);
   }
 
@@ -688,6 +701,7 @@ CHECK_DEV_LIST();
   virtual void Init(::size_t value_size, ::size_t total_values,
                     ::size_t max_cache_capacity, ::size_t max_write_capacity,
                     const std::vector<std::string> &args) {
+    int mtu;
     CHECK_DEV_LIST();
     namespace po = ::boost::program_options;
 
@@ -697,6 +711,7 @@ CHECK_DEV_LIST();
       ("rdma:dev",  po::value(&config_.dev_name), "RDMA device name")
       ("rdma:port", po::value(&config_.ib_port),  "RDMA device port")
       ("rdma:gid",  po::value(&config_.gid_idx),  "RDMA GID index")
+      ("rdma:mtu",  po::value(&mtu), "RDMA MTU (256/512/1024/2048/4096) (512)");
       ;
     CHECK_DEV_LIST();
 
@@ -706,21 +721,45 @@ CHECK_DEV_LIST();
     po::store(clp.run(), vm);
     po::notify(vm);
     CHECK_DEV_LIST();
+    config_.require_completion_channel = false;
+    if (vm.count("rdma:mtu") > 0) {
+      switch (mtu) {
+      case 256:
+        config_.mtu = IBV_MTU_256;
+        break;
+      case 512:
+        config_.mtu = IBV_MTU_512;
+        break;
+      case 1024:
+        config_.mtu = IBV_MTU_1024;
+        break;
+      case 2048:
+        config_.mtu = IBV_MTU_2048;
+        break;
+      case 4096:
+        config_.mtu = IBV_MTU_4096;
+        break;
+      default:
+        throw po::validation_error(po::validation_error::invalid_option_value,
+                                   "rdma:mtu",
+                                   "must be 256/512/1024/2048/4096");
+      }
+    }
 
     /* print the used parameters for info*/
     std::cout << config_;
 
-    mcmc::timer::Timer::setTabular(true);
+    Timer::setTabular(true);
 
-    t_read = mcmc::timer::Timer("RDMA read");
-    t_local_read = mcmc::timer::Timer("     local read");
-    t_post_read = mcmc::timer::Timer("     post read");
-    t_finish_read = mcmc::timer::Timer("     finish read");
-    t_write = mcmc::timer::Timer("RDMA write");
-    t_local_write = mcmc::timer::Timer("     local write");
-    t_post_write = mcmc::timer::Timer("     post write");
-    t_finish_write = mcmc::timer::Timer("     finish write");
-    t_barrier = mcmc::timer::Timer("RDMA barrier");
+    t_read = Timer("RDMA read");
+    t_local_read = Timer("     local read");
+    t_post_read = Timer("     post read");
+    t_finish_read = Timer("     finish read");
+    t_write = Timer("RDMA write");
+    t_local_write = Timer("     local write");
+    t_post_write = Timer("     post write");
+    t_finish_write = Timer("     finish write");
+    t_barrier = Timer("RDMA barrier");
 
     init_networking();  // along the way, defines my_rank_ and num_servers_
     CHECK_DEV_LIST();
@@ -799,6 +838,7 @@ CHECK_DEV_LIST();
         struct ::ibv_sge *sge = &recv_sge_[current_recv_req_];
         current_recv_req_++;
 
+        wr->wr_id = 42; // Yes!
         wr->num_sge = 1;
         wr->sg_list = sge;
         sge->addr   = static_cast<uint64_t>(reinterpret_cast<uintptr_t>(target));
@@ -815,11 +855,11 @@ CHECK_DEV_LIST();
         wr->next = q_recv_front_[owner];
         q_recv_front_[owner] = wr;
 
-        bytes_remote_read += value_size_ * sizeof(ValueType);
+        bytes_remote_read += sge->length;
       }
     }
 
-    // Post the linked list of WR requests
+    // Post the linked lists of WR read requests
     for (::size_t i = 0; i < num_servers_; ++i) {
         post_linked_list(res_.peer_[i].qp, q_recv_front_[i], i,
                          IBV_WC_RDMA_READ);
@@ -862,6 +902,7 @@ CHECK_DEV_LIST();
         struct ::ibv_sge *sge = &recv_sge_[current_send_req_];
         current_send_req_++;
 
+        memset(wr, 0, sizeof *wr);
         wr->num_sge = 1;
         wr->sg_list = sge;
         if (write_.contains(value[i])) {
@@ -883,10 +924,11 @@ CHECK_DEV_LIST();
         wr->next = q_send_front_[owner];
         q_send_front_[owner] = wr;
 
-        bytes_remote_written += value_size_ * sizeof(ValueType);
+        bytes_remote_written += sge->length;
       }
     }
 
+    // Post the linked lists of WR write requests
     for (::size_t i = 0; i < num_servers_; ++i) {
       post_linked_list(res_.peer_[i].qp, q_send_front_[i], i,
                        IBV_WC_RDMA_WRITE);
@@ -1000,10 +1042,25 @@ CHECK_DEV_LIST();
     if (wc_.capacity() < n) {
       wc_.reserve(n);
     }
+
+    if (config_.require_completion_channel) {
+      void *ectx;
+      struct ibv_cq *ecq;
+
+      if (ibv_get_cq_event(res_.comp_channel_, &ecq, &ectx) != 0)
+        throw RDMAException("failed to get CQ event");
+      if (ecq != res_.cq_)
+        throw RDMAException("CQ event for unknown CQ");
+      if (ibv_req_notify_cq(res_.cq_, 0) != 0)
+        throw RDMAException("failed to request CQ notification");
+      ibv_ack_cq_events(res_.cq_, 1);
+    }
+
     int r;
     ::size_t seen = 0;
     while (seen < n) {
       do {
+
         r = ::ibv_poll_cq(res_.cq_, n, wc_.data());
         if (r < 0) {
           std::cerr << "Oops, must handle wrong result cq poll" << std::endl;
@@ -1079,7 +1136,7 @@ CHECK_DEV_LIST();
     int flags;
     memset (&attr, 0, sizeof (attr));
     attr.qp_state = IBV_QPS_RTR;
-    attr.path_mtu = IBV_MTU_256;
+    attr.path_mtu = config_.mtu;
     attr.dest_qp_num = remote_qpn;
     attr.rq_psn = 0;
     attr.max_dest_rd_atomic = 1;
@@ -1255,17 +1312,21 @@ CHECK_DEV_LIST();
       }
     }
 
-    // FIXME: What should we do about this? Do we _ever_ receive?
-    /* let the client post RR to be prepared for incoming messages */
-    for (::size_t i = 0; i < num_servers_; ++i) {
-      if (i == my_rank_) {
-        std::cerr << "FIXME " << __LINE__ << ": What about me?" << std::endl;
-      } else {
-        // post_receive(&value_, res_.peer_[i].qp);
-        post_receive(&cache_, res_.peer_[i].qp);
+    if (false) {
+      // FIXME: What should we do about this? Do we _ever_ receive?
+      /* let the client post RR to be prepared for incoming messages */
+      for (::size_t i = 0; i < num_servers_; ++i) {
+        if (i == my_rank_) {
+          std::cerr << "FIXME " << __LINE__ << ": What about me?" << std::endl;
+        } else {
+          // post_receive(&value_, res_.peer_[i].qp);
+          post_receive(&cache_, res_.peer_[i].qp);
+        }
       }
+      fprintf (stderr, "Posted receive to QP\n");
+    } else {
+      fprintf (stderr, "Skip posting receive to QP\n");
     }
-    fprintf (stderr, "Posted receive to QP\n");
 
     std::cerr << "FIXME: do we need a barrier here?" << std::endl;
 
@@ -1292,6 +1353,12 @@ CHECK_DEV_LIST();
       }
     }
     fprintf (stderr, "QP state was change to RTS\n");
+
+    if (config_.require_completion_channel) {
+      if (ibv_req_notify_cq(res_.cq_, 0) != 0) {
+        throw RDMAException("Cannot req notify cq");
+      }
+    }
 
     /* sync to make sure that both sides are in states that they can connect to prevent packet loose */
     barrier();
@@ -1487,7 +1554,7 @@ CHECK_DEV_LIST();
   std::vector<::ibv_send_wr *> q_recv_front_;
   std::vector<::ibv_wc> wc_;
 
-  const ::size_t post_send_chunk = 16;
+  const ::size_t post_send_chunk = 1024;
 
   /* memory buffer pointers, used for RDMA and send ops */
   rdma_area<ValueType> value_;
@@ -1502,15 +1569,15 @@ CHECK_DEV_LIST();
 #endif
 #endif
 
-  mcmc::timer::Timer t_read;
-  mcmc::timer::Timer t_local_read;
-  mcmc::timer::Timer t_post_read;
-  mcmc::timer::Timer t_finish_read;
-  mcmc::timer::Timer t_write;
-  mcmc::timer::Timer t_local_write;
-  mcmc::timer::Timer t_post_write;
-  mcmc::timer::Timer t_finish_write;
-  mcmc::timer::Timer t_barrier;
+  Timer t_read;
+  Timer t_local_read;
+  Timer t_post_read;
+  Timer t_finish_read;
+  Timer t_write;
+  Timer t_local_write;
+  Timer t_post_write;
+  Timer t_finish_write;
+  Timer t_barrier;
 
   int64_t bytes_local_read = 0;
   int64_t bytes_remote_read = 0;
