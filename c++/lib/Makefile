@@ -6,7 +6,8 @@ TARGET_STATIC	:= $(wildcard *.a)
 TARGET_SHARED	:= $(TARGET_STATIC:%.a=%.so)
 
 .PHONY: default
-default:	$(TARGET_SHARED)
+# default:	$(TARGET_SHARED)
+default:	$(TARGET_STATIC)
 
 include $(PROJECT)/include.mk
 

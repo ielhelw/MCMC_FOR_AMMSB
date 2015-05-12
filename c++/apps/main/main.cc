@@ -12,7 +12,7 @@ int main(int argc, char *argv[]) {
 		}
 		std::cout << std::endl;
 
-		Options args(argc, argv);
+        mcmc::Options args(argc, argv);
 
 #ifdef ENABLE_OPENCL
 		cl::ClContext context = cl::ClContext::createOpenCLContext(args.openClPlatform,

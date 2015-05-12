@@ -1075,6 +1075,7 @@ void SocketMap::release(PendingConnection *p) {
  *
  *--------------------------------------------------------------------------- */
 
+#ifdef DONT_USE_STATIC_INITIALIZER
 SocketImpl::SocketImpl() : NetworkImpl("socket"), refCount(0) {
 	addNetworkImpl(this);
 }
@@ -1086,6 +1087,7 @@ Network *SocketImpl::createNetwork(const OptionList &options) {
 
 
 static SocketImpl impl;
+#endif
 
 
 /* --------------------------------------------------------------------------

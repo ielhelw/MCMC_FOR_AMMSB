@@ -3,6 +3,6 @@ PROJECT = $(shell cd ..; pwd)
 SUBDIRS += preprocess
 SUBDIRS += rand-normal
 SUBDIRS += rand-distr
-SUBDIRS += d-kv-store
+SUBDIRS += rdma
 
 include $(PROJECT)/include.mk

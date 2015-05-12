@@ -52,18 +52,26 @@ class DKVException : public std::exception {
 template <typename ValueType>
 class Buffer {
  public:
-  Buffer() : capacity_(0), next_free_(0), buffer_(NULL) {
+  Buffer() : capacity_(0), next_free_(0), buffer_(NULL), managed_(false) {
   }
 
   ~Buffer() {
-    delete[] buffer_;
-    buffer_ = (ValueType *)0x55555555;
+    if (managed_) {
+      delete[] buffer_;
+      buffer_ = (ValueType *)0x55555555;
+    }
   }
 
   void Init(::size_t capacity) {
     delete[] buffer_;
     capacity_ = capacity;
     buffer_ = new ValueType[capacity];
+  }
+
+  void Init(ValueType *buffer, ::size_t capacity) {
+    capacity_ = capacity;
+    buffer_ = buffer;
+    managed_ = false;
   }
 
   ValueType *get(::size_t n) {
@@ -93,6 +101,7 @@ class Buffer {
   ::size_t capacity_;
   ::size_t next_free_;
   ValueType *buffer_;
+  bool managed_;
 };
 
 class DKVStoreInterface {
@@ -120,7 +129,7 @@ class DKVStoreInterface {
    * @reentrant: no
    */
   virtual void ReadKVRecords(std::vector<ValueType *> &cache,
-							 const std::vector<KeyType> &key,
+                             const std::vector<KeyType> &key,
                              RW_MODE::RWMode rw_mode) = 0;
 
   /**

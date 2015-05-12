@@ -15,18 +15,25 @@ endif
 LD = $(CXX)
 
 CXXFLAGS += -std=c++0x
-CXXFLAGS += -fPIC
+# CXXFLAGS += -fPIC
 ifeq (1, $(CONFIG_OPTIMIZE))
 	CXXFLAGS += -g3 -O3 # -finline-functions
 	CXXFLAGS += -DNDEBUG
+	CFLAGS += -g3 -O3 # -finline-functions
+	CFLAGS += -DNDEBUG
 else
 	CXXFLAGS += -g3 -O0
 	CXXFLAGS += -fno-inline-functions
+	CFLAGS += -g3 -O0
+	CFLAGS += -fno-inline-functions
 endif
 ifeq (1, $(CONFIG_PROFILE))
 	CXXFLAGS += -pg
 	CXXFLAGS := $(filter-out -finline-functions, $(CXXFLAGS))
 	CXXFLAGS += -fno-inline -fno-inline-functions
+	CFLAGS += -pg
+	CFLAGS := $(filter-out -finline-functions, $(CXXFLAGS))
+	CFLAGS += -fno-inline -fno-inline-functions
 	LDFLAGS += -pg
 	CONFIG_STATIC_LIB	= 1
 	export GMON_OUT_PREFIX=gmon.out	# document: will save to gmon.out.<PID>
@@ -68,6 +75,40 @@ else
 CXXFLAGS += -I$(PROJECT_HOME)/3rdparty/daslib/include
 LDFLAGS += -L$(PROJECT_HOME)/3rdparty/daslib/lib/$(shell uname -m)_$(shell uname -s)
 LDLIBS += -ldas
+endif
+
+CFLAGS += -std=gnu99
+CFLAGS += -Wall
+CFLAGS += -Wmissing-prototypes
+ifneq (icpc, $(CXX))
+CFLAGS += -Werror
+else
+CFLAGS += -no-gcc
+endif
+# may need to do this without -Werror:
+# CXXFLAGS += -Wconversion
+CFLAGS += -Wunused
+CFLAGS += -Wextra
+# CXXFLAGS += -pedantic
+# CXXFLAGS += -fmessage-length=0
+CFLAGS += -Wno-unused-parameter
+
+CPPFLAGS += -I$(PROJECT_HOME)/include
+CPPFLAGS += -I$(PROJECT_HOME)/3rdparty/tinyxml2/include
+ifneq (, $(OPENCL_ROOT))
+CPPFLAGS += -I$(OPENCL_ROOT)/include
+CPPFLAGS += -DENABLE_OPENCL
+endif
+CPPFLAGS += -DPROJECT_HOME=$(PROJECT_HOME)
+ifeq (1, $(CONFIG_DISTRIBUTED))
+CPPFLAGS += -DENABLE_DISTRIBUTED
+# OpenMPI requires this
+CFLAGS += -Wno-literal-suffix
+endif
+ifeq (0, $(CONFIG_NETWORKING))
+CPPFLAGS += -DDISABLE_NETWORKING
+else
+CPPFLAGS += -I$(PROJECT_HOME)/3rdparty/daslib/include
 endif
 
 ifneq (, $(OPENCL_ROOT))
@@ -136,6 +177,7 @@ LIBDIR = $(PROJECT_HOME)/lib
 
 CXX_OBJECTS += $(CXX_SOURCES:%.cc=$(OBJDIR)/%.o)
 CXX_OBJECTS += $(CPP_SOURCES:%.cpp=$(OBJDIR)/%.o)
+CXX_OBJECTS += $(C_SOURCES:%.c=$(OBJDIR)/%.o)
 CLEANSUBDIRS = $(SUBDIRS:%=%.clean)
 DEPENDS = $(CXX_OBJECTS:%.o=%.d) $(TARGETS:%=$(OBJDIR)/%.d)
 
@@ -156,6 +198,10 @@ $(OBJDIR)/%.o: %.cc
 $(OBJDIR)/%.o: %.cpp
 	@mkdir -p $(dir $@)
 	$(CXX) $(CXXFLAGS) -MMD -c $< -o $@
+
+$(OBJDIR)/%.o: %.c
+	@mkdir -p $(dir $@)
+	$(CC) $(CFLAGS) $(CPPFLAGS) -MMD -c $< -o $@
 
 $(TARGETS): % : $(OBJDIR)/%.o $(CXX_OBJECTS) $(LDLIBS)
 	@echo LD_RUN_PATH $(LD_RUN_PATH)
