@@ -186,6 +186,8 @@ typedef struct Options {
     const char	       *static_rate;
     uint32_t		src_path_bits;
     int			sl;
+    int                 poll_mode;
+    int                 alt_port;
 } Options;
 
 extern Options Req;
@@ -198,19 +200,15 @@ void debug(char *fmt, ...);
 
 int     cq_error(int status);
 int     do_error(int status, uint64_t *errors);
-int     ib_open(DEVICE *dev);
-int     ib_open_2(CONNECTION *con, const DEVICE *dev);
-int     ib_create_qp(CONNECTION *con, DEVICE *dev, const NODE *peer);
-int     ib_prep(const DEVICE *dev, CONNECTION *conn);
-int     ib_close1(DEVICE *dev);
-int     ib_close2(DEVICE *dev);
 
-int     rd_prep(DEVICE *dev, int size);
-int     rd_create_qp(CONNECTION *con,
-                     DEVICE *dev,
+int     rd_open(DEVICE *dev, int trans, int max_send_wr, int max_recv_wr);
+int     rd_prep(const DEVICE *dev, CONNECTION *con);
+int     rd_open_2(const DEVICE *dev, CONNECTION *con);
+int     rd_create_qp(DEVICE *dev,
+                     CONNECTION *con,
                      struct ibv_context *context,
                      struct rdma_cm_id *id);
-void    rd_close_qp(CONNECTION *con);
+int     rd_close_qp(CONNECTION *con);
 int     rd_close(DEVICE *dev);
 int     rd_close_2(DEVICE *dev);
 int	rd_client_rdma_bw(DEVICE *dev,
@@ -221,8 +219,7 @@ int	rd_client_rdma_bw(DEVICE *dev,
 			  const size_t *sizes);
 int     rd_mralloc(REGION *region, const DEVICE *dev, size_t size);
 int     rd_mrfree(REGION *region, const DEVICE *dev);
-int     rd_open(DEVICE *dev, int trans, int max_send_wr, int max_recv_wr);
-int      rd_poll(DEVICE *dev, struct ibv_wc *wc, int nwc);
+int     rd_poll(DEVICE *dev, struct ibv_wc *wc, int nwc);
 int     rd_post_rdma_std(CONNECTION *con, uint32_t lkey, uint32_t rkey,
                          int opcode,
 			 size_t n,

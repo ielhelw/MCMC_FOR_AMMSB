@@ -15,7 +15,7 @@ endif
 LD = $(CXX)
 
 CXXFLAGS += -std=c++0x
-# CXXFLAGS += -fPIC
+CXXFLAGS += -fPIC
 ifeq (1, $(CONFIG_OPTIMIZE))
 	CXXFLAGS += -g3 -O3 # -finline-functions
 	CXXFLAGS += -DNDEBUG
@@ -78,6 +78,7 @@ LDLIBS += -ldas
 endif
 
 CFLAGS += -std=gnu99
+CFLAGS += -fPIC
 CFLAGS += -Wall
 CFLAGS += -Wmissing-prototypes
 ifneq (icpc, $(CXX))

@@ -178,7 +178,7 @@ private:
 
 	static const ::size_t nameWidth = 36;
 	static const ::size_t totalWidth = 12;
-	static const ::size_t tickWidth = 8;
+	static const ::size_t tickWidth = 12;
 	static const ::size_t perTickWidth = 14;
 
 	static bool tabular;

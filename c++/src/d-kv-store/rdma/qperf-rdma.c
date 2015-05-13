@@ -253,6 +253,13 @@ RATES Rates[] ={
     { "120",    IBV_RATE_120_GBPS   },
 };
 
+static int     ib_open(DEVICE *dev);
+#ifdef UNUSED
+static int     ib_create_qp(CONNECTION *con, DEVICE *dev, const NODE *peer);
+#endif
+static int     ib_prep(const DEVICE *dev, CONNECTION *conn);
+static int     ib_close1(DEVICE *dev);
+static int     ib_close2(DEVICE *dev);
 
 /*
  * This routine is never called and is solely to avoid compiler warnings for
@@ -341,19 +348,15 @@ rd_open(DEVICE *dev, int trans, int max_send_wr, int max_recv_wr)
     else
 #endif
         int r = ib_open(dev);
-
-#if 0
-	If we ever get to send small messages, enable this for the QPs
-    /* Get QP attributes */
-    {
-        struct ibv_qp_attr qp_attr;
-        struct ibv_qp_init_attr qp_init_attr;
-
-        if (ibv_query_qp(dev->qp, &qp_attr, 0, &qp_init_attr) != 0)
-            error(SYS, "query QP failed");
-        dev->max_inline = qp_attr.cap.max_inline_data;
+    if (r != 0) {
+        return r;
     }
-#endif
+
+    /* Request CQ notification if not polling */
+    if (!Req.poll_mode) {
+        if (ibv_req_notify_cq(dev->cq, 0) != 0)
+            return error(SYS, "failed to request CQ notification");
+    }
 
     return r;
 }
@@ -363,7 +366,7 @@ rd_open(DEVICE *dev, int trans, int max_send_wr, int max_recv_wr)
  * Called after rd_open to prepare both ends.
  */
 int
-rd_prep(DEVICE *dev, int size)
+rd_prep(const DEVICE *dev, CONNECTION *con)
 {
 #if 0
 	Do this outside the qperf library: perform all rd_mrallocs, do an all2all
@@ -398,18 +401,10 @@ rd_prep(DEVICE *dev, int size)
     if (Req.use_cm) 
         cm_prep(dev);
     else
-        ib_prep(dev);
 #endif
+        int r = ib_prep(dev, con);
 
-#if 0
-    /* Request CQ notification if not polling */
-    if (!Req.poll_mode) {
-        if (ibv_req_notify_cq(dev->cq, 0) != 0)
-            error(SYS, "failed to request CQ notification");
-    }
-#endif
-
-    return 0;
+    return r;
 }
 
 
@@ -476,11 +471,13 @@ show_remote_node_info(const NODE *n, const CONNECTION *con, const REGION *r)
  * the right order.
  */
 
-void
+int
 rd_close_qp(CONNECTION *con)
 {
     if (con->qp)
         ibv_destroy_qp(con->qp);
+
+    return 0;
 }
 
 
@@ -491,8 +488,8 @@ rd_close(DEVICE *dev)
     if (Req.use_cm)
         cm_close(dev);
     else
-        ib_close1(dev);
 #endif
+        ib_close1(dev);
 
     if (dev->ah)
         ibv_destroy_ah(dev->ah);
@@ -513,8 +510,8 @@ rd_close_2(DEVICE *dev)
 
 #if 0
     if (!Req.use_cm)
-        ib_close2(dev);
 #endif
+        ib_close2(dev);
 
     memset(dev, 0, sizeof(*dev));
 
@@ -526,27 +523,27 @@ rd_close_2(DEVICE *dev)
  * Create a queue pair.
  */
 int
-rd_create_qp(CONNECTION *con,
-			 DEVICE *dev,
-			 struct ibv_context *context,
-			 struct rdma_cm_id *id)
+rd_create_qp(DEVICE *dev,
+             CONNECTION *con,
+             struct ibv_context *context,
+             struct rdma_cm_id *id)
 {
-#if 0
     /* Set up and verify rd_atomic parameters */
     {
         struct ibv_device_attr dev_attr;
 
         if (ibv_query_device(context, &dev_attr) != SUCCESS0)
-            error(SYS, "query device failed");
+            return error(SYS, "query device failed");
+#if 0
         if (Req.rd_atomic == 0)
             dev->lnode.rd_atomic = dev_attr.max_qp_rd_atom;
         else if (Req.rd_atomic <= dev_attr.max_qp_rd_atom)
             dev->lnode.rd_atomic = Req.rd_atomic;
         else
-            error(0, "device only supports %d (< %d) RDMA reads or atomics",
+            return error(0, "device only supports %d (< %d) RDMA reads or atomics",
                                     dev_attr.max_qp_rd_atom, Req.rd_atomic);
-    }
 #endif
+    }
 
     /* Create queue pair */
     {
@@ -565,7 +562,7 @@ rd_create_qp(CONNECTION *con,
 #if 0
         if (Req.use_cm) {
             if (rdma_create_qp(id, dev->pd, &qp_attr) != 0)
-                error(SYS, "failed to create QP");
+                return error(SYS, "failed to create QP");
             dev->qp = id->qp;
         } else {
 #ifdef HAS_XRC
@@ -579,12 +576,12 @@ rd_create_qp(CONNECTION *con,
 
                 dev->xrc = ibv_open_xrc_domain(context, -1, O_CREAT);
                 if (!dev->xrc)
-                    error(SYS, "failed to open XRC domain");
+                    return error(SYS, "failed to open XRC domain");
 
                 dev->srq = ibv_create_xrc_srq(dev->pd, dev->xrc, dev->cq,
                                                                     &srq_attr);
                 if (!dev->srq)
-                    error(SYS, "failed to create SRQ");
+                    return error(SYS, "failed to create SRQ");
 
                 qp_attr.cap.max_recv_wr  = 0;
                 qp_attr.cap.max_recv_sge = 0;
@@ -599,6 +596,16 @@ rd_create_qp(CONNECTION *con,
 #if 0
         }
 #endif
+    }
+
+    /* Get QP attributes */
+    {
+        struct ibv_qp_attr qp_attr;
+        struct ibv_qp_init_attr qp_init_attr;
+
+        if (ibv_query_qp(con->qp, &qp_attr, 0, &qp_init_attr) != 0)
+            return error(SYS, "query QP failed");
+        con->max_inline = qp_attr.cap.max_inline_data;
     }
 
     return 0;
@@ -661,7 +668,7 @@ rd_mrfree(REGION *region, const DEVICE *dev)
 /*
  * Open an InfiniBand device.
  */
-int
+static int
 ib_open(DEVICE *dev)
 {
     /* Determine MTU */
@@ -755,10 +762,14 @@ ib_open(DEVICE *dev)
 	    dev->lnode.lid += Req.src_path_bits & ((1 << port_attr.lmc) - 1);
     }
 
-    /* Allocate completion channel */
-    dev->channel = ibv_create_comp_channel(dev->ib.context);
-    if (!dev->channel)
-        return error(SYS, "failed to create completion channel");
+    if (!Req.poll_mode) {
+        /* Allocate completion channel */
+        dev->channel = ibv_create_comp_channel(dev->ib.context);
+        if (!dev->channel)
+            return error(SYS, "failed to create completion channel");
+    } else {
+        fprintf(stderr, "skip the completion channel\n");
+    }
 
     /* Allocate protection domain */
     dev->pd = ibv_alloc_pd(dev->ib.context);
@@ -771,20 +782,35 @@ ib_open(DEVICE *dev)
     if (!dev->cq)
         return error(SYS, "failed to create completion queue");
 
+    /* Set up alternate port LID */
+    if (Req.alt_port) {
+        struct ibv_port_attr port_attr;
+        int stat = ibv_query_port(dev->ib.context, Req.alt_port, &port_attr);
+
+        if (stat != SUCCESS0)
+            return error(SYS, "query port failed");
+        dev->lnode.alt_lid = port_attr.lid;
+	if (port_attr.lmc > 0)
+	    dev->lnode.alt_lid +=
+                Req.src_path_bits & ((1 << port_attr.lmc) - 1);
+    }
+
     return 0;
 }
 
 
-int
+#ifdef UNUSED
+static int
 ib_create_qp(CONNECTION *con, DEVICE *dev, const NODE *peer)
 {
     /* Create QP */
     return rd_create_qp(con, dev, dev->ib.context, 0);
 }
+#endif
 
 
 int
-ib_open_2(CONNECTION *con, const DEVICE *dev)
+rd_open_2(const DEVICE *dev, CONNECTION *con)
 {
     /* Modify queue pair to INIT state */
     {
@@ -828,21 +854,6 @@ ib_open_2(CONNECTION *con, const DEVICE *dev)
         dev->lnode.srqn = dev->srq->xrc_srq_num;
 #endif
 
-#if 0
-    /* Set up alternate port LID */
-    if (Req.alt_port) {
-        struct ibv_port_attr port_attr;
-        int stat = ibv_query_port(dev->ib.context, Req.alt_port, &port_attr);
-
-        if (stat != SUCCESS0)
-            error(SYS, "query port failed");
-        dev->lnode.alt_lid = port_attr.lid;
-	if (port_attr.lmc > 0)
-	    dev->lnode.alt_lid +=
-                Req.src_path_bits & ((1 << port_attr.lmc) - 1);
-    }
-#endif
-
     return 0;
 }
 
@@ -851,7 +862,7 @@ ib_open_2(CONNECTION *con, const DEVICE *dev)
  * Prepare the InfiniBand connection for receiving and sending.  Final stage of
  * open.
  */
-int
+static int
 ib_prep(const DEVICE *dev, CONNECTION *con)
 {
     int flags;
@@ -878,16 +889,14 @@ ib_prep(const DEVICE *dev, CONNECTION *con)
         .sq_psn            = con->local.psn,
         .max_rd_atomic     = 1,	// dev->rnode.rd_atomic,
         .path_mig_state    = IBV_MIG_REARM,
-#if 0
         .alt_port_num      = Req.alt_port,
         .alt_ah_attr       = {
-            .dlid          = dev->rnode.alt_lid,
+            .dlid          = con->rnode.alt_lid,
             .port_num      = Req.alt_port,
             .static_rate   = dev->ib.rate,
 	    .src_path_bits = Req.src_path_bits,
             .sl            = Req.sl
         }
-#endif
     };
 #if 0
     struct ibv_ah_attr ah_attr ={
@@ -904,17 +913,17 @@ ib_prep(const DEVICE *dev, CONNECTION *con)
         /* Modify queue pair to RTR */
         flags = IBV_QP_STATE;
         if (ibv_modify_qp(dev->qp, &rtr_attr, flags) != 0)
-            error(SYS, "failed to modify QP to RTR");
+            return error(SYS, "failed to modify QP to RTR");
 
         /* Modify queue pair to RTS */
         flags = IBV_QP_STATE | IBV_QP_SQ_PSN;
         if (ibv_modify_qp(dev->qp, &rts_attr, flags) != 0)
-            error(SYS, "failed to modify QP to RTS");
+            return error(SYS, "failed to modify QP to RTS");
 
         /* Create address handle */
         dev->ah = ibv_create_ah(dev->pd, &ah_attr);
         if (!dev->ah)
-            error(SYS, "failed to create address handle");
+            return error(SYS, "failed to create address handle");
 #ifdef HAS_XRC
     } else if (dev->trans == IBV_QPT_RC || dev->trans == IBV_QPT_XRC) {
 #else
@@ -939,10 +948,12 @@ ib_prep(const DEVICE *dev, CONNECTION *con)
                 IBV_QP_RNR_RETRY |
                 IBV_QP_SQ_PSN    |
                 IBV_QP_MAX_QP_RD_ATOMIC;
+        if (
 #if 0
-        if (dev->trans == IBV_QPT_RC && dev->rnode.alt_lid)
-            flags |= IBV_QP_ALT_PATH | IBV_QP_PATH_MIG_STATE;
+            dev->trans == IBV_QPT_RC &&
 #endif
+            con->rnode.alt_lid)
+            flags |= IBV_QP_ALT_PATH | IBV_QP_PATH_MIG_STATE;
         if (ibv_modify_qp(con->qp, &rts_attr, flags) != 0)
             return error(SYS, "failed to modify QP to RTS");
 #if 0
@@ -954,7 +965,7 @@ ib_prep(const DEVICE *dev, CONNECTION *con)
                 IBV_QP_DEST_QPN |
                 IBV_QP_RQ_PSN;
         if (ibv_modify_qp(dev->qp, &rtr_attr, flags) != 0)
-            error(SYS, "failed to modify QP to RTR");
+            return error(SYS, "failed to modify QP to RTR");
 
         /* Modify queue pair to RTS */
         flags = IBV_QP_STATE |
@@ -962,7 +973,7 @@ ib_prep(const DEVICE *dev, CONNECTION *con)
         if (dev->rnode.alt_lid)
             flags |= IBV_QP_ALT_PATH | IBV_QP_PATH_MIG_STATE;
         if (ibv_modify_qp(dev->qp, &rts_attr, flags) != 0)
-            error(SYS, "failed to modify QP to RTS");
+            return error(SYS, "failed to modify QP to RTS");
     }
 #endif
 
@@ -973,7 +984,7 @@ ib_prep(const DEVICE *dev, CONNECTION *con)
 /*
  * Close an InfiniBand device, part 1.
  */
-int
+static int
 ib_close1(DEVICE *dev)
 {
     if (dev->srq)
@@ -990,7 +1001,7 @@ ib_close1(DEVICE *dev)
 /*
  * Close an InfiniBand device, part 2.
  */
-int
+static int
 ib_close2(DEVICE *dev)
 {
     if (dev->ib.context)
@@ -1029,10 +1040,6 @@ rd_post_rdma_std(CONNECTION *con, uint32_t lkey, uint32_t rkey,
         },
     };
 
-#if 0
-    if (opcode != IBV_WR_RDMA_READ && dev->msg_size <= dev->max_inline)
-        wr.send_flags |= IBV_SEND_INLINE;
-#endif
     errno = 0;
     for (size_t i = 0; i < n; i++) {
 	struct ibv_send_wr *badwr;
@@ -1040,6 +1047,8 @@ rd_post_rdma_std(CONNECTION *con, uint32_t lkey, uint32_t rkey,
 	sge.length = sizes[i];
 	sge.addr   = (uint64_t)local_addr[i];
 	wr.wr.rdma.remote_addr = (uint64_t)remote_addr[i];
+        if (opcode != IBV_WR_RDMA_READ && sizes[i] <= con->max_inline)
+            wr.send_flags |= IBV_SEND_INLINE;
         if (ibv_post_send(con->qp, &wr, &badwr) != SUCCESS0) {
             return error(SYS, "failed to post %s", opcode_name(wr.opcode));
         }
@@ -1063,20 +1072,22 @@ rd_poll(DEVICE *dev, struct ibv_wc *wc, int nwc)
 {
     int n;
 
+    if (!Req.poll_mode
 #if 0
-    if (!Req.poll_mode && !Finished) {
+        && !Finished
+#endif
+        ) {
         void *ectx;
         struct ibv_cq *ecq;
 
         if (ibv_get_cq_event(dev->channel, &ecq, &ectx) != SUCCESS0)
             return maybe(0, "failed to get CQ event");
         if (ecq != dev->cq)
-            error(0, "CQ event for unknown CQ");
+            return error(0, "CQ event for unknown CQ");
         if (ibv_req_notify_cq(dev->cq, 0) != SUCCESS0)
             return maybe(0, "failed to request CQ notification");
 	ibv_ack_cq_events(dev->cq, 1);
     }
-#endif
     n = ibv_poll_cq(dev->cq, nwc, wc);
     if (n < 0)
         return maybe(0, "CQ poll failed");

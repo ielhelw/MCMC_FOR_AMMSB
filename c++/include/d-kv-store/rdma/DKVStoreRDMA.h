@@ -150,6 +150,7 @@ struct cm_con_data_t {
   uint32_t		qp_num;
   uint32_t		psn;
   uint16_t		lid;
+  uint16_t		alt_lid;
 
   std::ostream &put(std::ostream &s) const {
     std::ios_base::fmtflags flags = s.flags();
@@ -176,14 +177,20 @@ struct rdma_peer {
   CONNECTION     connection;          /* QP handle */
   struct cm_con_data_t props;         /* remote side properties */
 
+  ~rdma_peer() {
+    if (rd_close_qp(&connection) != 0) {
+      throw QPerfException("rd_close_qp");
+    }
+  }
+
   void Init(DEVICE *device) {
     std::cerr << "Create QP" << std::endl;
-    if (ib_create_qp(&connection, device, NULL) != 0) {
-      throw QPerfException();
+    if (rd_create_qp(device, &connection, device->ib.context, NULL) != 0) {
+      throw QPerfException("rd_create_qp");
     }
-    std::cerr << "Migrate QPs to INIT" << std::endl;
-    if (ib_open_2(&connection, device) != 0) {
-      throw QPerfException("rd_prep");
+    std::cerr << "Migrate this QP to INIT" << std::endl;
+    if (rd_open_2(device, &connection) != 0) {
+      throw QPerfException("rd_open_2");
     }
   }
 };
@@ -308,6 +315,13 @@ CHECK_DEV_LIST();
     dt = t_write.total() - t_local_write.total();
     std::cout << "Remote write " << bytes_remote_written << "B " <<
       GBs_from_time(dt, bytes_remote_written) << "GB/s" << std::endl;
+
+    if (rd_close(&res_) != 0) {
+      throw QPerfException("rd_close");
+    }
+    if (rd_close_2(&res_) != 0) {
+      throw QPerfException("rd_close_2");
+    }
   }
 #else
   virtual ~DKVStoreRDMA();
@@ -518,6 +532,8 @@ CHECK_DEV_LIST();
     Req.static_rate = "";
     Req.src_path_bits = 0;
     Req.sl = 0;
+    Req.poll_mode = 1;
+    Req.alt_port = 0;
 
     Timer::setTabular(true);
 
@@ -535,14 +551,9 @@ CHECK_DEV_LIST();
     init_networking();  // along the way, defines my_rank_ and num_servers_
     CHECK_DEV_LIST();
 
-#ifndef DISABLE_NETWORKING
     if (rd_open(&res_, IBV_QPT_RC, post_send_chunk_, 0) != 0) {
       throw QPerfException("rd_open");
     }
-    if (rd_prep(&res_, 0) != 0) {
-      throw QPerfException("rd_prep");
-    }
-#endif
 
     value_size_ = value_size;
     total_values_ = total_values;
@@ -583,12 +594,14 @@ CHECK_DEV_LIST();
         con->qp_num     = peer_[i].connection.local.qpn;
         con->psn        = peer_[i].connection.local.psn;
         con->lid        = res_.lnode.lid;
+        con->alt_lid    = res_.lnode.alt_lid;
 #if 0
         con->gid    = my_gid;
 #endif
         std::cout << "My con_data for qp to host " << i << ": " << std::endl;
-        std::cout << *con << std::endl;
-        fprintf (stdout, "\nLocal LID[%zd] = 0x%x\n", i, res_.lnode.lid);
+        std::cout << *con;
+        std::cout << "Local LID[" << i << "] = 0x " << std::hex <<
+          res_.lnode.lid << std::endl << std::dec;
       }
     }
 
@@ -602,9 +615,10 @@ CHECK_DEV_LIST();
       } else {
         /* save the remote side attributes, we will need it for the post SR */
         peer_[i].props = remote_con_data[i];
-        peer_[i].connection.rnode.lid = remote_con_data[i].lid;
-        peer_[i].connection.remote.qpn = remote_con_data[i].qp_num;
-        peer_[i].connection.remote.psn = remote_con_data[i].psn;
+        peer_[i].connection.rnode.lid     = remote_con_data[i].lid;
+        peer_[i].connection.rnode.alt_lid = remote_con_data[i].alt_lid;
+        peer_[i].connection.remote.qpn    = remote_con_data[i].qp_num;
+        peer_[i].connection.remote.psn    = remote_con_data[i].psn;
 
         std::cout << "Peer " << i << std::endl;
         std::cout << remote_con_data[i];
@@ -613,31 +627,34 @@ CHECK_DEV_LIST();
           std::cout << "  gid " << gid_t(peer_[i].props.gid);
         }
 #endif
-        std::cout << std::endl << std::dec;
+        std::cout << std::dec;
       }
     }
 
-    // Sync before we move the qps to the next state
+    // Sync before we move the QPs to the next state
     barrier();
+#endif
 
     std::cerr << "Migrate QPs to RTR, RTS" << std::endl;
     for (::size_t i = 0; i < num_servers_; ++i) {
       if (i == my_rank_) {
         // std::cerr << "FIXME " << __LINE__ << ": What about me?" << std::endl;
       } else {
-        if (ib_prep(&res_, &peer_[i].connection) != 0) {
-          throw QPerfException("ib_prep peer " + to_string(i));
+        if (rd_prep(&res_, &peer_[i].connection) != 0) {
+          throw QPerfException("rd_prep peer " + to_string(i));
         }
       }
     }
-#endif
 
-    q_recv_front_.resize(num_servers_);
-    q_send_front_.resize(num_servers_);
-    ::size_t q_size = std::max(cache_buffer_.capacity(),
-                               write_buffer_.capacity());
-    recv_wr_.resize(q_size);
-    recv_sge_.resize(q_size);
+    wc_.resize(post_send_chunk_);
+    if (false) {
+      q_recv_front_.resize(num_servers_);
+      q_send_front_.resize(num_servers_);
+      ::size_t q_size = std::max(cache_buffer_.capacity(),
+                                 write_buffer_.capacity());
+      recv_wr_.resize(q_size);
+      recv_sge_.resize(q_size);
+    }
   }
 
   template <typename T>
@@ -659,7 +676,7 @@ CHECK_DEV_LIST();
 
     t_read.start();
 
-#ifndef DISABLE_NETWORKING
+#ifndef DISABLE_INFINIBAND
     if (false) {
       // Fill the linked lists of WR requests
       q_recv_front_.assign(num_servers_, NULL);
@@ -748,24 +765,29 @@ CHECK_DEV_LIST();
           ::size_t at = 0;
           ::size_t seen = 0;
           ::size_t n = post_send_chunk_;
-          std::vector<struct ibv_wc> wc(post_send_chunk_);
           while (seen < local_addr[h].size()) {
             ::size_t p = std::min(n, local_addr[h].size() - at);
-            if (rd_post_rdma_std(&peer_[h].connection,
-                                 cache_.region_.mr->lkey,
-                                 remote_key,
-                                 IBV_WR_RDMA_READ,
-                                 p,
-                                 local_addr[h].data() + at,
-                                 remote_addr[h].data() + at,
-                                 sizes[h].data() + at) != 0) {
-              throw QPerfException("rd_post_rdma_std");
+            if (p > 0) {
+              t_post_read.start();
+              if (rd_post_rdma_std(&peer_[h].connection,
+                                   cache_.region_.mr->lkey,
+                                   remote_key,
+                                   IBV_WR_RDMA_READ,
+                                   p,
+                                   local_addr[h].data() + at,
+                                   remote_addr[h].data() + at,
+                                   sizes[h].data() + at) != 0) {
+                throw QPerfException("rd_post_rdma_std");
+              }
+              t_post_read.stop();
+              at += p;
             }
-            at += p;
 
-            n = rd_poll(&res_, wc.data(), wc.size());
-            for (int i = 0; i < n; i++) {
-              int status = wc[i].status;
+            t_finish_read.start();
+            n = rd_poll(&res_, wc_.data(), wc_.size());
+            t_finish_read.stop();
+            for (::size_t i = 0; i < n; i++) {
+              int status = wc_[i].status;
               if (status != IBV_WC_SUCCESS) {
                 throw QPerfException("rd_poll");
               }
@@ -784,7 +806,7 @@ CHECK_DEV_LIST();
   VIRTUAL void WriteKVRecords(const std::vector<KeyType> &key,
                               const std::vector<const ValueType *> &value) {
     t_write.start();
-#ifndef DISABLE_NETWORKING
+#ifndef DISABLE_INFINIBAND
     // Fill the linked lists of SGE requests
     q_send_front_.assign(num_servers_, NULL);
     if (send_wr_.capacity() < key.size()) {
@@ -946,7 +968,7 @@ CHECK_DEV_LIST();
 
 
   void finish_completion_queue(::size_t n, ::ibv_wc_opcode opcode) {
-#ifndef DISABLE_NETWORKING
+#ifndef DISABLE_INFINIBAND
     if (wc_.capacity() < n) {
       wc_.reserve(n);
     }
@@ -1222,7 +1244,6 @@ CHECK_DEV_LIST();
   ::size_t my_rank_;
   
   DEVICE res_;
-  std::vector<NODE> peer_node_;
   std::vector<rdma_peer> peer_;
 
   std::vector< ::ibv_send_wr> send_wr_;
