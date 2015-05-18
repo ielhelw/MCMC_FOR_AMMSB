@@ -211,16 +211,16 @@ $(TARGETS): % : $(OBJDIR)/%.o $(CXX_OBJECTS) $(LDLIBS) $(LIB_LDLIBS)
 	@echo LD_RUN_PATH $(LD_RUN_PATH)
 	$(LD) $< $(CXX_OBJECTS) $(LDFLAGS) $(LIB_LDFLAGS) $(LDLIBS) $(LIB_LDLIBS) -o $@
 
-# TARGET_LIBS_SHARED	= $(TARGET_LIBS:%=$(LIBDIR)/%.so)
-# TARGET_LIBS_STATIC	= $(TARGET_LIBS:%=$(LIBDIR)/%.a)
-# 
-# $(TARGET_LIBS):	$(TARGET_LIBS_STATIC)
-# # LDFLAGS	+= -static
-# # LDFLAGS	+= -static-libgcc
-# 
-# $(TARGET_LIBS_STATIC): $(CXX_OBJECTS)
-# 	$(AR) $(AR_FLAGS) $@ $^
-# 
+TARGET_LIBS_SHARED	= $(TARGET_LIBS:%=$(LIBDIR)/%.so)
+TARGET_LIBS_STATIC	= $(TARGET_LIBS:%=$(LIBDIR)/%.a)
+
+$(TARGET_LIBS):	$(TARGET_LIBS_STATIC)
+# LDFLAGS	+= -static
+# LDFLAGS	+= -static-libgcc
+
+$(TARGET_LIBS_STATIC): $(CXX_OBJECTS)
+	$(AR) $(AR_FLAGS) $@ $^
+
 # $(TARGET_LIBS_SHARED): $(CXX_OBJECTS)
 # 	$(LDSHARED) $(LD_FLAGS_LIB_SHARED) $^ -o $@.$(MAJOR).$(MINOR) -Wl,-soname,$@.$(MAJOR).$(MINOR)
 # 	rm -f $@.$(MAJOR) $@

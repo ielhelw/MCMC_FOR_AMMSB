@@ -107,8 +107,9 @@ typedef struct NODE {
 
 
 typedef struct CONN_DESCRIPTOR {
-    uint32_t    qpn;                    /* Queue pair number */
-    uint32_t    psn;                    /* Packet sequence number */
+    int32_t     qpn;                    /* Queue pair number */
+    int32_t     psn;                    /* Packet sequence number */
+    int32_t     rd_atomic;
 } CONN_DESCRIPTOR;
 
 
@@ -180,14 +181,15 @@ typedef struct RATES {
 
 
 typedef struct Options {
-    int			mtu_size;
+    int32_t		mtu_size;
     const char	       *id;
-    int                 port;
+    int32_t             port;
+    int32_t             rd_atomic;
     const char	       *static_rate;
-    uint32_t		src_path_bits;
-    int			sl;
-    int                 poll_mode;
-    int                 alt_port;
+    int32_t		src_path_bits;
+    int32_t		sl;
+    int32_t             poll_mode;
+    int32_t             alt_port;
 } Options;
 
 extern Options Req;

@@ -207,7 +207,7 @@ public:
     This method is great marriage between MCMC and stochastic methods.
     */
     MCMCSamplerStochasticDistributed(const Options &args, const Network &graph)
-			: MCMCSamplerStochastic(args, graph), args(args), mpi_master(0) {
+			: MCMCSamplerStochastic(args, graph), mpi_master(0), args(args) {
 #ifdef RANDOM_FOLLOWS_CPP_WENZHE
 		throw MCMCException("No support for Wenzhe Random compatibility");
 #endif

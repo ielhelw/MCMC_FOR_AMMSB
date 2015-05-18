@@ -30,6 +30,7 @@ typedef struct CM_CON_DATA {
   uint32_t              cache_rkey;
   uint32_t              qp_num;
   uint32_t              psn;
+  uint32_t              rd_atomic;
   uint16_t              lid;
   uint16_t              alt_lid;
 } cm_con_data_t;
@@ -47,6 +48,7 @@ cm_con_data_print(FILE *out, const cm_con_data_t *con)
   fprintf(out, "  cache rkey = 0x%" PRIx32 "\n",    con->cache_rkey);
   fprintf(out, "  QP number = 0x%" PRIx32 "\n",     con->qp_num);
   fprintf(out, "  PSN number = 0x%" PRIx32 "\n",    con->psn);
+  fprintf(out, "  max.atomic = 0x%" PRIx32 "\n",    con->rd_atomic);
   fprintf(out, "  LID = 0x%" PRIx16 "\n",           con->lid);
 
   return 0;
@@ -124,6 +126,7 @@ rdma_sync(int sock, int up_else_down, rdma_t *rdma, CONNECTION *me)
   }
   con.qp_num     = me->local.qpn;
   con.psn        = me->local.psn;
+  con.rd_atomic  = me->local.rd_atomic;
   con.lid        = rdma->device.lnode.lid;
   con.alt_lid    = rdma->device.lnode.alt_lid;
 
@@ -154,6 +157,7 @@ rdma_sync(int sock, int up_else_down, rdma_t *rdma, CONNECTION *me)
   rdma->peer_cache.key   = peer_con.cache_rkey;
   me->remote.qpn       = peer_con.qp_num;
   me->remote.psn       = peer_con.psn;
+  me->remote.rd_atomic = peer_con.rd_atomic;
   me->rnode.lid        = peer_con.lid;
   me->rnode.alt_lid    = peer_con.alt_lid;
 
@@ -190,6 +194,7 @@ int main(int argc, char *argv[])
   Req.sl = 0;
   Req.poll_mode = 1;
   Req.alt_port = 0;
+  Req.rd_atomic = 0;
 
   // parse options
   int option = 0;
@@ -214,6 +219,11 @@ int main(int argc, char *argv[])
       i++;
       if (sscanf(argv[i], "%zd", &iterations) != 1) {
         bail_out("x must be a size_t");
+      }
+    } else if (i < argc - 1 && strcmp(argv[i], "--atomic") == 0) {
+      i++;
+      if (sscanf(argv[i], "%u", &Req.rd_atomic) != 1) {
+        bail_out("atomic must be an uint32_t");
       }
     } else if (i < argc - 1 && strcmp(argv[i], "--chunk") == 0) {
       i++;

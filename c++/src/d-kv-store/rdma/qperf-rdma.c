@@ -534,11 +534,11 @@ rd_create_qp(DEVICE *dev,
 
         if (ibv_query_device(context, &dev_attr) != SUCCESS0)
             return error(SYS, "query device failed");
-#if 0
+#if 1
         if (Req.rd_atomic == 0)
-            dev->lnode.rd_atomic = dev_attr.max_qp_rd_atom;
+            con->local.rd_atomic = dev_attr.max_qp_rd_atom;
         else if (Req.rd_atomic <= dev_attr.max_qp_rd_atom)
-            dev->lnode.rd_atomic = Req.rd_atomic;
+            con->local.rd_atomic = Req.rd_atomic;
         else
             return error(0, "device only supports %d (< %d) RDMA reads or atomics",
                                     dev_attr.max_qp_rd_atom, Req.rd_atomic);
@@ -872,7 +872,7 @@ ib_prep(const DEVICE *dev, CONNECTION *con)
         .dest_qp_num        = con->remote.qpn,
         .rq_psn             = con->remote.psn,
         .min_rnr_timer      = MIN_RNR_TIMER,
-        .max_dest_rd_atomic = 1,	// con->lnode.rd_atomic,
+        .max_dest_rd_atomic = con->local.rd_atomic,
         .ah_attr            = {
             .dlid           = con->rnode.lid,
             .port_num       = dev->ib.port,
@@ -887,7 +887,7 @@ ib_prep(const DEVICE *dev, CONNECTION *con)
         .retry_cnt         = RETRY_CNT,
         .rnr_retry         = RNR_RETRY_CNT,
         .sq_psn            = con->local.psn,
-        .max_rd_atomic     = 1,	// dev->rnode.rd_atomic,
+        .max_rd_atomic     = con->remote.rd_atomic,
         .path_mig_state    = IBV_MIG_REARM,
         .alt_port_num      = Req.alt_port,
         .alt_ah_attr       = {

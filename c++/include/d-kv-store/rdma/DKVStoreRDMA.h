@@ -149,6 +149,7 @@ struct cm_con_data_t {
   uint32_t		cache_rkey;
   uint32_t		qp_num;
   uint32_t		psn;
+  uint32_t              rd_atomic;
   uint16_t		lid;
   uint16_t		alt_lid;
 
@@ -159,8 +160,10 @@ struct cm_con_data_t {
     s << "  value rkey = 0x" << value_rkey << std::endl;
     s << "  cache address = 0x" << cache << std::endl;
     s << "  cache rkey = 0x" << cache_rkey << std::endl;
-    s << "  QP number = 0x" << qp_num << std::endl;
-    s << "  PSN number = 0x" << psn << std::endl;
+    s << std::dec;
+    s << "  QP number = " << qp_num << std::endl;
+    s << "  PSN number = " << psn << std::endl;
+    s << "  max.atomic = " << rd_atomic << std::endl;
     s << "  LID = 0x" << lid << std::endl;
     s.flags(flags);
 
@@ -269,7 +272,8 @@ inline std::ostream &operator<< (std::ostream &s,
 class DKVStoreRDMA : public DKVStoreInterface {
 
  public:
-  DKVStoreRDMA() : DKVStoreInterface(), REQUIRE_POSTED_RECEIVE(false) {
+  DKVStoreRDMA()
+     : DKVStoreInterface(), REQUIRE_POSTED_RECEIVE(false), USE_QPERF_POST(true) {
 CHECK_DEV_LIST();
   }
 
@@ -482,15 +486,6 @@ CHECK_DEV_LIST();
 
  public:
 #ifndef OK_TO_DEFINE_IN_CC_FILE
-  /**
-   * FIXME TODO FIXME TODO FIXME TODO FIXME TODO FIXME TODO FIXME
-   * I DO NOT understand. If I move this method into the .cc file,
-   * the state of ib verbs is corrupted. It gives me a new, never-initialized
-   * version of the device list each time ibv_get_device_list() is invoked.
-   * This problem goes away when the method is defined in the .h file.
-   * RFHH
-   * FIXME TODO FIXME TODO FIXME TODO FIXME TODO FIXME TODO FIXME
-   */
   VIRTUAL void Init(::size_t value_size, ::size_t total_values,
                     ::size_t max_cache_capacity, ::size_t max_write_capacity,
                     const std::vector<std::string> &args) {
@@ -593,6 +588,7 @@ CHECK_DEV_LIST();
         con->cache_rkey = cache_.region_.mr->rkey;
         con->qp_num     = peer_[i].connection.local.qpn;
         con->psn        = peer_[i].connection.local.psn;
+        con->rd_atomic  = peer_[i].connection.local.rd_atomic;
         con->lid        = res_.lnode.lid;
         con->alt_lid    = res_.lnode.alt_lid;
 #if 0
@@ -619,6 +615,7 @@ CHECK_DEV_LIST();
         peer_[i].connection.rnode.alt_lid = remote_con_data[i].alt_lid;
         peer_[i].connection.remote.qpn    = remote_con_data[i].qp_num;
         peer_[i].connection.remote.psn    = remote_con_data[i].psn;
+        peer_[i].connection.remote.rd_atomic = remote_con_data[i].rd_atomic;
 
         std::cout << "Peer " << i << std::endl;
         std::cout << remote_con_data[i];
@@ -647,11 +644,22 @@ CHECK_DEV_LIST();
     }
 
     wc_.resize(post_send_chunk_);
-    if (false) {
+    ::size_t q_size = std::max(cache_buffer_.capacity(),
+                               write_buffer_.capacity());
+    if (USE_QPERF_POST) {
+      local_addr_.resize(num_servers_);
+      remote_addr_.resize(num_servers_);
+      sizes_.resize(num_servers_);
+      for (::size_t i = 0; i < num_servers_; ++i) {
+        local_addr_[i].resize(q_size);
+        remote_addr_[i].resize(q_size);
+        sizes_[i].resize(q_size);
+      }
+      posts_.resize(num_servers_);
+      remote_key_.resize(num_servers_);
+    } else {
       q_recv_front_.resize(num_servers_);
       q_send_front_.resize(num_servers_);
-      ::size_t q_size = std::max(cache_buffer_.capacity(),
-                                 write_buffer_.capacity());
       recv_wr_.resize(q_size);
       recv_sge_.resize(q_size);
     }
@@ -677,7 +685,7 @@ CHECK_DEV_LIST();
     t_read.start();
 
 #ifndef DISABLE_INFINIBAND
-    if (false) {
+    if (! USE_QPERF_POST) {
       // Fill the linked lists of WR requests
       q_recv_front_.assign(num_servers_, NULL);
       current_recv_req_ = 0;
@@ -730,10 +738,9 @@ CHECK_DEV_LIST();
       // std::cerr << "FIXME: should I GC the recv/send queue items? " << std::endl;
       // Answer: no
     } else {
-      std::vector<std::vector<const void *>> local_addr(num_servers_);
-      std::vector<std::vector<const void *>> remote_addr(num_servers_);
-      std::vector<std::vector< ::size_t>> sizes(num_servers_);
-      std::vector< uint32_t> remote_key(num_servers_);
+      for (auto &s : posts_) {
+        s = 0;
+      }
       for (::size_t i = 0; i < key.size(); i++) {
         ::size_t owner = HostOf(key[i]);
         if (owner == my_rank_) {
@@ -745,55 +752,61 @@ CHECK_DEV_LIST();
           t_local_read.stop();
 
         } else {
+          assert(owner < posts_.size());
+          assert(local_addr_[owner].capacity() > posts_[owner]);
+          assert(sizes_[owner].capacity() > posts_[owner]);
+          assert(remote_addr_[owner].capacity() > posts_[owner]);
           ValueType *target = cache_buffer_.get(value_size_);
           cache[i] = target;
 
-          local_addr[owner].push_back(target);
-          sizes[owner].push_back(value_size_ * sizeof(ValueType));
+          local_addr_[owner][posts_[owner]] = target;
+          sizes_[owner][posts_[owner]] = value_size_ * sizeof(ValueType);
 
-          remote_addr[owner].push_back((const ValueType *)(peer_[owner].props.value +
-            OffsetOf(key[i]) * sizeof(ValueType)));
+          remote_addr_[owner][posts_[owner]] = (const ValueType *)(peer_[owner].props.value +
+            OffsetOf(key[i]) * sizeof(ValueType));
+          assert(my_rank_ != owner);
+          assert(posts_[my_rank_] == 0);
+          posts_[owner] += 1;
+          assert(posts_[my_rank_] == 0);
 
           bytes_remote_read += value_size_ * sizeof(ValueType);
         }
       }
+      assert(posts_[my_rank_] == 0);
 
       for (::size_t h = 0; h < num_servers_; ++h) {
         uint32_t remote_key = peer_[h].props.value_rkey;
-
-        if (local_addr[h].size() > 0) {
-          ::size_t at = 0;
-          ::size_t seen = 0;
-          ::size_t n = post_send_chunk_;
-          while (seen < local_addr[h].size()) {
-            ::size_t p = std::min(n, local_addr[h].size() - at);
-            if (p > 0) {
-              t_post_read.start();
-              if (rd_post_rdma_std(&peer_[h].connection,
-                                   cache_.region_.mr->lkey,
-                                   remote_key,
-                                   IBV_WR_RDMA_READ,
-                                   p,
-                                   local_addr[h].data() + at,
-                                   remote_addr[h].data() + at,
-                                   sizes[h].data() + at) != 0) {
-                throw QPerfException("rd_post_rdma_std");
-              }
-              t_post_read.stop();
-              at += p;
+        ::size_t at = 0;
+        ::size_t seen = 0;
+        ::size_t n = post_send_chunk_;
+        while (seen < posts_[h]) {
+          ::size_t p = std::min(n, posts_[h] - at);
+          if (p > 0) {
+            t_post_read.start();
+            if (rd_post_rdma_std(&peer_[h].connection,
+                                 cache_.region_.mr->lkey,
+                                 remote_key,
+                                 IBV_WR_RDMA_READ,
+                                 p,
+                                 local_addr_[h].data() + at,
+                                 remote_addr_[h].data() + at,
+                                 sizes_[h].data() + at) != 0) {
+              throw QPerfException("rd_post_rdma_std");
             }
-
-            t_finish_read.start();
-            n = rd_poll(&res_, wc_.data(), wc_.size());
-            t_finish_read.stop();
-            for (::size_t i = 0; i < n; i++) {
-              int status = wc_[i].status;
-              if (status != IBV_WC_SUCCESS) {
-                throw QPerfException("rd_poll");
-              }
-            }
-            seen += n;
+            t_post_read.stop();
+            at += p;
           }
+
+          t_finish_read.start();
+          n = rd_poll(&res_, wc_.data(), wc_.size());
+          t_finish_read.stop();
+          for (::size_t i = 0; i < n; i++) {
+            int status = wc_[i].status;
+            if (status != IBV_WC_SUCCESS) {
+              throw QPerfException("rd_poll");
+            }
+          }
+          seen += n;
         }
       }
     }
@@ -1256,9 +1269,16 @@ CHECK_DEV_LIST();
   std::vector< ::ibv_send_wr *> q_recv_front_;
   std::vector< ::ibv_wc> wc_;
 
+  std::vector<std::vector<const void *>> local_addr_;
+  std::vector<std::vector<const void *>> remote_addr_;
+  std::vector<std::vector< ::size_t>> sizes_;
+  std::vector<uint32_t> remote_key_;
+  std::vector< ::size_t> posts_;
+
   std::string dev_name_;
   ::size_t post_send_chunk_ = 1024;
   const bool REQUIRE_POSTED_RECEIVE;
+  const bool USE_QPERF_POST;
 
   /* memory buffer pointers, used for RDMA and send ops */
   rdma_area<ValueType> value_;
