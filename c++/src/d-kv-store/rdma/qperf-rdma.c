@@ -1014,6 +1014,57 @@ ib_close2(DEVICE *dev)
 
 
 /*
+ * Post 1 RDMA request n times.
+ */
+int
+rd_post_rdma_std_1(CONNECTION *con, uint32_t lkey, uint32_t rkey,
+                 int opcode,
+		 size_t n,
+		 const void *local_addr,
+		 const void *remote_addr,
+		 const size_t sizes)
+{
+    struct ibv_sge sge ={
+        .lkey   = lkey,
+	.length = sizes,
+	.addr   = (uint64_t)local_addr,
+    };
+    struct ibv_send_wr wr ={
+        .wr_id      = WRID_RDMA,
+        .sg_list    = &sge,
+        .num_sge    = 1,
+        .opcode     = opcode,
+        .send_flags = IBV_SEND_SIGNALED,
+        .wr = {
+            .rdma = {
+                .remote_addr = (uint64_t)remote_addr,
+                .rkey        = rkey,
+            }
+        },
+    };
+
+    errno = 0;
+    for (size_t i = 0; i < n; i++) {
+	struct ibv_send_wr *badwr;
+
+        if (opcode != IBV_WR_RDMA_READ && sizes <= con->max_inline)
+            wr.send_flags |= IBV_SEND_INLINE;
+        if (ibv_post_send(con->qp, &wr, &badwr) != SUCCESS0) {
+            return error(SYS, "failed to post %s", opcode_name(wr.opcode));
+        }
+#if 0
+        if (opcode != IBV_WR_RDMA_READ) {
+            LStat.s.no_bytes += sizes[i];
+            LStat.s.no_msgs++;
+        }
+#endif
+    }
+
+    return 0;
+}
+
+
+/*
  * Post n RDMA requests.
  */
 int
