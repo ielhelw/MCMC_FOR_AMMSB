@@ -73,8 +73,8 @@ ifeq (0, $(CONFIG_NETWORKING))
 CXXFLAGS += -DDISABLE_NETWORKING
 else
 CXXFLAGS += -I$(PROJECT_HOME)/3rdparty/daslib/include
-LDFLAGS += -L$(PROJECT_HOME)/3rdparty/daslib/lib/$(shell uname -m)_$(shell uname -s)
-LDLIBS += -ldas
+LIB_LDFLAGS += -L$(PROJECT_HOME)/3rdparty/daslib/lib/$(shell uname -m)_$(shell uname -s)
+LIB_LDLIBS += -ldas
 endif
 
 CFLAGS += -std=gnu99
@@ -117,13 +117,16 @@ VEXCL		= $(PROJECT)/3rdparty/vexcl
 CXXFLAGS	+= -I$(VEXCL)
 endif
 
-LDFLAGS += -L$(PROJECT_HOME)/lib -lmcmc
+LDFLAGS += -L$(PROJECT_HOME)/lib
+LDLIBS += -lmcmc
 LDFLAGS	+= -Wl,-rpath,$(PROJECT_HOME)/lib
-LDFLAGS += -L$(PROJECT_HOME)/3rdparty/tinyxml2/lib -ltinyxml2
-LDFLAGS	+= -Wl,-rpath,$(PROJECT_HOME)/3rdparty/tinyxml2/lib
+LIB_LDFLAGS += -L$(PROJECT_HOME)/3rdparty/tinyxml2/lib
+LIB_LDLIBS += -ltinyxml2
+LIB_LDFLAGS	+= -Wl,-rpath,$(PROJECT_HOME)/3rdparty/tinyxml2/lib
 # export LD_RUN_PATH := $(PROJECT_HOME)/lib
 ifneq (, $(OPENCL_ROOT))
-LDFLAGS += -L$(OPENCL_ROOT)/lib -L$(OPENCL_ROOT)/lib/x86_64 -lOpenCL
+LIB_LDFLAGS += -L$(OPENCL_ROOT)/lib -L$(OPENCL_ROOT)/lib/x86_64
+LIB_LDLIBS += -lOpenCL
 endif
 ifdef USE_MUDFLAP
 LDLIBS	+= -lmudflapth -rdynamic
@@ -144,14 +147,14 @@ endif
 AR_FLAGS	= rc
 
 ifneq (, $(BOOST_ROOT))
-LDFLAGS += -L$(BOOST_ROOT)/lib
+LIB_LDFLAGS += -L$(BOOST_ROOT)/lib
 endif
-LDLIBS	+= -lboost_system$(BOOST_SUFFIX)
-LDLIBS	+= -lboost_filesystem$(BOOST_SUFFIX)
-LDLIBS	+= -lboost_program_options$(BOOST_SUFFIX)
+LIB_LDLIBS	+= -lboost_system$(BOOST_SUFFIX)
+LIB_LDLIBS	+= -lboost_filesystem$(BOOST_SUFFIX)
+LIB_LDLIBS	+= -lboost_program_options$(BOOST_SUFFIX)
 ifeq (1, $(CONFIG_RDMA))
 ifneq (1, $(CONFIG_NETWORKING))
-LDLIBS	+= -lboost_thread$(BOOST_SUFFIX)
+LIB_LDLIBS	+= -lboost_thread$(BOOST_SUFFIX)
 endif
 endif
 
@@ -160,18 +163,18 @@ CXXFLAGS += -I$(CONFIG_RAMCLOUD_ROOT)/src
 CXXFLAGS += -I$(CONFIG_RAMCLOUD_ROOT)/obj.master
 CXXFLAGS += -I$(CONFIG_RAMCLOUD_ROOT)/gtest/include
 CXXFLAGS += -DENABLE_RAMCLOUD
-LDFLAGS += -L$(CONFIG_RAMCLOUD_ROOT)/obj.master
-LDFLAGS	+= -Wl,-rpath,$(CONFIG_RAMCLOUD_ROOT)/obj.master
-LDLIBS  += -lramcloud
+LIB_LDFLAGS += -L$(CONFIG_RAMCLOUD_ROOT)/obj.master
+LIB_LDFLAGS += -Wl,-rpath,$(CONFIG_RAMCLOUD_ROOT)/obj.master
+LIB_LDLIBS  += -lramcloud
 # export LD_RUN_PATH := $(LD_RUN_PATH):$(CONFIG_RAMCLOUD_ROOT)/obj.master
 endif
 ifeq (1, $(CONFIG_RDMA))
 CXXFLAGS += -DENABLE_RDMA
-LDLIBS	+= -libverbs
+LIB_LDLIBS	+= -libverbs
 endif
 
-vpath lib%.so	$(LD_LIBRARY_PATH) $(subst -L,,$(LDFLAGS))
-vpath lib%.a	$(LD_LIBRARY_PATH) $(subst -L,,$(LDFLAGS))
+vpath lib%.so	$(LD_LIBRARY_PATH) $(subst -L,,$(LIB_LDFLAGS)) $(subst -L,,$(LDFLAGS))
+vpath lib%.a	$(LD_LIBRARY_PATH) $(subst -L,,$(LIB_LDFLAGS)) $(subst -L,,$(LDFLAGS))
 
 OBJDIR = obj
 LIBDIR = $(PROJECT_HOME)/lib
@@ -204,25 +207,25 @@ $(OBJDIR)/%.o: %.c
 	@mkdir -p $(dir $@)
 	$(CC) $(CFLAGS) $(CPPFLAGS) -MMD -c $< -o $@
 
-$(TARGETS): % : $(OBJDIR)/%.o $(CXX_OBJECTS) $(LDLIBS)
+$(TARGETS): % : $(OBJDIR)/%.o $(CXX_OBJECTS) $(LDLIBS) $(LIB_LDLIBS)
 	@echo LD_RUN_PATH $(LD_RUN_PATH)
-	$(LD) $< $(CXX_OBJECTS) $(LDFLAGS) $(LDLIBS) -o $@
+	$(LD) $< $(CXX_OBJECTS) $(LDFLAGS) $(LIB_LDFLAGS) $(LDLIBS) $(LIB_LDLIBS) -o $@
 
-TARGET_LIBS_SHARED	= $(TARGET_LIBS:%=$(LIBDIR)/%.so)
-TARGET_LIBS_STATIC	= $(TARGET_LIBS:%=$(LIBDIR)/%.a)
-
-$(TARGET_LIBS):	$(TARGET_LIBS_STATIC)
-# LDFLAGS	+= -static
-# LDFLAGS	+= -static-libgcc
-
-$(TARGET_LIBS_STATIC): $(CXX_OBJECTS)
-	$(AR) $(AR_FLAGS) $@ $^
-
-$(TARGET_LIBS_SHARED): $(CXX_OBJECTS)
-	$(LDSHARED) $(LD_FLAGS_LIB_SHARED) $^ -o $@.$(MAJOR).$(MINOR) -Wl,-soname,$@.$(MAJOR).$(MINOR)
-	rm -f $@.$(MAJOR) $@
-	ln -s $@.$(MAJOR).$(MINOR) $@.$(MAJOR)
-	ln -s $@.$(MAJOR) $@
+# TARGET_LIBS_SHARED	= $(TARGET_LIBS:%=$(LIBDIR)/%.so)
+# TARGET_LIBS_STATIC	= $(TARGET_LIBS:%=$(LIBDIR)/%.a)
+# 
+# $(TARGET_LIBS):	$(TARGET_LIBS_STATIC)
+# # LDFLAGS	+= -static
+# # LDFLAGS	+= -static-libgcc
+# 
+# $(TARGET_LIBS_STATIC): $(CXX_OBJECTS)
+# 	$(AR) $(AR_FLAGS) $@ $^
+# 
+# $(TARGET_LIBS_SHARED): $(CXX_OBJECTS)
+# 	$(LDSHARED) $(LD_FLAGS_LIB_SHARED) $^ -o $@.$(MAJOR).$(MINOR) -Wl,-soname,$@.$(MAJOR).$(MINOR)
+# 	rm -f $@.$(MAJOR) $@
+# 	ln -s $@.$(MAJOR).$(MINOR) $@.$(MAJOR)
+# 	ln -s $@.$(MAJOR) $@
 
 subdirs: $(SUBDIRS)
 
