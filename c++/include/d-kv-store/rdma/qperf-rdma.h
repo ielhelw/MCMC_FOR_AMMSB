@@ -220,6 +220,12 @@ int	rd_client_rdma_bw(DEVICE *dev,
 int     rd_mralloc(REGION *region, const DEVICE *dev, size_t size);
 int     rd_mrfree(REGION *region, const DEVICE *dev);
 int     rd_poll(DEVICE *dev, struct ibv_wc *wc, int nwc);
+int     rd_post_rdma_std_1(CONNECTION *con, uint32_t lkey, uint32_t rkey,
+                           int opcode,
+                           size_t n,
+                           const void *local_addr,
+                           const void *remote_addr,
+                           const size_t sizes);
 int     rd_post_rdma_std(CONNECTION *con, uint32_t lkey, uint32_t rkey,
                          int opcode,
 			 size_t n,
