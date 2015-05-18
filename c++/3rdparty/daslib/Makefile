@@ -42,7 +42,7 @@ MINOR		= 0
 MODULES		:=
 MODULES		+= das_inet
 # MODULES		+= das_route
-# MODULES		+= das_time
+MODULES		+= das_time
 # MODULES		+= das_pthread
 
 # The root of the daslib tree
