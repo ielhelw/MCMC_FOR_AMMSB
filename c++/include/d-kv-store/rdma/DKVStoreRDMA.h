@@ -26,12 +26,16 @@
 #include <mcmc/timer.h>
 #include <mr/timer.h>
 
-#ifndef USE_MPI
+// #define USE_MPI
+
 #ifndef DISABLE_NETWORKING
-#include <mr/net/netio.h>
-#include <mr/net/broadcast.h>
-#include <../src/mr/net/sockets/netio_sockets.h>
-#endif
+#  ifdef USE_MPI
+#    include <mpi.h>
+#  else
+#    include <mr/net/netio.h>
+#    include <mr/net/broadcast.h>
+#    include <../src/mr/net/sockets/netio_sockets.h>
+#  endif
 #endif
 
 #pragma GCC diagnostic ignored "-Wunused-local-typedefs"
@@ -108,12 +112,15 @@ class RDMAException : public DKVException {
 
 class QPerfException : public RDMAException {
  public:
+#if 0
   QPerfException() throw() :
       RDMAException(errno, rd_get_error_message()) {
   }
+#endif
 
   QPerfException(const std::string &reason) throw()
-      : RDMAException(errno, reason + " " + rd_get_error_message()) {
+      : RDMAException(errno, reason + " " + std::string(rd_get_error_message())) {
+    std::cerr << "QPerfException(" << reason << ") errno " << strerror(errno) << " QPerf " << rd_get_error_message() << std::endl;
   }
 
   virtual ~QPerfException() throw() {
@@ -283,7 +290,9 @@ CHECK_DEV_LIST();
 #ifndef OK_TO_DEFINE_IN_CC_FILE
   virtual ~DKVStoreRDMA() {
 #ifndef DISABLE_NETWORKING
-#  ifndef USE_MPI
+#  ifdef USE_MPI
+    MPI_Finalize();
+#  else
     broadcast_.Finish();
     for (auto & c : rw_list_) {
       if (c.writer != NULL) {
@@ -301,6 +310,7 @@ CHECK_DEV_LIST();
     std::cout << t_poll_cq << std::endl;
     std::cout << t_read << std::endl;
     std::cout << t_local_read << std::endl;
+    std::cout << t_host_read << std::endl;
     std::cout << t_post_read << std::endl;
     std::cout << t_finish_read << std::endl;
     std::cout << t_write << std::endl;
@@ -308,6 +318,7 @@ CHECK_DEV_LIST();
     std::cout << t_post_write << std::endl;
     std::cout << t_finish_write << std::endl;
     std::cout << t_barrier << std::endl;
+    std::cout << "posts " << posts << " messages " << msgs_per_post << " msgs/post " << ((double)msgs_per_post / posts) << std::endl;
     // std::chrono::high_resolution_clock::duration dt;
     std::cout << "Local read   " << bytes_local_read     << "B " <<
       GBs_from_timer(t_local_read, bytes_local_read) << "GB/s" << std::endl;
@@ -510,6 +521,14 @@ CHECK_DEV_LIST();
       ("rdma:chunk",
        po::value(&post_send_chunk_),
        "RDMA max number of messages per post")
+      // ("rdma:oob-network",
+       // po::value(&oob_impl_)->default_value("socket"),
+       // "RDMA OOB network implementation")
+#ifndef USE_MPI
+      ("rdma:oob-interface",
+       po::value(&oob_interface_)->default_value("ib0"),
+       "RDMA OOB network interface")
+#endif
       ;
     CHECK_DEV_LIST();
 
@@ -537,6 +556,7 @@ CHECK_DEV_LIST();
     t_local_read   = Timer("     local read");
     t_post_read    = Timer("     post read");
     t_finish_read  = Timer("     finish read");
+    t_host_read    = Timer("     per-host read");
     t_write        = Timer("RDMA write");
     t_local_write  = Timer("     local write");
     t_post_write   = Timer("     post write");
@@ -644,9 +664,10 @@ CHECK_DEV_LIST();
     }
 
     wc_.resize(post_send_chunk_);
-    ::size_t q_size = std::max(cache_buffer_.capacity(),
-                               write_buffer_.capacity());
+    ::size_t q_size = std::max(cache_buffer_.capacity() / value_size,
+                               write_buffer_.capacity() / value_size);
     if (USE_QPERF_POST) {
+      std::cerr << "Resize my queue pointers, use >= " << (num_servers_ * q_size * sizeof local_addr_[0][0] / 1048576.0) << "MB" << std::endl;
       local_addr_.resize(num_servers_);
       remote_addr_.resize(num_servers_);
       sizes_.resize(num_servers_);
@@ -737,6 +758,7 @@ CHECK_DEV_LIST();
 
       // std::cerr << "FIXME: should I GC the recv/send queue items? " << std::endl;
       // Answer: no
+
     } else {
       for (auto &s : posts_) {
         s = 0;
@@ -775,38 +797,49 @@ CHECK_DEV_LIST();
       assert(posts_[my_rank_] == 0);
 
       for (::size_t h = 0; h < num_servers_; ++h) {
-        uint32_t remote_key = peer_[h].props.value_rkey;
-        ::size_t at = 0;
-        ::size_t seen = 0;
-        ::size_t n = post_send_chunk_;
-        while (seen < posts_[h]) {
-          ::size_t p = std::min(n, posts_[h] - at);
-          if (p > 0) {
-            t_post_read.start();
-            if (rd_post_rdma_std(&peer_[h].connection,
-                                 cache_.region_.mr->lkey,
-                                 remote_key,
-                                 IBV_WR_RDMA_READ,
-                                 p,
-                                 local_addr_[h].data() + at,
-                                 remote_addr_[h].data() + at,
-                                 sizes_[h].data() + at) != 0) {
-              throw QPerfException("rd_post_rdma_std");
+        ::size_t peer = (h + my_rank_) % num_servers_;
+        if (posts_[peer] > 0) {
+          t_host_read.start();
+          uint32_t remote_key = peer_[peer].props.value_rkey;
+          ::size_t at = 0;
+          ::size_t seen = 0;
+          ::size_t n = post_send_chunk_;
+          while (seen < posts_[peer]) {
+            ::size_t p = std::min(n, posts_[peer] - at);
+            if (p > 0) {
+              t_post_read.start();
+              if (rd_post_rdma_std(&peer_[peer].connection,
+                                   cache_.region_.mr->lkey,
+                                   remote_key,
+                                   IBV_WR_RDMA_READ,
+                                   p,
+                                   local_addr_[peer].data() + at,
+                                   remote_addr_[peer].data() + at,
+                                   sizes_[peer].data() + at) != 0) {
+                throw QPerfException("rd_post_rdma_std");
+              }
+              t_post_read.stop();
+              at += p;
+              msgs_per_post += p;
+              posts++;
             }
-            t_post_read.stop();
-            at += p;
-          }
 
-          t_finish_read.start();
-          n = rd_poll(&res_, wc_.data(), wc_.size());
-          t_finish_read.stop();
-          for (::size_t i = 0; i < n; i++) {
-            int status = wc_[i].status;
-            if (status != IBV_WC_SUCCESS) {
-              throw QPerfException("rd_poll");
+            t_finish_read.start();
+            n = rd_poll(&res_, wc_.data(), wc_.size());
+            t_finish_read.stop();
+            for (::size_t i = 0; i < n; i++) {
+              enum ibv_wc_status status = wc_[i].status;
+              if (status != IBV_WC_SUCCESS) {
+                throw QPerfException("rd_poll" + std::string(ibv_wc_status_str(status)));
+              }
             }
+            seen += n;
           }
-          seen += n;
+          t_host_read.stop();
+        }
+        if (false) {
+          std::cerr << "For now, sync to see if it helps throughput..." << std::endl;
+          barrier();
         }
       }
     }
@@ -1100,6 +1133,7 @@ CHECK_DEV_LIST();
     my_rank_ = n;
   }
 
+ public:
   void alltoall(const void *sendbuf, ::size_t send_item_size,
                               void *recvbuf, ::size_t recv_item_size) {
     int r;
@@ -1114,18 +1148,16 @@ CHECK_DEV_LIST();
     int r = MPI_Barrier(MPI_COMM_WORLD);
     mpi_error_test(r, "barrier after qp exchange");
   }
+private:
 
 #else   // def USE_MPI
 
   void init_networking() {
 #ifndef DISABLE_NETWORKING
-    std::string network("socket");
-    // std::string interface("ib0");
-    std::string interface("br0");
-    std::cerr << "For now, hardwire network = " << network << ", interface = " << interface << std::endl;
+    std::cerr << "hardwire network = " << "socket" << ", interface = " << oob_interface_ << std::endl;
 
     mr::OptionList options;
-    options.push_back(mr::Option("interface", interface));
+    options.push_back(mr::Option("interface", oob_interface_));
     // network_ = mr::net::NetworkImpl::createNetwork("socket", options);
     network_ = new mr::net::SocketNetwork(options);
     network_->createAllToAllConnections(rw_list_, network_->getPeers(),
@@ -1287,6 +1319,8 @@ CHECK_DEV_LIST();
 
 #ifndef USE_MPI
 #ifndef DISABLE_NETWORKING
+  std::string oob_impl_;
+  std::string oob_interface_;
   mr::net::Network *network_;
   mr::net::Broadcast broadcast_;
   mr::net::Network::RWList rw_list_;
@@ -1296,6 +1330,7 @@ CHECK_DEV_LIST();
   Timer t_poll_cq;
   Timer t_read;
   Timer t_local_read;
+  Timer t_host_read;
   Timer t_post_read;
   Timer t_finish_read;
   Timer t_write;
@@ -1303,6 +1338,8 @@ CHECK_DEV_LIST();
   Timer t_post_write;
   Timer t_finish_write;
   Timer t_barrier;
+  ::size_t msgs_per_post = 0;
+  ::size_t posts = 0;
 
   int64_t bytes_local_read = 0;
   int64_t bytes_remote_read = 0;

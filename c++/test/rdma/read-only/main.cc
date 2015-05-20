@@ -222,6 +222,9 @@ CHECK_DEV_LIST();
         std::endl;
       std::vector<int32_t> *neighbor;
       if (random_request) {
+          if (my_m * n * 2 >= N) {
+            std::cerr << "Warning: sampling " << (my_m * n) << " from " << N << " might take a long time" << std::endl;
+          }
           neighbor = random.sampleRange(N, my_m * n);
       } else {
           neighbor = new std::vector<int32_t>(my_m * n);
@@ -293,12 +296,20 @@ CHECK_DEV_LIST();
 
       std::cout << "*********" << iter << ":  Sync... " << std::endl;
       d_kv_store_.barrier();
+      std::cerr << "*********" << iter << ":  Sync done" << std::endl;
 
       delete neighbor;
     }
 
     outer.stop();
     std::cout << outer << std::endl;
+
+    if (false) {
+      std::cerr << "Should linger a bit to allow gracious shutdown" << std::endl;
+    } else {
+      std::cerr << "Linger a bit to allow gracious shutdown" << std::endl;
+      sleep(1);
+    }
   }
 
 protected:
@@ -315,6 +326,12 @@ int main(int argc, char *argv[]) {
   for (int i = 0; i < num_devices; i++) {
     std::cerr << "  IB device[" << i << "] device_name " << (void *)DKV::DKVRDMA::global_dev_list[0] << " " << DKV::DKVRDMA::global_dev_list[i]->dev_name << std::endl;
   }
+
+  std::cout << "Pid " << getpid() << " invoked with options: ";
+  for (int i = 0; i < argc; ++i) {
+    std::cout << argv[i] << " ";
+  }
+  std::cout << std::endl;
 
     mcmc::Options options(argc, argv);
 

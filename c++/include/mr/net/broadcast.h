@@ -41,20 +41,24 @@ class Broadcast {
   void Finish() {
     if (rank != master) {
       if (std::get<0>(parent) != NULL) {
+        std::get<0>(parent)->close();
         delete std::get<0>(parent);
         std::get<0>(parent) = NULL;
       }
       if (std::get<1>(parent) != NULL) {
+        std::get<1>(parent)->close();
         delete std::get<1>(parent);
         std::get<1>(parent) = NULL;
       }
     }
     for (auto & c : children) {
       if (std::get<0>(c) != NULL) {
+        std::get<0>(c)->close();
         delete std::get<0>(c);
         std::get<0>(c) = NULL;
       }
       if (std::get<1>(c) != NULL) {
+        std::get<1>(c)->close();
         delete std::get<1>(c);
         std::get<1>(c) = NULL;
       }
@@ -62,6 +66,7 @@ class Broadcast {
   }
 
   void Init(Network *network) {
+    network_ = network;
     if (network == NULL) {
       size = 2;
       return;
@@ -194,6 +199,7 @@ class Broadcast {
   }
 
  private:
+  const Network *network_;
   ::size_t rank;
   ::size_t size;
   ::size_t master;

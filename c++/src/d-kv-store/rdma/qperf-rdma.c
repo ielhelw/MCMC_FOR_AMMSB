@@ -261,16 +261,8 @@ static int     ib_prep(const DEVICE *dev, CONNECTION *conn);
 static int     ib_close1(DEVICE *dev);
 static int     ib_close2(DEVICE *dev);
 
-/*
- * This routine is never called and is solely to avoid compiler warnings for
- * functions that are not currently being used.
- */
-void
-rdma_not_called(void)
-{
-}
 
-
+#ifdef COMES_LATER
 /*
  * Measure RDMA bandwidth (client side).
  */
@@ -282,7 +274,6 @@ rd_client_rdma_bw(DEVICE *dev,
 		  const void **remote_addr,
 		  const size_t *sizes)
 {
-#ifdef COMES_LATER
     rd_post_rdma_std(dev, opcode, NCQE);
     while (!Finished) {
 	int i;
@@ -314,9 +305,9 @@ rd_client_rdma_bw(DEVICE *dev,
     exchange_results();
     rd_close(&dev);
     fprintf(stderr, "Max n %d\n", LStat.max_cqes);
-#endif
     return 0;
 }
+#endif
 
 
 /*
