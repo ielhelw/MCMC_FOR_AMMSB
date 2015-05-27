@@ -273,6 +273,16 @@ inline std::ostream &operator<< (std::ostream &s,
 }
 
 
+template <typename ValueType>
+class PostDescriptor {
+ public:
+  CONNECTION *connection_;
+  uint32_t rkey_;
+  ValueType *local_addr_;
+  ::size_t sizes_;
+  const ValueType *remote_addr_;
+};
+
 /*
  * Class description
  */
@@ -280,7 +290,10 @@ class DKVStoreRDMA : public DKVStoreInterface {
 
  public:
   DKVStoreRDMA()
-     : DKVStoreInterface(), REQUIRE_POSTED_RECEIVE(false), USE_QPERF_POST(true) {
+     : DKVStoreInterface(),
+       REQUIRE_POSTED_RECEIVE(false),
+       USE_QPERF_POST(true),
+       ALL_REQUESTS_INTERLEAVED(true) {
 CHECK_DEV_LIST();
   }
 
@@ -323,8 +336,10 @@ CHECK_DEV_LIST();
     std::cout << "Local read   " << bytes_local_read     << "B " <<
       GBs_from_timer(t_local_read, bytes_local_read) << "GB/s" << std::endl;
     auto dt = t_read.total() - t_local_read.total();
+    auto dth = t_host_read.total();
     std::cout << "Remote read  " << bytes_remote_read    << "B " <<
-      GBs_from_time(dt, bytes_remote_read) << "GB/s" << std::endl;
+      GBs_from_time(dt, bytes_remote_read) << "GB/s per-host loop " <<
+      GBs_from_time(dth, bytes_remote_read) << "GB/s" << std::endl;
     std::cout << "Local write  " << bytes_local_written  << "B " <<
       GBs_from_timer(t_local_write, bytes_local_written) << "GB/s" << std::endl;
     dt = t_write.total() - t_local_write.total();
@@ -521,6 +536,9 @@ CHECK_DEV_LIST();
       ("rdma:chunk",
        po::value(&post_send_chunk_),
        "RDMA max number of messages per post")
+      ("rdma:peers",
+       po::value(&batch_size_)->default_value(1),
+       "RDMA max number of peers to address in one post")
       // ("rdma:oob-network",
        // po::value(&oob_impl_)->default_value("socket"),
        // "RDMA OOB network implementation")
@@ -667,17 +685,13 @@ CHECK_DEV_LIST();
     ::size_t q_size = std::max(cache_buffer_.capacity() / value_size,
                                write_buffer_.capacity() / value_size);
     if (USE_QPERF_POST) {
-      std::cerr << "Resize my queue pointers, use >= " << (num_servers_ * q_size * sizeof local_addr_[0][0] / 1048576.0) << "MB" << std::endl;
-      local_addr_.resize(num_servers_);
-      remote_addr_.resize(num_servers_);
-      sizes_.resize(num_servers_);
-      for (::size_t i = 0; i < num_servers_; ++i) {
-        local_addr_[i].resize(q_size);
-        remote_addr_[i].resize(q_size);
-        sizes_[i].resize(q_size);
+      ::size_t num_batches = (num_servers_ + batch_size_ - 1) / batch_size_;
+      std::cerr << "Resize my queue pointers, use >= " << (num_batches * q_size * sizeof post_descriptor_[0][0] / 1048576.0) << "MB" << std::endl;
+      post_descriptor_.resize(num_batches);
+      for (::size_t i = 0; i < num_batches; ++i) {
+        post_descriptor_[i].resize(q_size);
       }
-      posts_.resize(num_servers_);
-      remote_key_.resize(num_servers_);
+      posts_.resize(num_batches);
     } else {
       q_recv_front_.resize(num_servers_);
       q_send_front_.resize(num_servers_);
@@ -774,30 +788,64 @@ CHECK_DEV_LIST();
           t_local_read.stop();
 
         } else {
-          assert(owner < posts_.size());
-          assert(local_addr_[owner].capacity() > posts_[owner]);
-          assert(sizes_[owner].capacity() > posts_[owner]);
-          assert(remote_addr_[owner].capacity() > posts_[owner]);
           ValueType *target = cache_buffer_.get(value_size_);
           cache[i] = target;
 
-          local_addr_[owner][posts_[owner]] = target;
-          sizes_[owner][posts_[owner]] = value_size_ * sizeof(ValueType);
+          ::size_t batch = owner / batch_size_;
+          ::size_t n = posts_[batch];
+          posts_[batch] += 1;
+          assert(post_descriptor_.capacity() > batch);
+          assert(post_descriptor_[batch].capacity() > n);
+          auto *d = &post_descriptor_[batch][n];
 
-          remote_addr_[owner][posts_[owner]] = (const ValueType *)(peer_[owner].props.value +
+          d->connection_ = &peer_[owner].connection;
+          d->rkey_ = peer_[owner].props.value_rkey;
+          d->local_addr_ = target;
+          d->sizes_ = value_size_ * sizeof(ValueType);
+          d->remote_addr_ = (const ValueType *)(peer_[owner].props.value +
             OffsetOf(key[i]) * sizeof(ValueType));
-          assert(my_rank_ != owner);
-          assert(posts_[my_rank_] == 0);
-          posts_[owner] += 1;
-          assert(posts_[my_rank_] == 0);
 
           bytes_remote_read += value_size_ * sizeof(ValueType);
         }
       }
-      assert(posts_[my_rank_] == 0);
+      assert(posts_[my_rank_ / batch_size_] == 0);
 
-      for (::size_t h = 0; h < num_servers_; ++h) {
-        ::size_t peer = (h + my_rank_) % num_servers_;
+      ::size_t cookies = post_send_chunk_;
+      ::size_t num_batches = (num_servers_ + batch_size_ - 1) / batch_size_;
+      for (::size_t h = 0; h < num_batches; ++h) {
+        ::size_t peer = (h + my_rank_ / num_batches) % num_batches;
+        for (::size_t i = 0; i < posts_[peer]; ++i) {
+          if (cookies == 0) {
+            while (cookies == 0) {
+              t_finish_read.start();
+              ::size_t n = rd_poll(&res_, wc_.data(), wc_.size());
+              t_finish_read.stop();
+              for (::size_t i = 0; i < n; i++) {
+                enum ibv_wc_status status = wc_[i].status;
+                if (status != IBV_WC_SUCCESS) {
+                  throw QPerfException("rd_poll" + std::string(ibv_wc_status_str(status)));
+                }
+              }
+              cookies += n;
+            }
+          }
+
+          t_post_read.start();
+          const auto *d = &post_descriptor_[peer][i];
+          if (rd_post_rdma_std(d->connection_,
+                               cache_.region_.mr->lkey,
+                               d->rkey_,
+                               IBV_WR_RDMA_READ,
+                               1,
+                               (const void **)&d->local_addr_,
+                               (const void **)&d->remote_addr_,
+                               &d->sizes_) != 0) {
+            throw QPerfException("rd_post_rdma_std");
+          }
+          t_post_read.stop();
+          posts++;
+          cookies--;
+#if 0
         if (posts_[peer] > 0) {
           t_host_read.start();
           uint32_t remote_key = peer_[peer].props.value_rkey;
@@ -837,10 +885,25 @@ CHECK_DEV_LIST();
           }
           t_host_read.stop();
         }
+#endif
+        }
         if (false) {
           std::cerr << "For now, sync to see if it helps throughput..." << std::endl;
           barrier();
         }
+      }
+
+      while (cookies < post_send_chunk_) {
+        t_finish_read.start();
+        ::size_t n = rd_poll(&res_, wc_.data(), wc_.size());
+        t_finish_read.stop();
+        for (::size_t i = 0; i < n; i++) {
+          enum ibv_wc_status status = wc_[i].status;
+          if (status != IBV_WC_SUCCESS) {
+            throw QPerfException("rd_poll" + std::string(ibv_wc_status_str(status)));
+          }
+        }
+        cookies += n;
       }
     }
 
@@ -1301,16 +1364,15 @@ private:
   std::vector< ::ibv_send_wr *> q_recv_front_;
   std::vector< ::ibv_wc> wc_;
 
-  std::vector<std::vector<const void *>> local_addr_;
-  std::vector<std::vector<const void *>> remote_addr_;
-  std::vector<std::vector< ::size_t>> sizes_;
-  std::vector<uint32_t> remote_key_;
+  std::vector<std::vector<PostDescriptor<ValueType>>> post_descriptor_;
   std::vector< ::size_t> posts_;
+  ::size_t batch_size_;
 
   std::string dev_name_;
   ::size_t post_send_chunk_ = 1024;
   const bool REQUIRE_POSTED_RECEIVE;
   const bool USE_QPERF_POST;
+  const bool ALL_REQUESTS_INTERLEAVED;
 
   /* memory buffer pointers, used for RDMA and send ops */
   rdma_area<ValueType> value_;
