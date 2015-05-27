@@ -221,6 +221,8 @@ CHECK_DEV_LIST();
       std::cout << "Populate " << N << "x" << K << " takes " <<
         (1000.0 * dur.count()) << "ms thrp " << (GB(N, K) / dur.count()) <<
         " GB/s" << std::endl;
+
+      d_kv_store_.barrier();
     }
 
     std::vector<double *> cache(my_m * n);
@@ -276,14 +278,17 @@ CHECK_DEV_LIST();
             }
           }
           if (verify) {
+            int miss = 0;
             for (::size_t i = 0; i < my_m * n; ++i) {
               int32_t key = (*neighbor)[i];
               for (::size_t k = 0; k < K; k++) {
                 if (cache[i][k] != key + (double)k / K) {
+                  miss++;
                   std::cerr << "Ooppss... key " << key << " wrong value[" << k << "] " << cache[i][k] << " should be " << (key + (double)k / K) << std::endl;
                 }
               }
             }
+            std::cout << "Verify: checked " << (my_m * n) << " vectors, wrong values: " << miss << std::endl;
           }
         }
       }
