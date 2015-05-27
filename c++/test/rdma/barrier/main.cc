@@ -303,13 +303,6 @@ CHECK_DEV_LIST();
 
     outer.stop();
     std::cout << outer << std::endl;
-
-    if (false) {
-      std::cerr << "Should linger a bit to allow gracious shutdown" << std::endl;
-    } else {
-      std::cerr << "Linger a bit to allow gracious shutdown" << std::endl;
-      sleep(1);
-    }
   }
 
 protected:
@@ -327,7 +320,7 @@ int main(int argc, char *argv[]) {
     std::cerr << "  IB device[" << i << "] device_name " << (void *)DKV::DKVRDMA::global_dev_list[0] << " " << DKV::DKVRDMA::global_dev_list[i]->dev_name << std::endl;
   }
 
-  std::cout << "Pid " << getpid() << " invoked with options: ";
+  std::cout << "Invoked with options: ";
   for (int i = 0; i < argc; ++i) {
     std::cout << argv[i] << " ";
   }

@@ -115,7 +115,7 @@ min(size_t a, size_t b)
 
 
 static int
-rdma_sync(int sock, int up_else_down, rdma_t *rdma, CONNECTION *me)
+rdma_sync(int sock, int up_else_down, rdma_t *rdma, CONNECTION *me, int verbose)
 {
   cm_con_data_t con;
   con.value      = (uint64_t)(rdma->value.vaddr);
@@ -130,8 +130,10 @@ rdma_sync(int sock, int up_else_down, rdma_t *rdma, CONNECTION *me)
   con.lid        = rdma->device.lnode.lid;
   con.alt_lid    = rdma->device.lnode.alt_lid;
 
-  fprintf(stdout, "Me:\n");
-  cm_con_data_print(stdout, &con);
+  if (verbose) {
+    fprintf(stdout, "Me:\n");
+    cm_con_data_print(stdout, &con);
+  }
 
   cm_con_data_t peer_con;
 
@@ -161,8 +163,10 @@ rdma_sync(int sock, int up_else_down, rdma_t *rdma, CONNECTION *me)
   me->rnode.lid        = peer_con.lid;
   me->rnode.alt_lid    = peer_con.alt_lid;
 
-  fprintf(stdout, "Peer:\n");
-  cm_con_data_print(stdout, &peer_con);
+  if (verbose) {
+    fprintf(stdout, "Peer:\n");
+    cm_con_data_print(stdout, &peer_con);
+  }
 
   return 0;
 }
@@ -180,8 +184,9 @@ int main(int argc, char *argv[])
   const char   *server = NULL;
   int           sock;
   int           single_pointer = 0;
-  int           is_client = 0;
+  int           is_oob_client = 0;
   char          server_name[HOST_NAME_MAX + 8];
+  int           bidirectional = 0;
 
   das_time_init(&argc, argv);
 
@@ -236,9 +241,11 @@ int main(int argc, char *argv[])
         bail_out("mtu must be an int");
       }
     } else if (strcmp(argv[i], "-c") == 0) {
-      is_client = 1;
+      is_oob_client = 1;
     } else if (strcmp(argv[i], "-C") == 0) {
       separate_cache = 0;
+    } else if (strcmp(argv[i], "-2") == 0) {
+      bidirectional = 1;
     } else if (strcmp(argv[i], "-1") == 0) {
       single_pointer = 1;
     } else if (option == 0) {
@@ -277,7 +284,7 @@ int main(int argc, char *argv[])
     bail_out("rd_open_2");
   }
 
-  if (is_client && server == NULL) {
+  if (is_oob_client && server == NULL) {
     server = server_name;
     fprintf(stdout, "Server name/port: ");
     fflush(stdout);
@@ -303,14 +310,14 @@ int main(int argc, char *argv[])
     }
   }
 
-  rdma_sync(sock, (server == NULL), &rdma, &connection);
+  rdma_sync(sock, (server == NULL), &rdma, &connection, 1);
 
   fprintf(stdout, "Migrate QP to RTR, RTS\n");
   if (rd_prep(&rdma.device, &connection) != 0) {
     bail_out("rd_prep");
   }
 
-  if (server != NULL) {
+  if (server != NULL || bidirectional) {
     const void **local_address = malloc(neighb * sizeof *local_address);
     if (local_address == NULL) {
       bail_out("malloc(local_address)");
@@ -404,7 +411,7 @@ int main(int argc, char *argv[])
   }
 
   // Abuse this for a barrier
-  rdma_sync(sock, (server == NULL), &rdma, &connection);
+  rdma_sync(sock, (server == NULL), &rdma, &connection, 0);
 
   if (rd_close_qp(&connection) != 0) {
     bail_out("rd_close_qp");
