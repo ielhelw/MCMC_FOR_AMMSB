@@ -681,6 +681,10 @@ CHECK_DEV_LIST();
       }
     }
 
+    if (batch_size_ > num_servers_) {
+      batch_size_ = num_servers_;
+    }
+
     wc_.resize(post_send_chunk_);
     ::size_t q_size = std::max(cache_buffer_.capacity() / value_size,
                                write_buffer_.capacity() / value_size);
