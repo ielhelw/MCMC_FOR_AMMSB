@@ -44,3 +44,15 @@ test/preprocess/relativity/main
 test/rand-normal/main
 test/rand-distr/main
 test/d-kv-store/main
+test/d-kv-store/read-only/main
+test/timer/main
+
+# log files
+apps/*/log-*
+apps/*/*/log.*
+apps/*/log-*
+apps/*/*/log.*
+test/*/log-*
+test/*/*/log.*
+test/*/log-*
+test/*/*/log.*

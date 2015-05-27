@@ -114,6 +114,9 @@ class DKVWrapper {
       ("check-duplicates,d",
        po::bool_switch()->default_value(false),
        "check keys for duplicates")
+      ("verify,V",
+       po::bool_switch()->default_value(false),
+       "verify values")
       ;
 
     CHECK_DEV_LIST();
@@ -144,6 +147,7 @@ class DKVWrapper {
     bool do_write = vm["write"].as<bool>();
     bool do_read = ! do_write;      // later maybe finer control
     bool check_duplicates = vm["check-duplicates"].as<bool>();
+    bool verify = vm["verify"].as<bool>();
 
     int32_t n_hosts;
     int32_t rank;
@@ -207,7 +211,7 @@ CHECK_DEV_LIST();
         // std::vector<double> pi = random.randn(K);
         std::vector<double> pi(K);
         for (::size_t k = 0; k < K; k++) {
-          pi[k] = i * 1000.0 + (k + 1) / 1000.0;
+          pi[k] = i + (double)k / K;
         }
         std::vector<int32_t> k(1, static_cast<int32_t>(i));
         std::vector<const double *> v(1, pi.data());
@@ -269,6 +273,16 @@ CHECK_DEV_LIST();
                 std::cerr << cache[i][k] << " ";
               }
               std::cerr << "}" << std::endl;
+            }
+          }
+          if (verify) {
+            for (::size_t i = 0; i < my_m * n; ++i) {
+              int32_t key = (*neighbor)[i];
+              for (::size_t k = 0; k < K; k++) {
+                if (cache[i][k] != key + (double)k / K) {
+                  std::cerr << "Ooppss... key " << key << " wrong value[" << k << "] " << cache[i][k] << " should be " << (key + (double)k / K) << std::endl;
+                }
+              }
             }
           }
         }
