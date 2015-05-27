@@ -808,12 +808,12 @@ CHECK_DEV_LIST();
           bytes_remote_read += value_size_ * sizeof(ValueType);
         }
       }
-      assert(posts_[my_rank_ / batch_size_] == 0);
 
       ::size_t cookies = post_send_chunk_;
       ::size_t num_batches = (num_servers_ + batch_size_ - 1) / batch_size_;
       for (::size_t h = 0; h < num_batches; ++h) {
         ::size_t peer = (h + my_rank_ / num_batches) % num_batches;
+        t_host_read.start();
         for (::size_t i = 0; i < posts_[peer]; ++i) {
           if (cookies == 0) {
             while (cookies == 0) {
@@ -887,6 +887,7 @@ CHECK_DEV_LIST();
         }
 #endif
         }
+        t_host_read.stop();
         if (false) {
           std::cerr << "For now, sync to see if it helps throughput..." << std::endl;
           barrier();
