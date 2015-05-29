@@ -67,15 +67,7 @@ class DKVWrapper {
   DKVWrapper(const mcmc::Options &options,
              const std::vector<std::string> &remains)
       : options_(options), remains_(remains) {
-    CHECK_DEV_LIST();
-    d_kv_store_.Info();
-    CHECK_DEV_LIST();
-
-    d_kv_store_.InfoH();
-    CHECK_DEV_LIST();
-
     d_kv_store_.PurgeKVRecords();
-    CHECK_DEV_LIST();
   }
 
   void run() {
@@ -85,7 +77,6 @@ class DKVWrapper {
 
     int64_t seed;
     ::size_t N;   // #nodes in the graph
-    CHECK_DEV_LIST();
 
     std::string dkv_type_string;
     po::options_description desc("D-KV store test program");
@@ -119,13 +110,11 @@ class DKVWrapper {
        "verify values")
       ;
 
-    CHECK_DEV_LIST();
     po::variables_map vm;
     po::parsed_options parsed = po::basic_command_line_parser<char>(remains_).options(desc).allow_unregistered().run();
     po::store(parsed, vm);
     try {
       po::notify(vm);
-      CHECK_DEV_LIST();
     } catch (po::error &e) {
       std::cerr << "Option error: " << e.what() << std::endl;
       exit(33);
@@ -139,7 +128,6 @@ class DKVWrapper {
     std::vector<std::string> remains = po::collect_unrecognized(parsed.options,
                                                                 po::include_positional);
 
-    CHECK_DEV_LIST();
     bool no_populate = vm["no-populate"].as<bool>();
     bool bidirectional = ! vm["unidirectional"].as<bool>();
     bool random_request = ! vm["no-random"].as<bool>();
@@ -169,20 +157,12 @@ class DKVWrapper {
       rank    = 0;
     }
 
-    CHECK_DEV_LIST();
-
     ::size_t K = options_.K;                            // #communities
     ::size_t m = options_.mini_batch_size;          // #nodes in minibatch, total
     ::size_t n = options_.num_node_sample;          // #neighbors for each minibatch node
     ::size_t iterations = options_.max_iteration;
 
     ::size_t my_m = (m + n_hosts - 1) / n_hosts;
-
-CHECK_DEV_LIST();
-d_kv_store_.Info();
-CHECK_DEV_LIST();
-d_kv_store_.PurgeKVRecords();
-CHECK_DEV_LIST();
 
     try {
       d_kv_store_.Init(K, N, my_m * n, my_m, remains);
@@ -364,8 +344,6 @@ int main(int argc, char *argv[]) {
 
     mcmc::Options options(argc, argv);
 
-    CHECK_DEV_LIST();
-
     std::string dkv_type_string;
     po::options_description desc("D-KV store test program");
     desc.add_options()
@@ -374,7 +352,6 @@ int main(int argc, char *argv[]) {
        "D-KV store type (file/ramcloud/rdma)")
       ;
 
-    CHECK_DEV_LIST();
     po::variables_map vm;
     po::parsed_options parsed = po::basic_command_line_parser<char>(options.getRemains()).options(desc).allow_unregistered().run();
     po::store(parsed, vm);
@@ -382,14 +359,11 @@ int main(int argc, char *argv[]) {
     // clp.options(desc).allow_unregistered.run();
     // po::store(clp.run(), vm);
     po::notify(vm);
-    CHECK_DEV_LIST();
 
     if (options.help) {
         std::cout << desc << std::endl;
         return 0;
     }
-
-    CHECK_DEV_LIST();
 
     DKV_TYPE::TYPE dkv_type = DKV_TYPE::FILE;
     if (vm.count("dkv:type") > 0) {
@@ -409,7 +383,6 @@ int main(int argc, char *argv[]) {
             throw mcmc::InvalidArgumentException("Unsupported value '" + dkv_type_string + "' for dkv:type");
         }
     }
-    CHECK_DEV_LIST();
 
     std::vector<std::string> remains = po::collect_unrecognized(parsed.options, po::include_positional);
     std::cerr << "main has unparsed options: \"";

@@ -28,14 +28,12 @@
 
 // #define USE_MPI
 
-#ifndef DISABLE_NETWORKING
-#  ifdef USE_MPI
-#    include <mpi.h>
-#  else
-#    include <mr/net/netio.h>
-#    include <mr/net/broadcast.h>
-#    include <../src/mr/net/sockets/netio_sockets.h>
-#  endif
+#ifdef USE_MPI
+#  include <mpi.h>
+#else
+#  include <mr/net/netio.h>
+#  include <mr/net/broadcast.h>
+#  include <../src/mr/net/sockets/netio_sockets.h>
 #endif
 
 #pragma GCC diagnostic ignored "-Wunused-local-typedefs"
@@ -65,23 +63,6 @@ namespace DKV {
 namespace DKVRDMA {
 
 using ::mr::timer::Timer;
-
-extern struct ibv_device **global_dev_list;
-
-#ifdef DEBUG_CC_FILE_H_FILE_FIASCO
-#define CHECK_DEV_LIST() \
-  do { \
-    int num; \
-    std::cerr << __FILE__ << "." << __LINE__ << \
-         ": dev_list[0] " << (void *)::DKV::DKVRDMA::global_dev_list[0] << \
-         " ibv_get_device_list()[0] " << ::ibv_get_device_list(&num)[0] << \
-         " " << ::DKV::DKVRDMA::global_dev_list[0]->dev_name << std::endl; \
-    /* check_dev_list(__FILE__, __LINE__); */ \
-  } while (0)
-#else
-#define CHECK_DEV_LIST() \
-  do { } while (0)
-#endif
 
 
 template <typename T>
@@ -138,14 +119,13 @@ class NetworkException : public RDMAException {
 };
 
 
-struct q_item_t {
-  q_item_t() {
-    wr.sg_list = &sg_list;
-  }
-
-  struct ::ibv_send_wr    wr;
-  struct ::ibv_sge        sg_list;
-  q_item_t             *next;
+class BatchTimer {
+ public:
+  Timer outer;
+  Timer local;
+  Timer host;
+  Timer post;
+  Timer finish;
 };
 
 
@@ -289,12 +269,7 @@ class PostDescriptor {
 class DKVStoreRDMA : public DKVStoreInterface {
 
  public:
-  DKVStoreRDMA()
-     : DKVStoreInterface(),
-       REQUIRE_POSTED_RECEIVE(false),
-       USE_QPERF_POST(true),
-       ALL_REQUESTS_INTERLEAVED(true) {
-CHECK_DEV_LIST();
+  DKVStoreRDMA() : DKVStoreInterface() {
   }
 
   typedef DKVStoreInterface::KeyType   KeyType;
@@ -302,10 +277,9 @@ CHECK_DEV_LIST();
 
 #ifndef OK_TO_DEFINE_IN_CC_FILE
   virtual ~DKVStoreRDMA() {
-#ifndef DISABLE_NETWORKING
-#  ifdef USE_MPI
+#ifdef USE_MPI
     MPI_Finalize();
-#  else
+#else
     broadcast_.Finish();
     for (auto & c : rw_list_) {
       if (c.writer != NULL) {
@@ -317,34 +291,40 @@ CHECK_DEV_LIST();
       delete c.writer;
     }
     delete network_;
-#  endif
 #endif
     Timer::printHeader(std::cout);
-    std::cout << t_poll_cq << std::endl;
-    std::cout << t_read << std::endl;
-    std::cout << t_local_read << std::endl;
-    std::cout << t_host_read << std::endl;
-    std::cout << t_post_read << std::endl;
-    std::cout << t_finish_read << std::endl;
-    std::cout << t_write << std::endl;
-    std::cout << t_local_write << std::endl;
-    std::cout << t_post_write << std::endl;
-    std::cout << t_finish_write << std::endl;
-    std::cout << t_barrier << std::endl;
-    std::cout << "posts " << posts << " messages " << msgs_per_post << " msgs/post " << ((double)msgs_per_post / posts) << std::endl;
+    std::cout << t_poll_cq_ << std::endl;
+
+    std::cout << t_read_.outer << std::endl;
+    std::cout << t_read_.local << std::endl;
+    std::cout << t_read_.host << std::endl;
+    std::cout << t_read_.post << std::endl;
+    std::cout << t_read_.finish << std::endl;
+
+    std::cout << t_write_.outer << std::endl;
+    std::cout << t_write_.local << std::endl;
+    std::cout << t_write_.host << std::endl;
+    std::cout << t_write_.post << std::endl;
+    std::cout << t_write_.finish << std::endl;
+
+    std::cout << t_barrier_ << std::endl;
+
+    std::cout << "posts " << num_posts_ << " messages " << msgs_per_post_ << " msgs/post " << ((double)msgs_per_post_ / num_posts_) << std::endl;
     // std::chrono::high_resolution_clock::duration dt;
     std::cout << "Local read   " << bytes_local_read     << "B " <<
-      GBs_from_timer(t_local_read, bytes_local_read) << "GB/s" << std::endl;
-    auto dt = t_read.total() - t_local_read.total();
-    auto dth = t_host_read.total();
+      GBs_from_timer(t_read_.local, bytes_local_read) << "GB/s" << std::endl;
+    auto dt = t_read_.outer.total() - t_read_.local.total();
+    auto dth = t_read_.host.total();
     std::cout << "Remote read  " << bytes_remote_read    << "B " <<
       GBs_from_time(dt, bytes_remote_read) << "GB/s per-host loop " <<
       GBs_from_time(dth, bytes_remote_read) << "GB/s" << std::endl;
     std::cout << "Local write  " << bytes_local_written  << "B " <<
-      GBs_from_timer(t_local_write, bytes_local_written) << "GB/s" << std::endl;
-    dt = t_write.total() - t_local_write.total();
+      GBs_from_timer(t_write_.local, bytes_local_written) << "GB/s" << std::endl;
+    dt = t_write_.outer.total() - t_write_.local.total();
+    dth = t_write_.host.total();
     std::cout << "Remote write " << bytes_remote_written << "B " <<
-      GBs_from_time(dt, bytes_remote_written) << "GB/s" << std::endl;
+      GBs_from_time(dt, bytes_remote_written) << "GB/s per-host loop " <<
+      GBs_from_time(dth, bytes_remote_written) << "GB/s" << std::endl;
 
     if (rd_close(&res_) != 0) {
       throw QPerfException("rd_close");
@@ -357,138 +337,7 @@ CHECK_DEV_LIST();
   virtual ~DKVStoreRDMA();
 #endif
 
-  virtual void InfoH() const {
-    CHECK_DEV_LIST();
-  }
-
-  virtual void Info() const;
-
  private:
-  void post_linked_list(::ibv_qp *qp, ::ibv_send_wr *q_front,
-                        ::size_t peer, ::ibv_wc_opcode opcode) {
-    // Only for verbose
-    std::string action;
-    switch (opcode) {
-    case IBV_WC_RDMA_READ:
-      action = "read";
-      break;
-    case IBV_WC_RDMA_WRITE:
-      action = "write";
-      break;
-    default:
-      action = "<any old post>";
-      break;
-    }
-
-    if (peer == my_rank_) {
-      // already done the memcpy
-      // std::cerr << "Skip the home " << action << "s" << std::endl;
-      return;
-    }
-
-    if (true) {
-      if (false) {
-        ::size_t sent_items = 0;
-        for (auto p = q_front; p != NULL; p = p->next) {
-          sent_items++;
-        }
-
-        std::cerr << "post " << sent_items << " " << action << " requests to host " << peer << std::endl;
-      }
-
-      // std::cerr << "******** Do the " << action << "s in chunks of size " << post_send_chunk_ << std::endl;
-      ::ibv_send_wr *front = q_front;
-      while (front != NULL) {
-        ::ibv_send_wr *next_front;
-        ::ibv_send_wr *p = front;
-        ::size_t count = 0;
-        while (true) {
-          if (p == NULL) {
-            next_front = NULL;
-            break;
-          }
-          count++;
-          if (count == post_send_chunk_) {
-            next_front = p->next;
-            p->send_flags |= IBV_SEND_SIGNALED;
-            p->next = NULL;
-            break;
-          }
-          if (p->next == NULL) {
-            p->send_flags |= IBV_SEND_SIGNALED;
-          } else {
-            assert(! (p->send_flags & IBV_SEND_SIGNALED));
-          }
-          p = p->next;
-        }
-
-        // std::cerr << "post " << count << " subchunk requests to host " << peer << std::endl;
-
-        if (front != NULL) {
-          struct ::ibv_send_wr *bad;
-
-          if (opcode == IBV_WC_RDMA_READ) {
-            t_post_read.start();
-          } else {
-            t_post_write.start();
-          }
-          int r = ::ibv_post_send(qp, front, &bad);
-          check_ibv_status(r, bad);
-          if (opcode == IBV_WC_RDMA_READ) {
-            t_post_read.stop();
-            t_finish_read.start();
-          } else {
-            t_post_write.stop();
-            t_finish_write.start();
-          }
-
-          // finish_completion_queue(count, opcode);
-          finish_completion_queue(1, opcode);
-          if (opcode == IBV_WC_RDMA_READ) {
-            t_finish_read.stop();
-          } else {
-            t_finish_write.stop();
-          }
-        }
-
-        front = next_front;
-      }
-
-    } else if (false) {
-      ::size_t sent_items = 0;
-      for (auto p = q_front; p != NULL; p = p->next) {
-        sent_items++;
-      }
-
-      if (sent_items == 0) {
-        std::cerr << "skip posting " << sent_items << " " << action << " requests to host " << peer << std::endl;
-      } else {
-        std::cerr << "post " << sent_items << " " << action << " requests to host " << peer << std::endl;
-        struct ::ibv_send_wr *bad;
-
-        assert(q_front->wr.rdma.rkey != 0);
-        int r = ::ibv_post_send(qp, q_front, &bad);
-        check_ibv_status(r, bad);
-
-        finish_completion_queue(sent_items, opcode);
-      }
-
-    } else {
-      for (auto & p = q_front; p != NULL; p = p->next) {
-        struct ::ibv_send_wr *bad;
-
-        assert(q_front->wr.rdma.rkey != 0);
-        ::ibv_send_wr *next = p->next;
-        p->next = 0;
-        int r = ::ibv_post_send(qp, p, &bad);
-        check_ibv_status(r, bad);
-
-        finish_completion_queue(1, opcode);
-        p->next = next;
-      }
-    }
-  }
-
   static double GBs_from_time(
       const std::chrono::high_resolution_clock::duration &dt, int64_t bytes) {
     double gbs;
@@ -515,7 +364,6 @@ CHECK_DEV_LIST();
   VIRTUAL void Init(::size_t value_size, ::size_t total_values,
                     ::size_t max_cache_capacity, ::size_t max_write_capacity,
                     const std::vector<std::string> &args) {
-    CHECK_DEV_LIST();
     namespace po = ::boost::program_options;
 
     int ib_port;
@@ -548,14 +396,12 @@ CHECK_DEV_LIST();
        "RDMA OOB network interface")
 #endif
       ;
-    CHECK_DEV_LIST();
 
     po::variables_map vm;
     po::basic_command_line_parser<char> clp(args);
     clp.options(desc);
     po::store(clp.run(), vm);
     po::notify(vm);
-    CHECK_DEV_LIST();
 
     // Feed the options to the QPerf Req
     Req.mtu_size = mtu;
@@ -569,20 +415,20 @@ CHECK_DEV_LIST();
 
     Timer::setTabular(true);
 
-    t_poll_cq      = Timer("RDMA poll cq");
-    t_read         = Timer("RDMA read");
-    t_local_read   = Timer("     local read");
-    t_post_read    = Timer("     post read");
-    t_finish_read  = Timer("     finish read");
-    t_host_read    = Timer("     per-host read");
-    t_write        = Timer("RDMA write");
-    t_local_write  = Timer("     local write");
-    t_post_write   = Timer("     post write");
-    t_finish_write = Timer("     finish write");
-    t_barrier      = Timer("RDMA barrier");
+    t_poll_cq_      = Timer("RDMA poll cq");
+    t_read_.outer   = Timer("RDMA read");
+    t_read_.local   = Timer("     local read");
+    t_read_.post    = Timer("     post read");
+    t_read_.finish  = Timer("     finish read");
+    t_read_.host    = Timer("     per-host read");
+    t_write_.outer  = Timer("RDMA write");
+    t_write_.local  = Timer("     local write");
+    t_write_.post   = Timer("     post write");
+    t_write_.finish = Timer("     finish write");
+    t_write_.host   = Timer("     per-host write");
+    t_barrier_      = Timer("RDMA barrier");
 
     init_networking();  // along the way, defines my_rank_ and num_servers_
-    CHECK_DEV_LIST();
 
     if (rd_open(&res_, IBV_QPT_RC, post_send_chunk_, 0) != 0) {
       throw QPerfException("rd_open");
@@ -603,7 +449,6 @@ CHECK_DEV_LIST();
     write_.Init(&res_, &write_buffer_, max_write_capacity * value_size);
     std::cout << "MR/write " << write_ << std::endl;
 
-#ifndef DISABLE_NETWORKING
     peer_.resize(num_servers_);
     for (::size_t i = 0; i < num_servers_; i++) {
       if (i == my_rank_) {
@@ -668,7 +513,6 @@ CHECK_DEV_LIST();
 
     // Sync before we move the QPs to the next state
     barrier();
-#endif
 
     std::cerr << "Migrate QPs to RTR, RTS" << std::endl;
     for (::size_t i = 0; i < num_servers_; ++i) {
@@ -688,20 +532,13 @@ CHECK_DEV_LIST();
     wc_.resize(post_send_chunk_);
     ::size_t q_size = std::max(cache_buffer_.capacity() / value_size,
                                write_buffer_.capacity() / value_size);
-    if (USE_QPERF_POST) {
-      ::size_t num_batches = (num_servers_ + batch_size_ - 1) / batch_size_;
-      std::cerr << "Resize my queue pointers, use >= " << (num_batches * q_size * sizeof post_descriptor_[0][0] / 1048576.0) << "MB" << std::endl;
-      post_descriptor_.resize(num_batches);
-      for (::size_t i = 0; i < num_batches; ++i) {
-        post_descriptor_[i].resize(q_size);
-      }
-      posts_.resize(num_batches);
-    } else {
-      q_recv_front_.resize(num_servers_);
-      q_send_front_.resize(num_servers_);
-      recv_wr_.resize(q_size);
-      recv_sge_.resize(q_size);
+    ::size_t num_batches = (num_servers_ + batch_size_ - 1) / batch_size_;
+    std::cerr << "Resize my queue pointers, use >= " << (num_batches * q_size * sizeof post_descriptor_[0][0] / 1048576.0) << "MB" << std::endl;
+    post_descriptor_.resize(num_batches);
+    for (::size_t i = 0; i < num_batches; ++i) {
+      post_descriptor_[i].resize(q_size);
     }
+    posts_.resize(num_batches);
   }
 
   template <typename T>
@@ -721,267 +558,104 @@ CHECK_DEV_LIST();
       std::cerr << "Ooppssss.......... writeable records not yet implemented" << std::endl;
     }
 
-    t_read.start();
+    t_read_.outer.start();
 
 #ifndef DISABLE_INFINIBAND
-    if (! USE_QPERF_POST) {
-      // Fill the linked lists of WR requests
-      q_recv_front_.assign(num_servers_, NULL);
-      current_recv_req_ = 0;
-      assert(recv_wr_.capacity() >= key.size());
-      for (::size_t i = 0; i < key.size(); i++) {
-        ::size_t owner = HostOf(key[i]);
-        if (owner == my_rank_) {
-          t_local_read.start();
-          // Read directly, without RDMA
-          cache[i] = value_.area_ + OffsetOf(key[i]);
+    for (auto &s : posts_) {
+      s = 0;
+    }
+    for (::size_t i = 0; i < key.size(); i++) {
+      ::size_t owner = HostOf(key[i]);
+      if (owner == my_rank_) {
+        // FIXME: do this asynchronously
+        t_read_.local.start();
+        // Read directly, without RDMA
+        cache[i] = value_.area_ + OffsetOf(key[i]);
 
-          bytes_local_read += value_size_ * sizeof(ValueType);
-          t_local_read.stop();
+        bytes_local_read += value_size_ * sizeof(ValueType);
+        t_read_.local.stop();
 
-        } else {
-          ValueType *target = cache_buffer_.get(value_size_);
-          cache[i] = target;
+      } else {
+        ValueType *target = cache_buffer_.get(value_size_);
+        cache[i] = target;
 
-          struct ::ibv_send_wr *wr = &recv_wr_[current_recv_req_];
-          struct ::ibv_sge *sge = &recv_sge_[current_recv_req_];
-          current_recv_req_++;
+        ::size_t batch = owner / batch_size_;
+        ::size_t n = posts_[batch];
+        posts_[batch] += 1;
+        assert(post_descriptor_.capacity() > batch);
+        assert(post_descriptor_[batch].capacity() > n);
+        auto *d = &post_descriptor_[batch][n];
 
-          wr->wr_id = 42; // Yes!
-          wr->num_sge = 1;
-          wr->sg_list = sge;
-          sge->addr   = static_cast<uint64_t>(reinterpret_cast<uintptr_t>(target));
-          sge->length = value_size_ * sizeof(ValueType);
-          sge->lkey   = cache_.region_.mr->lkey;
+        d->connection_ = &peer_[owner].connection;
+        d->rkey_ = peer_[owner].props.value_rkey;
+        d->local_addr_ = target;
+        d->sizes_ = value_size_ * sizeof(ValueType);
+        d->remote_addr_ = (const ValueType *)(peer_[owner].props.value +
+                                              OffsetOf(key[i]) * sizeof(ValueType));
 
-          wr->opcode = IBV_WR_RDMA_READ;
-          wr->send_flags = 0;
-          wr->wr.rdma.remote_addr = peer_[owner].props.value +
-            OffsetOf(key[i]) * sizeof(ValueType);
-          wr->wr.rdma.rkey = peer_[owner].props.value_rkey;
-          assert(wr->wr.rdma.rkey != 0);
-
-          wr->next = q_recv_front_[owner];
-          q_recv_front_[owner] = wr;
-
-          bytes_remote_read += sge->length;
-        }
-      }
-
-      // Post the linked lists of WR read requests
-      for (::size_t i = 0; i < num_servers_; ++i) {
-        post_linked_list(peer_[i].connection.qp, q_recv_front_[i], i,
-                         IBV_WC_RDMA_READ);
-      }
-
-      // std::cerr << "FIXME: should I GC the recv/send queue items? " << std::endl;
-      // Answer: no
-
-    } else {
-      for (auto &s : posts_) {
-        s = 0;
-      }
-      for (::size_t i = 0; i < key.size(); i++) {
-        ::size_t owner = HostOf(key[i]);
-        if (owner == my_rank_) {
-          t_local_read.start();
-          // Read directly, without RDMA
-          cache[i] = value_.area_ + OffsetOf(key[i]);
-
-          bytes_local_read += value_size_ * sizeof(ValueType);
-          t_local_read.stop();
-
-        } else {
-          ValueType *target = cache_buffer_.get(value_size_);
-          cache[i] = target;
-
-          ::size_t batch = owner / batch_size_;
-          ::size_t n = posts_[batch];
-          posts_[batch] += 1;
-          assert(post_descriptor_.capacity() > batch);
-          assert(post_descriptor_[batch].capacity() > n);
-          auto *d = &post_descriptor_[batch][n];
-
-          d->connection_ = &peer_[owner].connection;
-          d->rkey_ = peer_[owner].props.value_rkey;
-          d->local_addr_ = target;
-          d->sizes_ = value_size_ * sizeof(ValueType);
-          d->remote_addr_ = (const ValueType *)(peer_[owner].props.value +
-            OffsetOf(key[i]) * sizeof(ValueType));
-
-          bytes_remote_read += value_size_ * sizeof(ValueType);
-        }
-      }
-
-      ::size_t cookies = post_send_chunk_;
-      ::size_t num_batches = (num_servers_ + batch_size_ - 1) / batch_size_;
-      for (::size_t h = 0; h < num_batches; ++h) {
-        ::size_t peer = (h + my_rank_ / num_batches) % num_batches;
-        t_host_read.start();
-        for (::size_t i = 0; i < posts_[peer]; ++i) {
-          if (cookies == 0) {
-            while (cookies == 0) {
-              t_finish_read.start();
-              ::size_t n = rd_poll(&res_, wc_.data(), wc_.size());
-              t_finish_read.stop();
-              for (::size_t i = 0; i < n; i++) {
-                enum ibv_wc_status status = wc_[i].status;
-                if (status != IBV_WC_SUCCESS) {
-                  throw QPerfException("rd_poll" + std::string(ibv_wc_status_str(status)));
-                }
-              }
-              cookies += n;
-            }
-          }
-
-          t_post_read.start();
-          const auto *d = &post_descriptor_[peer][i];
-          if (rd_post_rdma_std(d->connection_,
-                               cache_.region_.mr->lkey,
-                               d->rkey_,
-                               IBV_WR_RDMA_READ,
-                               1,
-                               (const void **)&d->local_addr_,
-                               (const void **)&d->remote_addr_,
-                               &d->sizes_) != 0) {
-            throw QPerfException("rd_post_rdma_std");
-          }
-          t_post_read.stop();
-          posts++;
-          cookies--;
-#if 0
-        if (posts_[peer] > 0) {
-          t_host_read.start();
-          uint32_t remote_key = peer_[peer].props.value_rkey;
-          ::size_t at = 0;
-          ::size_t seen = 0;
-          ::size_t n = post_send_chunk_;
-          while (seen < posts_[peer]) {
-            ::size_t p = std::min(n, posts_[peer] - at);
-            if (p > 0) {
-              t_post_read.start();
-              if (rd_post_rdma_std(&peer_[peer].connection,
-                                   cache_.region_.mr->lkey,
-                                   remote_key,
-                                   IBV_WR_RDMA_READ,
-                                   p,
-                                   local_addr_[peer].data() + at,
-                                   remote_addr_[peer].data() + at,
-                                   sizes_[peer].data() + at) != 0) {
-                throw QPerfException("rd_post_rdma_std");
-              }
-              t_post_read.stop();
-              at += p;
-              msgs_per_post += p;
-              posts++;
-            }
-
-            t_finish_read.start();
-            n = rd_poll(&res_, wc_.data(), wc_.size());
-            t_finish_read.stop();
-            for (::size_t i = 0; i < n; i++) {
-              enum ibv_wc_status status = wc_[i].status;
-              if (status != IBV_WC_SUCCESS) {
-                throw QPerfException("rd_poll" + std::string(ibv_wc_status_str(status)));
-              }
-            }
-            seen += n;
-          }
-          t_host_read.stop();
-        }
-#endif
-        }
-        t_host_read.stop();
-        if (false) {
-          std::cerr << "For now, sync to see if it helps throughput..." << std::endl;
-          barrier();
-        }
-      }
-
-      while (cookies < post_send_chunk_) {
-        t_finish_read.start();
-        ::size_t n = rd_poll(&res_, wc_.data(), wc_.size());
-        t_finish_read.stop();
-        for (::size_t i = 0; i < n; i++) {
-          enum ibv_wc_status status = wc_[i].status;
-          if (status != IBV_WC_SUCCESS) {
-            throw QPerfException("rd_poll" + std::string(ibv_wc_status_str(status)));
-          }
-        }
-        cookies += n;
+        bytes_remote_read += value_size_ * sizeof(ValueType);
       }
     }
 
+    post_batches(post_descriptor_, posts_, cache_.region_.mr->lkey,
+                 IBV_WR_RDMA_READ, t_read_);
 #endif
-    t_read.stop();
+
+    t_read_.outer.stop();
   }
 
 
   VIRTUAL void WriteKVRecords(const std::vector<KeyType> &key,
                               const std::vector<const ValueType *> &value) {
-    t_write.start();
+    t_write_.outer.start();
+
 #ifndef DISABLE_INFINIBAND
     // Fill the linked lists of SGE requests
-    q_send_front_.assign(num_servers_, NULL);
-    if (send_wr_.capacity() < key.size()) {
-      send_wr_.reserve(key.size());
-      send_sge_.reserve(key.size());
-    }
-    current_send_req_ = 0;
     for (::size_t i = 0; i < key.size(); i++) {
       ::size_t owner = HostOf(key[i]);
       if (owner == my_rank_) {
-        t_local_write.start();
+        // FIXME: do this asynchronously
+        t_write_.local.start();
         // Write directly, without RDMA
         ValueType *target = value_.area_ + OffsetOf(key[i]);
         memcpy(target, value[i], value_size_ * sizeof(ValueType));
-        t_local_write.stop();
+        t_write_.local.stop();
 
         bytes_local_written += value_size_ * sizeof(ValueType);
 
       } else {
-        assert(current_send_req_ < send_wr_.capacity());
-        assert(current_send_req_ < recv_sge_.capacity());
-        struct ::ibv_send_wr *wr = &send_wr_[current_send_req_];
-        struct ::ibv_sge *sge = &recv_sge_[current_send_req_];
-        current_send_req_++;
-
-        memset(wr, 0, sizeof *wr);
-        wr->num_sge = 1;
-        wr->sg_list = sge;
+        const ValueType *source;
         if (write_.contains(value[i])) {
-          sge->addr = reinterpret_cast<uint64_t>(value[i]);
+          source = value[i];
         } else {
           ValueType *v = write_buffer_.get(value_size_);
           memcpy(v, value[i], value_size_ * sizeof(ValueType));
-          sge->addr = reinterpret_cast<uint64_t>(v);
+          source = v;
         }
-        sge->lkey = write_.region_.mr->lkey;
-        sge->length = value_size_ * sizeof(ValueType);
 
-        wr->opcode = IBV_WR_RDMA_WRITE;
-        wr->send_flags = 0;
-        wr->wr.rdma.remote_addr = peer_[owner].props.value +
-          OffsetOf(key[i]) * sizeof(ValueType);
-        wr->wr.rdma.rkey = peer_[owner].props.value_rkey;
+        ::size_t batch = owner / batch_size_;
+        ::size_t n = posts_[batch];
+        posts_[batch] += 1;
+        assert(post_descriptor_.capacity() > batch); 
+        assert(post_descriptor_[batch].capacity() > n);
+        auto *d = &post_descriptor_[batch][n];
 
-        wr->next = q_send_front_[owner];
-        q_send_front_[owner] = wr;
+        d->connection_ = &peer_[owner].connection;
+        d->rkey_ = peer_[owner].props.value_rkey;
+        d->local_addr_ = const_cast<ValueType *>(source);       // sorry, API
+        d->sizes_ = value_size_ * sizeof(ValueType);
+        d->remote_addr_ = (const ValueType *)(peer_[owner].props.value +
+                                              OffsetOf(key[i]) * sizeof(ValueType));
 
-        bytes_remote_written += sge->length;
+        bytes_remote_written += value_size_ * sizeof(ValueType);
       }
     }
 
-    // Post the linked lists of WR write requests
-    for (::size_t i = 0; i < num_servers_; ++i) {
-      post_linked_list(peer_[i].connection.qp, q_send_front_[i], i,
-                       IBV_WC_RDMA_WRITE);
-    }
-
-    // std::cerr << "FIXME: should I GC the recv/send queue items? " << std::endl;
-    // Answer: no
+    post_batches(post_descriptor_, posts_, write_.region_.mr->lkey,
+                 IBV_WR_RDMA_WRITE, t_write_);
 #endif
-    t_write.stop();
+
+    t_write_.outer.stop();
   }
 
 
@@ -1004,7 +678,6 @@ CHECK_DEV_LIST();
    * Purge the cache area
    */
   VIRTUAL void PurgeKVRecords() {
-    CHECK_DEV_LIST();
     cache_buffer_.reset();
     write_buffer_.reset();
   }
@@ -1016,6 +689,64 @@ CHECK_DEV_LIST();
 
   uint64_t OffsetOf(DKVStoreRDMA::KeyType key) {
     return key / num_servers_ * value_size_;
+  }
+
+  ::size_t PollForCookies(::size_t current, ::size_t at_least, BatchTimer &timer) {
+    while (current < at_least) {
+      timer.finish.start();
+      ::size_t n = rd_poll(&res_, wc_.data(), wc_.size());
+      timer.finish.stop();
+      for (::size_t i = 0; i < n; i++) {
+        enum ibv_wc_status status = wc_[i].status;
+        if (status != IBV_WC_SUCCESS) {
+          throw QPerfException("rd_poll" + std::string(ibv_wc_status_str(status)));
+        }
+      }
+      current += n;
+    }
+
+    return current;
+  }
+
+  void post_batches(const std::vector<std::vector<PostDescriptor<ValueType>>> &post_descriptor,
+                    const std::vector< ::size_t> &posts,
+                    uint32_t local_key,
+                    enum ibv_wr_opcode opcode,
+                    BatchTimer &timer) {
+    ::size_t cookies = post_send_chunk_;
+    ::size_t num_batches = (num_servers_ + batch_size_ - 1) / batch_size_;
+    for (::size_t h = 0; h < num_batches; ++h) {
+      ::size_t peer = (h + my_rank_ / num_batches) % num_batches;
+      timer.host.start();
+      for (::size_t i = 0; i < posts[peer]; ++i) {
+        if (cookies == 0) {
+          cookies = PollForCookies(0, 1, timer);
+        }
+
+        timer.post.start();
+        const auto *d = &post_descriptor[peer][i];
+        if (rd_post_rdma_std(d->connection_,
+                             local_key, // cache_.region_.mr->lkey,
+                             d->rkey_,
+                             opcode,
+                             1,
+                             (const void **)&d->local_addr_,
+                             (const void **)&d->remote_addr_,
+                             &d->sizes_) != 0) {
+          throw QPerfException("rd_post_rdma_std");
+        }
+        timer.post.stop();
+        num_posts_++;
+        cookies--;
+      }
+      timer.host.stop();
+      if (false) {
+        std::cerr << "For now, sync to see if it helps throughput..." << std::endl;
+        barrier();
+      }
+    }
+
+    PollForCookies(cookies, post_send_chunk_, timer);
   }
 #endif
 
@@ -1055,7 +786,6 @@ CHECK_DEV_LIST();
 
   void init_networking();
 #ifndef USE_MPI
-#ifndef DISABLE_NETWORKING
   void alltoall_leaf(const char *sendbuf, ::size_t send_item_size,
                      char *recvbuf, ::size_t recv_item_size,
                      ::size_t me, ::size_t size,
@@ -1064,7 +794,6 @@ CHECK_DEV_LIST();
                    char *recvbuf, ::size_t recv_item_size,
                    ::size_t me, ::size_t size,
                    ::size_t start, ::size_t size_2pow);
-#endif
 #endif
  public:
   void alltoall(const void *sendbuf, ::size_t send_item_size,
@@ -1090,7 +819,7 @@ CHECK_DEV_LIST();
     int r;
     ::size_t seen = 0;
     while (seen < n) {
-      t_poll_cq.start();
+      t_poll_cq_.start();
       do {
 
         r = ::ibv_poll_cq(res_.cq, n, wc_.data() + seen);
@@ -1099,7 +828,7 @@ CHECK_DEV_LIST();
           break;
         }
       } while (r == 0);
-      t_poll_cq.stop();
+      t_poll_cq_.stop();
       for (::size_t i = seen; i < seen + r; i++) {
         if (wc_[i].status != IBV_WC_SUCCESS) {
           throw RDMAException("ibv_poll_cq status " + to_string(wc_[r].status) +
@@ -1112,72 +841,6 @@ CHECK_DEV_LIST();
     }
 #endif
   }
-
-#if 0       // DEPRECATED
-/******************************************************************************
- * Function: connect_qp
- *
- * Input
- * none
- *
- * Output
- * none
- *
- * Returns
- * none
- *
- * @throws RDMAException
- *
- * Description
- * Connect the QP. Transition the server side to RTR, sender side to RTS
- ******************************************************************************/
-  void connect_qp() {
-
-    /* exchange using o-o-b network info required to connect QPs */
-    std::vector<cm_con_data_t> my_con_data(num_servers_);
-    for (::size_t i = 0; i < num_servers_; ++i) {
-      if (i == my_rank_) {
-        std::cerr << "FIXME " << __LINE__ << ": What about me?" << std::endl;
-      } else {
-        cm_con_data_t *con = &my_con_data[i];
-        con->value  = reinterpret_cast<uint64_t>(value_.vaddr);
-        con->cache  = reinterpret_cast<uint64_t>(cache_.vaddr);
-        con->value_rkey   = value_.key;
-        con->cache_rkey   = cache_.key;
-        con->qp_num = peer_[i].connection.qp->qp_num;
-        con->lid    = res_.lnode.lid;
-#if 0
-        con->gid    = my_gid;
-#endif
-        fprintf (stdout, "\nLocal LID[%zd] = 0x%x\n", i, res_.lnode.lid);
-      }
-    }
-
-    std::vector<cm_con_data_t> remote_con_data(num_servers_);
-    alltoall(my_con_data.data(), sizeof my_con_data[0],
-             remote_con_data.data(), sizeof remote_con_data[0]);
-
-    for (::size_t i = 0; i < num_servers_; ++i) {
-      if (i == my_rank_) {
-        std::cerr << "FIXME " << __LINE__ << ": What about me?" << std::endl;
-      } else {
-        /* save the remote side attributes, we will need it for the post SR */
-        peer_[i].props = remote_con_data[i];
-
-        std::cout << "Peer " << i << std::endl;
-        std::cout << remote_con_data[i];
-#if 0
-        if (config_.gid_idx >= 0) {
-          std::cout << "  gid " << gid_t(peer_[i].props.gid);
-        }
-#endif
-        std::cout << std::endl << std::dec;
-      }
-    }
-
-    barrier();
-  }
-#endif
 
 #ifdef USE_MPI
 
@@ -1221,7 +884,6 @@ private:
 #else   // def USE_MPI
 
   void init_networking() {
-#ifndef DISABLE_NETWORKING
     std::cerr << "hardwire network = " << "socket" << ", interface = " << oob_interface_ << std::endl;
 
     mr::OptionList options;
@@ -1240,17 +902,9 @@ private:
     }
 
     broadcast_.Init(network_);
-#else
-    std::cerr << "Skip the network thingy" << std::endl;
-    const char *prun_cpu_rank = getenv("PRUN_CPU_RANK");
-    const char *nhosts = getenv("NHOSTS");
-    my_rank_ = atoi(prun_cpu_rank);
-    num_servers_ = atoi(nhosts);
-#endif
   }
 
 
-#ifndef DISABLE_NETWORKING
  private:
   void alltoall_leaf(const char *sendbuf, ::size_t send_item_size,
                                    char *recvbuf, ::size_t recv_item_size,
@@ -1311,32 +965,26 @@ private:
                   me, size, start + size_2pow, size_2pow);
     }
   }
-#endif
 
 
  public:
   void alltoall(const void *sendbuf, ::size_t send_item_size,
                               void *recvbuf, ::size_t recv_item_size) {
-    CHECK_DEV_LIST();
-#ifndef DISABLE_NETWORKING
     ::size_t size_2pow = mr::next_2_power(num_servers_);
 
     alltoall_DC(static_cast<const char *>(sendbuf), send_item_size,
                 static_cast<char *>(recvbuf), recv_item_size,
                 my_rank_, num_servers_, 0, size_2pow);
-#endif
 
     // copy our own contribution by hand
     memcpy(static_cast<char *>(recvbuf) + my_rank_ * recv_item_size,
            static_cast<const char *>(sendbuf) + my_rank_ * send_item_size,
            recv_item_size);
-    CHECK_DEV_LIST();
   }
 
 
   void barrier() {
-    t_barrier.start();
-#ifndef DISABLE_NETWORKING
+    t_barrier_.start();
     int32_t dummy = -1;
     if (my_rank_ == 0) {
       broadcast_.bcast_send(dummy);
@@ -1345,8 +993,7 @@ private:
       broadcast_.bcast_rcve(&dummy);
       broadcast_.reduce_send(dummy);
     }
-#endif
-    t_barrier.stop();
+    t_barrier_.stop();
   }
 
 #endif  // def USE_MPI
@@ -1359,14 +1006,6 @@ private:
   DEVICE res_;
   std::vector<rdma_peer> peer_;
 
-  std::vector< ::ibv_send_wr> send_wr_;
-  std::vector< ::ibv_sge> send_sge_;
-  ::size_t current_send_req_;
-  std::vector< ::ibv_send_wr *> q_send_front_;
-  std::vector< ::ibv_send_wr> recv_wr_;
-  std::vector< ::ibv_sge> recv_sge_;
-  ::size_t current_recv_req_;
-  std::vector< ::ibv_send_wr *> q_recv_front_;
   std::vector< ::ibv_wc> wc_;
 
   std::vector<std::vector<PostDescriptor<ValueType>>> post_descriptor_;
@@ -1375,9 +1014,6 @@ private:
 
   std::string dev_name_;
   ::size_t post_send_chunk_ = 1024;
-  const bool REQUIRE_POSTED_RECEIVE;
-  const bool USE_QPERF_POST;
-  const bool ALL_REQUESTS_INTERLEAVED;
 
   /* memory buffer pointers, used for RDMA and send ops */
   rdma_area<ValueType> value_;
@@ -1385,28 +1021,19 @@ private:
   rdma_area<ValueType> write_;
 
 #ifndef USE_MPI
-#ifndef DISABLE_NETWORKING
   std::string oob_impl_;
   std::string oob_interface_;
   mr::net::Network *network_;
   mr::net::Broadcast broadcast_;
   mr::net::Network::RWList rw_list_;
 #endif
-#endif
 
-  Timer t_poll_cq;
-  Timer t_read;
-  Timer t_local_read;
-  Timer t_host_read;
-  Timer t_post_read;
-  Timer t_finish_read;
-  Timer t_write;
-  Timer t_local_write;
-  Timer t_post_write;
-  Timer t_finish_write;
-  Timer t_barrier;
-  ::size_t msgs_per_post = 0;
-  ::size_t posts = 0;
+  Timer t_poll_cq_;
+  BatchTimer t_read_;
+  BatchTimer t_write_;
+  Timer t_barrier_;
+  ::size_t msgs_per_post_ = 0;
+  ::size_t num_posts_ = 0;
 
   int64_t bytes_local_read = 0;
   int64_t bytes_remote_read = 0;

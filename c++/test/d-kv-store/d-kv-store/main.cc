@@ -30,12 +30,12 @@ static double GB(::size_t n, ::size_t k) {
 
 namespace DKV_TYPE {
 enum TYPE {
-	FILE,
+    FILE,
 #ifdef ENABLE_RAMCLOUD
-	RAMCLOUD,
+    RAMCLOUD,
 #endif
 #ifdef ENABLE_RDMA
-	RDMA,
+    RDMA,
 #endif
 };
 }   // namespace DKV_TYPE
@@ -61,15 +61,7 @@ class DKVWrapper {
  public:
   DKVWrapper(const mcmc::Options &options, const std::vector<std::string> &remains)
       : options_(options), remains_(remains) {
-    CHECK_DEV_LIST();
-    d_kv_store_.Info();
-    CHECK_DEV_LIST();
-
-    d_kv_store_.InfoH();
-    CHECK_DEV_LIST();
-
     d_kv_store_.PurgeKVRecords();
-    CHECK_DEV_LIST();
   }
 
   void run() {
@@ -77,10 +69,9 @@ class DKVWrapper {
     mcmc::timer::Timer outer("Outer time");
     outer.start();
 
-	int64_t seed;
-	::size_t N;   // #nodes in the graph
-	bool no_populate;
-    CHECK_DEV_LIST();
+    int64_t seed;
+    ::size_t N;   // #nodes in the graph
+    bool no_populate;
 
     std::string dkv_type_string;
     po::options_description desc("D-KV store test program");
@@ -88,70 +79,56 @@ class DKVWrapper {
       ("network,N",
        po::value< ::size_t>(&N)->default_value(1 << 20),
        "nodes in the network")
-	  ("no-populate,P",
-	   po::bool_switch()->default_value(false),
-	   "do not populate at start of run")
-	  ("seed,S",
-	   po::value<int64_t>(&seed)->default_value(42),
-	   "random seed")
+      ("no-populate,P",
+       po::bool_switch()->default_value(false),
+       "do not populate at start of run")
+      ("seed,S",
+       po::value<int64_t>(&seed)->default_value(42),
+       "random seed")
       ;
 
-    CHECK_DEV_LIST();
     po::variables_map vm;
-	po::parsed_options parsed = po::basic_command_line_parser<char>(remains_).options(desc).allow_unregistered().run();
-	po::store(parsed, vm);
+    po::parsed_options parsed = po::basic_command_line_parser<char>(remains_).options(desc).allow_unregistered().run();
+    po::store(parsed, vm);
     po::notify(vm);
-    CHECK_DEV_LIST();
 
-	if (options_.help) {
-		std::cout << desc << std::endl;
-		return;
-	}
+    if (options_.help) {
+        std::cout << desc << std::endl;
+        return;
+    }
 
-	no_populate = vm["no-populate"].as<bool>();
+    no_populate = vm["no-populate"].as<bool>();
 
     std::vector<std::string> remains = po::collect_unrecognized(parsed.options,
                                                                 po::include_positional);
 
-    CHECK_DEV_LIST();
-	no_populate = vm["no-populate"].as<bool>();
-	int32_t n_hosts;
-	int32_t rank;
-	const char *prun_pe_hosts = getenv("NHOSTS");
+    no_populate = vm["no-populate"].as<bool>();
+    int32_t n_hosts;
+    int32_t rank;
+    const char *prun_pe_hosts = getenv("NHOSTS");
     if (prun_pe_hosts == NULL) {
       prun_pe_hosts = getenv("OMPI_COMM_WORLD_SIZE");
     }
-	const char *prun_cpu_rank = getenv("PRUN_CPU_RANK");
+    const char *prun_cpu_rank = getenv("PRUN_CPU_RANK");
     if (prun_cpu_rank == NULL) {
       prun_cpu_rank = getenv("OMPI_COMM_WORLD_RANK");
     }
 
-	try {
-		n_hosts = boost::lexical_cast<int32_t>(prun_pe_hosts);
-		rank    = boost::lexical_cast<int32_t>(prun_cpu_rank);
-	} catch (boost::bad_lexical_cast const&) {
-		std::cerr << "Cannot determine run size/rank from environment, assume sequential" << std::endl;
-		n_hosts = 1;
-		rank    = 0;
-	}
+    try {
+        n_hosts = boost::lexical_cast<int32_t>(prun_pe_hosts);
+        rank    = boost::lexical_cast<int32_t>(prun_cpu_rank);
+    } catch (boost::bad_lexical_cast const&) {
+        std::cerr << "Cannot determine run size/rank from environment, assume sequential" << std::endl;
+        n_hosts = 1;
+        rank    = 0;
+    }
 
-    CHECK_DEV_LIST();
-
-    CHECK_DEV_LIST();
-    CHECK_DEV_LIST();
-
-    ::size_t K = options_.K;							// #communities
-    ::size_t m = options_.mini_batch_size;			// #nodes in minibatch, total
-    ::size_t n = options_.num_node_sample;			// #neighbors for each minibatch node
+    ::size_t K = options_.K;                            // #communities
+    ::size_t m = options_.mini_batch_size;          // #nodes in minibatch, total
+    ::size_t n = options_.num_node_sample;          // #neighbors for each minibatch node
     ::size_t iterations = options_.max_iteration;
 
     ::size_t my_m = (m + n_hosts - 1) / n_hosts;
-
-CHECK_DEV_LIST();
-d_kv_store_.Info();
-CHECK_DEV_LIST();
-d_kv_store_.PurgeKVRecords();
-CHECK_DEV_LIST();
 
     d_kv_store_.Init(K, N, my_m * n, my_m, remains);
 
@@ -278,9 +255,7 @@ int main(int argc, char *argv[]) {
     std::cerr << "  IB device[" << i << "] device_name " << (void *)DKV::DKVRDMA::global_dev_list[0] << " " << DKV::DKVRDMA::global_dev_list[i]->dev_name << std::endl;
   }
 
-	mcmc::Options options(argc, argv);
-
-    CHECK_DEV_LIST();
+    mcmc::Options options(argc, argv);
 
     std::string dkv_type_string;
     po::options_description desc("D-KV store test program");
@@ -290,75 +265,70 @@ int main(int argc, char *argv[]) {
        "D-KV store type (file/ramcloud/rdma)")
       ;
 
-    CHECK_DEV_LIST();
     po::variables_map vm;
-	po::parsed_options parsed = po::basic_command_line_parser<char>(options.getRemains()).options(desc).allow_unregistered().run();
-	po::store(parsed, vm);
+    po::parsed_options parsed = po::basic_command_line_parser<char>(options.getRemains()).options(desc).allow_unregistered().run();
+    po::store(parsed, vm);
     // po::basic_command_line_parser<char> clp(options.getRemains());
     // clp.options(desc).allow_unregistered.run();
     // po::store(clp.run(), vm);
     po::notify(vm);
-    CHECK_DEV_LIST();
 
-	if (options.help) {
-		std::cout << desc << std::endl;
-		return 0;
-	}
+    if (options.help) {
+        std::cout << desc << std::endl;
+        return 0;
+    }
 
-    CHECK_DEV_LIST();
-
-	DKV_TYPE::TYPE dkv_type = DKV_TYPE::FILE;
+    DKV_TYPE::TYPE dkv_type = DKV_TYPE::FILE;
     if (vm.count("dkv:type") > 0) {
-		if (false) {
-		} else if (dkv_type_string == "file") {
-			dkv_type = DKV_TYPE::FILE;
+        if (false) {
+        } else if (dkv_type_string == "file") {
+            dkv_type = DKV_TYPE::FILE;
 #ifdef ENABLE_RAMCLOUD
-		} else if (dkv_type_string == "ramcloud") {
-			dkv_type = DKV_TYPE::RAMCLOUD;
+        } else if (dkv_type_string == "ramcloud") {
+            dkv_type = DKV_TYPE::RAMCLOUD;
 #endif
 #ifdef ENABLE_RDMA
-		} else if (dkv_type_string == "rdma") {
-			dkv_type = DKV_TYPE::RDMA;
+        } else if (dkv_type_string == "rdma") {
+            dkv_type = DKV_TYPE::RDMA;
 #endif
-		} else {
-			desc.print(std::cerr);
-			throw mcmc::InvalidArgumentException("Unsupported value '" + dkv_type_string + "' for dkv:type");
-		}
-	}
-    CHECK_DEV_LIST();
+        } else {
+            desc.print(std::cerr);
+            throw mcmc::InvalidArgumentException("Unsupported value '" + dkv_type_string + "' for dkv:type");
+        }
+    }
 
-	std::vector<std::string> remains = po::collect_unrecognized(parsed.options, po::include_positional);
-	std::cerr << "main has unparsed options: \"";
+    std::vector<std::string> remains = po::collect_unrecognized(parsed.options, po::include_positional);
+    std::cerr << "main has unparsed options: \"";
     for (auto r : remains) {
       std::cerr << r << " ";
     }
     std::cerr << "\"" << std::endl;
 
-	switch (dkv_type) {
-	case DKV_TYPE::FILE: {
+    switch (dkv_type) {
+    case DKV_TYPE::FILE: {
 #if 0
-		DKVWrapper<DKV::DKVFile::DKVStoreFile> dkv_store(options, remains);
+        DKVWrapper<DKV::DKVFile::DKVStoreFile> dkv_store(options, remains);
         dkv_store.run();
 #endif
-		break;
+        break;
     }
 #ifdef ENABLE_RAMCLOUD
-	case DKV_TYPE::RAMCLOUD: {
+    case DKV_TYPE::RAMCLOUD: {
 #if 0
-		DKVWrapper<DKV::DKVRamCloud::DKVStoreRamCloud> dkv_store(options, remains);
+        DKVWrapper<DKV::DKVRamCloud::DKVStoreRamCloud> dkv_store(options, remains);
         dkv_store.run();
 #endif
-		break;
+        break;
     }
 #endif
 #ifdef ENABLE_RDMA
-	case DKV_TYPE::RDMA: {
-		DKVWrapper<DKV::DKVRDMA::DKVStoreRDMA> dkv_store(options, remains);
+    case DKV_TYPE::RDMA: {
+        DKVWrapper<DKV::DKVRDMA::DKVStoreRDMA> dkv_store(options, remains);
         dkv_store.run();
-		break;
+        break;
     }
 #endif
-	}
+    }
 
-	return 0;
+    return 0;
 }

@@ -35,12 +35,10 @@
 #include <exception>
 
 // #define USE_MPI
-#if defined ENABLE_NETWORKING
-#  ifdef USE_MPI
-#    include <mpi.h>
-#  else
-#    include <mr/net/netio.h>
-#  endif
+#ifdef USE_MPI
+#  include <mpi.h>
+#else
+#  include <mr/net/netio.h>
 #endif
 #endif
 
@@ -91,7 +89,6 @@ void DKVStoreRDMA::barrier() {
 #else
 
 void DKVStoreRDMA::init_networking() {
-#ifndef DISABLE_NETWORKING
   std::string network("socket");
   // std::string interface("ib0");
   std::string interface("br0");
@@ -112,17 +109,9 @@ void DKVStoreRDMA::init_networking() {
   }
 
   broadcast_.Init(network_);
-#else
-  std::cerr << "Skip the network thingy" << std::endl;
-  const char *prun_cpu_rank = getenv("PRUN_CPU_RANK");
-  const char *nhosts = getenv("NHOSTS");
-  my_rank_ = atoi(prun_cpu_rank);
-  num_servers_ = atoi(nhosts);
-#endif
 }
 
 
-#ifndef DISABLE_NETWORKING
 void DKVStoreRDMA::alltoall_leaf(const char *sendbuf, ::size_t send_item_size,
                                  char *recvbuf, ::size_t recv_item_size,
                                  ::size_t me, ::size_t size,
@@ -155,10 +144,8 @@ void DKVStoreRDMA::alltoall_leaf(const char *sendbuf, ::size_t send_item_size,
     }
   }
 }
-#endif
 
 
-#ifndef DISABLE_NETWORKING
 void DKVStoreRDMA::alltoall_DC(const char *sendbuf, ::size_t send_item_size,
                                char *recvbuf, ::size_t recv_item_size,
                                ::size_t me, ::size_t size,
@@ -184,30 +171,24 @@ void DKVStoreRDMA::alltoall_DC(const char *sendbuf, ::size_t send_item_size,
                 me, size, start + size_2pow, size_2pow);
   }
 }
-#endif
 
 
 void DKVStoreRDMA::alltoall(const void *sendbuf, ::size_t send_item_size,
                             void *recvbuf, ::size_t recv_item_size) {
-  CHECK_DEV_LIST();
-#ifndef DISABLE_NETWORKING
   ::size_t size_2pow = mr::next_2_power(num_servers_);
 
   alltoall_DC(static_cast<const char *>(sendbuf), send_item_size,
               static_cast<char *>(recvbuf), recv_item_size,
               my_rank_, num_servers_, 0, size_2pow);
-#endif
 
   // copy our own contribution by hand
   memcpy(static_cast<char *>(recvbuf) + my_rank_ * recv_item_size,
          static_cast<const char *>(sendbuf) + my_rank_ * send_item_size,
          recv_item_size);
-  CHECK_DEV_LIST();
 }
 
 
 void DKVStoreRDMA::barrier() {
-#ifndef DISABLE_NETWORKING
   int32_t dummy;
   if (my_rank_ == 0) {
     broadcast_.bcast_send(dummy);
@@ -216,17 +197,10 @@ void DKVStoreRDMA::barrier() {
     broadcast_.bcast_rcve(&dummy);
     broadcast_.reduce_send(dummy);
   }
-#endif
 }
 
 #endif
 #endif
-
-
-
-void DKVStoreRDMA::Info() const {
-  CHECK_DEV_LIST();
-}
 
 }   // namespace DKV {
 }   // namespace DKVRDMA {
