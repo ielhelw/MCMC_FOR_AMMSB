@@ -1009,11 +1009,11 @@ ib_close2(DEVICE *dev)
  */
 int
 rd_post_rdma_std_1(CONNECTION *con, uint32_t lkey, uint32_t rkey,
-                 int opcode,
-		 size_t n,
-		 const void *local_addr,
-		 const void *remote_addr,
-		 const size_t sizes)
+                   int opcode,
+                   size_t n,
+                   void* const local_addr,
+                   void* const remote_addr,
+                   const size_t sizes)
 {
     struct ibv_sge sge ={
         .lkey   = lkey,
@@ -1062,8 +1062,8 @@ int
 rd_post_rdma_std(CONNECTION *con, uint32_t lkey, uint32_t rkey,
                  int opcode,
 		 size_t n,
-		 const void **local_addr,
-		 const void **remote_addr,
+		 void* const* local_addr,
+		 const void* const* remote_addr,
 		 const size_t *sizes)
 {
     struct ibv_sge sge ={

@@ -385,7 +385,7 @@ class DKVStoreRDMA : public DKVStoreInterface {
        po::value(&post_send_chunk_),
        "RDMA max number of messages per post")
       ("rdma:peers",
-       po::value(&batch_size_)->default_value(1),
+       po::value(&batch_size_)->default_value(0),
        "RDMA max number of peers to address in one post")
       // ("rdma:oob-network",
        // po::value(&oob_impl_)->default_value("socket"),
@@ -432,6 +432,22 @@ class DKVStoreRDMA : public DKVStoreInterface {
 
     if (rd_open(&res_, IBV_QPT_RC, post_send_chunk_, 0) != 0) {
       throw QPerfException("rd_open");
+    }
+
+    if (batch_size_ == 0) {
+      if (num_servers_ <= 3) {
+        batch_size_ = num_servers_;
+      } else if (num_servers_ <= 6) {
+        batch_size_ = 4;
+      } else if (num_servers_ <= 12) {
+        batch_size_ = 5;
+      } else if (num_servers_ <= 24) {
+        batch_size_ = 6;
+      } else if (num_servers_ <= 48) {
+        batch_size_ = 7;
+      } else {
+        batch_size_ = 8;
+      }
     }
 
     value_size_ = value_size;
@@ -730,8 +746,8 @@ class DKVStoreRDMA : public DKVStoreInterface {
                              d->rkey_,
                              opcode,
                              1,
-                             (const void **)&d->local_addr_,
-                             (const void **)&d->remote_addr_,
+                             reinterpret_cast<void* const*>(&d->local_addr_),
+                             reinterpret_cast<const void* const*>(&d->remote_addr_),
                              &d->sizes_) != 0) {
           throw QPerfException("rd_post_rdma_std");
         }
