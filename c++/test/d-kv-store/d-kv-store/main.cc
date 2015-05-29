@@ -71,7 +71,6 @@ class DKVWrapper {
 
     int64_t seed;
     ::size_t N;   // #nodes in the graph
-    bool no_populate;
 
     std::string dkv_type_string;
     po::options_description desc("D-KV store test program");
@@ -82,6 +81,9 @@ class DKVWrapper {
       ("no-populate,P",
        po::bool_switch()->default_value(false),
        "do not populate at start of run")
+      ("verify,V",
+       po::bool_switch()->default_value(false),
+       "verify contents")
       ("seed,S",
        po::value<int64_t>(&seed)->default_value(42),
        "random seed")
@@ -97,12 +99,12 @@ class DKVWrapper {
         return;
     }
 
-    no_populate = vm["no-populate"].as<bool>();
-
     std::vector<std::string> remains = po::collect_unrecognized(parsed.options,
                                                                 po::include_positional);
 
-    no_populate = vm["no-populate"].as<bool>();
+    bool no_populate = vm["no-populate"].as<bool>();
+    bool verify = vm["verify"].as<bool>();
+
     int32_t n_hosts;
     int32_t rank;
     const char *prun_pe_hosts = getenv("NHOSTS");
@@ -151,7 +153,7 @@ class DKVWrapper {
         // std::vector<double> pi = random.randn(K);
         std::vector<double> pi(K);
         for (::size_t k = 0; k < K; k++) {
-          pi[k] = i * 1000.0 + (k + 1) / 1000.0;
+          pi[k] = i + (double)k / K;
         }
         std::vector<int32_t> k(1, static_cast<int32_t>(i));
         std::vector<const double *> v(1, pi.data());
@@ -163,7 +165,7 @@ class DKVWrapper {
         " GB/s" << std::endl;
     }
 
-    std::vector<std::vector<double *>> cache(my_m, std::vector<double *>(n));
+    std::vector<double *> cache(my_m * n);
     std::vector<double *> overwrite = d_kv_store_.GetWriteKVRecords(my_m);
     for (::size_t iter = 0; iter < iterations; ++iter) {
       std::vector<int32_t> *minibatch = random.sampleRange(N, my_m);
@@ -171,34 +173,35 @@ class DKVWrapper {
       // Vector for the neighbors
       std::cerr << "********* " << iter << ": Sample the neighbors" <<
         std::endl;
-      std::vector<std::vector<int32_t> *> neighbor(my_m);
-      for (::size_t i = 0; i < my_m; ++i) {
-        neighbor[i] = random.sampleRange(N, n);
+      std::vector<int32_t> *neighbor;
+      if (my_m * n * 2 >= N) {
+        std::cerr << "Warning: sampling " << (my_m * n) << " from " << N << " might take a long time" << std::endl;
       }
+      neighbor = random.sampleRange(N, my_m * n);
 
       {
         std::cout << "*********" << iter << ":  Start reading KVs... " <<
           std::endl;
         // Read the values for the neighbors
         auto t = hires::now();
-        for (::size_t i = 0; i < my_m; ++i) {
-          d_kv_store_.ReadKVRecords(cache[i], *neighbor[i],
-                                    DKV::RW_MODE::READ_ONLY);
-        }
+        d_kv_store_.ReadKVRecords(cache, *neighbor,
+                                  DKV::RW_MODE::READ_ONLY);
         duration dur = std::chrono::duration_cast<duration>(hires::now() - t);
         std::cout << my_m << " Read " << my_m << "x" << n << "x" << K <<
           " takes " << (1000.0 * dur.count()) << "ms thrp " <<
           (GB(my_m * n, K) / dur.count()) << " GB/s" << std::endl;
-        if (false) {
-          for (::size_t i = 0; i < my_m; ++i) {
-            for (::size_t j = 0; j < n; j++) {
-              std::cerr << "Key " << (*neighbor[i])[j] << " pi = {";
-              for (::size_t k = 0; k < K; k++) {
-                std::cerr << cache[i][j][k] << " ";
+        if (verify) {
+          int miss = 0;
+          for (::size_t i = 0; i < my_m * n; ++i) {
+            int32_t key = (*neighbor)[i];
+            for (::size_t k = 0; k < K; k++) {
+              if (cache[i][k] < key + (double)k / K || cache[i][k] > key + (double)k / K + (double)(iter + 1) / (K * K)) {
+                miss++;
+                std::cerr << "Ooppss... key " << key << " wrong value[" << k << "] " << cache[i][k] << " should be (slightly over) " << (key + (double)k / K) << std::endl;
               }
-              std::cerr << "}" << std::endl;
             }
           }
+          std::cout << "Verify: checked " << (my_m * n) << " vectors, wrong values: " << miss << std::endl;
         }
       }
 
@@ -210,8 +213,7 @@ class DKVWrapper {
           std::endl;
         for (::size_t i = 0; i < minibatch->size(); i++) {
           for (::size_t k = 0; k < K; k++) {
-            overwrite[i][k] = (*minibatch)[i] * 1000.0 +
-                                ((iter + 1) * (k + 1)) / 1000.0;
+            overwrite[i][k] = (*minibatch)[i] + (double)k / K + (double)(iter + 1) / (K * K);
           }
         }
 
@@ -226,9 +228,7 @@ class DKVWrapper {
 
       d_kv_store_.PurgeKVRecords();
 
-      for (auto n : neighbor) {
-        delete n;
-      }
+      delete neighbor;
 
       std::cout << "*********" << iter << ":  Sync... " << std::endl;
       d_kv_store_.barrier();

@@ -600,8 +600,8 @@ class DKVStoreRDMA : public DKVStoreInterface {
         posts_[batch] += 1;
         assert(post_descriptor_.capacity() > batch);
         assert(post_descriptor_[batch].capacity() > n);
-        auto *d = &post_descriptor_[batch][n];
 
+        auto *d = &post_descriptor_[batch][n];
         d->connection_ = &peer_[owner].connection;
         d->rkey_ = peer_[owner].props.value_rkey;
         d->local_addr_ = target;
@@ -626,7 +626,9 @@ class DKVStoreRDMA : public DKVStoreInterface {
     t_write_.outer.start();
 
 #ifndef DISABLE_INFINIBAND
-    // Fill the linked lists of SGE requests
+    for (auto &s : posts_) {
+      s = 0;
+    }
     for (::size_t i = 0; i < key.size(); i++) {
       ::size_t owner = HostOf(key[i]);
       if (owner == my_rank_) {
@@ -654,8 +656,8 @@ class DKVStoreRDMA : public DKVStoreInterface {
         posts_[batch] += 1;
         assert(post_descriptor_.capacity() > batch); 
         assert(post_descriptor_[batch].capacity() > n);
-        auto *d = &post_descriptor_[batch][n];
 
+        auto *d = &post_descriptor_[batch][n];
         d->connection_ = &peer_[owner].connection;
         d->rkey_ = peer_[owner].props.value_rkey;
         d->local_addr_ = const_cast<ValueType *>(source);       // sorry, API

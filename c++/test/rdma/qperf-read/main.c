@@ -318,7 +318,7 @@ int main(int argc, char *argv[])
   }
 
   if (server != NULL || bidirectional) {
-    const void **local_address = malloc(neighb * sizeof *local_address);
+    void **local_address = malloc(neighb * sizeof *local_address);
     if (local_address == NULL) {
       bail_out("malloc(local_address)");
     }
