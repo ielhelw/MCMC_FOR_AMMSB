@@ -223,26 +223,26 @@ public:
 
 		std::cerr << "***************** FIXME: make an array of kernelRandoms, one for each of the OpenMP threads" << std::endl;
 
-		t_outer = Timer("  outer");
 		t_populate_pi           = Timer("  populate pi");
+		t_outer                 = Timer("  iteration");
+		t_deploy_minibatch      = Timer("    deploy minibatch");
+		t_mini_batch            = Timer("      sample_mini_batch");
+		t_nodes_in_mini_batch   = Timer("      nodes_in_mini_batch");
+		t_sample_neighbor_nodes = Timer("      sample_neighbor_nodes");
+		t_load_pi_minibatch     = Timer("      load minibatch pi");
+		t_load_pi_neighbor      = Timer("      load neighbor pi");
+		t_update_phi            = Timer("      update_phi");
+		t_store_pi_minibatch    = Timer("      store minibatch pi");
+		t_purge_pi_perp         = Timer("      purge perplexity pi");
+		t_barrier_phi           = Timer("    barrier to update phi");
+		t_update_pi             = Timer("    update_pi");
+		t_barrier_pi            = Timer("    barrier to update pi");
+		t_update_beta           = Timer("    update_beta");
+		t_broadcast_beta        = Timer("      broadcast beta");
 		t_perplexity            = Timer("  perplexity");
-		t_rank_pi_perp          = Timer("  rank pi perp");
-		t_cal_edge_likelihood   = Timer("  calc edge likel");
-		t_mini_batch            = Timer("  sample_mini_batch");
-		t_nodes_in_mini_batch   = Timer("  nodes_in_mini_batch");
-		t_sample_neighbor_nodes = Timer("  sample_neighbor_nodes");
-		t_update_phi            = Timer("  update_phi");
-		t_update_pi             = Timer("  update_pi");
-		t_update_beta           = Timer("  update_beta");
-		t_load_pi_minibatch     = Timer("  load minibatch pi");
-		t_load_pi_neighbor      = Timer("  load neighbor pi");
-		t_load_pi_perp          = Timer("  load perplexity pi");
-		t_store_pi_minibatch    = Timer("  store minibatch pi");
-		t_purge_pi_perp         = Timer("  purge perplexity pi");
-		t_broadcast_beta        = Timer("  broadcast beta");
-		t_deploy_minibatch      = Timer("  deploy minibatch");
-		t_barrier_phi           = Timer("  barrier to update phi");
-		t_barrier_pi            = Timer("  barrier to update pi");
+		t_load_pi_perp          = Timer("      load perplexity pi");
+		t_rank_pi_perp          = Timer("      rank pi perp");
+		t_cal_edge_likelihood   = Timer("      calc edge likel");
 		Timer::setTabular(true);
 	}
 
@@ -523,27 +523,26 @@ public:
 		check_perplexity();
 
 		Timer::printHeader(std::cout);
-		std::cout << std::fixed << std::setprecision(12);
-		std::cout << t_outer << std::endl;
 		std::cout << t_populate_pi << std::endl;
-		std::cout << t_perplexity << std::endl;
-		std::cout << t_cal_edge_likelihood << std::endl;
-		std::cout << t_rank_pi_perp << std::endl;
+		std::cout << t_outer << std::endl;
+		std::cout << t_deploy_minibatch << std::endl;
 		std::cout << t_mini_batch << std::endl;
 		std::cout << t_nodes_in_mini_batch << std::endl;
 		std::cout << t_sample_neighbor_nodes << std::endl;
-		std::cout << t_update_phi << std::endl;
-		std::cout << t_update_pi << std::endl;
-		std::cout << t_update_beta << std::endl;
 		std::cout << t_load_pi_minibatch << std::endl;
 		std::cout << t_load_pi_neighbor << std::endl;
-		std::cout << t_load_pi_perp << std::endl;
+		std::cout << t_update_phi << std::endl;
 		std::cout << t_store_pi_minibatch << std::endl;
 		std::cout << t_purge_pi_perp << std::endl;
-		std::cout << t_broadcast_beta << std::endl;
-		std::cout << t_deploy_minibatch << std::endl;
 		std::cout << t_barrier_phi << std::endl;
+		std::cout << t_update_pi << std::endl;
 		std::cout << t_barrier_pi << std::endl;
+		std::cout << t_update_beta << std::endl;
+		std::cout << t_broadcast_beta << std::endl;
+		std::cout << t_perplexity << std::endl;
+		std::cout << t_load_pi_perp << std::endl;
+		std::cout << t_rank_pi_perp << std::endl;
+		std::cout << t_cal_edge_likelihood << std::endl;
 	}
 
 
@@ -650,7 +649,10 @@ protected:
 
 			std::vector<int32_t> node(1, i);
 			std::vector<const double *> pi_wrapper(1, pi);
+			// Easy performance improvement: accumulate records up to write area
+			// size, the Write/Purge
 			d_kv_store->WriteKVRecords(node, pi_wrapper);
+			d_kv_store->PurgeKVRecords();
 		}
 	}
 
