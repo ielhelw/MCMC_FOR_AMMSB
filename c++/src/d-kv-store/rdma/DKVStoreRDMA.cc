@@ -28,7 +28,7 @@ struct ibv_device **global_dev_list = NULL;
 
 #ifdef USE_MPI
 
-static void mpi_error_test(int r, const std::string &message) {
+void DKVStoreRDMA::mpi_error_test(int r, const std::string &message) {
   if (r != MPI_SUCCESS) {
     throw NetworkException("MPI error " + r + message);
   }
@@ -251,15 +251,13 @@ DKVStoreRDMA::~DKVStoreRDMA() {
 }
 
 double DKVStoreRDMA::GBs_from_time(const double &dt, int64_t bytes) {
-  double gbs;
-  gbs = bytes / dt / (1LL << 30);
+  double gbs = bytes / dt / (1LL << 30);
 
   return gbs;
 }
 
 double DKVStoreRDMA::GBs_from_time(
     const std::chrono::high_resolution_clock::duration &dt, int64_t bytes) {
-  double gbs;
   double s = std::chrono::duration_cast<std::chrono::nanoseconds>(dt).count() /
                1000000000.0;
 

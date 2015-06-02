@@ -29,7 +29,9 @@
 #include <mcmc/timer.h>
 #include <mr/timer.h>
 
-// #define USE_MPI
+#ifdef ENABLE_DISTRIBUTED
+#  define USE_MPI
+#endif
 
 #ifdef USE_MPI
 #  include <mpi.h>
