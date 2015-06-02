@@ -5,6 +5,8 @@
 #include <d-kv-store/rdma/DKVStoreRDMA.h>
 #endif
 
+#include <unistd.h>
+
 #pragma GCC diagnostic ignored "-Wunused-local-typedefs"
 #pragma GCC diagnostic push
 #include <boost/program_options.hpp>
@@ -187,6 +189,14 @@ DKVStoreRDMA::~DKVStoreRDMA() {
   MPI_Finalize();
 #else
   broadcast_.Finish();
+
+  if (false) {
+	  std::cerr << "Should linger a bit to allow gracious shutdown" << std::endl;
+  } else {
+	  std::cerr << "Linger a bit to allow gracious shutdown" << std::endl;
+	  usleep(500000);
+  }
+
   for (auto & c : rw_list_) {
     if (c.writer != NULL) {
       c.writer->close();
@@ -622,6 +632,8 @@ void DKVStoreRDMA::WriteKVRecords(const std::vector<KeyType> &key,
         memcpy(v, value[i], value_size_ * sizeof(ValueType));
         source = v;
       }
+	  assert(source >= write_buffer_.buffer());
+	  assert(source + value_size_ <= write_buffer_.buffer() + write_buffer_.capacity());
 
       ::size_t batch = owner / batch_size_;
       ::size_t n = posts_[batch];

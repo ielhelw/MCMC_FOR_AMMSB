@@ -39,13 +39,6 @@
 #  include <../src/mr/net/sockets/netio_sockets.h>
 #endif
 
-#if 0
-#pragma GCC diagnostic ignored "-Wunused-local-typedefs"
-#pragma GCC diagnostic push
-#include <boost/program_options.hpp>
-#pragma GCC diagnostic pop
-#endif
-
 #include <d-kv-store/DKVStore.h>
 
 #include <d-kv-store/rdma/qperf-rdma.h>
@@ -204,7 +197,7 @@ class rdma_area {
 
   void Init(const DEVICE *device, Buffer<ValueType> *buffer, ::size_t n_elements) {
     Init(device, n_elements);
-    buffer->Init(area_, n_elements * sizeof(ValueType));
+    buffer->Init(area_, n_elements);
   }
 
   bool contains(const ValueType *v) const {

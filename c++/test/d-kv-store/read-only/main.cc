@@ -312,13 +312,6 @@ class DKVWrapper {
 
     outer.stop();
     std::cout << outer << std::endl;
-
-    if (false) {
-      std::cerr << "Should linger a bit to allow gracious shutdown" << std::endl;
-    } else {
-      std::cerr << "Linger a bit to allow gracious shutdown" << std::endl;
-      sleep(1);
-    }
   }
 
 protected:
