@@ -7,10 +7,14 @@
 
 #include <unistd.h>
 
+#ifndef __INTEL_COMPILER
 #pragma GCC diagnostic ignored "-Wunused-local-typedefs"
 #pragma GCC diagnostic push
+#endif
 #include <boost/program_options.hpp>
+#ifndef __INTEL_COMPILER
 #pragma GCC diagnostic pop
+#endif
 #include <boost/lexical_cast.hpp>
 
 #include <mcmc/random.h>
@@ -30,15 +34,18 @@ struct ibv_device **global_dev_list = NULL;
 
 void DKVStoreRDMA::mpi_error_test(int r, const std::string &message) {
   if (r != MPI_SUCCESS) {
+	std::cerr << "It throws me error code " << r << std::endl;
     throw NetworkException("MPI error " + r + message);
   }
 }
 
 void DKVStoreRDMA::init_networking() {
-  std::cerr << "FIXME MPI_Init reentrant" << std::endl;
   int r;
-  r = MPI_Init(NULL, NULL);
-  mpi_error_test(r, "MPI_Init() fails");
+  if (! mpi_initialized) {
+    std::cerr << "FIXME MPI_Init reentrant" << std::endl;
+    r = MPI_Init(NULL, NULL);
+    mpi_error_test(r, "MPI_Init() fails");
+  }
   int n;
   r = MPI_Comm_size(MPI_COMM_WORLD, &n);
   mpi_error_test(r, "MPI_Comm_size() fails");
@@ -186,16 +193,11 @@ DKVStoreRDMA::DKVStoreRDMA() {
 
 DKVStoreRDMA::~DKVStoreRDMA() {
 #ifdef USE_MPI
-  MPI_Finalize();
+  if (! mpi_initialized) {
+    MPI_Finalize();
+  }
 #else
   broadcast_.Finish();
-
-  if (false) {
-	  std::cerr << "Should linger a bit to allow gracious shutdown" << std::endl;
-  } else {
-	  std::cerr << "Linger a bit to allow gracious shutdown" << std::endl;
-	  usleep(500000);
-  }
 
   for (auto & c : rw_list_) {
     if (c.writer != NULL) {
@@ -208,6 +210,14 @@ DKVStoreRDMA::~DKVStoreRDMA() {
   }
   delete network_;
 #endif
+
+  if (false) {
+	  std::cerr << "Should linger a bit to allow gracious shutdown" << std::endl;
+  } else {
+	  std::cerr << "Linger a bit to allow gracious shutdown" << std::endl;
+	  usleep(500000);
+  }
+
   Timer::printHeader(std::cout);
   std::cout << t_poll_cq_ << std::endl;
 
@@ -298,7 +308,11 @@ void DKVStoreRDMA::Init(::size_t value_size, ::size_t total_values,
     // ("rdma:oob-network",
     // po::value(&oob_impl_)->default_value("socket"),
     // "RDMA OOB network implementation")
-#ifndef USE_MPI
+#ifdef USE_MPI
+    ("rdma:mpi-initialized",
+     po::bool_switch()->default_value(false),
+     "MPI is already initialized")
+#else
     ("rdma:oob-interface",
      po::value(&oob_interface_)->default_value("ib0"),
      "RDMA OOB network interface")
@@ -310,6 +324,12 @@ void DKVStoreRDMA::Init(::size_t value_size, ::size_t total_values,
   clp.options(desc);
   po::store(clp.run(), vm);
   po::notify(vm);
+
+#ifdef USE_MPI
+  if (vm.count("rdma:mpi-initialized") > 0) {
+    mpi_initialized = true;
+  }
+#endif
 
   // Feed the options to the QPerf Req
   Req.mtu_size = mtu;

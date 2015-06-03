@@ -42,6 +42,7 @@ endif
 CXXFLAGS += -Wall
 ifneq (icpc, $(CXX))
 CXXFLAGS += -Werror
+CXXFLAGS += -Wno-literal-suffix
 else
 CXXFLAGS += -no-gcc
 endif
@@ -67,7 +68,6 @@ endif
 ifeq (1, $(CONFIG_DISTRIBUTED))
 CXXFLAGS += -DENABLE_DISTRIBUTED
 # OpenMPI requires this
-CXXFLAGS += -Wno-literal-suffix
 endif
 ifeq (0, $(CONFIG_NETWORKING))
 CXXFLAGS += -DDISABLE_NETWORKING

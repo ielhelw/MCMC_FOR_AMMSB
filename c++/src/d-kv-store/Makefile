@@ -7,7 +7,7 @@ SUBDIRS += file
 ifneq (, $(CONFIG_RAMCLOUD_ROOT))
 SUBDIRS += ramcloud
 endif
-ifneq (, $(CONFIG_RDMA))
+ifeq (1, $(CONFIG_RDMA))
 SUBDIRS += rdma
 endif
 

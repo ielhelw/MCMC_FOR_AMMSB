@@ -15,11 +15,15 @@
 #ifndef APPS_MCMC_D_KV_STORE_RAMCLOUD_DKV_STORE_H__
 #define APPS_MCMC_D_KV_STORE_RAMCLOUD_DKV_STORE_H__
 
+#ifndef __INTEL_COMPILER
 #pragma GCC diagnostic ignored "-Wunused-local-typedefs"
 #pragma GCC diagnostic ignored "-Wunused-variable"
 #pragma GCC diagnostic push
+#endif
 #include <RamCloud.h>
+#ifndef __INTEL_COMPILER
 #pragma GCC diagnostic pop
+#endif
 
 #include <d-kv-store/DKVStore.h>
 

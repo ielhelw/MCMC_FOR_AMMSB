@@ -20,13 +20,17 @@
 #include <string.h>
 #include <assert.h>
 
+#ifndef __INTEL_COMPILER
 #pragma GCC diagnostic ignored "-Wunused-local-typedefs"
 #pragma GCC diagnostic push
+#endif
 #include <boost/filesystem.hpp>
 #ifdef HAVE_S3
 #include <boost/thread.hpp>
 #endif
+#ifndef __INTEL_COMPILER
 #pragma GCC diagnostic pop
+#endif
 
 #ifdef HAVE_HADOOP
 #  include <hdfs.h>

@@ -4,11 +4,15 @@
 #include <string>
 #include <vector>
 
+#ifndef __INTEL_COMPILER
 #pragma GCC diagnostic ignored "-Wunused-local-typedefs"
 #pragma GCC diagnostic push
+#endif
 #include <boost/thread/thread.hpp>
 #include <boost/thread/condition_variable.hpp>
+#ifndef __INTEL_COMPILER
 #pragma GCC diagnostic pop
+#endif
 
 // #include <mr/util.h>
 #include <mr/net/netio.h>

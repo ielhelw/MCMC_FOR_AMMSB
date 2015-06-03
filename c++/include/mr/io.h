@@ -10,10 +10,14 @@
 
 #include <sys/uio.h>	// struct iovec
 
+#ifndef __INTEL_COMPILER
 #pragma GCC diagnostic ignored "-Wunused-variable"
 #pragma GCC diagnostic push
+#endif
 #include <boost/thread/mutex.hpp>
+#ifndef __INTEL_COMPILER
 #pragma GCC diagnostic pop
+#endif
 
 #include "mcmc/exception.h"
 

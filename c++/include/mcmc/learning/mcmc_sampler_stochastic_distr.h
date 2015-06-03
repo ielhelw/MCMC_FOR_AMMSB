@@ -232,17 +232,19 @@ public:
 		t_load_pi_minibatch     = Timer("      load minibatch pi");
 		t_load_pi_neighbor      = Timer("      load neighbor pi");
 		t_update_phi            = Timer("      update_phi");
-		t_store_pi_minibatch    = Timer("      store minibatch pi");
-		t_purge_pi_perp         = Timer("      purge perplexity pi");
 		t_barrier_phi           = Timer("    barrier to update phi");
 		t_update_pi             = Timer("    update_pi");
+		t_store_pi_minibatch    = Timer("      store minibatch pi");
+		t_purge_pi_perp         = Timer("      purge perplexity pi");
 		t_barrier_pi            = Timer("    barrier to update pi");
 		t_update_beta           = Timer("    update_beta");
+		t_load_pi_beta          = Timer("      load pi update_beta");
 		t_broadcast_beta        = Timer("      broadcast beta");
 		t_perplexity            = Timer("  perplexity");
 		t_load_pi_perp          = Timer("      load perplexity pi");
 		t_rank_pi_perp          = Timer("      rank pi perp");
-		t_cal_edge_likelihood   = Timer("      calc edge likel");
+		t_cal_edge_likelihood   = Timer("      calc edge likelihood");
+		t_perp_log              = Timer("      calc log");
 		Timer::setTabular(true);
 	}
 
@@ -309,6 +311,7 @@ public:
 				dkv_args.push_back(a[i]);
 			}
 		}
+                dkv_args.push_back("rdma:mpi-initialized");
 
 		// d_kv_store = new DKV::DKVRamCloud::DKVStoreRamCloud();
 		switch (dkv_type) {
@@ -328,13 +331,14 @@ public:
 		}
 
 		max_minibatch_nodes = network.minibatch_nodes_for_strategy(mini_batch_size, strategy);
-		max_minibatch_neighbors = max_minibatch_nodes * real_num_node_sample();
+        ::size_t max_my_minibatch_nodes = (max_minibatch_nodes + mpi_size - 1) / mpi_size;
+		max_minibatch_neighbors = max_my_minibatch_nodes * real_num_node_sample();
 		std::cerr << "minibatch size param " << mini_batch_size << " max " << max_minibatch_nodes << " #neighbors(total) " << max_minibatch_neighbors << std::endl;
 
 		d_kv_store->Init(K + 1,
 						 N,
-						 (max_minibatch_nodes + max_minibatch_neighbors + mpi_size - 1) / mpi_size,
-                         (max_minibatch_nodes + mpi_size - 1) / mpi_size,
+						 max_my_minibatch_nodes + max_minibatch_neighbors,
+                         max_my_minibatch_nodes,
 						 dkv_args);
 
 		if (mpi_rank == mpi_master) {
@@ -532,17 +536,19 @@ public:
 		std::cout << t_load_pi_minibatch << std::endl;
 		std::cout << t_load_pi_neighbor << std::endl;
 		std::cout << t_update_phi << std::endl;
-		std::cout << t_store_pi_minibatch << std::endl;
-		std::cout << t_purge_pi_perp << std::endl;
 		std::cout << t_barrier_phi << std::endl;
 		std::cout << t_update_pi << std::endl;
+		std::cout << t_store_pi_minibatch << std::endl;
+		std::cout << t_purge_pi_perp << std::endl;
 		std::cout << t_barrier_pi << std::endl;
 		std::cout << t_update_beta << std::endl;
+		std::cout << t_load_pi_beta << std::endl;
 		std::cout << t_broadcast_beta << std::endl;
 		std::cout << t_perplexity << std::endl;
 		std::cout << t_load_pi_perp << std::endl;
 		std::cout << t_rank_pi_perp << std::endl;
 		std::cout << t_cal_edge_likelihood << std::endl;
+		std::cout << t_perp_log << std::endl;
 	}
 
 
@@ -927,6 +933,7 @@ protected:
 		std::vector<double> theta_sum(theta.size());
 		std::transform(theta.begin(), theta.end(), theta_sum.begin(), np::sum<double>);
 
+        // FIXME: already did the nodes_in_batch() -- only the ranking remains
 		std::unordered_map<int, int> node_rank;
 		std::vector<int> nodes;
 		for (auto e : mini_batch) {
@@ -945,12 +952,19 @@ protected:
 			assert(node_rank.size() == nodes.size());
 		}
 		std::vector<double *> pi(node_rank.size());
+		t_load_pi_beta.start();
 		d_kv_store->ReadKVRecords(pi, nodes, DKV::RW_MODE::READ_ONLY);
+		t_load_pi_beta.stop();
 
 		// update gamma, only update node in the grad
 		double eps_t = a * std::pow(1.0 + step_count / b, -c);
 		//double eps_t = std::pow(1024+step_count, -0.5);
-		for (auto edge = mini_batch.begin(); edge != mini_batch.end(); edge++) {
+		// for (auto edge = mini_batch.begin(); edge != mini_batch.end(); edge++) {
+        std::vector<Edge> v_mini_batch(mini_batch.begin(), mini_batch.end());
+#pragma omp parallel for // num_threads (12)
+        for (::size_t e = 0; e < v_mini_batch.size(); e++) {
+            const auto *edge = &v_mini_batch[e];
+
             int y = 0;
             if (edge->in(network.get_linked_edges())) {
                 y = 1;
@@ -1039,6 +1053,8 @@ protected:
 
 		// FIXME code duplication w/ update_beta
 		// Is there also code duplication w/ update_phi?
+        // FIXME isn't the held-out set fixed across iterations
+        // so we can memo the ranking?
 		t_rank_pi_perp.start();
 		std::unordered_map<int, int> node_rank;
 		std::vector<int> nodes;
@@ -1064,6 +1080,8 @@ protected:
 		d_kv_store->ReadKVRecords(pi, nodes, DKV::RW_MODE::READ_ONLY);
 		t_load_pi_perp.stop();
 
+        // FIXME: trivial to OpenMP-parallelize: memo the likelihoods, sum
+        // them in the end
 		::size_t i = 0;
 		for (auto edge : data) {
 			const Edge &e = edge.first;
@@ -1081,6 +1099,7 @@ protected:
 			ppx_for_heldout[i] = (ppx_for_heldout[i] * (average_count-1) + edge_likelihood)/(average_count);
 			// std::cout << std::fixed << std::setprecision(12) << e << " in? " << (e.in(network.get_linked_edges()) ? "True" : "False") << " -> " << edge_likelihood << " av. " << average_count << " ppx[" << i << "] " << ppx_for_heldout[i] << std::endl;
 			// assert(edge->second == e.in(network.get_linked_edges()));
+            t_perp_log.start();
 			if (edge.second) {
 				link_count++;
 				link_likelihood += std::log(ppx_for_heldout[i]);
@@ -1098,6 +1117,7 @@ protected:
 					std::cerr << "non_link_likelihood is NaN; potential bug" << std::endl;
 				}
 			}
+            t_perp_log.stop();
 			i++;
 		}
 
@@ -1167,12 +1187,14 @@ protected:
 	Timer t_perplexity;
 	Timer t_rank_pi_perp;
 	Timer t_cal_edge_likelihood;
+	Timer t_perp_log;
 	Timer t_mini_batch;
 	Timer t_nodes_in_mini_batch;
 	Timer t_sample_neighbor_nodes;
 	Timer t_update_phi;
 	Timer t_update_pi;
 	Timer t_update_beta;
+	Timer t_load_pi_beta;
 	Timer t_load_pi_minibatch;
 	Timer t_load_pi_neighbor;
 	Timer t_load_pi_perp;
