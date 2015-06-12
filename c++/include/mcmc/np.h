@@ -53,6 +53,15 @@ void normalize(std::vector<T> &r, const std::vector<T> &a) {
 
 
 template <typename T>
+T inner_product(const T *a, const T *b, ::size_t len, T init) {
+	for (::size_t i = 0; i < len; ++i) {
+		init += a[i] * b[i];
+	}
+	return init;
+}
+
+
+template <typename T>
 void normalize(std::vector<T> *r, const std::vector<T> &a) {
 	normalize(*r, a);
 }

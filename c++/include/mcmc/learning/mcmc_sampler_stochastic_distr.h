@@ -8,6 +8,23 @@
 #include <algorithm>	// min, max
 #include <chrono>
 
+#ifdef ENABLE_OPENMP
+#  include <omp.h>
+#else
+
+static int omp_get_max_threads() {
+	return 1;
+}
+
+static int omp_get_thread_num() {
+	return 0;
+}
+
+static int omp_get_num_threads() {
+	return 1;
+}
+
+#endif
 
 #ifdef ENABLE_DISTRIBUTED
 #  include <mpi.h>
@@ -51,13 +68,13 @@ int MPI_Comm_set_errhandler(MPI_Comm comm, int mode) {
 	return MPI_SUCCESS;
 }
 
-int MPI_Comm_size(MPI_Comm comm, int *mpi_size) {
-	*mpi_size = 1;
+int MPI_Comm_size(MPI_Comm comm, int *mpi_size_) {
+	*mpi_size_ = 1;
 	return MPI_SUCCESS;
 }
 
-int MPI_Comm_rank(MPI_Comm comm, int *mpi_rank) {
-	*mpi_rank = 0;
+int MPI_Comm_rank(MPI_Comm comm, int *mpi_rank_) {
+	*mpi_rank_ = 0;
 	return MPI_SUCCESS;
 }
 
@@ -150,6 +167,28 @@ typedef OrderedVertexSet NeighborSet;
 
 using ::mr::timer::Timer;
 
+struct WorkItem {
+	WorkItem() {
+	}
+
+	WorkItem(int32_t m, int32_t n) : minibatch_node(m), neighbor_node(n) {
+	}
+
+	int32_t	minibatch_node;
+	int32_t	neighbor_node;
+
+	std::ostream &put(std::ostream &s) const {
+		s << "<" << minibatch_node << "," << neighbor_node << ")";
+		return s;
+	}
+};
+
+
+inline std::ostream &operator << (std::ostream &s, const WorkItem &w) {
+	return w.put(s);
+}
+
+
 /**
  * The distributed version differs in these aspects from the parallel version:
  *  - the minibatch is distributed
@@ -160,7 +199,7 @@ using ::mr::timer::Timer;
  * Algorithm:
  * LOOP:
  *   One host (the Master) creates the minibatch and distributes its nodes over
- *   the workers. Each worker samples a neighbor set for each of its minibatch nodes.
+ *   the workers. Each worker samples a neighbor_ set for each of its minibatch nodes.
  *
  *   Then, each worker:
  *    - fetches pi/phi for its minibatch nodes
@@ -207,7 +246,7 @@ public:
     This method is great marriage between MCMC and stochastic methods.
     */
     MCMCSamplerStochasticDistributed(const Options &args, const Network &graph)
-			: MCMCSamplerStochastic(args, graph), mpi_master(0), args(args) {
+			: MCMCSamplerStochastic(args, graph), mpi_master_(0), args(args) {
 #ifdef RANDOM_FOLLOWS_CPP_WENZHE
 		throw MCMCException("No support for Wenzhe Random compatibility");
 #endif
@@ -230,7 +269,10 @@ public:
 		t_nodes_in_mini_batch   = Timer("      nodes_in_mini_batch");
 		t_sample_neighbor_nodes = Timer("      sample_neighbor_nodes");
 		t_load_pi_minibatch     = Timer("      load minibatch pi");
-		t_load_pi_neighbor      = Timer("      load neighbor pi");
+		t_load_pi_neighbor      = Timer("      load neighbor_ pi");
+		t_grads_calc            = Timer("      calc grad chunks");
+		t_grads_sum_local       = Timer("      locally sum grad chunks");
+		t_grads_reduce          = Timer("      reduce(+) grad sums");
 		t_update_phi            = Timer("      update_phi");
 		t_barrier_phi           = Timer("    barrier to update phi");
 		t_update_pi             = Timer("    update_pi");
@@ -253,28 +295,50 @@ public:
 		// std::cerr << "FIXME: close off d-kv-store" << std::endl;
 		delete d_kv_store;
 
-		for (auto r : threadRandom) {
+		for (auto r : threadRandom_) {
 			delete r;
 		}
 
 		(void)MPI_Finalize();
 	}
 
+	static std::string mpi_thread_level_string(int level) {
+		switch (level) {
+		case MPI_THREAD_SINGLE: return "MPI_THREAD_SINGLE";
+		case MPI_THREAD_FUNNELED: return "MPI_THREAD_FUNNELED";
+		case MPI_THREAD_SERIALIZED: return "MPI_THREAD_SERIALIZED";
+		case MPI_THREAD_MULTIPLE: return "MPI_THREAD_MULTIPLE";
+		default: return "<unknown thread level>";
+		}
+	}
 
 	virtual void init() {
 		int r;
 
 		// In an OpenMP program: no need for thread support
-		r = MPI_Init(NULL, NULL);
-		mpi_error_test(r, "MPI_Init() fails");
+		int required;
+		int provided;
+		required = MPI_THREAD_MULTIPLE;
+		r = MPI_Init_thread(NULL, NULL, required, &provided);
+		mpi_error_test(r, "MPI_Init_thread fails");
+		if (provided < required) {
+			throw MCMCException("Cannot provide required MT level " +
+							   	mpi_thread_level_string(required) +
+							   	", get " + mpi_thread_level_string(provided));
+		}
 
 		r = MPI_Comm_set_errhandler(MPI_COMM_WORLD, MPI_ERRORS_RETURN);
 		mpi_error_test(r, "MPI_Comm_set_errhandler fails");
 
-		r = MPI_Comm_size(MPI_COMM_WORLD, &mpi_size);
+		r = MPI_Comm_size(MPI_COMM_WORLD, &mpi_size_);
 		mpi_error_test(r, "MPI_Comm_size() fails");
-		r = MPI_Comm_rank(MPI_COMM_WORLD, &mpi_rank);
+		r = MPI_Comm_rank(MPI_COMM_WORLD, &mpi_rank_);
 		mpi_error_test(r, "MPI_Comm_rank() fails");
+
+		r = MPI_Type_contiguous(2, MPI_INT, &MPI_INT2_TUPLE);
+		mpi_error_test(r, "MPI_Type_contiguous() fails");
+		r = MPI_Type_commit(&MPI_INT2_TUPLE);
+		mpi_error_test(r, "MPI_Type_commit() fails");
 
 		DKV::TYPE::DKV_TYPE dkv_type = DKV::TYPE::FILE;
 
@@ -294,6 +358,7 @@ public:
 #ifdef ENABLE_RDMA
 				} else if (a[i] == "rdma") {
 					dkv_type = DKV::TYPE::RDMA;
+					dkv_args.push_back("rdma:mpi-initialized");
 #endif
 				} else {
 					std::cerr << "Possible values for dkv:file:" << std::endl;
@@ -311,7 +376,6 @@ public:
 				dkv_args.push_back(a[i]);
 			}
 		}
-                dkv_args.push_back("rdma:mpi-initialized");
 
 		// d_kv_store = new DKV::DKVRamCloud::DKVStoreRamCloud();
 		switch (dkv_type) {
@@ -331,26 +395,25 @@ public:
 		}
 
 		max_minibatch_nodes = network.minibatch_nodes_for_strategy(mini_batch_size, strategy);
-        ::size_t max_my_minibatch_nodes = (max_minibatch_nodes + mpi_size - 1) / mpi_size;
-		max_minibatch_neighbors = max_my_minibatch_nodes * real_num_node_sample();
+		max_minibatch_neighbors = max_minibatch_nodes * (real_num_node_sample() + mpi_size_ - 1) / mpi_size_;
 		std::cerr << "minibatch size param " << mini_batch_size << " max " << max_minibatch_nodes << " #neighbors(total) " << max_minibatch_neighbors << std::endl;
 
 		d_kv_store->Init(K + 1,
 						 N,
-						 max_my_minibatch_nodes + max_minibatch_neighbors,
-                         max_my_minibatch_nodes,
+						 max_minibatch_nodes + max_minibatch_neighbors,
+                         max_minibatch_nodes,
 						 dkv_args);
 
-		if (mpi_rank == mpi_master) {
+		if (mpi_rank_ == mpi_master_) {
 			init_beta();
 		}
 
-		// Make kernelRandom init depend on mpi_rank
+		// Make kernelRandom init depend on mpi_rank_
 		delete kernelRandom;
-		kernelRandom = new Random::Random((mpi_rank + 1) * 42);
-		threadRandom.resize(max_minibatch_nodes);
-		for (::size_t i = 0; i < threadRandom.size(); i++) {
-			threadRandom[i] = new Random::Random(i, (mpi_rank + 1) * 42);
+		kernelRandom = new Random::Random((mpi_rank_ + 1) * 42);
+		threadRandom_.resize(max_minibatch_nodes);
+		for (::size_t i = 0; i < threadRandom_.size(); i++) {
+			threadRandom_[i] = new Random::Random(i, (mpi_rank_ + 1) * 42);
 		}
 
 		t_populate_pi.start();
@@ -382,19 +445,25 @@ public:
 		}
 #endif
 
+		grads_.resize(omp_get_max_threads());
+		for (auto & g : grads_) {
+			g.resize(K * max_minibatch_nodes);
+		}
+		scratch_.resize(K * max_minibatch_nodes);
+
         std::cerr << "Random seed " << std::hex << "0x" << kernelRandom->seed(0) << ",0x" << kernelRandom->seed(1) << std::endl << std::dec;
 		std::cerr << "Done constructor" << std::endl;
 	}
+
 
     virtual void run() {
         /** run mini-batch based MCMC sampler, based on the sungjin's note */
 
         using namespace std::chrono;
 
-		std::vector<int32_t> flat_neighbors(max_minibatch_nodes * real_num_node_sample());
 		std::vector<std::vector<double>> phi_node(max_minibatch_nodes, std::vector<double>(K + 1));
-		std::vector<double *> pi_node;
-		std::vector<double *> pi_neighbor(max_minibatch_nodes * real_num_node_sample());
+		std::vector<double *> pi_node(max_minibatch_nodes);
+		std::vector<double *> pi_neighbor(max_minibatch_neighbors);
 
 		int r;
 
@@ -412,73 +481,57 @@ public:
 			check_perplexity();
 
 			t_broadcast_beta.start();
-			r = MPI_Bcast(beta.data(), beta.size(), MPI_DOUBLE, mpi_master, MPI_COMM_WORLD);
+			r = MPI_Bcast(beta.data(), beta.size(), MPI_DOUBLE, mpi_master_, MPI_COMM_WORLD);
 			mpi_error_test(r, "MPI_Bcast of beta fails");
 			t_broadcast_beta.stop();
 
 			t_deploy_minibatch.start();
-			std::vector<int32_t> nodes_vector;
-			EdgeSample edgeSample = deploy_mini_batch(&nodes_vector);
+			// Defines:
+			//	my_work_item_[] transformed to indicate ranks i.s.o. node ids
+			// 	nodes_[]	minibatch rank -> node id
+			// 	neighbor_[]		local neighbor_ rank -> node id
+			EdgeSample edgeSample = deploy_mini_batch();
 			t_deploy_minibatch.stop();
 
+			std::cerr << "FIXME: use an AllGather to broadcast the minibatch pi" << std::endl;
 			// ************ load minibatch node pi from D-KV store **************
             t_load_pi_minibatch.start();
-			pi_node.resize(nodes_vector.size());
-            d_kv_store->ReadKVRecords(pi_node, nodes_vector, DKV::RW_MODE::READ_ONLY);
+			pi_node.resize(nodes_.size());
+            d_kv_store->ReadKVRecords(pi_node, nodes_, DKV::RW_MODE::READ_ONLY);
             t_load_pi_minibatch.stop();
 
-			// ************ do in parallel at each host
-			// std::cerr << "Sample neighbor nodes" << std::endl;
-			// FIXME: nodes_in_batch should generate a vector, not an OrderedVertexSet
-			t_sample_neighbor_nodes.start();
-			pi_neighbor.resize(nodes_vector.size() * real_num_node_sample());
-			flat_neighbors.resize(nodes_vector.size() * real_num_node_sample());
-#pragma omp parallel for // num_threads (12)
-			for (::size_t i = 0; i < nodes_vector.size(); ++i) {
-				int node = nodes_vector[i];
-				// sample a mini-batch of neighbors
-				NeighborSet neighbors = sample_neighbor_nodes(num_node_sample, node,
-															  threadRandom[i]);
-				assert(neighbors.size() == real_num_node_sample());
-#if 1
-				// Cannot use flat_neighbors.insert() because it may (concurrently)
-				// attempt to resize flat_neighbors.
-				::size_t j = i * real_num_node_sample();
-				for (auto n : neighbors) {
-					memcpy(flat_neighbors.data() + j, &n, sizeof n);
-					j++;
-				}
-#else
-				flat_neighbors.insert(flat_neighbors.begin() + i * real_num_node_sample(),
-									  neighbors.begin(), neighbors.end());
-#endif
-				assert(flat_neighbors.size() >= nodes_vector.size() * real_num_node_sample());
-			}
-			t_sample_neighbor_nodes.stop();
-			// Why: ?????
-			// flat_neighbors.resize(nodes_vector.size() * real_num_node_sample());
-			assert(flat_neighbors.size() == nodes_vector.size() * real_num_node_sample());
-
+			std::cerr << "FIXME: skip this if we just do locality, no load balancing" << std::endl;
 			// ************ load neighor pi from D-KV store **********
 			t_load_pi_neighbor.start();
+			pi_neighbor.resize(neighbor_.size());
 			d_kv_store->ReadKVRecords(pi_neighbor,
-									  flat_neighbors,
+									  neighbor_,
 									  DKV::RW_MODE::READ_ONLY);
 			t_load_pi_neighbor.stop();
 
-			double eps_t  = a * std::pow(1 + step_count / b, -c);	// step size
+			double eps_t = a * std::pow(1 + step_count / b, -c);	// step size
 			// double eps_t = std::pow(1024+step_count, -0.5);
 
+			// Calculate grads in parallel, partitioned over the neighbors
+			t_grads_calc.start();
+			::size_t num_threads;
+			num_threads = grads_calculate(pi_node, pi_neighbor, eps_t);
+			t_grads_calc.stop();
+
+			// Locally add the grads contribution of each thread
+			t_grads_sum_local.start();
+			// Sum to grads_[thread = 0]
+			grads_sum_local(num_threads);
+			t_grads_sum_local.stop();
+
+			// Reduce(+) the grads to their owner
+			t_grads_reduce.start();
+			allreduce2all();
+			t_grads_reduce.stop();
+
+			std::cerr << "FIXME: every node must update its OWN minibatch phi" << std::endl;
 			t_update_phi.start();
-#pragma omp parallel for // num_threads (12)
-			for (::size_t i = 0; i < nodes_vector.size(); ++i) {
-				int node = nodes_vector[i];
-                // std::cerr << "Random seed " << std::hex << "0x" << kernelRandom->seed(0) << ",0x" << kernelRandom->seed(1) << std::endl << std::dec;
-				update_phi(&phi_node[i], node, pi_node[i],
-						   flat_neighbors.begin() + i + real_num_node_sample(),
-						   pi_neighbor.begin() + i * real_num_node_sample(),
-						   eps_t, threadRandom[i]);
-			}
+			update_phi(constify(pi_node), eps_t, &phi_node);
 			t_update_phi.stop();
 
 			// all synchronize with barrier: ensure we read pi/phi_sum from current iteration
@@ -488,33 +541,35 @@ public:
 			t_barrier_phi.stop();
 
 			// TODO calculate and store updated values for pi/phi_sum
+			std::cerr << "FIXME: every node must update its OWN minibatch pi" << std::endl;
 			t_update_pi.start();
 #pragma omp parallel for // num_threads (12)
 			for (::size_t i = 0; i < pi_node.size(); i++) {
 				pi_from_phi(pi_node[i], phi_node[i]);
 			}
 			t_update_pi.stop();
-			// std::cerr << "write back phi/pi after update" << std::endl;
-			t_store_pi_minibatch.start();
-			d_kv_store->WriteKVRecords(nodes_vector, constify(pi_node));
-			t_store_pi_minibatch.stop();
-			d_kv_store->PurgeKVRecords();
 
-			// all synchronize with barrier
+			// std::cerr << "write back phi/pi after update" << std::endl;
+			std::cerr << "FIXME: every node must store its OWN minibatch pi" << std::endl;
+			t_store_pi_minibatch.start();
+			d_kv_store->WriteKVRecords(nodes_, constify(pi_node));
+			t_store_pi_minibatch.stop();
+
 			t_barrier_pi.start();
 			r = MPI_Barrier(MPI_COMM_WORLD);
 			mpi_error_test(r, "MPI_Barrier(post pi) fails");
 			t_barrier_pi.stop();
 
-			if (mpi_rank == mpi_master) {
-				// TODO load pi/phi values for the minibatch nodes
+			if (mpi_rank_ == mpi_master_) {
 				t_update_beta.start();
-				update_beta(*edgeSample.first, edgeSample.second);
+				update_beta(*edgeSample.first, pi_node, eps_t, edgeSample.second);
 				t_update_beta.stop();
 
 				// TODO FIXME allocate this outside the loop
 				delete edgeSample.first;
 			}
+
+			d_kv_store->PurgeKVRecords();
 
             step_count++;
 			t_outer.stop();
@@ -535,6 +590,9 @@ public:
 		std::cout << t_sample_neighbor_nodes << std::endl;
 		std::cout << t_load_pi_minibatch << std::endl;
 		std::cout << t_load_pi_neighbor << std::endl;
+		std::cout << t_grads_calc << std::endl;
+		std::cout << t_grads_sum_local << std::endl;
+		std::cout << t_grads_reduce << std::endl;
 		std::cout << t_update_phi << std::endl;
 		std::cout << t_barrier_phi << std::endl;
 		std::cout << t_update_pi << std::endl;
@@ -625,7 +683,8 @@ protected:
 
 	void init_pi() {
 		double pi[K + 1];
-		for (int32_t i = mpi_rank; i < static_cast<int32_t>(N); i += mpi_size) {
+		// FIXME: might parallelize this, but it is startup-only
+		for (int32_t i = mpi_rank_; i < static_cast<int32_t>(N); i += mpi_size_) {
 			std::vector<double> phi_pi = kernelRandom->gamma(1, 1, 1, K)[0];
 			if (true) {
 				if (i < 10) {
@@ -664,10 +723,9 @@ protected:
 
 
 	void check_perplexity() {
-		if (mpi_rank == mpi_master) {
+		if (mpi_rank_ == mpi_master_) {
 			if (step_count % interval == 0) {
 				t_perplexity.start();
-				// TODO load pi for the held-out set to calculate perplexity
 				double ppx_score = cal_perplexity_held_out();
 				t_perplexity.stop();
 				std::cout << std::fixed << std::setprecision(12) << "step count: " << step_count << " perplexity for hold out set: " << ppx_score << std::endl;
@@ -712,18 +770,14 @@ protected:
 	}
 
 
-	EdgeSample deploy_mini_batch(std::vector<int32_t> *nodes_vector) {
-		std::vector<int32_t> minibatch_chunk(mpi_size);	// used only at Master	FIXME: lift to class
-		std::vector<int32_t> scatter_minibatch;			// used only at Master	FIXME: lift to class
-		std::vector<int32_t> scatter_displs(mpi_size);	// used only at Master	FIXME: lift to class
+	EdgeSample deploy_mini_batch() {
+		std::vector<int32_t> items(mpi_size_);		// used only at Master	FIXME: lift to class
+		std::vector<WorkItem> scatter_items;			// used only at Master	FIXME: lift to class
+		std::vector<int32_t> scatter_displs(mpi_size_);	// used only at Master	FIXME: lift to class
 		int		r;
 		EdgeSample edgeSample;
 
-		if (mpi_rank == mpi_master) {
-			// TODO Only at the Master
-			// (mini_batch, scale) = self._network.sample_mini_batch(self._mini_batch_size, "stratified-random-node")
-			// std::cerr << "Invoke sample_mini_batch" << std::endl;
-			// TODO FIXME allocate edgeSample.first statically, and pass as parameter
+		if (mpi_rank_ == mpi_master_) {
 			t_mini_batch.start();
 			edgeSample = network.sample_mini_batch(mini_batch_size, strategy::STRATIFIED_RANDOM_NODE);
 			t_mini_batch.stop();
@@ -737,196 +791,297 @@ protected:
 			}
 			// std::cerr << "Done sample_mini_batch" << std::endl;
 
-			//std::unordered_map<int, std::vector<int> > latent_vars;
-			//std::unordered_map<int, ::size_t> size;
-
-			// iterate through each node in the mini batch.
+			// Master samples the neighbors for each minibatch node.
+			// The tuples <minibatch_node, neighbor(minibatch_node)> are distributed
+			// over the workers, in accordance with the neighbor locality.
 			t_nodes_in_mini_batch.start();
-			OrderedVertexSet nodes = nodes_in_batch(mini_batch);
+			OrderedVertexSet node_set = nodes_in_batch(mini_batch);
 			t_nodes_in_mini_batch.stop();
 // std::cerr << "mini_batch size " << mini_batch.size() << " num_node_sample " << num_node_sample << std::endl;
 
-			std::vector<std::vector<int>> subminibatch(mpi_size);
+			std::cerr << "FIXME: do the neighbor bucketize also in parallel" << std::endl;
+			std::cerr << "FIXME: do better load balancing; fetching a few pi rows won't kill you" << std::endl;
 
-			::size_t upper_bound = (nodes.size() + mpi_size - 1) / mpi_size;
-			std::unordered_set<int> unassigned;
-			for (auto n: nodes) {
-				::size_t owner = node_owner(n);
-				if (subminibatch[owner].size() == upper_bound) {
-					unassigned.insert(n);
-				} else {
-					subminibatch[owner].push_back(n);
+			nodes_.resize(node_set.size());
+			std::copy(node_set.begin(), node_set.end(), nodes_.begin());
+			assert(threadRandom_.size() >= nodes_.size());
+			std::vector<NeighborSet> neighbor(nodes_.size());
+			std::cerr << "FIXME: distribute the neighbor sampling?" << std::endl;
+			t_sample_neighbor_nodes.start();
+#pragma omp parallel for
+			for (::size_t i = 0; i < nodes_.size(); ++i) {
+				neighbor[i] = sample_neighbor_nodes(num_node_sample, nodes_[i],
+													threadRandom_[i]);
+			}
+			t_sample_neighbor_nodes.stop();
+			std::cerr << "FIXME: static allocation of work_items[]" << std::endl;
+			std::cerr << "FIXME: do two passes over work_items to save a copy" << std::endl;
+			std::vector<std::vector<WorkItem>> work_item(mpi_size_);
+			for (::size_t i = 0; i < nodes_.size(); ++i) {
+				for (auto j : neighbor[i]) {
+					// ::size_t h = d_kv_store->HostOf(j);
+					::size_t h = (j * mpi_size_) / N;
+					work_item[h].push_back(WorkItem(i, j));
 				}
 			}
-			std::cerr << "#nodes " << nodes.size() << " #unassigned " << unassigned.size() << " upb " << upper_bound << std::endl;
 
-			std::cerr << "subminibatch[" << subminibatch.size() << "] = [";
-			for (auto s : subminibatch) {
-				std::cerr << s.size() << " ";
-			}
-			std::cerr << "]" << std::endl;
-
-			::size_t i = 0;
-			for (auto n: unassigned) {
-				while (subminibatch[i].size() == upper_bound) {
-					i++;
-					assert(i < static_cast< ::size_t>(mpi_size));
-				}
-				subminibatch[i].push_back(n);
-			}
-
-			scatter_minibatch.clear();
+			scatter_items.clear();
 			int32_t running_sum = 0;
-			for (int i = 0; i < mpi_size; i++) {
-				minibatch_chunk[i] = subminibatch[i].size();
+			for (int i = 0; i < mpi_size_; i++) {
 				scatter_displs[i] = running_sum;
-				running_sum += subminibatch[i].size();
-				scatter_minibatch.insert(scatter_minibatch.end(),
-										 subminibatch[i].begin(),
-										 subminibatch[i].end());
+				items[i] = work_item[i].size();
+				running_sum += items[i];
+				scatter_items.insert(scatter_items.end(),
+									 work_item[i].begin(),
+									 work_item[i].begin() + items[i]);
 			}
 		}
 
-		int32_t my_minibatch_size;
-		r = MPI_Scatter(minibatch_chunk.data(), 1, MPI_INT,
-						&my_minibatch_size, 1, MPI_INT,
-						mpi_master, MPI_COMM_WORLD);
+		r = MPI_Scatter(items.data(), 1, MPI_LONG,
+						&num_my_work_items_, 1, MPI_LONG,
+						mpi_master_, MPI_COMM_WORLD);
 		mpi_error_test(r, "MPI_Scatter of minibatch chunks fails");
-		nodes_vector->resize(my_minibatch_size);
+		my_work_item_.resize(num_my_work_items_);
 
-		if (mpi_rank == mpi_master) {
-			// TODO Master scatters the minibatch nodes over the workers,
+		if (mpi_rank_ == mpi_master_) {
+			// TODO Master scatters the <minibatch, neigbor> tuples over the workers,
 			// preferably with consideration for both load balance and locality
-			r = MPI_Scatterv(scatter_minibatch.data(),
-							 minibatch_chunk.data(),
+			r = MPI_Scatterv(scatter_items.data(),
+							 items.data(),
 							 scatter_displs.data(),
-							 MPI_INT,
-							 nodes_vector->data(),
-							 my_minibatch_size,
-							 MPI_INT,
-							 mpi_master,
+							 MPI_INT2_TUPLE,
+							 my_work_item_.data(),
+							 num_my_work_items_,
+							 MPI_INT2_TUPLE,
+							 mpi_master_,
 							 MPI_COMM_WORLD);
-			mpi_error_test(r, "MPI_Scatterv of minibatch fails");
+			mpi_error_test(r, "MPI_Scatterv of work tuples fails at master");
 
 		} else {
 			r = MPI_Scatterv(NULL, NULL, NULL, MPI_INT,
-							 nodes_vector->data(), my_minibatch_size, MPI_INT,
-							 mpi_master, MPI_COMM_WORLD);
-			mpi_error_test(r, "MPI_Scatterv of minibatch fails");
+							 my_work_item_.data(), num_my_work_items_, MPI_INT,
+							 mpi_master_, MPI_COMM_WORLD);
+			mpi_error_test(r, "MPI_Scatterv of work tuples fails at worker");
 		}
 
-		std::cerr << "Master gives me minibatch nodes[" << my_minibatch_size << "] ";
-		for (auto n : *nodes_vector) {
+		if (true) {
+			std::cerr << "Master gives me work items [" << num_my_work_items_ << "] ";
+			for (auto n : my_work_item_) {
+				std::cerr << n << " ";
+			}
+			std::cerr << std::endl;
+		}
+
+		uint32_t minibatch_size = nodes_.size();
+		r = MPI_Bcast(&minibatch_size, 1, MPI_INT, 0, MPI_COMM_WORLD);
+		mpi_error_test(r, "MPI_Bcast of minibatch size fails");
+		nodes_.resize(minibatch_size);
+		r = MPI_Bcast(nodes_.data(), nodes_.size(), MPI_INT, 0, MPI_COMM_WORLD);
+		mpi_error_test(r, "MPI_Bcast of minibatch nodes fails");
+
+		std::cerr << "Master gives me minibatch nodes[" << minibatch_size << "] ";
+		for (auto n : nodes_) {
 			std::cerr << n << " ";
 		}
 		std::cerr << std::endl;
+
+		convert_to_ranking();
 
 		return edgeSample;
 	}
 
 
-    void update_phi(std::vector<double> *phi_node,	// out parameter
-					int i, const double *pi_node,
-					const std::vector<int32_t>::iterator &neighbors,
-					const std::vector<double *>::iterator &pi,
-                    double eps_t, Random::Random *rnd) {
-		if (false) {
-			std::cerr << "update_phi pre ";
-			std::cerr << "phi[" << i << "] ";
-			for (::size_t k = 0; k < K; k++) {
-				std::cerr << std::fixed << std::setprecision(12) << (pi_node[k] * pi_node[K]) << " ";
-			}
-			std::cerr << std::endl;
-			std::cerr << "pi[" << i << "] ";
-			for (::size_t k = 0; k < K; k++) {
-				std::cerr << std::fixed << std::setprecision(12) << pi_node[k] << " ";
-			}
-			std::cerr << std::endl;
-			for (::size_t ix = 0; ix < real_num_node_sample(); ix++) {
-				int32_t neighbor = neighbors[ix];
-				std::cerr << "pi[" << neighbor << "] ";
+	void convert_to_ranking() {
+#ifdef MASTER_GIVES_ME_NODE_ISO_RANK
+		std::unordered_map<int32_t, int32_t> ranking;
+		for (::size_t i = 0; i < nodes_.size(); i++) {
+			ranking[nodes_[i]] = i;
+		}
+#endif
+		neighbor_.resize(my_work_item_.size());
+#pragma omp parallel for	// allow concurrent write access to neighbor_, my_work_item_
+		for (::size_t i = 0; i < my_work_item_.size(); ++i) {
+			neighbor_[i] = my_work_item_[i].neighbor_node;
+			my_work_item_[i].neighbor_node = i;
+#ifdef MASTER_GIVES_ME_NODE_ISO_RANK
+			my_work_item_[i].minibatch_node = ranking[my_work_item_[i].minibatch_node];
+#endif
+		}
+	}
+
+
+	::size_t grads_calculate(const std::vector<double *> &pi_node,
+							 const std::vector<double *> &pi_neighbor,
+							 const double eps_t) {
+		assert(grads_.capacity() == static_cast<::size_t>(omp_get_max_threads()));
+#pragma omp parallel for
+		for (::size_t t = 0; t < grads_.size(); t++) {
+			// std::cerr << "FIXME: do this lazily:" << std::endl;
+			// grads_[t].reserve(K * nodes_.size());
+			assert(grads_[t].size() >= nodes_.size());
+			for (::size_t i = 0; i < nodes_.size(); ++i) {
 				for (::size_t k = 0; k < K; k++) {
-					std::cerr << std::fixed << std::setprecision(12) << pi[ix][k] << " ";
+					grads_[t][i * K + k] = 0.0;
 				}
-				std::cerr << std::endl;
-				ix++;
 			}
 		}
 
-		double phi_i_sum = pi_node[K];
-        std::vector<double> grads(K, 0.0);	// gradient for K classes
-		// std::vector<double> phi_star(K);					// temp vars
+		::size_t num_threads;
+#pragma omp parallel for private(my_pi_node, my_pi_neighbor, my_grads, probs)
+		for (::size_t i = 0; i < my_work_item_.size(); ++i) {
+			if (i == 0 && omp_get_thread_num() == 0) {
+				num_threads = omp_get_num_threads();
+			}
+			int32_t node_rank = my_work_item_[i].minibatch_node;
+			int32_t neighbor_rank = my_work_item_[i].neighbor_node;
 
-		for (::size_t ix = 0; ix < real_num_node_sample(); ix++) {
-			int32_t neighbor = neighbors[ix];
-			if (i != neighbor) {
+			const double *my_pi_node = pi_node[node_rank];
+			const double *my_pi_neighbor = pi_neighbor[neighbor_rank];
+			if (false) {
+				std::cerr << __func__ << " ";
+				std::cerr << "phi[" << i << "] ";
+				for (::size_t k = 0; k < K; k++) {
+					std::cerr << std::fixed << std::setprecision(12) << (my_pi_node[k] * my_pi_node[K]) << " ";
+				}
+				std::cerr << std::endl;
+				std::cerr << "pi[" << node_rank << "] ";
+				for (::size_t k = 0; k < K; k++) {
+					std::cerr << std::fixed << std::setprecision(12) << my_pi_node[k] << " ";
+				}
+				std::cerr << std::endl;
+				std::cerr << "pi[" << neighbor_rank << "] ";
+				for (::size_t k = 0; k < K; k++) {
+					std::cerr << std::fixed << std::setprecision(12) << my_pi_neighbor[k] << " ";
+				}
+				std::cerr << std::endl;
+			}
+
+			int32_t node = nodes_[node_rank];
+			int32_t neighb = neighbor_[neighbor_rank];
+			if (node != neighb) {
 				int y_ab = 0;		// observation
-				Edge edge(std::min(i, neighbor), std::max(i, neighbor));
+				Edge edge(std::min(node, neighb), std::max(node, neighb));
 				if (edge.in(network.get_linked_edges())) {
 					y_ab = 1;
 				}
 
+				if (true) {
+					static bool first = true;
+					if (first) {
+						first = false;
+						std::cerr << "FIXME: statically allocate probs[num_threads][K]" << std::endl;
+					}
+				}
 				std::vector<double> probs(K);
 				double e = (y_ab == 1) ? epsilon : 1.0 - epsilon;
 				for (::size_t k = 0; k < K; k++) {
 					double f = (y_ab == 1) ? (beta[k] - epsilon) : (epsilon - beta[k]);
-					probs[k] = pi_node[k] * (pi[ix][k] * f + e);
+					// FIXME: first multiply by my_pi_node[k]
+					probs[k] = my_pi_node[k] * (my_pi_neighbor[k] * f + e);
+					// probs[k] = my_pi_neighbor[k] * f + e;
 				}
 
+				// double prob_sum = np::inner_product(probs.data(), my_pi_node,
+													// probs.size(), 0.0);
 				double prob_sum = np::sum(probs);
+				double phi_i_sum = my_pi_node[K];
+				// std::cerr << std::fixed << std::setprecision(12) << "node " << node << " neighb " << neighb << " prob_sum " << prob_sum << " phi_i_sum " << phi_i_sum << " #sample " << real_num_node_sample() << std::endl;
+
+				double *my_grads = &grads_[omp_get_thread_num()][node_rank * K];
 				for (::size_t k = 0; k < K; k++) {
-					// grads[k] += (probs[k] / prob_sum) / phi[i][k] - 1.0 / phi_i_sum;
-					grads[k] += ((probs[k] / prob_sum) / pi_node[k] - 1.0) / phi_i_sum;
+					// grads_[k] += (probs[k] / prob_sum) / phi[node_index][k] - 1.0 / phi_i_sum;
+					// FIXME: then divide by my_pi_node[k]
+					my_grads[k] += ((probs[k] / prob_sum) / my_pi_node[k] - 1.0) / phi_i_sum;
+					// my_grads[k] += (probs[k] / prob_sum - 1.0) / phi_i_sum;
 				}
 			}
-			ix++;
 		}
 
-		std::vector<double> noise = rnd->randn(K);	// random gaussian noise.
-		if (false) {
-			for (::size_t k = 0; k < K; ++k) {
-				std::cerr << "randn " << std::fixed << std::setprecision(12) << noise[k] << std::endl;
-			}
-		}
-		double Nn = (1.0 * N) / num_node_sample;
-        // update phi for node i
-        for (::size_t k = 0; k < K; k++) {
-			double phi_node_k = pi_node[k] * phi_i_sum;
-			(*phi_node)[k] = std::abs(phi_node_k + eps_t / 2 * (alpha - phi_node_k + \
-															 Nn * grads[k]) +
-								   sqrt(eps_t * phi_node_k) * noise[k]);
-		}
+		return num_threads;
+    }
 
-		if (false) {
-			std::cerr << std::fixed << std::setprecision(12) << "update_phi post Nn " << Nn << " phi[" << i << "] ";
-			for (::size_t k = 0; k < K; k++) {
-				std::cerr << std::fixed << std::setprecision(12) << (*phi_node)[k] << " ";
-			}
-			std::cerr << std::endl;
-			std::cerr << "pi[" << i << "] ";
-			for (::size_t k = 0; k < K; k++) {
-				std::cerr << std::fixed << std::setprecision(12) << pi_node[k] << " ";
-			}
-			std::cerr << std::endl;
-			std::cerr << "grads ";
-			for (::size_t k = 0; k < K; k++) {
-				std::cerr << std::fixed << std::setprecision(12) << grads[k] << " ";
-			}
-			std::cerr << std::endl;
-			std::cerr << "noise ";
-			for (::size_t k = 0; k < K; k++) {
-				std::cerr << std::fixed << std::setprecision(12) << noise[k] << " ";
-			}
-			std::cerr << std::endl;
-		}
 
-		// assign back to phi.
-		//phi[i] = phi_star;
+	void grads_sum_local(::size_t num_threads) {
+#pragma omp parallel for private(grads_)
+		for (::size_t i = 0; i < grads_.size(); ++i) {
+			for (::size_t t = 1; t < num_threads; ++t) {
+				grads_[0][i] += grads_[t][i];
+			}
+		}
 	}
 
 
-    void update_beta(const OrderedEdgeSet &mini_batch, double scale) {
+	void allreduce2all() {
+		std::cerr << "FIXME: implement this allreduce2all" << std::endl;
+	}
 
+
+    void update_phi(const std::vector<const double *> &pi_node,
+                    const double eps_t,
+					std::vector<std::vector<double>> *phi_node	// out parameter
+					) {
+		const double Nn = (1.0 * N) / num_node_sample;
+#pragma omp parallel for private(my_phi_node, my_grads, my_phi_node, rnd, noise)
+		for (::size_t i = 0; i < pi_node.size(); ++i) {
+			// std::cerr << "Random seed " << std::hex << "0x" << kernelRandom->seed(0) << ",0x" << kernelRandom->seed(1) << std::endl << std::dec;
+			// update_phi(i, pi_node[i], grads_.begin() + i * K,
+			// 		   eps_t, threadRandom_[i], &phi_node[i]);
+			const double *my_pi_node = pi_node[i];
+			// grads_[0] contains the reduced sum of the sum of the local thread contributions
+			const double *my_grads = &grads_[0][i * K];
+			std::vector<double> &my_phi_node = (*phi_node)[i];
+			Random::Random *rnd = threadRandom_[i];
+
+			std::vector<double> noise = rnd->randn(K);	// random gaussian noise.
+			if (false) {
+				for (::size_t k = 0; k < K; ++k) {
+					std::cerr << "randn " << std::fixed << std::setprecision(12) << noise[k] << std::endl;
+				}
+			}
+			double phi_i_sum = my_pi_node[K];
+			// update phi for node i
+			for (::size_t k = 0; k < K; k++) {
+				double phi_node_k = my_pi_node[k] * phi_i_sum;
+				my_phi_node[k] = std::abs(phi_node_k + eps_t / 2 * (alpha - phi_node_k + \
+																	Nn * my_grads[k]) +
+										  sqrt(eps_t * phi_node_k) * noise[k]);
+			}
+
+			if (false) {
+				std::cerr << std::fixed << std::setprecision(12) << __func__ << " post Nn " << Nn << " phi[" << i << "] ";
+				for (::size_t k = 0; k < K; k++) {
+					std::cerr << std::fixed << std::setprecision(12) << my_phi_node[k] << " ";
+				}
+				std::cerr << std::endl;
+				std::cerr << "pi[" << i << "] ";
+				for (::size_t k = 0; k < K; k++) {
+					std::cerr << std::fixed << std::setprecision(12) << my_pi_node[k] << " ";
+				}
+				std::cerr << std::endl;
+				std::cerr << "grads_ ";
+				for (::size_t k = 0; k < K; k++) {
+					std::cerr << std::fixed << std::setprecision(12) << my_grads[k] << " ";
+				}
+				std::cerr << std::endl;
+				std::cerr << "noise ";
+				for (::size_t k = 0; k < K; k++) {
+					std::cerr << std::fixed << std::setprecision(12) << noise[k] << " ";
+				}
+				std::cerr << std::endl;
+			}
+
+			// assign back to phi.
+			//phi[i] = phi_star;
+		}
+	}
+
+
+    void update_beta(const OrderedEdgeSet &mini_batch,
+					 const std::vector<double *> &pi_node,
+					 const double eps_t,
+					 const double scale) {
+
+		std::cerr << "FIXME: allocate update_beta::grads statically (or share with update_phi)" << std::endl;
 		std::vector<std::vector<double> > grads(K, std::vector<double>(2, 0.0));	// gradients K*2 dimension
 		std::vector<double> probs(K);
         // sums = np.sum(self.__theta,1)
@@ -951,13 +1106,20 @@ protected:
 			}
 			assert(node_rank.size() == nodes.size());
 		}
+#ifndef NDEBUG
 		std::vector<double *> pi(node_rank.size());
 		t_load_pi_beta.start();
 		d_kv_store->ReadKVRecords(pi, nodes, DKV::RW_MODE::READ_ONLY);
 		t_load_pi_beta.stop();
+		assert(nodes.size() == nodes_.size());
+		for (::size_t i = 0; i < nodes.size(); i++) {
+			assert(nodes[i] = nodes_[i]);
+		}
+#else
+		std::vector<double *> &pi = pi_node;
+#endif
 
 		// update gamma, only update node in the grad
-		double eps_t = a * std::pow(1.0 + step_count / b, -c);
 		//double eps_t = std::pow(1024+step_count, -0.5);
 		// for (auto edge = mini_batch.begin(); edge != mini_batch.end(); edge++) {
         std::vector<Edge> v_mini_batch(mini_batch.begin(), mini_batch.end());
@@ -1013,8 +1175,6 @@ protected:
 		np::row_normalize(&temp, theta);
 		std::transform(temp.begin(), temp.end(), beta.begin(), np::SelectColumn<double>(1));
 
-		d_kv_store->PurgeKVRecords();
-
         if (false) {
           for (auto n : noise) {
             std::cerr << "noise ";
@@ -1053,6 +1213,7 @@ protected:
 
 		// FIXME code duplication w/ update_beta
 		// Is there also code duplication w/ update_phi?
+		std::cerr << "FIXME: isn't the held-out set fixed across iterations?" << std::endl;
         // FIXME isn't the held-out set fixed across iterations
         // so we can memo the ranking?
 		t_rank_pi_perp.start();
@@ -1075,11 +1236,13 @@ protected:
 			assert(node_rank.size() == nodes.size());
 		}
 		t_rank_pi_perp.stop();
+
 		t_load_pi_perp.start();
 		std::vector<double *> pi(node_rank.size());
 		d_kv_store->ReadKVRecords(pi, nodes, DKV::RW_MODE::READ_ONLY);
 		t_load_pi_perp.stop();
 
+		std::cerr <<  "FIXME: OpenMP-parallelize calc perplexity" << std::endl;
         // FIXME: trivial to OpenMP-parallelize: memo the likelihoods, sum
         // them in the end
 		::size_t i = 0;
@@ -1157,7 +1320,7 @@ protected:
 
 
 	int node_owner(int node) const {
-		return node % mpi_size;
+		return node % mpi_size_;
 	}
 
 
@@ -1172,15 +1335,24 @@ protected:
 	::size_t	max_minibatch_nodes;
 	::size_t	max_minibatch_neighbors;
 
-	const int mpi_master;
-	int		mpi_size;
-	int		mpi_rank;
+	const int mpi_master_;
+	int		mpi_size_;
+	int		mpi_rank_;
+	MPI_Datatype MPI_INT2_TUPLE;
 
 	const Options &args;
 
 	DKV::DKVStoreInterface *d_kv_store;
 
-	std::vector<Random::Random *> threadRandom;
+	uint64_t num_my_work_items_;
+	std::vector<WorkItem> my_work_item_;	// [] tuple<minibatch rank, neighbor_ rank>
+	std::vector<int32_t> nodes_;			// rank -> id of minibatch node
+	std::vector<int32_t> neighbor_;			// rank -> id of neighbor_ node
+
+	std::vector<std::vector<double>> grads_;
+	std::vector<double> scratch_;
+
+	std::vector<Random::Random *> threadRandom_;
 
 	Timer t_outer;
 	Timer t_populate_pi;
@@ -1191,6 +1363,9 @@ protected:
 	Timer t_mini_batch;
 	Timer t_nodes_in_mini_batch;
 	Timer t_sample_neighbor_nodes;
+	Timer t_grads_calc;
+	Timer t_grads_sum_local;
+	Timer t_grads_reduce;
 	Timer t_update_phi;
 	Timer t_update_pi;
 	Timer t_update_beta;
