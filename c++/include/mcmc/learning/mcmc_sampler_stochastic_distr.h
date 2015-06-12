@@ -475,7 +475,7 @@ public:
 				int node = nodes_vector[i];
                 // std::cerr << "Random seed " << std::hex << "0x" << kernelRandom->seed(0) << ",0x" << kernelRandom->seed(1) << std::endl << std::dec;
 				update_phi(&phi_node[i], node, pi_node[i],
-						   flat_neighbors.begin() + i + real_num_node_sample(),
+						   flat_neighbors.begin() + i * real_num_node_sample(),
 						   pi_neighbor.begin() + i * real_num_node_sample(),
 						   eps_t, threadRandom[i]);
 			}
@@ -874,12 +874,14 @@ protected:
 				}
 
 				double prob_sum = np::sum(probs);
+				// std::cerr << std::fixed << std::setprecision(12) << "node " << i << " neighb " << neighbor << " prob_sum " << prob_sum << " phi_i_sum " << phi_i_sum << " #sample " << real_num_node_sample() << std::endl;
 				for (::size_t k = 0; k < K; k++) {
 					// grads[k] += (probs[k] / prob_sum) / phi[i][k] - 1.0 / phi_i_sum;
 					grads[k] += ((probs[k] / prob_sum) / pi_node[k] - 1.0) / phi_i_sum;
 				}
+			} else {
+				std::cerr << "Skip self loop <" << i << "," << neighbor << ">" << std::endl;
 			}
-			ix++;
 		}
 
 		std::vector<double> noise = rnd->randn(K);	// random gaussian noise.
