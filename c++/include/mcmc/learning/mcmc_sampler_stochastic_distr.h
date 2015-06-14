@@ -45,11 +45,31 @@ enum MPI_Datatype {
 	MPI_LONG                   = 0x4c000407,
 	MPI_DOUBLE                 = 0x4c00080b,
 	MPI_BYTE                   = 0x4c00010d,
+	MPI_CUSTOM                 = 0x4c001000,
 };
+
+#define MPI_THREAD_SINGLE		0
+#define MPI_THREAD_FUNNELED		1
+#define MPI_THREAD_SERIALIZED	2
+#define MPI_THREAD_MULTIPLE		3
 
 int MPI_Init(int *argc, char ***argv) {
 	return MPI_SUCCESS;
 }
+
+int MPI_Init_thread(int *argc, char ***argv, int required, int *provided) {
+	*provided = required;
+
+	return MPI_SUCCESS;
+}
+
+struct MPI_TYPE {
+	MPI_Datatype	datatype;
+	::size_t		size;
+};
+
+static std::vector<MPI_TYPE> mpi_custom_type;
+static MPI_Datatype custom_types = static_cast<MPI_Datatype>(MPI_CUSTOM + 1);
 
 int MPI_Finalize() {
 	return MPI_SUCCESS;
@@ -89,9 +109,25 @@ int MPI_Comm_rank(MPI_Comm comm, int *mpi_rank_) {
 	case MPI_BYTE:
 		return 1;
 	default:
-		std::cerr << "Unknown MPI datatype" << std::cerr;
+		if (type > MPI_CUSTOM && type < custom_types) {
+			return mpi_custom_type[type - MPI_CUSTOM - 1].size;
+		}
+		std::cerr << "OOOPPPPPPSSS: Unknown datatype: " << (int)type << std::endl;
 		return 0;
 	}
+}
+
+int MPI_Type_contiguous(int n, MPI_Datatype base, MPI_Datatype *cont) {
+	mpi_custom_type.resize(mpi_custom_type.size() + 1);
+	mpi_custom_type[mpi_custom_type.size() - 1].datatype = custom_types;
+	*cont = custom_types;
+	custom_types = static_cast<MPI_Datatype>(custom_types + 1);
+	mpi_custom_type[mpi_custom_type.size() - 1].size = n * mpi_datatype_size(base);
+	return MPI_SUCCESS;
+}
+
+int MPI_Type_commit(MPI_Datatype *type) {
+	return MPI_SUCCESS;
 }
 
 int MPI_Scatter(void *sendbuf, int sendcount, MPI_Datatype sendtype,
@@ -411,7 +447,7 @@ public:
 		// Make kernelRandom init depend on mpi_rank_
 		delete kernelRandom;
 		kernelRandom = new Random::Random((mpi_rank_ + 1) * 42);
-		threadRandom_.resize(max_minibatch_nodes);
+		threadRandom_.resize(omp_get_max_threads());
 		for (::size_t i = 0; i < threadRandom_.size(); i++) {
 			threadRandom_[i] = new Random::Random(i, (mpi_rank_ + 1) * 42);
 		}
@@ -804,14 +840,13 @@ protected:
 
 			nodes_.resize(node_set.size());
 			std::copy(node_set.begin(), node_set.end(), nodes_.begin());
-			assert(threadRandom_.size() >= nodes_.size());
 			std::vector<NeighborSet> neighbor(nodes_.size());
 			std::cerr << "FIXME: distribute the neighbor sampling?" << std::endl;
 			t_sample_neighbor_nodes.start();
 #pragma omp parallel for
 			for (::size_t i = 0; i < nodes_.size(); ++i) {
 				neighbor[i] = sample_neighbor_nodes(num_node_sample, nodes_[i],
-													threadRandom_[i]);
+													threadRandom_[omp_get_thread_num()]);
 			}
 			t_sample_neighbor_nodes.stop();
 			std::cerr << "FIXME: static allocation of work_items[]" << std::endl;
@@ -837,10 +872,12 @@ protected:
 			}
 		}
 
-		r = MPI_Scatter(items.data(), 1, MPI_LONG,
-						&num_my_work_items_, 1, MPI_LONG,
+		int32_t nw;
+		r = MPI_Scatter(items.data(), 1, MPI_INT,
+						&nw, 1, MPI_INT,
 						mpi_master_, MPI_COMM_WORLD);
 		mpi_error_test(r, "MPI_Scatter of minibatch chunks fails");
+		num_my_work_items_ = nw;
 		my_work_item_.resize(num_my_work_items_);
 
 		if (mpi_rank_ == mpi_master_) {
@@ -926,14 +963,30 @@ protected:
 			}
 		}
 
+#ifndef NDEBUG
+		// The _node fields are in fact ranks (indices) in the vectors
+		for (::size_t i = 0; i < my_work_item_.size(); ++i) {
+			assert((::size_t)my_work_item_[i].minibatch_node < pi_node.size());
+			assert((::size_t)my_work_item_[i].neighbor_node < pi_neighbor.size());
+		}
+#endif
+
 		::size_t num_threads;
-#pragma omp parallel for private(my_pi_node, my_pi_neighbor, my_grads, probs)
+// #pragma omp parallel for private(my_pi_node, my_pi_neighbor, my_grads, probs)
+#pragma omp parallel for
 		for (::size_t i = 0; i < my_work_item_.size(); ++i) {
 			if (i == 0 && omp_get_thread_num() == 0) {
 				num_threads = omp_get_num_threads();
 			}
 			int32_t node_rank = my_work_item_[i].minibatch_node;
 			int32_t neighbor_rank = my_work_item_[i].neighbor_node;
+
+			if ((::size_t)node_rank >= pi_node.size()) {
+				std::cerr << "Oops, node_rank " << node_rank << " exceeds " << pi_node.size() << std::endl;
+			}
+			if ((::size_t)neighbor_rank >= pi_neighbor.size()) {
+				std::cerr << "Oops, neighbor_rank " << neighbor_rank << " exceeds " << pi_neighbor.size() << std::endl;
+			}
 
 			const double *my_pi_node = pi_node[node_rank];
 			const double *my_pi_neighbor = pi_neighbor[neighbor_rank];
@@ -1002,7 +1055,7 @@ protected:
 
 
 	void grads_sum_local(::size_t num_threads) {
-#pragma omp parallel for private(grads_)
+#pragma omp parallel for
 		for (::size_t i = 0; i < grads_.size(); ++i) {
 			for (::size_t t = 1; t < num_threads; ++t) {
 				grads_[0][i] += grads_[t][i];
@@ -1021,7 +1074,7 @@ protected:
 					std::vector<std::vector<double>> *phi_node	// out parameter
 					) {
 		const double Nn = (1.0 * N) / num_node_sample;
-#pragma omp parallel for private(my_phi_node, my_grads, my_phi_node, rnd, noise)
+#pragma omp parallel for
 		for (::size_t i = 0; i < pi_node.size(); ++i) {
 			// std::cerr << "Random seed " << std::hex << "0x" << kernelRandom->seed(0) << ",0x" << kernelRandom->seed(1) << std::endl << std::dec;
 			// update_phi(i, pi_node[i], grads_.begin() + i * K,
@@ -1030,7 +1083,7 @@ protected:
 			// grads_[0] contains the reduced sum of the sum of the local thread contributions
 			const double *my_grads = &grads_[0][i * K];
 			std::vector<double> &my_phi_node = (*phi_node)[i];
-			Random::Random *rnd = threadRandom_[i];
+			Random::Random *rnd = threadRandom_[omp_get_thread_num()];
 
 			std::vector<double> noise = rnd->randn(K);	// random gaussian noise.
 			if (false) {
@@ -1048,12 +1101,12 @@ protected:
 			}
 
 			if (false) {
-				std::cerr << std::fixed << std::setprecision(12) << __func__ << " post Nn " << Nn << " phi[" << i << "] ";
+				std::cerr << std::fixed << std::setprecision(12) << __func__ << " post Nn " << Nn << " phi[" << nodes_[i] << "] ";
 				for (::size_t k = 0; k < K; k++) {
 					std::cerr << std::fixed << std::setprecision(12) << my_phi_node[k] << " ";
 				}
 				std::cerr << std::endl;
-				std::cerr << "pi[" << i << "] ";
+				std::cerr << "pi[" << nodes_[i] << "] ";
 				for (::size_t k = 0; k < K; k++) {
 					std::cerr << std::fixed << std::setprecision(12) << my_pi_node[k] << " ";
 				}
@@ -1082,42 +1135,16 @@ protected:
 					 const double scale) {
 
 		std::cerr << "FIXME: allocate update_beta::grads statically (or share with update_phi)" << std::endl;
-		std::vector<std::vector<double> > grads(K, std::vector<double>(2, 0.0));	// gradients K*2 dimension
-		std::vector<double> probs(K);
+		std::vector<std::vector<std::vector<double> > > grads(omp_get_max_threads(), std::vector<std::vector<double> >(K, std::vector<double>(2, 0.0)));	// gradients K*2 dimension
         // sums = np.sum(self.__theta,1)
 		std::vector<double> theta_sum(theta.size());
 		std::transform(theta.begin(), theta.end(), theta_sum.begin(), np::sum<double>);
 
-        // FIXME: already did the nodes_in_batch() -- only the ranking remains
+		// FIXME: already did the nodes_in_batch() -- only the ranking remains
 		std::unordered_map<int, int> node_rank;
-		std::vector<int> nodes;
-		for (auto e : mini_batch) {
-			int i = e.first;
-			int j = e.second;
-			if (node_rank.find(i) == node_rank.end()) {
-				::size_t next = node_rank.size();
-				node_rank[i] = next;
-				nodes.push_back(i);
-			}
-			if (node_rank.find(j) == node_rank.end()) {
-				::size_t next = node_rank.size();
-				node_rank[j] = next;
-				nodes.push_back(j);
-			}
-			assert(node_rank.size() == nodes.size());
+		for (::size_t i = 0; i < nodes_.size(); i++) {
+			node_rank[nodes_[i]] = i;
 		}
-#ifndef NDEBUG
-		std::vector<double *> pi(node_rank.size());
-		t_load_pi_beta.start();
-		d_kv_store->ReadKVRecords(pi, nodes, DKV::RW_MODE::READ_ONLY);
-		t_load_pi_beta.stop();
-		assert(nodes.size() == nodes_.size());
-		for (::size_t i = 0; i < nodes.size(); i++) {
-			assert(nodes[i] = nodes_[i]);
-		}
-#else
-		std::vector<double *> &pi = pi_node;
-#endif
 
 		// update gamma, only update node in the grad
 		//double eps_t = std::pow(1024+step_count, -0.5);
@@ -1125,6 +1152,7 @@ protected:
         std::vector<Edge> v_mini_batch(mini_batch.begin(), mini_batch.end());
 #pragma omp parallel for // num_threads (12)
         for (::size_t e = 0; e < v_mini_batch.size(); e++) {
+			std::vector<double> probs(K);
             const auto *edge = &v_mini_batch[e];
 
             int y = 0;
@@ -1137,8 +1165,8 @@ protected:
 			double pi_sum = 0.0;
 			for (::size_t k = 0; k < K; k++) {
 				// Note: this is the KV-store cached pi, not the Learner item
-				pi_sum += pi[i][k] * pi[j][k];
-				double f = pi[i][k] * pi[j][k];
+				pi_sum += pi_node[i][k] * pi_node[j][k];
+				double f = pi_node[i][k] * pi_node[j][k];
 				if (y == 1) {
 					probs[k] = beta[k] * f;
 				} else {
@@ -1151,8 +1179,16 @@ protected:
 			for (::size_t k = 0; k < K; k++) {
 				double f = probs[k] / prob_sum;
 				double one_over_theta_sum = 1.0 / theta_sum[k];
-				grads[k][0] += f * ((1 - y) / theta[k][0] - one_over_theta_sum);
-				grads[k][1] += f * (y / theta[k][1] - one_over_theta_sum);
+				grads[omp_get_thread_num()][k][0] += f * ((1 - y) / theta[k][0] - one_over_theta_sum);
+				grads[omp_get_thread_num()][k][1] += f * (y / theta[k][1] - one_over_theta_sum);
+			}
+		}
+
+#pragma omp parallel for
+		for (int i = 1; i < omp_get_max_threads(); i++) {
+			for (::size_t k = 0; k < K; k++) {
+				grads[0][k][0] += grads[i][k][0];
+				grads[0][k][1] += grads[i][k][1];
 			}
 		}
 
@@ -1164,7 +1200,7 @@ protected:
 				double f = std::sqrt(eps_t * theta[k][i]);
 				theta[k][i] = std::abs(theta[k][i] +
 									   eps_t / 2.0 * (eta[i] - theta[k][i] +
-													  scale * grads[k][i]) +
+													  scale * grads[0][k][i]) +
 									   f * noise[k][i]);
 			}
 		}
