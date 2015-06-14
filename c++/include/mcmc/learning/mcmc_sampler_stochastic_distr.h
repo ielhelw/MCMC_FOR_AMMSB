@@ -8,6 +8,25 @@
 #include <algorithm>	// min, max
 #include <chrono>
 
+#ifdef ENABLE_OPENMP
+#  include <omp.h>
+#else
+
+static int omp_get_max_threads() {
+	    return 1;
+}
+
+static int omp_get_thread_num() {
+	    return 0;
+}
+
+#ifdef ACTUALLY_USED
+static int omp_get_num_threads() {
+	    return 1;
+}
+#endif
+
+#endif
 
 #ifdef ENABLE_DISTRIBUTED
 #  include <mpi.h>
@@ -348,7 +367,7 @@ public:
 		// Make kernelRandom init depend on mpi_rank
 		delete kernelRandom;
 		kernelRandom = new Random::Random((mpi_rank + 1) * 42);
-		threadRandom.resize(max_minibatch_nodes);
+		threadRandom.resize(omp_get_max_threads());
 		for (::size_t i = 0; i < threadRandom.size(); i++) {
 			threadRandom[i] = new Random::Random(i, (mpi_rank + 1) * 42);
 		}
@@ -438,7 +457,7 @@ public:
 				int node = nodes_vector[i];
 				// sample a mini-batch of neighbors
 				NeighborSet neighbors = sample_neighbor_nodes(num_node_sample, node,
-															  threadRandom[i]);
+															  threadRandom[omp_get_thread_num()]);
 				assert(neighbors.size() == real_num_node_sample());
 #if 1
 				// Cannot use flat_neighbors.insert() because it may (concurrently)
@@ -477,7 +496,7 @@ public:
 				update_phi(&phi_node[i], node, pi_node[i],
 						   flat_neighbors.begin() + i * real_num_node_sample(),
 						   pi_neighbor.begin() + i * real_num_node_sample(),
-						   eps_t, threadRandom[i]);
+						   eps_t, threadRandom[omp_get_thread_num()]);
 			}
 			t_update_phi.stop();
 
@@ -899,7 +918,7 @@ protected:
 								   sqrt(eps_t * phi_node_k) * noise[k]);
 		}
 
-		if (false) {
+		if (true) {
 			std::cerr << std::fixed << std::setprecision(12) << "update_phi post Nn " << Nn << " phi[" << i << "] ";
 			for (::size_t k = 0; k < K; k++) {
 				std::cerr << std::fixed << std::setprecision(12) << (*phi_node)[k] << " ";
@@ -929,8 +948,7 @@ protected:
 
     void update_beta(const OrderedEdgeSet &mini_batch, double scale) {
 
-		std::vector<std::vector<double> > grads(K, std::vector<double>(2, 0.0));	// gradients K*2 dimension
-		std::vector<double> probs(K);
+		std::vector<std::vector<std::vector<double> > > grads(omp_get_max_threads(), std::vector<std::vector<double> >(K, std::vector<double>(2, 0.0)));    // gradients K*2 dimension
         // sums = np.sum(self.__theta,1)
 		std::vector<double> theta_sum(theta.size());
 		std::transform(theta.begin(), theta.end(), theta_sum.begin(), np::sum<double>);
@@ -966,6 +984,7 @@ protected:
 #pragma omp parallel for // num_threads (12)
         for (::size_t e = 0; e < v_mini_batch.size(); e++) {
             const auto *edge = &v_mini_batch[e];
+			std::vector<double> probs(K);
 
             int y = 0;
             if (edge->in(network.get_linked_edges())) {
@@ -991,8 +1010,16 @@ protected:
 			for (::size_t k = 0; k < K; k++) {
 				double f = probs[k] / prob_sum;
 				double one_over_theta_sum = 1.0 / theta_sum[k];
-				grads[k][0] += f * ((1 - y) / theta[k][0] - one_over_theta_sum);
-				grads[k][1] += f * (y / theta[k][1] - one_over_theta_sum);
+				grads[omp_get_thread_num()][k][0] += f * ((1 - y) / theta[k][0] - one_over_theta_sum);
+				grads[omp_get_thread_num()][k][1] += f * (y / theta[k][1] - one_over_theta_sum);
+			}
+		}
+
+#pragma omp parallel for
+		for (int i = 1; i < omp_get_max_threads(); i++) {
+			for (::size_t k = 0; k < K; k++) {
+				grads[0][k][0] += grads[i][k][0];
+				grads[0][k][1] += grads[i][k][1];
 			}
 		}
 
@@ -1004,7 +1031,7 @@ protected:
 				double f = std::sqrt(eps_t * theta[k][i]);
 				theta[k][i] = std::abs(theta[k][i] +
 									   eps_t / 2.0 * (eta[i] - theta[k][i] +
-													  scale * grads[k][i]) +
+													  scale * grads[0][k][i]) +
 									   f * noise[k][i]);
 			}
 		}
