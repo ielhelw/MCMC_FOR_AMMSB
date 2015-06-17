@@ -918,7 +918,7 @@ protected:
 								   sqrt(eps_t * phi_node_k) * noise[k]);
 		}
 
-		if (true) {
+		if (false) {
 			std::cerr << std::fixed << std::setprecision(12) << "update_phi post Nn " << Nn << " phi[" << i << "] ";
 			for (::size_t k = 0; k < K; k++) {
 				std::cerr << std::fixed << std::setprecision(12) << (*phi_node)[k] << " ";
@@ -1016,18 +1016,18 @@ protected:
 		}
 
 #pragma omp parallel for
-		for (int i = 1; i < omp_get_max_threads(); i++) {
-			for (::size_t k = 0; k < K; k++) {
+		for (::size_t k = 0; k < K; k++) {
+			for (int i = 1; i < omp_get_max_threads(); i++) {
 				grads[0][k][0] += grads[i][k][0];
 				grads[0][k][1] += grads[i][k][1];
 			}
 		}
 
-        // update theta
+		// update theta
 		std::vector<std::vector<double> > noise = kernelRandom->randn(K, 2);	// random noise.
 		// std::vector<std::vector<double> > theta_star(theta);
-        for (::size_t k = 0; k < K; k++) {
-            for (::size_t i = 0; i < 2; i++) {
+		for (::size_t k = 0; k < K; k++) {
+			for (::size_t i = 0; i < 2; i++) {
 				double f = std::sqrt(eps_t * theta[k][i]);
 				theta[k][i] = std::abs(theta[k][i] +
 									   eps_t / 2.0 * (eta[i] - theta[k][i] +
