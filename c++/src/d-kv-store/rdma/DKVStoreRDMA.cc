@@ -188,7 +188,11 @@ void DKVStoreRDMA::barrier() {
 /*
  * Class description
  */
-DKVStoreRDMA::DKVStoreRDMA() {
+DKVStoreRDMA::DKVStoreRDMA()
+#ifndef USE_MPI
+	: network_(NULL)
+#endif
+	{
 }
 
 DKVStoreRDMA::~DKVStoreRDMA() {

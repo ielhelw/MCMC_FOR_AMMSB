@@ -11,6 +11,7 @@
 #define VIRTUAL
 // #endif
 
+#include <string.h>		// strerror
 #include <errno.h>
 #include <inttypes.h>
 
