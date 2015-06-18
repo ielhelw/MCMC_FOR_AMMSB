@@ -80,8 +80,10 @@ int MPI_Bcast(void *buffer, int count, MPI_Datatype datatype,
 	return MPI_SUCCESS;
 }
 
-int MPI_Barrier(MPI_Comm comm) {
-	return MPI_SUCCESS;
+typedef double MPI_Op(double, double);
+
+double MPI_SUM(double a, double b) {
+	return a + b;
 }
 
 int MPI_Comm_set_errhandler(MPI_Comm comm, int mode) {
@@ -127,6 +129,18 @@ int MPI_Type_contiguous(int n, MPI_Datatype base, MPI_Datatype *cont) {
 }
 
 int MPI_Type_commit(MPI_Datatype *type) {
+	return MPI_SUCCESS;
+}
+
+int MPI_Reduce(void *sendbuf, void *recvbuf, int count, MPI_Datatype datatype,
+			   MPI_Op op, int root, MPI_Comm comm) {
+	if (sendbuf != recvbuf) {
+		memcpy(recvbuf, sendbuf, count * mpi_datatype_size(datatype));
+	}
+	return MPI_SUCCESS;
+}
+
+int MPI_Barrier(MPI_Comm comm) {
 	return MPI_SUCCESS;
 }
 
@@ -214,7 +228,7 @@ struct WorkItem {
 	int32_t	neighbor_node;
 
 	std::ostream &put(std::ostream &s) const {
-		s << "<" << minibatch_node << "," << neighbor_node << ")";
+		s << "<" << minibatch_node << "," << neighbor_node << ">";
 		return s;
 	}
 };
@@ -304,6 +318,10 @@ public:
 		t_mini_batch            = Timer("      sample_mini_batch");
 		t_nodes_in_mini_batch   = Timer("      nodes_in_mini_batch");
 		t_sample_neighbor_nodes = Timer("      sample_neighbor_nodes");
+		t_create_work_scatter   = Timer("      create scatter lists");
+		t_scatter_work          = Timer("      scatter work items");
+		t_bcast_minibatch       = Timer("      bcast minibatch nodes");
+		t_update_phi_pi         = Timer("    update_phi_pi");
 		t_load_pi_minibatch     = Timer("      load minibatch pi");
 		t_load_pi_neighbor      = Timer("      load neighbor_ pi");
 		t_grads_calc            = Timer("      calc grad chunks");
@@ -313,7 +331,6 @@ public:
 		t_barrier_phi           = Timer("    barrier to update phi");
 		t_update_pi             = Timer("    update_pi");
 		t_store_pi_minibatch    = Timer("      store minibatch pi");
-		t_purge_pi_perp         = Timer("      purge perplexity pi");
 		t_barrier_pi            = Timer("    barrier to update pi");
 		t_update_beta           = Timer("    update_beta");
 		t_load_pi_beta          = Timer("      load pi update_beta");
@@ -321,6 +338,7 @@ public:
 		t_perplexity            = Timer("  perplexity");
 		t_load_pi_perp          = Timer("      load perplexity pi");
 		t_rank_pi_perp          = Timer("      rank pi perp");
+		t_purge_pi_perp         = Timer("      purge perplexity pi");
 		t_cal_edge_likelihood   = Timer("      calc edge likelihood");
 		t_perp_log              = Timer("      calc log");
 		Timer::setTabular(true);
@@ -354,7 +372,8 @@ public:
 		// In an OpenMP program: no need for thread support
 		int required;
 		int provided;
-		required = MPI_THREAD_MULTIPLE;
+		// required = MPI_THREAD_MULTIPLE;
+		required = MPI_THREAD_SINGLE;
 		r = MPI_Init_thread(NULL, NULL, required, &provided);
 		mpi_error_test(r, "MPI_Init_thread fails");
 		if (provided < required) {
@@ -530,6 +549,7 @@ public:
 			t_deploy_minibatch.stop();
 
 			std::cerr << "FIXME: use an AllGather to broadcast the minibatch pi" << std::endl;
+			t_update_phi_pi.start();
 			// ************ load minibatch node pi from D-KV store **************
             t_load_pi_minibatch.start();
 			pi_node.resize(nodes_.size());
@@ -575,6 +595,7 @@ public:
 			r = MPI_Barrier(MPI_COMM_WORLD);
 			mpi_error_test(r, "MPI_Barrier(post phi) fails");
 			t_barrier_phi.stop();
+			t_update_phi_pi.stop();
 
 			// TODO calculate and store updated values for pi/phi_sum
 			std::cerr << "FIXME: every node must update its OWN minibatch pi" << std::endl;
@@ -624,6 +645,10 @@ public:
 		std::cout << t_mini_batch << std::endl;
 		std::cout << t_nodes_in_mini_batch << std::endl;
 		std::cout << t_sample_neighbor_nodes << std::endl;
+		std::cout << t_create_work_scatter << std::endl;
+		std::cout << t_scatter_work << std::endl;
+		std::cout << t_bcast_minibatch << std::endl;
+		std::cout << t_update_phi_pi << std::endl;
 		std::cout << t_load_pi_minibatch << std::endl;
 		std::cout << t_load_pi_neighbor << std::endl;
 		std::cout << t_grads_calc << std::endl;
@@ -633,7 +658,6 @@ public:
 		std::cout << t_barrier_phi << std::endl;
 		std::cout << t_update_pi << std::endl;
 		std::cout << t_store_pi_minibatch << std::endl;
-		std::cout << t_purge_pi_perp << std::endl;
 		std::cout << t_barrier_pi << std::endl;
 		std::cout << t_update_beta << std::endl;
 		std::cout << t_load_pi_beta << std::endl;
@@ -641,6 +665,7 @@ public:
 		std::cout << t_perplexity << std::endl;
 		std::cout << t_load_pi_perp << std::endl;
 		std::cout << t_rank_pi_perp << std::endl;
+		std::cout << t_purge_pi_perp << std::endl;
 		std::cout << t_cal_edge_likelihood << std::endl;
 		std::cout << t_perp_log << std::endl;
 	}
@@ -818,7 +843,7 @@ protected:
 			edgeSample = network.sample_mini_batch(mini_batch_size, strategy::STRATIFIED_RANDOM_NODE);
 			t_mini_batch.stop();
 			const OrderedEdgeSet &mini_batch = *edgeSample.first;
-			if (true) {
+			if (false) {
 				std::cerr << "Minibatch[" << mini_batch.size() << "]: ";
 				for (auto e : mini_batch) {
 					std::cerr << e << " ";
@@ -832,7 +857,6 @@ protected:
 			// over the workers, in accordance with the neighbor locality.
 			t_nodes_in_mini_batch.start();
 			OrderedVertexSet node_set = nodes_in_batch(mini_batch);
-			t_nodes_in_mini_batch.stop();
 // std::cerr << "mini_batch size " << mini_batch.size() << " num_node_sample " << num_node_sample << std::endl;
 
 			std::cerr << "FIXME: do the neighbor bucketize also in parallel" << std::endl;
@@ -840,22 +864,28 @@ protected:
 
 			nodes_.resize(node_set.size());
 			std::copy(node_set.begin(), node_set.end(), nodes_.begin());
+#ifdef ENABLE_DISTRIBUTED
+			std::cerr << "Sort nodes in minibatch" << std::endl;
+			std::sort(nodes_.begin(), nodes_.end());
+#endif
 			std::vector<NeighborSet> neighbor(nodes_.size());
 			std::cerr << "FIXME: distribute the neighbor sampling?" << std::endl;
+			t_nodes_in_mini_batch.stop();
 			t_sample_neighbor_nodes.start();
 #pragma omp parallel for
 			for (::size_t i = 0; i < nodes_.size(); ++i) {
-				neighbor[i] = sample_neighbor_nodes(num_node_sample, nodes_[i],
-													threadRandom_[omp_get_thread_num()]);
+				sample_neighbor_nodes(num_node_sample, nodes_[i],
+									  threadRandom_[omp_get_thread_num()],
+									  &neighbor[i]);
 			}
 			t_sample_neighbor_nodes.stop();
 			std::cerr << "FIXME: static allocation of work_items[]" << std::endl;
 			std::cerr << "FIXME: do two passes over work_items to save a copy" << std::endl;
+			t_create_work_scatter.start();
 			std::vector<std::vector<WorkItem>> work_item(mpi_size_);
 			for (::size_t i = 0; i < nodes_.size(); ++i) {
 				for (auto j : neighbor[i]) {
-					// ::size_t h = d_kv_store->HostOf(j);
-					::size_t h = (j * mpi_size_) / N;
+					int32_t h = d_kv_store->HostOf(j);
 					work_item[h].push_back(WorkItem(i, j));
 				}
 			}
@@ -870,8 +900,17 @@ protected:
 									 work_item[i].begin(),
 									 work_item[i].begin() + items[i]);
 			}
+			t_create_work_scatter.stop();
+			if (false) {
+				std::cerr << "Item map: ";
+				for (auto i : items) {
+					std::cerr << i << " ";
+				}
+				std::cerr << std::endl;
+			}
 		}
 
+		t_scatter_work.start();
 		int32_t nw;
 		r = MPI_Scatter(items.data(), 1, MPI_INT,
 						&nw, 1, MPI_INT,
@@ -879,6 +918,7 @@ protected:
 		mpi_error_test(r, "MPI_Scatter of minibatch chunks fails");
 		num_my_work_items_ = nw;
 		my_work_item_.resize(num_my_work_items_);
+		std::cerr << "My work items: " << num_my_work_items_ << std::endl;
 
 		if (mpi_rank_ == mpi_master_) {
 			// TODO Master scatters the <minibatch, neigbor> tuples over the workers,
@@ -895,13 +935,14 @@ protected:
 			mpi_error_test(r, "MPI_Scatterv of work tuples fails at master");
 
 		} else {
-			r = MPI_Scatterv(NULL, NULL, NULL, MPI_INT,
-							 my_work_item_.data(), num_my_work_items_, MPI_INT,
+			r = MPI_Scatterv(NULL, NULL, NULL, MPI_INT2_TUPLE,
+							 my_work_item_.data(), num_my_work_items_, MPI_INT2_TUPLE,
 							 mpi_master_, MPI_COMM_WORLD);
 			mpi_error_test(r, "MPI_Scatterv of work tuples fails at worker");
 		}
+		t_scatter_work.stop();
 
-		if (true) {
+		if (false) {
 			std::cerr << "Master gives me work items [" << num_my_work_items_ << "] ";
 			for (auto n : my_work_item_) {
 				std::cerr << n << " ";
@@ -909,16 +950,20 @@ protected:
 			std::cerr << std::endl;
 		}
 
+		t_bcast_minibatch.start();
 		uint32_t minibatch_size = nodes_.size();
 		r = MPI_Bcast(&minibatch_size, 1, MPI_INT, 0, MPI_COMM_WORLD);
 		mpi_error_test(r, "MPI_Bcast of minibatch size fails");
 		nodes_.resize(minibatch_size);
 		r = MPI_Bcast(nodes_.data(), nodes_.size(), MPI_INT, 0, MPI_COMM_WORLD);
 		mpi_error_test(r, "MPI_Bcast of minibatch nodes fails");
+		t_bcast_minibatch.stop();
 
 		std::cerr << "Master gives me minibatch nodes[" << minibatch_size << "] ";
-		for (auto n : nodes_) {
-			std::cerr << n << " ";
+		if (false) {
+			for (auto n : nodes_) {
+				std::cerr << n << " ";
+			}
 		}
 		std::cerr << std::endl;
 
@@ -971,7 +1016,7 @@ protected:
 		}
 #endif
 
-		::size_t num_threads;
+		::size_t num_threads = 1; // in case my_work_item_ is empty
 // #pragma omp parallel for private(my_pi_node, my_pi_neighbor, my_grads, probs)
 #pragma omp parallel for
 		for (::size_t i = 0; i < my_work_item_.size(); ++i) {
@@ -1055,8 +1100,8 @@ protected:
 
 
 	void grads_sum_local(::size_t num_threads) {
-#pragma omp parallel for
-		for (::size_t i = 0; i < grads_.size(); ++i) {
+#pragma omp parallel for schedule(static, 1)
+		for (::size_t i = 0; i < grads_[0].size(); ++i) {
 			for (::size_t t = 1; t < num_threads; ++t) {
 				grads_[0][i] += grads_[t][i];
 			}
@@ -1065,7 +1110,32 @@ protected:
 
 
 	void allreduce2all() {
-		std::cerr << "FIXME: implement this allreduce2all" << std::endl;
+		std::vector<::size_t> host_offset(mpi_size_ + 1);
+		int32_t current_host = -1;
+		for (::size_t i = 0; i < nodes_.size(); i++) {
+			while (d_kv_store->HostOf(nodes_[i]) != current_host) {
+				assert(d_kv_store->HostOf(nodes_[i]) >= 0);
+				assert(d_kv_store->HostOf(nodes_[i]) < mpi_size_);
+				current_host++;
+				host_offset[current_host] = i;
+			}
+		}
+		for (::size_t h = current_host + 1; h < host_offset.size(); h++) {
+			host_offset[h] = nodes_.size();
+		}
+		// Do this in parallel for multiple communicators only
+// #pragma omp parallel for
+		for (int i = 0; i < mpi_size_; i++) {
+			int r = MPI_Reduce(grads_[0].data() + K * host_offset[i],
+							   scratch_.data() + K * host_offset[i],
+							   K * (host_offset[i + 1] - host_offset[i]),
+							   MPI_DOUBLE,
+							   MPI_SUM,
+							   i,
+							   MPI_COMM_WORLD);
+			mpi_error_test(r, "MPI_Reduce fails");
+		}
+		memcpy(grads_[0].data(), scratch_.data(), K * nodes_.size() * sizeof(double));
 	}
 
 
@@ -1074,7 +1144,7 @@ protected:
 					std::vector<std::vector<double>> *phi_node	// out parameter
 					) {
 		const double Nn = (1.0 * N) / num_node_sample;
-#pragma omp parallel for
+#pragma omp parallel for schedule(static, 1)
 		for (::size_t i = 0; i < pi_node.size(); ++i) {
 			// std::cerr << "Random seed " << std::hex << "0x" << kernelRandom->seed(0) << ",0x" << kernelRandom->seed(1) << std::endl << std::dec;
 			// update_phi(i, pi_node[i], grads_.begin() + i * K,
@@ -1185,8 +1255,8 @@ protected:
 		}
 
 #pragma omp parallel for
-		for (int i = 1; i < omp_get_max_threads(); i++) {
-			for (::size_t k = 0; k < K; k++) {
+		for (::size_t k = 0; k < K; k++) {
+			for (int i = 1; i < omp_get_max_threads(); i++) {
 				grads[0][k][0] += grads[i][k][0];
 				grads[0][k][1] += grads[i][k][1];
 			}
@@ -1362,6 +1432,10 @@ protected:
 
 	static void mpi_error_test(int r, const std::string &message) {
 		if (r != MPI_SUCCESS) {
+			char descr[MPI_MAX_ERROR_STRING];
+			int len = sizeof descr;
+			MPI_Error_string(r, descr, &len);
+			std::cerr << "MPI error " << descr << " " << message << std::endl;
 			throw MCMCException("MPI error " + r + message);
 		}
 	}
@@ -1392,13 +1466,14 @@ protected:
 
 	Timer t_outer;
 	Timer t_populate_pi;
-	Timer t_perplexity;
-	Timer t_rank_pi_perp;
 	Timer t_cal_edge_likelihood;
 	Timer t_perp_log;
 	Timer t_mini_batch;
 	Timer t_nodes_in_mini_batch;
 	Timer t_sample_neighbor_nodes;
+	Timer t_create_work_scatter;
+	Timer t_scatter_work;
+	Timer t_bcast_minibatch;
 	Timer t_grads_calc;
 	Timer t_grads_sum_local;
 	Timer t_grads_reduce;
@@ -1406,11 +1481,14 @@ protected:
 	Timer t_update_pi;
 	Timer t_update_beta;
 	Timer t_load_pi_beta;
+	Timer t_update_phi_pi;
 	Timer t_load_pi_minibatch;
 	Timer t_load_pi_neighbor;
+	Timer t_perplexity;
+	Timer t_rank_pi_perp;
 	Timer t_load_pi_perp;
-	Timer t_store_pi_minibatch;
 	Timer t_purge_pi_perp;
+	Timer t_store_pi_minibatch;
 	Timer t_broadcast_beta;
 	Timer t_deploy_minibatch;
    	Timer t_barrier_phi;

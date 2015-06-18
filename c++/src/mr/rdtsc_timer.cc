@@ -1,3 +1,4 @@
+#include <unistd.h>
 
 #include <mr/timer.h>
 
@@ -24,8 +25,15 @@ double Timer::get_CPU_speed_in_MHz()
     while (infile.good()) {
 		infile.getline(buffer, 256);
 
-		if (strncmp("cpu MHz", buffer, 7) == 0 && (colon = strchr(buffer, ':')) != 0)
+		if (strncmp("cpu MHz", buffer, 7) == 0 && (colon = strchr(buffer, ':')) != 0) {
+#ifndef HOST_NAME_MAX
+#  define HOST_NAME_MAX	256
+#endif
+			char host[HOST_NAME_MAX];
+			(void)gethostname(host, HOST_NAME_MAX);
+			std::cout << host << ": CPU speed " << atof(colon + 2) << "MHz" << std::endl;
 			return atof(colon + 2);
+		}
 	}
 #endif
 

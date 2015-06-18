@@ -347,7 +347,8 @@ public:
 				int node = node_vector[n];
 				t_sample_neighbor_nodes.start();
 				// sample a mini-batch of neighbors
-				NeighborSet neighbors = sample_neighbor_nodes(num_node_sample, node, kernelRandom);
+				NeighborSet neighbors;
+			   	sample_neighbor_nodes(num_node_sample, node, kernelRandom, &neighbors);
 				t_sample_neighbor_nodes.stop();
 
                 // std::cerr << "Random seed " << std::hex << "0x" << kernelRandom->seed(0) << ",0x" << kernelRandom->seed(1) << std::endl << std::dec;
@@ -691,13 +692,12 @@ protected:
         return -1
 #endif
 
-	// TODO FIXME make VertexSet an out parameter
-    NeighborSet sample_neighbor_nodes(::size_t sample_size, int nodeId, Random::Random *rnd) {
+    void sample_neighbor_nodes(::size_t sample_size, int nodeId, Random::Random *rnd,
+							   NeighborSet *neighbor_nodes) {
         /**
         Sample subset of neighborhood nodes.
          */
         int p = (int)sample_size;
-        NeighborSet neighbor_nodes;
         const EdgeMap &held_out_set = network.get_held_out_set();
         const EdgeMap &test_set = network.get_test_set();
 
@@ -726,18 +726,18 @@ protected:
 				Edge edge(std::min(nodeId, *neighborId), std::max(nodeId, *neighborId));
 				if (edge.in(held_out_set) || edge.in(test_set) ||
 #ifdef RANDOM_FOLLOWS_SCALABLE_GRAPH
-						find(neighbor_nodes.begin(), neighbor_nodes.end(), neighborId) != neighbor_nodes.end()
+						find(neighbor_nodes->begin(), neighbor_nodes->end(), neighborId) != neighbor_nodes->end()
 #else
-						neighbor_nodes.find(*neighborId) != neighbor_nodes.end()
+						neighbor_nodes->find(*neighborId) != neighbor_nodes->end()
 #endif
 						) {
 					continue;
 				} else {
 					// add it into mini_batch_set
 #ifdef RANDOM_FOLLOWS_SCALABLE_GRAPH
-					neighbor_nodes.push_back(*neighborId);
+					neighbor_nodes->push_back(*neighborId);
 #else
-					neighbor_nodes.insert(*neighborId);
+					neighbor_nodes->insert(*neighborId);
 #endif
 					p -= 1;
 				}
@@ -757,27 +757,25 @@ protected:
 					|| edge.in(held_out_set)
 					|| edge.in(test_set)
 #ifdef RANDOM_FOLLOWS_SCALABLE_GRAPH
-					|| find(neighbor_nodes.begin(), neighbor_nodes.end(), neighborId) != neighbor_nodes.end()
+					|| find(neighbor_nodes->begin(), neighbor_nodes->end(), neighborId) != neighbor_nodes->end()
 #else
-					|| neighbor_nodes.find(neighborId) != neighbor_nodes.end()
+					|| neighbor_nodes->find(neighborId) != neighbor_nodes->end()
 #endif
 					);
 #ifdef RANDOM_FOLLOWS_SCALABLE_GRAPH
-			neighbor_nodes.push_back(neighborId);
+			neighbor_nodes->push_back(neighborId);
 #else
-			neighbor_nodes.insert(neighborId);
+			neighbor_nodes->insert(neighborId);
 #endif
 		}
 #endif
 		if (false) {
 			std::cerr << "Node " << nodeId << ": neighbors ";
-			for (auto n : neighbor_nodes) {
+			for (auto n : *neighbor_nodes) {
 				std::cerr << n << " ";
 			}
 			std::cerr << std::endl;
 		}
-
-		return neighbor_nodes;
 	}
 
     OrderedVertexSet nodes_in_batch(const OrderedEdgeSet &mini_batch) const {

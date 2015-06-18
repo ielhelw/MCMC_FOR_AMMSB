@@ -380,6 +380,8 @@ void DKVStoreRDMA::Init(::size_t value_size, ::size_t total_values,
 
   value_size_ = value_size;
   total_values_ = total_values;
+  keys_per_host_ = (total_values_ + num_servers_ - 1) / num_servers_;
+
   /* memory buffer to hold the value data */
   ::size_t my_values = (total_values + num_servers_ - 1) / num_servers_;
   value_.Init(&res_, my_values * value_size);
@@ -495,12 +497,16 @@ std::vector<const T*>& constify(std::vector<T*>& v) {
 }
 
 
-int32_t DKVStoreRDMA::HostOf(DKVStoreRDMA::KeyType key) {
-  return key % num_servers_;
+int32_t DKVStoreRDMA::HostOf(DKVStoreInterface::KeyType key) {
+  // return key % num_servers_;
+  // Nowadays, prefer blocked over striped
+  return key / keys_per_host_;
 }
 
-uint64_t DKVStoreRDMA::OffsetOf(DKVStoreRDMA::KeyType key) {
-  return key / num_servers_ * value_size_;
+uint64_t DKVStoreRDMA::OffsetOf(DKVStoreInterface::KeyType key) {
+  // return key / num_servers_ * value_size_;
+  // Nowadays, prefer blocked over striped
+  return (key - HostOf(key) * keys_per_host_) * value_size_;
 }
 
 

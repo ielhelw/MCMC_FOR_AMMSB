@@ -6,96 +6,47 @@ PROJECT_HOME = $(shell cd $(PROJECT); pwd)
 include $(PROJECT_HOME)/config.mk
 
 ifeq (1, $(CONFIG_OPENMP))
-CXXFLAGS		+= -fopenmp
-LDFLAGS			+= -fopenmp
+CANYFLAGS	+= -fopenmp
+LDFLAGS		+= -fopenmp
 else
-CXXFLAGS		+= -Wno-unknown-pragmas
+CANYFLAGS	+= -Wno-unknown-pragmas
 endif
 
 LD = $(CXX)
 
 CXXFLAGS += -std=c++0x
-CXXFLAGS += -fPIC
+CANYFLAGS += -fPIC
+CFLAGS += -fPIC
 ifeq (1, $(CONFIG_OPTIMIZE))
-	CXXFLAGS += -g3 -O3 # -finline-functions
-	CXXFLAGS += -DNDEBUG
-	CFLAGS += -g3 -O3 # -finline-functions
-	CFLAGS += -DNDEBUG
+	CANYFLAGS += -g3 -O3 # -finline-functions
+	CPPFLAGS += -DNDEBUG
 else
-	CXXFLAGS += -g3 -O0
-	CXXFLAGS += -fno-inline-functions
-	CFLAGS += -g3 -O0
-	CFLAGS += -fno-inline-functions
+	CANYFLAGS += -g3 -O0
+	CANYFLAGS += -fno-inline-functions
 endif
 ifeq (1, $(CONFIG_PROFILE))
-	CXXFLAGS += -pg
-	CXXFLAGS := $(filter-out -finline-functions, $(CXXFLAGS))
-	CXXFLAGS += -fno-inline -fno-inline-functions
-	CFLAGS += -pg
-	CFLAGS := $(filter-out -finline-functions, $(CXXFLAGS))
-	CFLAGS += -fno-inline -fno-inline-functions
+	CANYFLAGS += -pg
+	CANYFLAGS := $(filter-out -finline-functions, $(CANYFLAGS))
+	CANYFLAGS += -fno-inline -fno-inline-functions
 	LDFLAGS += -pg
 	CONFIG_STATIC_LIB	= 1
 	export GMON_OUT_PREFIX=gmon.out	# document: will save to gmon.out.<PID>
 endif
 
-CXXFLAGS += -Wall
+CANYFLAGS += -Wall
 ifneq (icpc, $(CXX))
-CXXFLAGS += -Werror
+CANYFLAGS += -Werror
 CXXFLAGS += -Wno-literal-suffix
 else
-CXXFLAGS += -no-gcc
+CANYFLAGS += -no-gcc
 endif
 # may need to do this without -Werror:
 # CXXFLAGS += -Wconversion
-CXXFLAGS += -Wunused
-CXXFLAGS += -Wextra
-# CXXFLAGS += -pedantic
-# CXXFLAGS += -fmessage-length=0
-CXXFLAGS += -Wno-unused-parameter
-
-CXXFLAGS += -I$(PROJECT_HOME)/include
-CXXFLAGS += -I$(PROJECT_HOME)/3rdparty/tinyxml2/include
-ifneq (, $(OPENCL_ROOT))
-CXXFLAGS += -I$(OPENCL_ROOT)/include
-CXXFLAGS += -DENABLE_OPENCL
-endif
-CXXFLAGS += -DPROJECT_HOME=$(PROJECT_HOME)
-ifneq (, $(BOOST_INCLUDE))
-CXXFLAGS += -I$(BOOST_INCLUDE)
-BOOST_ROOT = $(dir $(BOOST_INCLUDE))
-endif
-ifeq (1, $(CONFIG_OPENMP))
-CXXFLAGS += -DENABLE_OPENMP
-endif
-ifeq (1, $(CONFIG_DISTRIBUTED))
-CXXFLAGS += -DENABLE_DISTRIBUTED
-# OpenMPI requires this
-endif
-ifeq (0, $(CONFIG_NETWORKING))
-CXXFLAGS += -DDISABLE_NETWORKING
-else
-CXXFLAGS += -I$(PROJECT_HOME)/3rdparty/daslib/include
-LIB_LDFLAGS += -L$(PROJECT_HOME)/3rdparty/daslib/lib/$(shell uname -m)_$(shell uname -s)
-LIB_LDLIBS += -ldas
-endif
-
-CFLAGS += -std=gnu99
-CFLAGS += -fPIC
-CFLAGS += -Wall
-CFLAGS += -Wmissing-prototypes
-ifneq (icpc, $(CXX))
-CFLAGS += -Werror
-else
-CFLAGS += -no-gcc
-endif
-# may need to do this without -Werror:
-# CXXFLAGS += -Wconversion
-CFLAGS += -Wunused
-CFLAGS += -Wextra
-# CXXFLAGS += -pedantic
-# CXXFLAGS += -fmessage-length=0
-CFLAGS += -Wno-unused-parameter
+CANYFLAGS += -Wunused
+CANYFLAGS += -Wextra
+# CANYFLAGS += -pedantic
+# CANYFLAGS += -fmessage-length=0
+CANYFLAGS += -Wno-unused-parameter
 
 CPPFLAGS += -I$(PROJECT_HOME)/include
 CPPFLAGS += -I$(PROJECT_HOME)/3rdparty/tinyxml2/include
@@ -104,14 +55,26 @@ CPPFLAGS += -I$(OPENCL_ROOT)/include
 CPPFLAGS += -DENABLE_OPENCL
 endif
 CPPFLAGS += -DPROJECT_HOME=$(PROJECT_HOME)
+ifneq (, $(BOOST_INCLUDE))
+CPPFLAGS += -I$(BOOST_INCLUDE)
+BOOST_ROOT = $(dir $(BOOST_INCLUDE))
+endif
+ifeq (1, $(CONFIG_OPENMP))
+CPPFLAGS += -DENABLE_OPENMP
+endif
 ifeq (1, $(CONFIG_DISTRIBUTED))
 CPPFLAGS += -DENABLE_DISTRIBUTED
+# OpenMPI requires this
 endif
 ifeq (0, $(CONFIG_NETWORKING))
 CPPFLAGS += -DDISABLE_NETWORKING
 else
 CPPFLAGS += -I$(PROJECT_HOME)/3rdparty/daslib/include
+LIB_LDFLAGS += -L$(PROJECT_HOME)/3rdparty/daslib/lib/$(shell uname -m)_$(shell uname -s)
+LIB_LDLIBS += -ldas
 endif
+
+CFLAGS += -std=gnu99
 
 ifneq (, $(OPENCL_ROOT))
 VEXCL		= $(PROJECT)/3rdparty/vexcl
@@ -131,7 +94,7 @@ LIB_LDLIBS += -lOpenCL
 endif
 ifdef USE_MUDFLAP
 LDLIBS	+= -lmudflapth -rdynamic
-CXXFLAGS += -fmudflap -fmudflapth -funwind-tables
+CANYFLAGS += -fmudflap -fmudflapth -funwind-tables
 endif
 
 LD_FLAGS_LIB_SHARED += -shared
@@ -141,7 +104,7 @@ LD_FLAGS_LIB_SHARED += -lmudflapth -rdynamic
 endif
 
 ifdef USE_ADDRESS_SANTIZER
-CXXFLAGS += -fsanitize=address
+CANYFLAGS += -fsanitize=address
 LDFLAGS += -fsanitize=address
 endif
 
@@ -160,24 +123,24 @@ endif
 endif
 
 ifneq (, $(CONFIG_RAMCLOUD_ROOT))
-CXXFLAGS += -I$(CONFIG_RAMCLOUD_ROOT)/src
-CXXFLAGS += -I$(CONFIG_RAMCLOUD_ROOT)/obj.master
-CXXFLAGS += -I$(CONFIG_RAMCLOUD_ROOT)/gtest/include
-CXXFLAGS += -DENABLE_RAMCLOUD
+CPPFLAGS += -I$(CONFIG_RAMCLOUD_ROOT)/src
+CPPFLAGS += -I$(CONFIG_RAMCLOUD_ROOT)/obj.master
+CPPFLAGS += -I$(CONFIG_RAMCLOUD_ROOT)/gtest/include
+CPPFLAGS += -DENABLE_RAMCLOUD
 LIB_LDFLAGS += -L$(CONFIG_RAMCLOUD_ROOT)/obj.master
 LIB_LDFLAGS += -Wl,-rpath,$(CONFIG_RAMCLOUD_ROOT)/obj.master
 LIB_LDLIBS  += -lramcloud
 # export LD_RUN_PATH := $(LD_RUN_PATH):$(CONFIG_RAMCLOUD_ROOT)/obj.master
 endif
 ifeq (1, $(CONFIG_RDMA))
-CXXFLAGS += -DENABLE_RDMA
+CPPFLAGS += -DENABLE_RDMA
 LIB_LDLIBS	+= -libverbs
 endif
 
 vpath lib%.so	$(LD_LIBRARY_PATH) $(subst -L,,$(LIB_LDFLAGS)) $(subst -L,,$(LDFLAGS))
 vpath lib%.a	$(LD_LIBRARY_PATH) $(subst -L,,$(LIB_LDFLAGS)) $(subst -L,,$(LDFLAGS))
 
-OBJDIR = obj
+OBJDIR = $(PROJECT_HOME)/obj
 LIBDIR = $(PROJECT_HOME)/lib
 
 CXX_OBJECTS += $(CXX_SOURCES:%.cc=$(OBJDIR)/%.o)
@@ -198,15 +161,15 @@ objects:	$(CXX_OBJECTS)
 
 $(OBJDIR)/%.o: %.cc
 	@mkdir -p $(dir $@)
-	$(CXX) $(CXXFLAGS) -MMD -c $< -o $@
+	$(CXX) $(CXXFLAGS) $(CANYFLAGS) $(CPPFLAGS) -MMD -c $< -o $@
 
 $(OBJDIR)/%.o: %.cpp
 	@mkdir -p $(dir $@)
-	$(CXX) $(CXXFLAGS) -MMD -c $< -o $@
+	$(CXX) $(CXXFLAGS) $(CANYFLAGS) $(CPPFLAGS) -MMD -c $< -o $@
 
 $(OBJDIR)/%.o: %.c
 	@mkdir -p $(dir $@)
-	$(CC) $(CFLAGS) $(CPPFLAGS) -MMD -c $< -o $@
+	$(CC) $(CFLAGS) $(CANYFLAGS) $(CPPFLAGS) -MMD -c $< -o $@
 
 $(TARGETS): % : $(OBJDIR)/%.o $(CXX_OBJECTS) $(LDLIBS) $(LIB_LDLIBS)
 	@echo LD_RUN_PATH $(LD_RUN_PATH)
@@ -220,7 +183,7 @@ $(TARGET_LIBS):	$(TARGET_LIBS_STATIC)
 # LDFLAGS	+= -static-libgcc
 
 $(TARGET_LIBS_STATIC): $(CXX_OBJECTS)
-	$(AR) $(AR_FLAGS) $@ $^
+	# $(AR) $(AR_FLAGS) $@ $^
 
 # $(TARGET_LIBS_SHARED): $(CXX_OBJECTS)
 # 	$(LDSHARED) $(LD_FLAGS_LIB_SHARED) $^ -o $@.$(MAJOR).$(MINOR) -Wl,-soname,$@.$(MAJOR).$(MINOR)
@@ -231,7 +194,8 @@ $(TARGET_LIBS_STATIC): $(CXX_OBJECTS)
 subdirs: $(SUBDIRS)
 
 $(SUBDIRS):
-	$(MAKE) $(MFLAGS) -C $@
+	# $(MAKE) $(MFLAGS) -C $@
+	$(MAKE) -C $@
 
 runtests:
 ifeq (apps, $(findstring apps, $(SUBDIRS)))
