@@ -248,6 +248,7 @@ public:
 		t_mini_batch            = Timer("      sample_mini_batch");
 		t_nodes_in_mini_batch   = Timer("      nodes_in_mini_batch");
 		t_sample_neighbor_nodes = Timer("      sample_neighbor_nodes");
+		t_update_phi_pi         = Timer("    update_phi_pi");
 		t_load_pi_minibatch     = Timer("      load minibatch pi");
 		t_load_pi_neighbor      = Timer("      load neighbor pi");
 		t_update_phi            = Timer("      update_phi");
@@ -478,6 +479,7 @@ public:
 			// flat_neighbors.resize(nodes_vector.size() * real_num_node_sample());
 			assert(flat_neighbors.size() == nodes_vector.size() * real_num_node_sample());
 
+			t_update_phi_pi.start();
 			// ************ load neighor pi from D-KV store **********
 			t_load_pi_neighbor.start();
 			d_kv_store->ReadKVRecords(pi_neighbor,
@@ -505,6 +507,7 @@ public:
 			r = MPI_Barrier(MPI_COMM_WORLD);
 			mpi_error_test(r, "MPI_Barrier(post phi) fails");
 			t_barrier_phi.stop();
+			t_update_phi_pi.stop();
 
 			// TODO calculate and store updated values for pi/phi_sum
 			t_update_pi.start();
@@ -552,6 +555,7 @@ public:
 		std::cout << t_mini_batch << std::endl;
 		std::cout << t_nodes_in_mini_batch << std::endl;
 		std::cout << t_sample_neighbor_nodes << std::endl;
+		std::cout << t_update_phi_pi << std::endl;
 		std::cout << t_load_pi_minibatch << std::endl;
 		std::cout << t_load_pi_neighbor << std::endl;
 		std::cout << t_update_phi << std::endl;
@@ -1220,6 +1224,7 @@ protected:
 	Timer t_mini_batch;
 	Timer t_nodes_in_mini_batch;
 	Timer t_sample_neighbor_nodes;
+	Timer t_update_phi_pi;
 	Timer t_update_phi;
 	Timer t_update_pi;
 	Timer t_update_beta;
