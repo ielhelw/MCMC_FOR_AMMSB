@@ -35,15 +35,14 @@ public:
 		}
 	}
 
-
-	inline void start() {
+	static inline void rdtsc(int64_t *t) {
 #if (defined __PATHSCALE__) && (defined __i386 || defined __x86_64)
 		uint32_t eax, edx;
 
 		asm volatile ("rdtsc" : "=a" (eax), "=d" (edx));
 
-		t_start = ((uint64_t) edx << 32) + eax;
-		total_time -= t_start;
+		*t = ((uint64_t) edx << 32) + eax;
+
 #elif (defined __GNUC__ || defined __INTEL_COMPILER) && (defined __i386 || defined __x86_64)
 		asm volatile
 		(
@@ -56,36 +55,25 @@ public:
 		:
 		"eax", "edx"
 		);
+		*t = two_int.w;
 #else
 #error Compiler/Architecture not recognized
 #endif
 	}
 
+	inline void start() {
+		rdtsc(&t_start);
+		total_time -= t_start;
+	}
+
 
 	inline void stop() {
-#if (defined __PATHSCALE__) && (defined __i386 || defined __x86_64)
-		uint32_t eax, edx;
-
-		asm volatile ("rdtsc" : "=a" (eax), "=d" (edx));
-
-		int64_t t = ((uint64_t) edx << 32) + eax;
+		int64_t t;
+		rdtsc(&t);
 		total_time += t;
         if (t - t_start > max) {
           max = t - t_start;
         }
-#elif (defined __GNUC__ || defined __INTEL_COMPILER) && (defined __i386 || defined __x86_64)
-		asm volatile
-		(
-		"rdtsc\n\t"
-		"addl %%eax, %0\n\t"
-		"adcl %%edx, %1"
-		:
-		"+m" (two_int.low), "+m" (two_int.high)
-		:
-		:
-		"eax", "edx"
-		);
-#endif
 
 		++ count;
 	}
