@@ -18,6 +18,7 @@ bool Timer::tabular = false;
 
 double Timer::get_CPU_speed_in_MHz()
 {
+#if 0
 #if defined __linux__
     std::ifstream infile("/proc/cpuinfo");
     char     buffer[256], *colon;
@@ -35,9 +36,20 @@ double Timer::get_CPU_speed_in_MHz()
 			return atof(colon + 2);
 		}
 	}
-#endif
 
     return 0.0;
+#endif
+#else
+	int64_t	t_start;
+	int64_t	t_stop;
+
+	rdtsc(&t_start);
+	usleep(5000);
+	rdtsc(&t_stop);
+	double dt = (t_stop - t_start) / 5000.0;
+	std::cout << "CPU speed " << dt << "MHz" << std::endl;
+	return dt;
+#endif
 }
 
 

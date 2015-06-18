@@ -216,6 +216,7 @@ typedef OrderedVertexSet NeighborSet;
 #endif
 
 using ::mr::timer::Timer;
+// using ::mcmc::timer::Timer;
 
 struct WorkItem {
 	WorkItem() {
