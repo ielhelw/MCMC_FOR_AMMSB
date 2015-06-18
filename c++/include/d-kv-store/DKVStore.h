@@ -162,6 +162,14 @@ class DKVStoreInterface {
    */
   virtual void PurgeKVRecords() = 0;
 
+  virtual int32_t HostOf(KeyType key) {
+	  return 0;
+  }
+
+  virtual uint64_t OffsetOf(KeyType key) {
+	  return key;
+  }
+
  protected:
   ::size_t value_size_;
   ::size_t total_values_;

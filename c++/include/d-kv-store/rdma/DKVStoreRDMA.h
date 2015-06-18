@@ -303,11 +303,11 @@ class DKVStoreRDMA : public DKVStoreInterface {
    */
   VIRTUAL void PurgeKVRecords();
 
+  VIRTUAL int32_t HostOf(DKVStoreInterface::KeyType key);
+
+  VIRTUAL uint64_t OffsetOf(DKVStoreInterface::KeyType key);
+
  private:
-  int32_t HostOf(DKVStoreRDMA::KeyType key);
-
-  uint64_t OffsetOf(DKVStoreRDMA::KeyType key);
-
   ::size_t PollForCookies(::size_t current, ::size_t at_least, BatchTimer &timer);
 
   void post_batches(const std::vector<std::vector<PostDescriptor<ValueType>>> &post_descriptor,
@@ -337,6 +337,7 @@ class DKVStoreRDMA : public DKVStoreInterface {
  private:
   ::size_t num_servers_;
   ::size_t my_rank_;
+  ::size_t keys_per_host_;
   
   DEVICE res_;
   std::vector<rdma_peer> peer_;
