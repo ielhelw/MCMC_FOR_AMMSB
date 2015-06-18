@@ -354,7 +354,8 @@ public:
 		// In an OpenMP program: no need for thread support
 		int required;
 		int provided;
-		required = MPI_THREAD_MULTIPLE;
+		// required = MPI_THREAD_MULTIPLE;
+		required = MPI_THREAD_SINGLE;
 		r = MPI_Init_thread(NULL, NULL, required, &provided);
 		mpi_error_test(r, "MPI_Init_thread fails");
 		if (provided < required) {
@@ -901,7 +902,7 @@ protected:
 			mpi_error_test(r, "MPI_Scatterv of work tuples fails at worker");
 		}
 
-		if (true) {
+		if (false) {
 			std::cerr << "Master gives me work items [" << num_my_work_items_ << "] ";
 			for (auto n : my_work_item_) {
 				std::cerr << n << " ";
