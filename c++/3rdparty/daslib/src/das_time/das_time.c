@@ -5,6 +5,7 @@
  */
  
 #include <stdio.h>
+#include <unistd.h>
 
 #include "das_time.h"
 
@@ -18,6 +19,7 @@ static double das_time_host_mhz = HOST_MHZ_DEFAULT * MEGA;
 void
 das_time_init(int *argc, char **argv)
 {
+#if 0
 #if defined(__linux)
     /* code borrowed from Panda 4.0 */
 #   define LINE_SIZE       512
@@ -54,6 +56,16 @@ das_time_init(int *argc, char **argv)
     das_time_host_mhz *= MEGA;
 #else
 #  error "OS not supported"
+#endif
+#else
+    int64_t t_start;
+    int64_t t_stop;
+
+    DAS_TIME_RDTSC(&t_start);
+    usleep(5000);
+    DAS_TIME_RDTSC(&t_stop);
+    das_time_host_mhz = MEGA * (t_stop - t_start) / 5000.0;
+    fprintf(stdout, "CPU speed %.2lfMHz\n", das_time_host_mhz);
 #endif
 }
 

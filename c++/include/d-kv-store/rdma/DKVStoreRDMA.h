@@ -30,7 +30,7 @@
 #include <mcmc/timer.h>
 #include <mr/timer.h>
 
-#ifdef ENABLE_DISTRIBUTED
+#if 0 && defined ENABLE_DISTRIBUTED
 #  define USE_MPI
 #endif
 
