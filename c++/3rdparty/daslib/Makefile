@@ -87,6 +87,9 @@ object_dirs	+= $(addprefix $(DASLIB)/lib/$(ARCH)/objects/, $(MODULES))
 		@# $(DEP) $(CPPFLAGS) $< | sed 's/$*\.o/& $@/g' > $@
 		$(SHELL) -ec '$(DEP) $(CPPFLAGS) $< | sed '\''s/$*\.o/& $@/g'\'' > $@'
 
+.PHONY: default all
+default: all
+
 all:		$(MODULES)
 
 # Make each module by recursive make with the module's Makefile

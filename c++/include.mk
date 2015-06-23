@@ -257,6 +257,7 @@ ALWAYS:
 distclean: clean ALWAYS
 	-rm -f config.cache Makefile.config
 	-rm -f OpenCLInclude/generated/{emit.h,memcpy.h}
+	$(MAKE) $(MFLAGS) -C 3rdparty $@
 
 depends: $(DEPENDS)
 

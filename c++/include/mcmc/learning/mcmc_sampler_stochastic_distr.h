@@ -1,12 +1,15 @@
 #ifndef MCMC_LEARNING_MCMC_SAMPLER_STOCHASTIC_DISTR_H__
 #define MCMC_LEARNING_MCMC_SAMPLER_STOCHASTIC_DISTR_H__
 
+#include <cinttypes>
 #include <cmath>
 
 #include <utility>
 #include <numeric>
 #include <algorithm>	// min, max
 #include <chrono>
+
+#include <mcmc/exception.h>
 
 #ifdef ENABLE_OPENMP
 #  include <omp.h>
@@ -258,6 +261,11 @@ public:
 		t_purge_pi_perp         = Timer("      purge perplexity pi");
 		t_barrier_pi            = Timer("    barrier to update pi");
 		t_update_beta           = Timer("    update_beta");
+		t_beta_zero             = Timer("      zero beta grads");
+		t_beta_rank             = Timer("      rank minibatch nodes");
+		t_beta_calc_grads       = Timer("      beta calc grads");
+		t_beta_sum_grads        = Timer("      beta sum grads");
+		t_beta_update_theta     = Timer("      update theta");
 		t_load_pi_beta          = Timer("      load pi update_beta");
 		t_broadcast_beta        = Timer("      broadcast beta");
 		t_perplexity            = Timer("  perplexity");
@@ -272,6 +280,10 @@ public:
 	virtual ~MCMCSamplerStochasticDistributed() {
 		// std::cerr << "FIXME: close off d-kv-store" << std::endl;
 		delete d_kv_store;
+
+		for (auto &p : pi_update_) {
+			delete[] p;
+		}
 
 		for (auto r : threadRandom) {
 			delete r;
@@ -298,10 +310,15 @@ public:
 
 		DKV::TYPE::DKV_TYPE dkv_type = DKV::TYPE::FILE;
 
+		max_minibatch_chunk = 0;
 		const std::vector<std::string> &a = args.getRemains();
 		std::vector<std::string> dkv_args;
 		for (::size_t i = 0; i < a.size(); i++) {
 			if (false) {
+			} else if (i < a.size() - 1 &&
+					   	(a[i] == "--mcmc:mini-batch-chunk" || a[i] == "-M")) {
+				i++;
+				max_minibatch_chunk = parse_size_t(a[i]);
 			} else if (i < a.size() - 1 && a[i] == "--dkv:type") {
 				i++;
 				if (false) {
@@ -331,7 +348,7 @@ public:
 				dkv_args.push_back(a[i]);
 			}
 		}
-                dkv_args.push_back("rdma:mpi-initialized");
+		dkv_args.push_back("rdma:mpi-initialized");
 
 		// d_kv_store = new DKV::DKVRamCloud::DKVStoreRamCloud();
 		switch (dkv_type) {
@@ -350,10 +367,32 @@ public:
 #endif
 		}
 
+		if (max_minibatch_chunk == 0) {
+			std::ifstream meminfo("/proc/meminfo");
+			int64_t mem_total = -1;
+			while (meminfo.good()) {
+				char buffer[256];
+				char *colon;
+
+				meminfo.getline(buffer, sizeof buffer);
+				if (strncmp("MemTotal", buffer, 8) == 0 && (colon = strchr(buffer, ':')) != 0) {
+					if (sscanf(colon + 2, "%" SCNd64, &mem_total) != 1) {
+						throw NumberFormatException("MemTotal must be a longlong");
+					}
+					break;
+				}
+			}
+			if (mem_total == -1) {
+				throw InvalidArgumentException("/proc/meminfo has no line for MemTotal");
+			}
+			::size_t pi_total = mem_total / ((K + 1) * sizeof(double));
+			max_minibatch_chunk = pi_total / 32;
+		}
+
 		max_minibatch_nodes = network.minibatch_nodes_for_strategy(mini_batch_size, strategy);
-        ::size_t max_my_minibatch_nodes = (max_minibatch_nodes + mpi_size - 1) / mpi_size;
-		max_minibatch_neighbors = max_my_minibatch_nodes * real_num_node_sample();
-		std::cerr << "minibatch size param " << mini_batch_size << " max " << max_minibatch_nodes << " #neighbors(total) " << max_minibatch_neighbors << std::endl;
+        ::size_t max_my_minibatch_nodes = (std::min(max_minibatch_chunk, max_minibatch_nodes) + mpi_size - 1) / mpi_size;
+		::size_t max_minibatch_neighbors = max_my_minibatch_nodes * real_num_node_sample();
+		std::cerr << "minibatch size param " << mini_batch_size << " max " << max_minibatch_nodes << " chunk " << max_minibatch_chunk << " #neighbors(total) " << max_minibatch_neighbors << std::endl;
 
 		d_kv_store->Init(K + 1,
 						 N,
@@ -402,6 +441,15 @@ public:
 		}
 #endif
 
+		pi_update_.resize(max_minibatch_nodes);
+		for (auto &p : pi_update_) {
+			p = new double[K + 1];
+		}
+		grads_beta_.resize(omp_get_max_threads());
+		for (auto &g : grads_beta_) {
+			g = std::vector<std::vector<double> >(K, std::vector<double>(2));    // gradients K*2 dimension
+		}
+
         std::cerr << "Random seed " << std::hex << "0x" << kernelRandom->seed(0) << ",0x" << kernelRandom->seed(1) << std::endl << std::dec;
 		std::cerr << "Done constructor" << std::endl;
 	}
@@ -411,7 +459,7 @@ public:
 
         using namespace std::chrono;
 
-		std::vector<int32_t> flat_neighbors(max_minibatch_nodes * real_num_node_sample());
+		std::vector<int32_t> flat_neighbors(max_minibatch_chunk * real_num_node_sample());
 		std::vector<std::vector<double>> phi_node(max_minibatch_nodes, std::vector<double>(K + 1));
 		std::vector<double *> pi_node;
 		std::vector<double *> pi_neighbor(max_minibatch_nodes * real_num_node_sample());
@@ -437,88 +485,100 @@ public:
 			t_broadcast_beta.stop();
 
 			t_deploy_minibatch.start();
-			std::vector<int32_t> nodes_vector;
-			EdgeSample edgeSample = deploy_mini_batch(&nodes_vector);
+			// edgeSample is nonempty only at the master
+			// assigns nodes_
+			EdgeSample edgeSample = deploy_mini_batch();
 			t_deploy_minibatch.stop();
 
-			// ************ load minibatch node pi from D-KV store **************
-            t_load_pi_minibatch.start();
-			pi_node.resize(nodes_vector.size());
-            d_kv_store->ReadKVRecords(pi_node, nodes_vector, DKV::RW_MODE::READ_ONLY);
-            t_load_pi_minibatch.stop();
-
-			// ************ do in parallel at each host
-			// std::cerr << "Sample neighbor nodes" << std::endl;
-			// FIXME: nodes_in_batch should generate a vector, not an OrderedVertexSet
-			t_sample_neighbor_nodes.start();
-			pi_neighbor.resize(nodes_vector.size() * real_num_node_sample());
-			flat_neighbors.resize(nodes_vector.size() * real_num_node_sample());
-#pragma omp parallel for // num_threads (12)
-			for (::size_t i = 0; i < nodes_vector.size(); ++i) {
-				int node = nodes_vector[i];
-				// sample a mini-batch of neighbors
-				NeighborSet neighbors = sample_neighbor_nodes(num_node_sample, node,
-															  threadRandom[omp_get_thread_num()]);
-				assert(neighbors.size() == real_num_node_sample());
-#if 1
-				// Cannot use flat_neighbors.insert() because it may (concurrently)
-				// attempt to resize flat_neighbors.
-				::size_t j = i * real_num_node_sample();
-				for (auto n : neighbors) {
-					memcpy(flat_neighbors.data() + j, &n, sizeof n);
-					j++;
+			for (::size_t chunk_start = 0;
+				 	chunk_start < nodes_.size();
+					chunk_start += max_minibatch_chunk) {
+				::size_t chunk = max_minibatch_chunk;
+				if (chunk_start + chunk > nodes_.size()) {
+					chunk = nodes_.size() - chunk_start;
 				}
-#else
-				flat_neighbors.insert(flat_neighbors.begin() + i * real_num_node_sample(),
-									  neighbors.begin(), neighbors.end());
-#endif
-				assert(flat_neighbors.size() >= nodes_vector.size() * real_num_node_sample());
-			}
-			t_sample_neighbor_nodes.stop();
-			// Why: ?????
-			// flat_neighbors.resize(nodes_vector.size() * real_num_node_sample());
-			assert(flat_neighbors.size() == nodes_vector.size() * real_num_node_sample());
+				std::vector<int32_t> chunk_nodes(nodes_.begin() + chunk_start,
+												 nodes_.begin() + chunk_start + chunk);
+				// ************ load minibatch node pi from D-KV store **************
+				t_load_pi_minibatch.start();
+				pi_node.resize(chunk_nodes.size());
+				d_kv_store->ReadKVRecords(pi_node, chunk_nodes, DKV::RW_MODE::READ_ONLY);
+				t_load_pi_minibatch.stop();
 
-			t_update_phi_pi.start();
-			// ************ load neighor pi from D-KV store **********
-			t_load_pi_neighbor.start();
-			d_kv_store->ReadKVRecords(pi_neighbor,
-									  flat_neighbors,
-									  DKV::RW_MODE::READ_ONLY);
-			t_load_pi_neighbor.stop();
-
-			double eps_t  = a * std::pow(1 + step_count / b, -c);	// step size
-			// double eps_t = std::pow(1024+step_count, -0.5);
-
-			t_update_phi.start();
+				// ************ do in parallel at each host
+				// std::cerr << "Sample neighbor nodes" << std::endl;
+				// FIXME: nodes_in_batch should generate a vector, not an OrderedVertexSet
+				t_sample_neighbor_nodes.start();
+				pi_neighbor.resize(chunk_nodes.size() * real_num_node_sample());
+				flat_neighbors.resize(chunk_nodes.size() * real_num_node_sample());
 #pragma omp parallel for // num_threads (12)
-			for (::size_t i = 0; i < nodes_vector.size(); ++i) {
-				int node = nodes_vector[i];
-                // std::cerr << "Random seed " << std::hex << "0x" << kernelRandom->seed(0) << ",0x" << kernelRandom->seed(1) << std::endl << std::dec;
-				update_phi(&phi_node[i], node, pi_node[i],
-						   flat_neighbors.begin() + i * real_num_node_sample(),
-						   pi_neighbor.begin() + i * real_num_node_sample(),
-						   eps_t, threadRandom[omp_get_thread_num()]);
+				for (::size_t i = 0; i < chunk_nodes.size(); ++i) {
+					int node = chunk_nodes[i];
+					// sample a mini-batch of neighbors
+					NeighborSet neighbors = sample_neighbor_nodes(num_node_sample, node,
+																  threadRandom[omp_get_thread_num()]);
+					assert(neighbors.size() == real_num_node_sample());
+#if 1
+					// Cannot use flat_neighbors.insert() because it may (concurrently)
+					// attempt to resize flat_neighbors.
+					::size_t j = i * real_num_node_sample();
+					for (auto n : neighbors) {
+						memcpy(flat_neighbors.data() + j, &n, sizeof n);
+						j++;
+					}
+#else
+					flat_neighbors.insert(flat_neighbors.begin() + i * real_num_node_sample(),
+										  neighbors.begin(), neighbors.end());
+#endif
+					assert(flat_neighbors.size() >= chunk_nodes.size() * real_num_node_sample());
+				}
+				t_sample_neighbor_nodes.stop();
+				// Why: ?????
+				// flat_neighbors.resize(chunk_nodes.size() * real_num_node_sample());
+				assert(flat_neighbors.size() == chunk_nodes.size() * real_num_node_sample());
+
+				// t_update_phi_pi.start();
+				// ************ load neighor pi from D-KV store **********
+				t_load_pi_neighbor.start();
+				d_kv_store->ReadKVRecords(pi_neighbor,
+										  flat_neighbors,
+										  DKV::RW_MODE::READ_ONLY);
+				t_load_pi_neighbor.stop();
+
+				double eps_t  = a * std::pow(1 + step_count / b, -c);	// step size
+				// double eps_t = std::pow(1024+step_count, -0.5);
+
+				t_update_phi.start();
+#pragma omp parallel for // num_threads (12)
+				for (::size_t i = 0; i < chunk_nodes.size(); ++i) {
+					int node = chunk_nodes[i];
+					// std::cerr << "Random seed " << std::hex << "0x" << kernelRandom->seed(0) << ",0x" << kernelRandom->seed(1) << std::endl << std::dec;
+					update_phi(node, pi_node[i],
+							   flat_neighbors.begin() + i * real_num_node_sample(),
+							   pi_neighbor.begin() + i * real_num_node_sample(),
+							   eps_t, threadRandom[omp_get_thread_num()],
+							   &phi_node[chunk_start + i]);
+				}
+				t_update_phi.stop();
 			}
-			t_update_phi.stop();
 
 			// all synchronize with barrier: ensure we read pi/phi_sum from current iteration
 			t_barrier_phi.start();
 			r = MPI_Barrier(MPI_COMM_WORLD);
 			mpi_error_test(r, "MPI_Barrier(post phi) fails");
 			t_barrier_phi.stop();
-			t_update_phi_pi.stop();
+			// t_update_phi_pi.stop();
 
 			// TODO calculate and store updated values for pi/phi_sum
 			t_update_pi.start();
 #pragma omp parallel for // num_threads (12)
-			for (::size_t i = 0; i < pi_node.size(); i++) {
-				pi_from_phi(pi_node[i], phi_node[i]);
+			for (::size_t i = 0; i < nodes_.size(); i++) {
+				pi_from_phi(pi_update_[i], phi_node[i]);
 			}
 			t_update_pi.stop();
 			// std::cerr << "write back phi/pi after update" << std::endl;
 			t_store_pi_minibatch.start();
-			d_kv_store->WriteKVRecords(nodes_vector, constify(pi_node));
+			d_kv_store->WriteKVRecords(nodes_, constify(pi_update_));
 			t_store_pi_minibatch.stop();
 			d_kv_store->PurgeKVRecords();
 
@@ -565,7 +625,12 @@ public:
 		std::cout << t_purge_pi_perp << std::endl;
 		std::cout << t_barrier_pi << std::endl;
 		std::cout << t_update_beta << std::endl;
+		std::cout << t_beta_zero << std::endl;
+		std::cout << t_beta_rank << std::endl;
 		std::cout << t_load_pi_beta << std::endl;
+		std::cout << t_beta_calc_grads << std::endl;
+		std::cout << t_beta_sum_grads << std::endl;
+		std::cout << t_beta_update_theta << std::endl;
 		std::cout << t_broadcast_beta << std::endl;
 		std::cout << t_perplexity << std::endl;
 		std::cout << t_load_pi_perp << std::endl;
@@ -735,7 +800,7 @@ protected:
 	}
 
 
-	EdgeSample deploy_mini_batch(std::vector<int32_t> *nodes_vector) {
+	EdgeSample deploy_mini_batch() {
 		std::vector<int32_t> minibatch_chunk(mpi_size);	// used only at Master	FIXME: lift to class
 		std::vector<int32_t> scatter_minibatch;			// used only at Master	FIXME: lift to class
 		std::vector<int32_t> scatter_displs(mpi_size);	// used only at Master	FIXME: lift to class
@@ -815,7 +880,7 @@ protected:
 						&my_minibatch_size, 1, MPI_INT,
 						mpi_master, MPI_COMM_WORLD);
 		mpi_error_test(r, "MPI_Scatter of minibatch chunks fails");
-		nodes_vector->resize(my_minibatch_size);
+		nodes_.resize(my_minibatch_size);
 
 		if (mpi_rank == mpi_master) {
 			// TODO Master scatters the minibatch nodes over the workers,
@@ -824,7 +889,7 @@ protected:
 							 minibatch_chunk.data(),
 							 scatter_displs.data(),
 							 MPI_INT,
-							 nodes_vector->data(),
+							 nodes_.data(),
 							 my_minibatch_size,
 							 MPI_INT,
 							 mpi_master,
@@ -833,13 +898,13 @@ protected:
 
 		} else {
 			r = MPI_Scatterv(NULL, NULL, NULL, MPI_INT,
-							 nodes_vector->data(), my_minibatch_size, MPI_INT,
+							 nodes_.data(), my_minibatch_size, MPI_INT,
 							 mpi_master, MPI_COMM_WORLD);
 			mpi_error_test(r, "MPI_Scatterv of minibatch fails");
 		}
 
 		std::cerr << "Master gives me minibatch nodes[" << my_minibatch_size << "] ";
-		for (auto n : *nodes_vector) {
+		for (auto n : nodes_) {
 			std::cerr << n << " ";
 		}
 		std::cerr << std::endl;
@@ -848,11 +913,12 @@ protected:
 	}
 
 
-    void update_phi(std::vector<double> *phi_node,	// out parameter
-					int i, const double *pi_node,
+    void update_phi(int i, const double *pi_node,
 					const std::vector<int32_t>::iterator &neighbors,
 					const std::vector<double *>::iterator &pi,
-                    double eps_t, Random::Random *rnd) {
+                    double eps_t, Random::Random *rnd,
+					std::vector<double> *phi_node	// out parameter
+					) {
 		if (false) {
 			std::cerr << "update_phi pre ";
 			std::cerr << "phi[" << i << "] ";
@@ -952,11 +1018,20 @@ protected:
 
     void update_beta(const OrderedEdgeSet &mini_batch, double scale) {
 
-		std::vector<std::vector<std::vector<double> > > grads(omp_get_max_threads(), std::vector<std::vector<double> >(K, std::vector<double>(2, 0.0)));    // gradients K*2 dimension
+		t_beta_zero.start();
+#pragma omp parallel for
+		for (int i = 0; i < omp_get_max_threads(); ++i) {
+			for (::size_t k = 0; k < K; ++k) {
+				grads_beta_[i][k][0] = 0.0;
+				grads_beta_[i][k][1] = 0.0;
+			}
+		}
         // sums = np.sum(self.__theta,1)
 		std::vector<double> theta_sum(theta.size());
 		std::transform(theta.begin(), theta.end(), theta_sum.begin(), np::sum<double>);
+		t_beta_zero.stop();
 
+		t_beta_rank.start();
         // FIXME: already did the nodes_in_batch() -- only the ranking remains
 		std::unordered_map<int, int> node_rank;
 		std::vector<int> nodes;
@@ -975,8 +1050,10 @@ protected:
 			}
 			assert(node_rank.size() == nodes.size());
 		}
-		std::vector<double *> pi(node_rank.size());
+		t_beta_rank.stop();
+
 		t_load_pi_beta.start();
+		std::vector<double *> pi(node_rank.size());
 		d_kv_store->ReadKVRecords(pi, nodes, DKV::RW_MODE::READ_ONLY);
 		t_load_pi_beta.stop();
 
@@ -984,6 +1061,7 @@ protected:
 		double eps_t = a * std::pow(1.0 + step_count / b, -c);
 		//double eps_t = std::pow(1024+step_count, -0.5);
 		// for (auto edge = mini_batch.begin(); edge != mini_batch.end(); edge++) {
+		t_beta_calc_grads.start();
         std::vector<Edge> v_mini_batch(mini_batch.begin(), mini_batch.end());
 #pragma omp parallel for // num_threads (12)
         for (::size_t e = 0; e < v_mini_batch.size(); e++) {
@@ -1014,28 +1092,33 @@ protected:
 			for (::size_t k = 0; k < K; k++) {
 				double f = probs[k] / prob_sum;
 				double one_over_theta_sum = 1.0 / theta_sum[k];
-				grads[omp_get_thread_num()][k][0] += f * ((1 - y) / theta[k][0] - one_over_theta_sum);
-				grads[omp_get_thread_num()][k][1] += f * (y / theta[k][1] - one_over_theta_sum);
+				grads_beta_[omp_get_thread_num()][k][0] += f * ((1 - y) / theta[k][0] - one_over_theta_sum);
+				grads_beta_[omp_get_thread_num()][k][1] += f * (y / theta[k][1] - one_over_theta_sum);
 			}
 		}
+		t_beta_calc_grads.stop();
 
+		t_beta_sum_grads.start();
 #pragma omp parallel for
 		for (::size_t k = 0; k < K; k++) {
 			for (int i = 1; i < omp_get_max_threads(); i++) {
-				grads[0][k][0] += grads[i][k][0];
-				grads[0][k][1] += grads[i][k][1];
+				grads_beta_[0][k][0] += grads_beta_[i][k][0];
+				grads_beta_[0][k][1] += grads_beta_[i][k][1];
 			}
 		}
+		t_beta_sum_grads.stop();
 
+		t_beta_update_theta.start();
 		// update theta
 		std::vector<std::vector<double> > noise = kernelRandom->randn(K, 2);	// random noise.
 		// std::vector<std::vector<double> > theta_star(theta);
+#pragma omp parallel for
 		for (::size_t k = 0; k < K; k++) {
 			for (::size_t i = 0; i < 2; i++) {
 				double f = std::sqrt(eps_t * theta[k][i]);
 				theta[k][i] = std::abs(theta[k][i] +
 									   eps_t / 2.0 * (eta[i] - theta[k][i] +
-													  scale * grads[0][k][i]) +
+													  scale * grads_beta_[0][k][i]) +
 									   f * noise[k][i]);
 			}
 		}
@@ -1047,6 +1130,7 @@ protected:
 		std::transform(temp.begin(), temp.end(), beta.begin(), np::SelectColumn<double>(1));
 
 		d_kv_store->PurgeKVRecords();
+		t_beta_update_theta.stop();
 
         if (false) {
           for (auto n : noise) {
@@ -1203,7 +1287,10 @@ protected:
 
 protected:
 	::size_t	max_minibatch_nodes;
-	::size_t	max_minibatch_neighbors;
+	::size_t	max_minibatch_chunk;
+	std::vector<int32_t> nodes_;		// my minibatch nodes
+	std::vector<double *> pi_update_;
+	std::vector<std::vector<std::vector<double> > > grads_beta_;    // gradients K*2 dimension
 
 	const int mpi_master;
 	int		mpi_size;
@@ -1226,18 +1313,23 @@ protected:
 	Timer t_sample_neighbor_nodes;
 	Timer t_update_phi_pi;
 	Timer t_update_phi;
-	Timer t_update_pi;
-	Timer t_update_beta;
-	Timer t_load_pi_beta;
 	Timer t_load_pi_minibatch;
 	Timer t_load_pi_neighbor;
+   	Timer t_barrier_phi;
+	Timer t_update_pi;
+	Timer t_barrier_pi;
+	Timer t_update_beta;
+	Timer t_beta_zero;
+	Timer t_beta_rank;
+	Timer t_load_pi_beta;
+	Timer t_beta_calc_grads;
+	Timer t_beta_sum_grads;
+	Timer t_beta_update_theta;
 	Timer t_load_pi_perp;
 	Timer t_store_pi_minibatch;
 	Timer t_purge_pi_perp;
 	Timer t_broadcast_beta;
 	Timer t_deploy_minibatch;
-   	Timer t_barrier_phi;
-	Timer t_barrier_pi;
 
 	clock_t	t_start;
 	std::vector<double> timings;
