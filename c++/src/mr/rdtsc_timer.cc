@@ -32,7 +32,7 @@ double Timer::get_CPU_speed_in_MHz()
 #endif
 			char host[HOST_NAME_MAX];
 			(void)gethostname(host, HOST_NAME_MAX);
-			std::cout << host << ": CPU speed " << atof(colon + 2) << "MHz" << std::endl;
+			std::cerr << host << ": CPU speed " << atof(colon + 2) << "MHz" << std::endl;
 			return atof(colon + 2);
 		}
 	}
@@ -47,7 +47,7 @@ double Timer::get_CPU_speed_in_MHz()
 	usleep(5000);
 	rdtsc(&t_stop);
 	double dt = (t_stop - t_start) / 5000.0;
-	std::cout << "CPU speed " << dt << "MHz" << std::endl;
+	std::cerr << "CPU speed " << dt << "MHz" << std::endl;
 	return dt;
 #endif
 }
