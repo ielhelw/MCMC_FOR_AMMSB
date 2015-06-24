@@ -15,6 +15,9 @@
 #include <fstream>
 #include <chrono>
 
+#include <boost/iostreams/filtering_streambuf.hpp>
+#include <boost/iostreams/filter/gzip.hpp>
+
 #include "mcmc/data.h"
 #include "mcmc/preprocess/dataset.h"
 
@@ -28,8 +31,10 @@ namespace preprocess {
  */
 class Relativity : public DataSet {
 public:
-	Relativity(const std::string &filename, bool contiguous = false)
-			: DataSet(filename == "" ? "datasets/CA-GrQc.txt" : filename, contiguous) {
+	Relativity(const std::string &filename, bool compressed = false,
+			   bool contiguous = false)
+			: DataSet(filename == "" ? "datasets/CA-GrQc.txt" : filename,
+					  compressed, contiguous) {
 	}
 
 	virtual ~Relativity() {
@@ -52,21 +57,34 @@ public:
 	 * the node ID first.
 	 */
 	virtual const Data *process() {
-using namespace std::chrono;
-auto start = system_clock::now();
+		using namespace std::chrono;
+		auto start = system_clock::now();
 
-		std::ifstream infile(filename);
+		std::ios_base::openmode mode = std::ios_base::in;
+		if (compressed) {
+			mode |= std::ios_base::binary;
+		}
+		std::ifstream infile(filename, mode);
 		if (! infile) {
 			throw mcmc::IOException("Cannot open " + filename);
 		}
 
-std::cerr << duration_cast<milliseconds>((system_clock::now() - start)).count() << "ms open file" << std::endl;
-		std::string line;
-		for (int i = 0; i < 4; i++) {
-			std::getline(infile, line);
+		std::cerr << duration_cast<milliseconds>((system_clock::now() - start)).count() << "ms open file" << std::endl;
+
+		boost::iostreams::filtering_streambuf<boost::iostreams::input> inbuf;
+
+		if (compressed) {
+			inbuf.push(boost::iostreams::gzip_decompressor());
 		}
+		inbuf.push(infile);
+		std::istream instream(&inbuf);
+
+		std::string line;
 
 		// start from the 5th line.
+		for (int i = 0; i < 4; i++) {
+			std::getline(instream, line);
+		}
 
 		mcmc::EdgeSet *E = new mcmc::EdgeSet();	// store all pair of edges.
 		::size_t N;
@@ -74,7 +92,7 @@ std::cerr << duration_cast<milliseconds>((system_clock::now() - start)).count() 
 		if (contiguous) {
 			int max = -1;
 			std::unordered_set<int> vertex;
-			while (std::getline(infile, line)) {
+			while (std::getline(instream, line)) {
 				int a;
 				int b;
 				std::istringstream iss(line);
@@ -100,7 +118,9 @@ std::cerr << duration_cast<milliseconds>((system_clock::now() - start)).count() 
 		} else {
 			std::set<int> vertex;	// ordered set
 			std::vector<mcmc::Edge> edge;
-			while (std::getline(infile, line)) {
+			int max = std::numeric_limits<int>::min();
+			int min = std::numeric_limits<int>::max();
+			while (std::getline(instream, line)) {
 				int a;
 				int b;
 				std::istringstream iss(line);
@@ -110,8 +130,13 @@ std::cerr << duration_cast<milliseconds>((system_clock::now() - start)).count() 
 				vertex.insert(a);
 				vertex.insert(b);
 				edge.push_back(Edge(a, b));
+				max = std::max(max, a);
+				min = std::min(min, b);
 			}
 			std::cerr << duration_cast<milliseconds>((system_clock::now() - start)).count() << "ms read ordered set" << std::endl;
+			std::cerr << "#nodes " << vertex.size() <<
+				" min " << min << " max " << max <<
+			   	" #vertices " << edge.size() << std::endl;
 
 			std::vector<int> nodelist(vertex.begin(), vertex.end()); // use range constructor, retain order
 
@@ -136,6 +161,8 @@ std::cerr << duration_cast<milliseconds>((system_clock::now() - start)).count() 
 			}
 			std::cerr << duration_cast<milliseconds>((system_clock::now() - start)).count() << "ms create EdgeSet" << std::endl;
 		}
+
+		infile.close();
 
 		return new Data(NULL, E, N);
 	}

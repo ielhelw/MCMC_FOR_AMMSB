@@ -246,7 +246,8 @@ public:
 
 			("input:file,f", po::value<std::string>(&filename)->default_value(""), "input file")
 			("input:class,c", po::value<std::string>(&dataset_class)->default_value("netscience"), "input class")
-			("input:contiguous,C", po::value<bool>(&contiguous)->default_value(false), "contiguous input data")
+			("input:contiguous,C", po::bool_switch(&contiguous)->default_value(false), "contiguous input data")
+			("input:compressed,z", po::bool_switch(&compressed)->default_value(false), "compressed input data")
 
 #ifdef ENABLE_OPENCL
 			("cl:platform,p", po::value<std::string>(&openClPlatform), "OpenCL platform")
@@ -313,6 +314,7 @@ public:
 	std::string filename;
 	std::string dataset_class;
 	bool		contiguous;
+	bool		compressed;
 
 #ifdef ENABLE_OPENCL
 	std::string	openClPlatform;

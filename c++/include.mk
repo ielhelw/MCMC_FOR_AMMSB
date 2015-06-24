@@ -153,6 +153,7 @@ endif
 LIB_LDLIBS	+= -lboost_system$(BOOST_SUFFIX)
 LIB_LDLIBS	+= -lboost_filesystem$(BOOST_SUFFIX)
 LIB_LDLIBS	+= -lboost_program_options$(BOOST_SUFFIX)
+LIB_LDLIBS	+= -lboost_iostreams$(BOOST_SUFFIX)
 ifeq (1, $(CONFIG_RDMA))
 ifneq (1, $(CONFIG_NETWORKING))
 LIB_LDLIBS	+= -lboost_thread$(BOOST_SUFFIX)

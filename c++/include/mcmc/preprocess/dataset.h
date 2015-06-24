@@ -26,8 +26,9 @@ namespace preprocess {
  */
 class DataSet {
 public:
-	DataSet(const std::string &filename, bool contiguous = false)
-			: filename(filename), contiguous(contiguous) {
+	DataSet(const std::string &filename, bool compressed = false,
+			bool contiguous = false)
+			: filename(filename), compressed(compressed), contiguous(contiguous) {
 		std::cerr << "Handle input dataset from file " << filename << std::endl;
 	}
 
@@ -46,6 +47,7 @@ public:
 
 protected:
 	std::string filename;
+	bool compressed;
 	bool contiguous;
 };
 

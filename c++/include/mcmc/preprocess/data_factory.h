@@ -12,8 +12,10 @@ namespace preprocess {
 
 class DataFactory {
 public:
-	DataFactory(const std::string &dataset_name, const std::string &filename = "", bool contiguous = false)
-   			: dataset_name(dataset_name), filename(filename), contiguous(contiguous) {
+	DataFactory(const std::string &dataset_name, const std::string &filename = "",
+			   	bool compressed = false, bool contiguous = false)
+   			: dataset_name(dataset_name), filename(filename),
+			  compressed(compressed), contiguous(contiguous) {
 	}
 
 	virtual ~DataFactory() {
@@ -25,19 +27,19 @@ public:
 		DataSet *dataObj = NULL;
 		if (false) {
 		} else if (dataset_name == "netscience") {
-			dataObj = new NetScience(filename, contiguous);
+			dataObj = new NetScience(filename, compressed, contiguous);
 		} else if (dataset_name == "relativity") {
-			dataObj = new Relativity(filename, contiguous);
+			dataObj = new Relativity(filename, compressed, contiguous);
 		} else if (dataset_name == "rc") {
 			dataObj = new Relativity(filename, true);
 		} else if (dataset_name == "hep_ph") {
-			// dataObj = new HepPH(filename, contiguous);
+			// dataObj = new HepPH(filename, compressed, contiguous);
 		} else if (dataset_name == "astro_ph") {
-			// dataObj = new AstroPH(filename, contiguous);
+			// dataObj = new AstroPH(filename, compressed, contiguous);
 		} else if (dataset_name == "condmat") {
-			// dataObj = new CondMat(filename, contiguous);
+			// dataObj = new CondMat(filename, compressed, contiguous);
 		} else if (dataset_name == "hep_th") {
-			// dataObj = new HepTH(filename, contiguous);
+			// dataObj = new HepTH(filename, compressed, contiguous);
 		} else {
 			throw MCMCException("Unknown dataset name \"" + dataset_name + "\"");
 		}
@@ -48,6 +50,7 @@ public:
 protected:
 	std::string dataset_name;
 	std::string filename;
+	bool		compressed;
 	bool		contiguous;
 };
 
