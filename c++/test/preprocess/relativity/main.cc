@@ -4,15 +4,31 @@ using namespace mcmc;
 using namespace mcmc::preprocess;
 
 int main(int argc, char *argv[]) {
+	bool quiet;
+	::size_t progress;
 
-  mcmc::Options options(argc, argv);
+	boost::program_options::options_description options;
+	options.add_options()
+		("quiet,q",
+		 po::bool_switch(&quiet)->default_value(false),
+		 "quiet: no dump of data")
+		("progress,p",
+		 po::value<::size_t>(&progress)->default_value(0),
+		 "progress: show progress every <progress> lines")
+		;
 
-  DataFactory df("relativity", options.filename,
-				 options.compressed, options.contiguous);
+  mcmc::Options mcmc_options(argc, argv, &options);
+
+  DataFactory df(mcmc_options.dataset_class, mcmc_options.filename);
+  df.setCompressed(mcmc_options.compressed);
+  df.setContiguous(mcmc_options.contiguous);
+  df.setProgress(progress);
 
   const Data *data = df.get_data();
-  data->dump_data();
-  delete const_cast<Data *>(data);
+  if (! quiet) {
+	  data->dump_data();
+  }
+  df.deleteData(data);
 
   return 0;
 }

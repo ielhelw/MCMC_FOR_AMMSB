@@ -12,6 +12,7 @@
 #ifndef MCMC_PREPROCESS_RELATIVITY_H__
 #define MCMC_PREPROCESS_RELATIVITY_H__
 
+#include <unordered_set>
 #include <fstream>
 #include <chrono>
 
@@ -31,10 +32,8 @@ namespace preprocess {
  */
 class Relativity : public DataSet {
 public:
-	Relativity(const std::string &filename, bool compressed = false,
-			   bool contiguous = false)
-			: DataSet(filename == "" ? "datasets/CA-GrQc.txt" : filename,
-					  compressed, contiguous) {
+	Relativity(const std::string &filename)
+			: DataSet(filename == "" ? "datasets/CA-GrQc.txt" : filename) {
 	}
 
 	virtual ~Relativity() {
@@ -61,19 +60,19 @@ public:
 		auto start = system_clock::now();
 
 		std::ios_base::openmode mode = std::ios_base::in;
-		if (compressed) {
+		if (compressed_) {
 			mode |= std::ios_base::binary;
 		}
-		std::ifstream infile(filename, mode);
+		std::ifstream infile(filename_, mode);
 		if (! infile) {
-			throw mcmc::IOException("Cannot open " + filename);
+			throw mcmc::IOException("Cannot open " + filename_);
 		}
 
 		std::cerr << duration_cast<milliseconds>((system_clock::now() - start)).count() << "ms open file" << std::endl;
 
 		boost::iostreams::filtering_streambuf<boost::iostreams::input> inbuf;
 
-		if (compressed) {
+		if (compressed_) {
 			inbuf.push(boost::iostreams::gzip_decompressor());
 		}
 		inbuf.push(infile);
@@ -89,9 +88,10 @@ public:
 		mcmc::EdgeSet *E = new mcmc::EdgeSet();	// store all pair of edges.
 		::size_t N;
 
-		if (contiguous) {
+		if (contiguous_) {
 			int max = -1;
 			std::unordered_set<int> vertex;
+			::size_t count = 0;
 			while (std::getline(instream, line)) {
 				int a;
 				int b;
@@ -105,7 +105,12 @@ public:
 				vertex.insert(b);
 				max = std::max(a, max);
 				max = std::max(b, max);
-				E->insert(Edge(std::min(a, b), std::max(a, b)));
+				Edge e(std::min(a, b), std::max(a, b));
+				e.insertMe(E);
+				count++;
+				if (count % progress_ == 0) {
+					std::cerr << "Read " << count << " edges" << std::endl;
+				}
 			}
 			std::cerr << duration_cast<milliseconds>((system_clock::now() - start)).count() << "ms read unordered set" << std::endl;
 			N = vertex.size();
@@ -116,10 +121,12 @@ public:
 			}
 
 		} else {
-			std::set<int> vertex;	// ordered set
+			// std::set<int> vertex;	// ordered set	WHY????????????????
+			std::unordered_set<int> vertex;
 			std::vector<mcmc::Edge> edge;
 			int max = std::numeric_limits<int>::min();
 			int min = std::numeric_limits<int>::max();
+			::size_t count = 0;
 			while (std::getline(instream, line)) {
 				int a;
 				int b;
@@ -132,6 +139,10 @@ public:
 				edge.push_back(Edge(a, b));
 				max = std::max(max, a);
 				min = std::min(min, b);
+				count++;
+				if (count % progress_ == 0) {
+					std::cerr << "Read " << count << " edges" << std::endl;
+				}
 			}
 			std::cerr << duration_cast<milliseconds>((system_clock::now() - start)).count() << "ms read ordered set" << std::endl;
 			std::cerr << "#nodes " << vertex.size() <<
@@ -157,7 +168,8 @@ public:
 				if (node1 == node2) {
 					continue;
 				}
-				E->insert(Edge(std::min(node1, node2), std::max(node1, node2)));
+				Edge e(std::min(node1, node2), std::max(node1, node2));
+				e.insertMe(E);
 			}
 			std::cerr << duration_cast<milliseconds>((system_clock::now() - start)).count() << "ms create EdgeSet" << std::endl;
 		}

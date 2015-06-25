@@ -206,7 +206,8 @@ namespace po = ::boost::program_options;
 
 class Options {
 public:
-	Options(int argc, char *argv[]) {
+	Options(int argc, char *argv[],
+		   	const po::options_description *caller_options = NULL) {
 		std::string config_file;
 
 		po::options_description desc("Options");
@@ -257,6 +258,10 @@ public:
 			("cl:buffer-size,b", po::value< ::size_t>(&openclBufferSize)->default_value(0), "OpenCL buffer size")
 #endif
 			;
+
+		if (caller_options != NULL) {
+			desc.add(*caller_options);
+		}
 
 		po::variables_map vm;
 		po::parsed_options parsed = po::command_line_parser(argc, argv).options(desc).allow_unregistered().run();

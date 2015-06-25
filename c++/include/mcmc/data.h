@@ -24,6 +24,10 @@
 
 namespace mcmc {
 
+#define EDGESET_IS_ADJACENCY_LIST
+
+typedef std::vector<std::unordered_set<int>> AdjacencyList;
+
 class Edge {
 public:
 	Edge(int a, int b) : first(a), second(b) {
@@ -36,6 +40,19 @@ public:
 	template <typename SET>
 	bool in(const SET &s) const {
 		return s.find(*this) != s.end();
+	}
+
+	bool in(const AdjacencyList &s) const {
+		return s[first].find(second) != s[first].end();
+	}
+
+	template <typename SET>
+	void insertMe(SET *s) const {
+		s->insert(*this);
+	}
+
+	void insertMe(AdjacencyList *s) const {
+		(*s)[first].insert(second);
 	}
 
 	bool operator== (const Edge &a) const {
@@ -101,6 +118,7 @@ inline std::istream &operator>> (std::istream &s, Edge &e) {
 	return e.get(s);
 }
 
+
 #ifdef RANDOM_FOLLOWS_PYTHON
 
 #ifdef RANDOM_FOLLOWS_CPP
@@ -124,7 +142,11 @@ typedef std::set<int>					OrderedVertexSet;
 typedef VertexSet						OrderedVertexSet;
 #endif
 
+#ifdef EDGESET_IS_ADJACENCY_LIST
+typedef AdjacencyList					EdgeSet;
+#else
 typedef std::unordered_set<Edge>		EdgeSet;
+#endif
 typedef EdgeSet		 					OrderedEdgeSet;
 typedef std::list<Edge>					EdgeList;
 
@@ -149,12 +171,47 @@ public:
 
 namespace mcmc {
 
-bool present(const EdgeSet &s, const Edge &edge) {
-	for (auto e = s.cbegin(); e != s.cend(); e++) {
-		if (*e == edge) {
+
+std::ostream &dump_edgeset(std::ostream &out, ::size_t N,
+						   const std::unordered_set<Edge> &E) {
+	out << "Edge set size " << N << std::endl;
+	for (auto edge : E) {
+		out << "    " << std::setw(10) << edge.first <<
+			" " << std::setw(10) << edge.second << std::endl;
+	}
+
+	return out;
+}
+
+
+std::ostream &dump_edgeset(std::ostream &out, ::size_t N, const AdjacencyList &E) {
+	out << "Edge set size " << N << std::endl;
+	for (::size_t n = 0; n < E.size(); n++) {
+		for (auto e : E[n]) {
+			out << "    " << std::setw(10) << n <<
+				" " << std::setw(10) << e << std::endl;
+		}
+	}
+
+	return out;
+}
+
+bool present(const std::unordered_set<Edge> &s, const Edge &edge) {
+	for (auto e : s) {
+		if (e == edge) {
 			return true;
 		}
-		assert(e->first != edge.first || e->second != edge.second);
+		assert(e.first != edge.first || e.second != edge.second);
+	}
+
+	return false;
+}
+
+bool present(const AdjacencyList &s, const Edge &edge) {
+	for (auto e : s[edge.first]) {
+		if (e == edge.second) {
+			return true;
+		}
 	}
 
 	return false;
@@ -195,11 +252,7 @@ public:
 	}
 
 	void dump_data() const {
-		std::cout << "Edge set size " << N << std::endl;
-		for (EdgeSet::const_iterator edge = E->begin(); edge != E->end(); edge++) {
-			std::cout << "    " << std::setw(10) << edge->first <<
-				" " << std::setw(10) << edge->second << std::endl;
-		}
+		(void)dump_edgeset(std::cout, N, *E);
 	}
 
 public:

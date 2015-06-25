@@ -51,10 +51,8 @@ typedef std::unordered_map<int, std::string> Vertex;
 
 class NetScience : public DataSet {
 public:
-	NetScience(const std::string &filename, bool compressed = false,
-			   bool contiguous = false)
-			: DataSet(filename == "" ? "datasets/netscience.xml" : filename,
-					  compressed, contiguous) {
+	NetScience(const std::string &filename)
+			: DataSet(filename == "" ? "datasets/netscience.xml" : filename) {
 	}
 
 	virtual ~NetScience() {
@@ -72,8 +70,8 @@ public:
 		// i.e {0: "WU, C", 1 :CHUA, L"}
 		Vertex *V = new Vertex();
 		XMLDocument tree;
-		if (tree.LoadFile(filename.c_str()) != XML_NO_ERROR) {
-			throw mcmc::IOException("Cannot open " + filename);
+		if (tree.LoadFile(filename_.c_str()) != XML_NO_ERROR) {
+			throw mcmc::IOException("Cannot open " + filename_);
 		}
 
 		/*
@@ -162,7 +160,8 @@ public:
 			if (n->QueryIntAttribute("target", &b) != XML_NO_ERROR) {
 				throw XMLException("Cannot get int attribute 'target'");
 			}
-			E->insert(Edge(b, a));
+			Edge e(b, a);
+			e.insertMe(E);
 		}
 
 		return new mcmc::Data((void *)V, E, N);

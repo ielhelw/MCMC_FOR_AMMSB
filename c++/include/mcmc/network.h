@@ -205,7 +205,7 @@ public:
 			}
 
 			// great, we put it into the mini_batch list.
-			mini_batch_set->insert(edge);
+			edge.insertMe(mini_batch_set);
 		}
 
 		double scale = ((N * (N - 1)) / 2) / mini_batch_size;
@@ -231,7 +231,7 @@ public:
 				continue;
 			}
 
-			mini_batch_set->insert(edge);
+			edge.insertMe(mini_batch_set);
 		}
 
 		return EdgeSample(mini_batch_set, N);
@@ -244,6 +244,7 @@ public:
 	 * 1/N_1 for link, where N_0-> number of non-linked edges, N_1-> # of linked edges.
 	 */
 	EdgeSample stratified_random_pair_sampling(::size_t mini_batch_size) const {
+#if 0
 		int p = (int)mini_batch_size;
 
 		OrderedEdgeSet *mini_batch_set = new OrderedEdgeSet();
@@ -258,19 +259,17 @@ public:
 #else
 			auto sampled_linked_edges = Random::random->sample(linked_edges, mini_batch_size * 2);
 #endif
-			for (auto edge = sampled_linked_edges->cbegin();
-				 	edge != sampled_linked_edges->cend();
-					edge++) {
+			for (auto edge : *sampled_linked_edges) {
 				if (p < 0) {
 					std::cerr << __func__ << ": Are you sure p < 0 is a good idea?" << std::endl;
 					break;
 				}
 
-				if (edge->in(held_out_map) || edge->in(test_map) || edge->in(*mini_batch_set)) {
+				if (edge.in(held_out_map) || edge.in(test_map) || edge.in(*mini_batch_set)) {
 					continue;
 				}
 
-				mini_batch_set->insert(*edge);
+				edge.insertMe(mini_batch_set);
 				p--;
 			}
 
@@ -297,13 +296,16 @@ public:
 					continue;
 				}
 
-				mini_batch_set->insert(edge);
+				edge.insertMe(mini_batch_set);
 				p--;
 			}
 
 			return EdgeSample(mini_batch_set,
 							  (N * (N - 1)) / 2 - linked_edges->size() / (double)mini_batch_size);
 		}
+#else
+		throw UnimplementedException("Refactor stratified random pair sampling with Adjacency list sets");
+#endif
 	}
 
 
@@ -363,7 +365,7 @@ public:
 							continue;
 						}
 
-						mini_batch_set->insert(edge);
+						edge.insertMe(mini_batch_set);
 						p--;
 					}
 
@@ -385,8 +387,9 @@ public:
 				for (VertexSet::const_iterator neighborId = train_link_map[nodeId].begin();
 						neighborId != train_link_map[nodeId].end();
 						neighborId++) {
-					mini_batch_set->insert(Edge(std::min(nodeId, *neighborId),
-												std::max(nodeId, *neighborId)));
+					Edge edge(std::min(nodeId, *neighborId),
+							  std::max(nodeId, *neighborId));
+					edge.insertMe(mini_batch_set);
 				}
 
 				if (false) {
