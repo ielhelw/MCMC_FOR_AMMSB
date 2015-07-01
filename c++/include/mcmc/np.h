@@ -8,6 +8,27 @@
 #include <limits>
 
 
+#ifdef ENABLE_OPENMP
+#  include <omp.h>
+#else
+
+static int omp_get_max_threads() {
+	    return 1;
+}
+
+static int omp_get_thread_num() {
+	    return 0;
+}
+
+#ifdef ACTUALLY_USED
+static int omp_get_num_threads() {
+	    return 1;
+}
+#endif
+
+#endif
+
+
 namespace mcmc {
 namespace np {
 
@@ -159,6 +180,9 @@ static ::ssize_t find_le(const std::vector<T> &p,
 			res = up;
 		} else {
 			res = lo;
+		}
+		while (res > 0 && p[res] == p[res - 1]) {
+			res--;
 		}
 		assert(lin == res);
 	}

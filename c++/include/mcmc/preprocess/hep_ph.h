@@ -89,7 +89,7 @@ public:
 			i++;
 		}
 
-		mcmc::EdgeSet *E = new mcmc::EdgeSet();	// store all pair of edges.
+		mcmc::NetworkGraph *E = new mcmc::NetworkGraph();	// store all pair of edges.
 		for (std::vector<Edge>::iterator i = edge.begin();
 				 i != edge.end();
 				 i++) {

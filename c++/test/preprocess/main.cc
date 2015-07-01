@@ -19,15 +19,23 @@ int main(int argc, char *argv[]) {
 
   mcmc::Options mcmc_options(argc, argv, &options);
 
-  DataFactory df(mcmc_options.dataset_class, mcmc_options.filename);
-  df.setCompressed(mcmc_options.compressed);
-  df.setContiguous(mcmc_options.contiguous);
+  DataFactory df(mcmc_options);
   df.setProgress(progress);
 
   const Data *data = df.get_data();
   if (! quiet) {
 	  data->dump_data();
   }
+  Network network(data, 0.1);
+
+  std::cerr << "Network: N " << network.get_num_nodes() <<
+	  " E " << network.get_num_total_edges() <<
+	  " linked edges " << network.get_num_linked_edges() <<
+	  " max.fan-out " << network.get_max_fan_out() <<
+	  " held-out set " << network.get_held_out_set().size() <<
+	  " test set " << network.get_test_set().size() <<
+	  std::endl;
+
   df.deleteData(data);
 
   return 0;

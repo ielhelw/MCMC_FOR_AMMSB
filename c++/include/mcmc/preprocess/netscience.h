@@ -131,7 +131,7 @@ public:
 
 		::size_t N = V->size();
 		// iterate every link in the graph, and store those links into Set<Edge> object.
-		EdgeSet *E = new EdgeSet();
+		NetworkGraph *E = new NetworkGraph();
 
 		c = tree.FirstChildElement("DynamicNetwork");
 		if (c == NULL) {

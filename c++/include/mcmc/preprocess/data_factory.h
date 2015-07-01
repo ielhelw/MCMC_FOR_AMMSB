@@ -12,19 +12,20 @@ namespace preprocess {
 
 class DataFactory {
 public:
-	DataFactory(const std::string &dataset_name, const std::string &filename = "")
-   			: dataset_name_(dataset_name), filename_(filename) {
+	DataFactory(const Options &options)
+   			: dataset_class_(options.dataset_class), filename_(options.filename),
+   			  compressed_(options.compressed), contiguous_(options.contiguous) {
 		if (false) {
-		} else if (dataset_name_ == "rcz") {
+		} else if (dataset_class_ == "rcz") {
 			compressed_ = true;
 			contiguous_ = true;
-			dataset_name_ = "relativity";
-		} else if (dataset_name_ == "rz") {
+			dataset_class_ = "relativity";
+		} else if (dataset_class_ == "rz") {
 			compressed_ = true;
-			dataset_name_ = "relativity";
-		} else if (dataset_name_ == "rc") {
+			dataset_class_ = "relativity";
+		} else if (dataset_class_ == "rc") {
 			contiguous_ = true;
-			dataset_name_ = "relativity";
+			dataset_class_ = "relativity";
 		}
 	}
 
@@ -36,22 +37,22 @@ public:
 		// FIXME: solve with.... !!! templating !!! FIXME
 		DataSet *dataObj = NULL;
 		if (false) {
-		} else if (dataset_name_ == "netscience") {
+		} else if (dataset_class_ == "netscience") {
 			dataObj = new NetScience(filename_);
-		} else if (dataset_name_ == "relativity") {
+		} else if (dataset_class_ == "relativity") {
 			dataObj = new Relativity(filename_);
 #if 0
-		} else if (dataset_name_ == "hep_ph") {
+		} else if (dataset_class_ == "hep_ph") {
 			dataObj = new HepPH(filename_);
-		} else if (dataset_name_ == "astro_ph") {
+		} else if (dataset_class_ == "astro_ph") {
 			dataObj = new AstroPH(filename_);
-		} else if (dataset_name_ == "condmat") {
+		} else if (dataset_class_ == "condmat") {
 			dataObj = new CondMat(filename_);
-		} else if (dataset_name_ == "hep_th") {
+		} else if (dataset_class_ == "hep_th") {
 			dataObj = new HepTH(filename_);
 #endif
 		} else {
-			throw MCMCException("Unknown dataset name \"" + dataset_name_ + "\"");
+			throw MCMCException("Unknown dataset name \"" + dataset_class_ + "\"");
 		}
 		dataObj->setCompressed(compressed_);
 		dataObj->setContiguous(contiguous_);
@@ -77,7 +78,7 @@ public:
 	}
 
 protected:
-	std::string dataset_name_;
+	std::string dataset_class_;
 	std::string filename_;
 	bool		compressed_ = false;
 	bool		contiguous_ = false;

@@ -31,7 +31,7 @@ int main(int argc, char *argv[]) {
 			std::cerr << "No compute device selected. Is that what you wanted?" << std::endl;
 		}
 
-		DataFactory df(args.dataset_class, args.filename);
+		DataFactory df(args);
 		const Data *data = df.get_data();
 		double held_out_ratio = args.held_out_ratio;
 		if (args.held_out_ratio == 0.0) {

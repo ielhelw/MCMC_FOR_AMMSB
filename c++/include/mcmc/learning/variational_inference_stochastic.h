@@ -122,7 +122,7 @@ public:
 			auto l1 = std::chrono::system_clock::now();
 			// (mini_batch, scale) = network.sample_mini_batch(mini_batch_size, "stratified-random-node")
 			EdgeSample edgeSample = network.sample_mini_batch(mini_batch_size, strategy::STRATIFIED_RANDOM_NODE);
-			const OrderedEdgeSet &mini_batch = *edgeSample.first;
+			const MinibatchSet &mini_batch = *edgeSample.first;
 			double scale = edgeSample.second;
 
 			/*
@@ -177,7 +177,7 @@ public:
 
 
 protected:
-	void sample_latent_vars_for_edges(PhiMap *phi, const OrderedEdgeSet &mini_batch) const {
+	void sample_latent_vars_for_edges(PhiMap *phi, const MinibatchSet &mini_batch) const {
 		if (false) {
 			std::cerr << "Minibatch size " << mini_batch.size() << std::endl;
 		}
@@ -231,7 +231,7 @@ protected:
 	}
 
 
-	void update_gamma_and_lamda(PhiMap &phi, const OrderedEdgeSet &mini_batch, double scale) {
+	void update_gamma_and_lamda(PhiMap &phi, const MinibatchSet &mini_batch, double scale) {
 
 		// calculate the gradient for gamma
 		std::vector<std::vector<double> > grad_lamda(K, std::vector<double>(2, 0.0));

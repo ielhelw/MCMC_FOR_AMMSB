@@ -11,26 +11,6 @@
 
 #include <mcmc/exception.h>
 
-#ifdef ENABLE_OPENMP
-#  include <omp.h>
-#else
-
-static int omp_get_max_threads() {
-	    return 1;
-}
-
-static int omp_get_thread_num() {
-	    return 0;
-}
-
-#ifdef ACTUALLY_USED
-static int omp_get_num_threads() {
-	    return 1;
-}
-#endif
-
-#endif
-
 #ifdef ENABLE_DISTRIBUTED
 #  include <mpi.h>
 #else
@@ -255,6 +235,7 @@ public:
 		t_load_pi_minibatch     = Timer("      load minibatch pi");
 		t_load_pi_neighbor      = Timer("      load neighbor pi");
 		t_update_phi            = Timer("      update_phi");
+		t_update_phi_in         = Timer("      update_phi in graph");
 		t_barrier_phi           = Timer("    barrier to update phi");
 		t_update_pi             = Timer("    update_pi");
 		t_store_pi_minibatch    = Timer("      store minibatch pi");
@@ -489,6 +470,7 @@ public:
 			// assigns nodes_
 			EdgeSample edgeSample = deploy_mini_batch();
 			t_deploy_minibatch.stop();
+			std::cerr << "Minibatch nodes " << nodes_.size() << std::endl;
 
 			for (::size_t chunk_start = 0;
 				 	chunk_start < nodes_.size();
@@ -619,6 +601,7 @@ public:
 		std::cout << t_load_pi_minibatch << std::endl;
 		std::cout << t_load_pi_neighbor << std::endl;
 		std::cout << t_update_phi << std::endl;
+		std::cout << t_update_phi_in << std::endl;
 		std::cout << t_barrier_phi << std::endl;
 		std::cout << t_update_pi << std::endl;
 		std::cout << t_store_pi_minibatch << std::endl;
@@ -815,7 +798,7 @@ protected:
 			t_mini_batch.start();
 			edgeSample = network.sample_mini_batch(mini_batch_size, strategy::STRATIFIED_RANDOM_NODE);
 			t_mini_batch.stop();
-			const OrderedEdgeSet &mini_batch = *edgeSample.first;
+			const MinibatchSet &mini_batch = *edgeSample.first;
 			if (true) {
 				std::cerr << "Minibatch[" << mini_batch.size() << "]: ";
 				for (auto e : mini_batch) {
@@ -903,11 +886,13 @@ protected:
 			mpi_error_test(r, "MPI_Scatterv of minibatch fails");
 		}
 
-		std::cerr << "Master gives me minibatch nodes[" << my_minibatch_size << "] ";
-		for (auto n : nodes_) {
-			std::cerr << n << " ";
+		if (false) {
+			std::cerr << "Master gives me minibatch nodes[" << my_minibatch_size << "] ";
+			for (auto n : nodes_) {
+				std::cerr << n << " ";
+			}
+			std::cerr << std::endl;
 		}
-		std::cerr << std::endl;
 
 		return edgeSample;
 	}
@@ -951,8 +936,14 @@ protected:
 			if (i != neighbor) {
 				int y_ab = 0;		// observation
 				Edge edge(std::min(i, neighbor), std::max(i, neighbor));
+				if (omp_get_max_threads() == 1) {
+					t_update_phi_in.start();
+				}
 				if (edge.in(network.get_linked_edges())) {
 					y_ab = 1;
+				}
+				if (omp_get_max_threads() == 1) {
+					t_update_phi_in.stop();
 				}
 
 				std::vector<double> probs(K);
@@ -1016,7 +1007,7 @@ protected:
 	}
 
 
-    void update_beta(const OrderedEdgeSet &mini_batch, double scale) {
+    void update_beta(const MinibatchSet &mini_batch, double scale) {
 
 		t_beta_zero.start();
 #pragma omp parallel for
@@ -1313,6 +1304,7 @@ protected:
 	Timer t_sample_neighbor_nodes;
 	Timer t_update_phi_pi;
 	Timer t_update_phi;
+	Timer t_update_phi_in;
 	Timer t_load_pi_minibatch;
 	Timer t_load_pi_neighbor;
    	Timer t_barrier_phi;

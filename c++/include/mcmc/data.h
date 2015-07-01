@@ -43,7 +43,16 @@ public:
 	}
 
 	bool in(const AdjacencyList &s) const {
-		return s[first].find(second) != s[first].end();
+		if (static_cast<::size_t>(first) >= s.size() ||
+				static_cast<::size_t>(second) >= s.size()) {
+			return false;
+		}
+
+		if (s[first].size() > s[second].size()) {
+			return s[second].find(first) != s[second].end();
+		} else {
+			return s[first].find(second) != s[first].end();
+		}
 	}
 
 	template <typename SET>
@@ -52,7 +61,14 @@ public:
 	}
 
 	void insertMe(AdjacencyList *s) const {
+		if (static_cast<::size_t>(first) >= s->size()) {
+			s->resize(first + 1);
+		}
+		if (static_cast<::size_t>(second) >= s->size()) {
+			s->resize(second + 1);
+		}
 		(*s)[first].insert(second);
+		(*s)[second].insert(first);
 	}
 
 	bool operator== (const Edge &a) const {
@@ -128,8 +144,8 @@ inline std::istream &operator>> (std::istream &s, Edge &e) {
 typedef std::unordered_set<int>			VertexSet;
 typedef std::set<int>					OrderedVertexSet;
 
-typedef std::unordered_set<Edge>		EdgeSet;
-typedef std::set<Edge> 					OrderedEdgeSet;
+typedef std::unordered_set<Edge>		NetworkGraph;
+typedef std::set<Edge>					MinibatchSet;
 typedef std::list<Edge>					EdgeList;
 
 typedef std::map<Edge, bool>			EdgeMap;
@@ -143,11 +159,11 @@ typedef VertexSet						OrderedVertexSet;
 #endif
 
 #ifdef EDGESET_IS_ADJACENCY_LIST
-typedef AdjacencyList					EdgeSet;
+typedef AdjacencyList					NetworkGraph;
 #else
-typedef std::unordered_set<Edge>		EdgeSet;
+typedef std::unordered_set<Edge>		NetworkGraph;
 #endif
-typedef EdgeSet		 					OrderedEdgeSet;
+typedef std::unordered_set<Edge>		MinibatchSet;
 typedef std::list<Edge>					EdgeList;
 
 typedef std::unordered_map<Edge, bool>	EdgeMap;
@@ -174,10 +190,9 @@ namespace mcmc {
 
 std::ostream &dump_edgeset(std::ostream &out, ::size_t N,
 						   const std::unordered_set<Edge> &E) {
-	out << "Edge set size " << N << std::endl;
+	// out << "Edge set size " << N << std::endl;
 	for (auto edge : E) {
-		out << "    " << std::setw(10) << edge.first <<
-			" " << std::setw(10) << edge.second << std::endl;
+		out << edge.first << "\t" << edge.second << std::endl;
 	}
 
 	return out;
@@ -185,11 +200,12 @@ std::ostream &dump_edgeset(std::ostream &out, ::size_t N,
 
 
 std::ostream &dump_edgeset(std::ostream &out, ::size_t N, const AdjacencyList &E) {
-	out << "Edge set size " << N << std::endl;
+	// out << "Edge set size " << N << std::endl;
 	for (::size_t n = 0; n < E.size(); n++) {
 		for (auto e : E[n]) {
-			out << "    " << std::setw(10) << n <<
-				" " << std::setw(10) << e << std::endl;
+			if (e > static_cast<int>(n)) {
+				out << n << "\t" << e << std::endl;
+			}
 		}
 	}
 
@@ -240,25 +256,26 @@ void dump(const EdgeContainer &s) {
  */
 class Data {
 public:
-	Data(const void *V, const EdgeSet *E, int N) {
-		this->V = V;
-		this->E = E;
-		this->N = N;
+	Data(const void *V, const NetworkGraph *E, int N, const std::string &header = "") :
+		V(V), E(E), N(N), header_(header) {
 	}
 
 	~Data() {
 		// delete const_cast<void *>(V); FIXME: somebody must delete V; the 'owner' of this dataset, I presume
-		delete const_cast<EdgeSet *>(E);
+		delete const_cast<NetworkGraph *>(E);
 	}
 
 	void dump_data() const {
+		// std::cout << "Edge set size " << N << std::endl;
+		std::cout << header_;
 		(void)dump_edgeset(std::cout, N, *E);
 	}
 
 public:
 	const void *V;	// mapping between vertices and attributes.
-	const EdgeSet *E;	// all pair of "linked" edges.
+	const NetworkGraph *E;	// all pair of "linked" edges.
 	int N;				// number of vertices
+	std::string header_;
 };
 
 }	// namespace mcmc
