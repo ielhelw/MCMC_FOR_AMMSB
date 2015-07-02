@@ -277,6 +277,10 @@ class DKVStoreRDMA : public DKVStoreInterface {
                     ::size_t max_cache_capacity, ::size_t max_write_capacity,
                     const std::vector<std::string> &args);
 
+  virtual bool include_master() {
+    return include_master_;
+  }
+
   template <typename T>
   std::vector<const T*>& constify(std::vector<T*>& v) {
     // Compiler doesn't know how to automatically convert
@@ -332,7 +336,7 @@ class DKVStoreRDMA : public DKVStoreInterface {
  public:
   void alltoall(const void *sendbuf, ::size_t send_item_size,
                 void *recvbuf, ::size_t recv_item_size);
-  void barrier();
+  VIRTUAL void barrier();
 
  private:
   ::size_t num_servers_;
@@ -349,6 +353,9 @@ class DKVStoreRDMA : public DKVStoreInterface {
 
   std::string dev_name_;
   ::size_t post_send_chunk_ = 1024;
+
+  bool include_master_;	// if unset, the KV area is distributed over all nodes
+  						// except the master. Watch out for the case #hosts == 1
 
   /* memory buffer pointers, used for RDMA and send ops */
   rdma_area<ValueType> value_;

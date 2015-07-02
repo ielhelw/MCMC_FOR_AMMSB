@@ -122,6 +122,14 @@ class DKVStoreInterface {
     write_buffer_.Init(value_size * max_write_capacity);
   }
 
+  virtual bool include_master() {
+    return true;
+  }
+
+  virtual void barrier() {
+    throw DKVException("Unimplemented " + std::string(__func__));
+  }
+
   /**
    * Populate the cache area with the values belonging to @argument keys,
    * in the same order.
