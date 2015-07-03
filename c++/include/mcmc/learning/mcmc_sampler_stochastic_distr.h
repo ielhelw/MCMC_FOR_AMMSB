@@ -129,20 +129,6 @@ namespace DKV { namespace TYPE {
 namespace mcmc {
 namespace learning {
 
-#ifdef UNUSED
-#ifdef RANDOM_FOLLOWS_CPP
-#define EDGEMAP_IS_VECTOR
-#endif
-
-// EDGEMAP_IS_VECTOR is a more efficient implementation anyway
-#ifdef EDGEMAP_IS_VECTOR
-typedef std::vector<int>    EdgeMapZ;
-#else
-// typedef std::map<Edge, int>	EdgeMapZ;
-typedef std::unordered_map<Edge, int>   EdgeMapZ;
-#endif
-#endif
-
 #ifdef RANDOM_FOLLOWS_SCALABLE_GRAPH
 #  define NEIGHBOR_SET_IS_VECTOR
 typedef std::vector<int> NeighborSet;
@@ -239,7 +225,6 @@ public:
 		t_barrier_phi           = Timer("    barrier to update phi");
 		t_update_pi             = Timer("    update_pi");
 		t_store_pi_minibatch    = Timer("      store minibatch pi");
-		t_purge_pi_perp         = Timer("      purge perplexity pi");
 		t_barrier_pi            = Timer("    barrier to update pi");
 		t_update_beta           = Timer("    update_beta");
 		t_beta_zero             = Timer("      zero beta grads");
@@ -254,6 +239,7 @@ public:
 		t_rank_pi_perp          = Timer("      rank pi perp");
 		t_cal_edge_likelihood   = Timer("      calc edge likelihood");
 		t_perp_log              = Timer("      calc log");
+		t_purge_pi_perp         = Timer("      purge perplexity pi");
 		Timer::setTabular(true);
 	}
 
@@ -334,15 +320,18 @@ public:
 		// d_kv_store = new DKV::DKVRamCloud::DKVStoreRamCloud();
 		switch (dkv_type) {
 		case DKV::TYPE::FILE:
+			std::cerr << "Use D-KV store type FILE" << std::endl;
 			d_kv_store = new DKV::DKVFile::DKVStoreFile();
 			break;
 #ifdef ENABLE_RAMCLOUD
 		case DKV::TYPE::RAMCLOUD:
+			std::cerr << "Use D-KV store type RamCloud" << std::endl;
 			d_kv_store = new DKV::DKVRamCloud::DKVStoreRamCloud();
 			break;
 #endif
 #ifdef ENABLE_RDMA
 		case DKV::TYPE::RDMA:
+			std::cerr << "Use D-KV store type RDMA" << std::endl;
 			d_kv_store = new DKV::DKVRDMA::DKVStoreRDMA();
 			break;
 #endif

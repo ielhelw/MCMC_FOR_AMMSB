@@ -26,6 +26,13 @@ int main(int argc, char *argv[]) {
   if (! quiet) {
 	  data->dump_data();
   }
+
+  if (quiet) {
+	  std::cerr << "Hit <enter> to create Network" << std::endl;
+	  std::string dummy;
+	  getline(std::cin, dummy);
+  }
+
   Network network(data, 0.1);
 
   std::cerr << "Network: N " << network.get_num_nodes() <<
@@ -35,6 +42,12 @@ int main(int argc, char *argv[]) {
 	  " held-out set " << network.get_held_out_set().size() <<
 	  " test set " << network.get_test_set().size() <<
 	  std::endl;
+
+  if (quiet) {
+	  std::cerr << "Hit <enter> to quit" << std::endl;
+	  std::string dummy;
+	  getline(std::cin, dummy);
+  }
 
   df.deleteData(data);
 

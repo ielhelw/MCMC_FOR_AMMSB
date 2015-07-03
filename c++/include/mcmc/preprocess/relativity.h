@@ -115,7 +115,7 @@ public:
 				if (progress_ > 0) {
 					count++;
 				   	if (count % progress_ == 0) {
-						std::cerr << "Read " << count << " edges" << std::endl;
+						std::cerr << "Edges read " << count << std::endl;
 					}
 				}
 			}
@@ -153,7 +153,7 @@ public:
 				if (progress_ > 0) {
 					count++;
 				   	if (count % progress_ == 0) {
-						std::cerr << "Read " << count << " edges" << std::endl;
+						std::cerr << "Edges read " << count << std::endl;
 					}
 				}
 			}
@@ -176,12 +176,15 @@ public:
 			std::cerr << duration_cast<milliseconds>((system_clock::now() - start)).count() << "ms create map" << std::endl;
 
 			::size_t duplicates = 0;
+			::size_t self_links = 0;
+			count = 0;
 			for (auto i: edge) {
 				int node1 = node_id_map[i.first];
 				int node2 = node_id_map[i.second];
 				Edge eIdent(i.first, i.second);
 				if (node1 == node2) {
 					std::cerr << "Self-link " << eIdent << ": ignore" << std::endl;
+					self_links++;
 					continue;
 				}
 				Edge e(std::min(node1, node2), std::max(node1, node2));
@@ -191,9 +194,20 @@ public:
 				} else {
 					e.insertMe(E);
 				}
+				if (progress_ > 0) {
+					count++;
+				   	if (count % progress_ == 0) {
+						std::cerr << "Edges inserted " << count << std::endl;
+					}
+				}
 			}
-			std::cerr << "#edges original " << edge.size() << " undirected " << E->size() << " duplicates " << duplicates << std::endl;
+			std::cerr << "#edges original " << edge.size() << " undirected subsets " << E->size() << " duplicates " << duplicates << " self-links " << self_links << std::endl;
 			std::cerr << duration_cast<milliseconds>((system_clock::now() - start)).count() << "ms create NetworkGraph" << std::endl;
+			for (::size_t i = 0; i < E->size(); i++) {
+				if ((*E)[i].size() == 0) {
+					std::cerr << "Find no edges to/from " << i << std::endl;
+				}
+			}
 		}
 
 		infile.close();
