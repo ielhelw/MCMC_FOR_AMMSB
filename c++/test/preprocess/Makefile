@@ -1,6 +1,4 @@
-PROJECT = $(shell cd ../..; pwd)
-
-SUBDIRS += netscience
-SUBDIRS += relativity
+PROJECT = ../..
+TARGETS = main
 
 include $(PROJECT)/include.mk

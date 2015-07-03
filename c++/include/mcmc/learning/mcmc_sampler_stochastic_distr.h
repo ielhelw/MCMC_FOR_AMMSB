@@ -11,26 +11,6 @@
 
 #include <mcmc/exception.h>
 
-#ifdef ENABLE_OPENMP
-#  include <omp.h>
-#else
-
-static int omp_get_max_threads() {
-	    return 1;
-}
-
-static int omp_get_thread_num() {
-	    return 0;
-}
-
-#ifdef ACTUALLY_USED
-static int omp_get_num_threads() {
-	    return 1;
-}
-#endif
-
-#endif
-
 #ifdef ENABLE_DISTRIBUTED
 #  include <mpi.h>
 #else
@@ -149,20 +129,6 @@ namespace DKV { namespace TYPE {
 namespace mcmc {
 namespace learning {
 
-#ifdef UNUSED
-#ifdef RANDOM_FOLLOWS_CPP
-#define EDGEMAP_IS_VECTOR
-#endif
-
-// EDGEMAP_IS_VECTOR is a more efficient implementation anyway
-#ifdef EDGEMAP_IS_VECTOR
-typedef std::vector<int>    EdgeMapZ;
-#else
-// typedef std::map<Edge, int>	EdgeMapZ;
-typedef std::unordered_map<Edge, int>   EdgeMapZ;
-#endif
-#endif
-
 #ifdef RANDOM_FOLLOWS_SCALABLE_GRAPH
 #  define NEIGHBOR_SET_IS_VECTOR
 typedef std::vector<int> NeighborSet;
@@ -259,7 +225,6 @@ public:
 		t_barrier_phi           = Timer("    barrier to update phi");
 		t_update_pi             = Timer("    update_pi");
 		t_store_pi_minibatch    = Timer("      store minibatch pi");
-		t_purge_pi_perp         = Timer("      purge perplexity pi");
 		t_barrier_pi            = Timer("    barrier to update pi");
 		t_update_beta           = Timer("    update_beta");
 		t_beta_zero             = Timer("      zero beta grads");
@@ -274,6 +239,7 @@ public:
 		t_rank_pi_perp          = Timer("      rank pi perp");
 		t_cal_edge_likelihood   = Timer("      calc edge likelihood");
 		t_perp_log              = Timer("      calc log");
+		t_purge_pi_perp         = Timer("      purge perplexity pi");
 		Timer::setTabular(true);
 	}
 
@@ -354,15 +320,18 @@ public:
 		// d_kv_store = new DKV::DKVRamCloud::DKVStoreRamCloud();
 		switch (dkv_type) {
 		case DKV::TYPE::FILE:
+			std::cerr << "Use D-KV store type FILE" << std::endl;
 			d_kv_store = new DKV::DKVFile::DKVStoreFile();
 			break;
 #ifdef ENABLE_RAMCLOUD
 		case DKV::TYPE::RAMCLOUD:
+			std::cerr << "Use D-KV store type RamCloud" << std::endl;
 			d_kv_store = new DKV::DKVRamCloud::DKVStoreRamCloud();
 			break;
 #endif
 #ifdef ENABLE_RDMA
 		case DKV::TYPE::RDMA:
+			std::cerr << "Use D-KV store type RDMA" << std::endl;
 			d_kv_store = new DKV::DKVRDMA::DKVStoreRDMA();
 			break;
 #endif
@@ -490,6 +459,7 @@ public:
 			// assigns nodes_
 			EdgeSample edgeSample = deploy_mini_batch();
 			t_deploy_minibatch.stop();
+			std::cerr << "Minibatch nodes " << nodes_.size() << std::endl;
 
 			for (::size_t chunk_start = 0;
 				 	chunk_start < nodes_.size();
@@ -817,7 +787,7 @@ protected:
 			t_mini_batch.start();
 			edgeSample = network.sample_mini_batch(mini_batch_size, strategy::STRATIFIED_RANDOM_NODE);
 			t_mini_batch.stop();
-			const OrderedEdgeSet &mini_batch = *edgeSample.first;
+			const MinibatchSet &mini_batch = *edgeSample.first;
 			if (true) {
 				std::cerr << "Minibatch[" << mini_batch.size() << "]: ";
 				for (auto e : mini_batch) {
@@ -905,11 +875,13 @@ protected:
 			mpi_error_test(r, "MPI_Scatterv of minibatch fails");
 		}
 
-		std::cerr << "Master gives me minibatch nodes[" << my_minibatch_size << "] ";
-		for (auto n : nodes_) {
-			std::cerr << n << " ";
+		if (false) {
+			std::cerr << "Master gives me minibatch nodes[" << my_minibatch_size << "] ";
+			for (auto n : nodes_) {
+				std::cerr << n << " ";
+			}
+			std::cerr << std::endl;
 		}
-		std::cerr << std::endl;
 
 		return edgeSample;
 	}
@@ -1024,7 +996,7 @@ protected:
 	}
 
 
-    void update_beta(const OrderedEdgeSet &mini_batch, double scale) {
+    void update_beta(const MinibatchSet &mini_batch, double scale) {
 
 		t_beta_zero.start();
 #pragma omp parallel for

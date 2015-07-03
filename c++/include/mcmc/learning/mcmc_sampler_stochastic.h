@@ -322,7 +322,7 @@ public:
 				std::cerr << std::endl;
 			}
 			// std::cerr << "Done sample_mini_batch" << std::endl;
-			const OrderedEdgeSet &mini_batch = *edgeSample.first;
+			const MinibatchSet &mini_batch = *edgeSample.first;
 			double scale = edgeSample.second;
 
 			//std::unordered_map<int, std::vector<int> > latent_vars;
@@ -455,7 +455,7 @@ protected:
 #endif
 
 
-    void update_beta(const OrderedEdgeSet &mini_batch, double scale) {
+    void update_beta(const MinibatchSet &mini_batch, double scale) {
 
 		std::vector<std::vector<double> > grads(K, std::vector<double>(2, 0.0));	// gradients K*2 dimension
 		std::vector<double> probs(K);
@@ -780,7 +780,7 @@ protected:
 		return neighbor_nodes;
 	}
 
-    OrderedVertexSet nodes_in_batch(const OrderedEdgeSet &mini_batch) const {
+    OrderedVertexSet nodes_in_batch(const MinibatchSet &mini_batch) const {
         /**
         Get all the unique nodes in the mini_batch.
          */

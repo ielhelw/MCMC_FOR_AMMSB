@@ -20,12 +20,44 @@
 #include <iostream>
 #include <iomanip>
 
+#define USE_GOOGLE_SPARSE_HASH
+
+#ifdef USE_GOOGLE_SPARSE_HASH
+// If <cinttypes> is not included before <google/sparse_hash_set>, compile errors
+// because of missing defines of SCNd64 and friends
+#include <cinttypes>
+#include <google/sparse_hash_set>
+#include <google/sparse_hash_map>
+#endif
+
 #include "mcmc/exception.h"
+#include "mcmc/np.h"
 
 namespace mcmc {
 
+#define EDGESET_IS_ADJACENCY_LIST
+
+#ifdef USE_GOOGLE_SPARSE_HASH
+class GoogleHashSet : public google::sparse_hash_set<int> {
+public:
+	GoogleHashSet() {
+		// this->set_empty_key(-1);
+		this->set_deleted_key(-2);
+	}
+};
+typedef std::vector<GoogleHashSet> AdjacencyList;
+
+#else
+typedef std::vector<std::unordered_set<int>> AdjacencyList;
+#endif
+
+
 class Edge {
 public:
+	// google::sparse_hash_map requires me to have a default constructor
+	Edge() {
+	}
+
 	Edge(int a, int b) : first(a), second(b) {
 	}
 
@@ -36,6 +68,62 @@ public:
 	template <typename SET>
 	bool in(const SET &s) const {
 		return s.find(*this) != s.end();
+	}
+
+	bool in(const AdjacencyList &s) const {
+		if (static_cast<::size_t>(first) >= s.size() ||
+				static_cast<::size_t>(second) >= s.size()) {
+			return false;
+		}
+
+		if (s[first].size() > s[second].size()) {
+			return s[second].find(first) != s[second].end();
+		} else {
+			return s[first].find(second) != s[first].end();
+		}
+	}
+
+	template <typename SET>
+	void insertMe(SET *s) const {
+		s->insert(*this);
+	}
+
+	void insertMe(AdjacencyList *s) const {
+		if (static_cast<::size_t>(first) >= s->size()) {
+			s->resize(first + 1);
+		}
+		if (static_cast<::size_t>(second) >= s->size()) {
+			s->resize(second + 1);
+		}
+
+#if 0
+		if ((*s)[first].size() == 0) {
+			(*s)[first].max_load_factor(2.0);
+		}
+		if ((*s)[second].size() == 0) {
+			(*s)[second].max_load_factor(2.0);
+		}
+#endif
+
+		(*s)[first].insert(second);
+		(*s)[second].insert(first);
+
+#if 0
+		if ((*s)[first].size() <= 4) {
+			(*s)[first].reserve(4);
+		}
+		if ((*s)[second].size() <= 4) {
+			(*s)[second].reserve(4);
+		}
+#endif
+
+		if (first < 10) {
+			std::cerr << "Adjacency elt[" << first << "] size " << (*s)[first].size() << " capacity " << (*s)[first].bucket_count() << std::endl;
+			std::cerr << "sizeof elt " << sizeof((*s)[second]) << std::endl;
+		}
+		if (second < 10) {
+			std::cerr << "Adjacency elt[" << second << "] size " << (*s)[second].size() << " capacity " << (*s)[second].bucket_count() << std::endl;
+		}
 	}
 
 	bool operator== (const Edge &a) const {
@@ -101,35 +189,14 @@ inline std::istream &operator>> (std::istream &s, Edge &e) {
 	return e.get(s);
 }
 
-#ifdef RANDOM_FOLLOWS_PYTHON
 
-#ifdef RANDOM_FOLLOWS_CPP
-#error "RANDOM_FOLLOWS_CPP is incompatible with RANDOM_FOLLOWS_PYTHON"
+#ifdef USE_GOOGLE_SPARSE_HASH
+struct EdgeEquals {
+	bool operator()(const Edge& e1, const Edge& e2) const {
+		return e1 == e2;
+	}
+};
 #endif
-
-typedef std::unordered_set<int>			VertexSet;
-typedef std::set<int>					OrderedVertexSet;
-
-typedef std::unordered_set<Edge>		EdgeSet;
-typedef std::set<Edge> 					OrderedEdgeSet;
-typedef std::list<Edge>					EdgeList;
-
-typedef std::map<Edge, bool>			EdgeMap;
-
-#else	// def RANDOM_FOLLOWS_PYTHON
-typedef std::unordered_set<int>			VertexSet;
-#ifdef RANDOM_FOLLOWS_CPP
-typedef std::set<int>					OrderedVertexSet;
-#else
-typedef VertexSet						OrderedVertexSet;
-#endif
-
-typedef std::unordered_set<Edge>		EdgeSet;
-typedef EdgeSet		 					OrderedEdgeSet;
-typedef std::list<Edge>					EdgeList;
-
-typedef std::unordered_map<Edge, bool>	EdgeMap;
-#endif	// def RANDOM_FOLLOWS_PYTHON
 
 }	// namespace mcmc
 
@@ -149,12 +216,94 @@ public:
 
 namespace mcmc {
 
-bool present(const EdgeSet &s, const Edge &edge) {
-	for (auto e = s.cbegin(); e != s.cend(); e++) {
-		if (*e == edge) {
+#ifdef RANDOM_FOLLOWS_PYTHON
+
+#ifdef RANDOM_FOLLOWS_CPP
+#error "RANDOM_FOLLOWS_CPP is incompatible with RANDOM_FOLLOWS_PYTHON"
+#endif
+
+typedef std::unordered_set<int>			VertexSet;
+typedef std::set<int>					OrderedVertexSet;
+
+typedef std::unordered_set<Edge>		NetworkGraph;
+typedef std::set<Edge>					MinibatchSet;
+typedef std::list<Edge>					EdgeList;
+
+typedef std::map<Edge, bool>			EdgeMap;
+
+#else	// def RANDOM_FOLLOWS_PYTHON
+typedef std::unordered_set<int>			VertexSet;
+#ifdef RANDOM_FOLLOWS_CPP
+typedef std::set<int>					OrderedVertexSet;
+#else
+typedef VertexSet						OrderedVertexSet;
+#endif
+
+#ifdef EDGESET_IS_ADJACENCY_LIST
+typedef AdjacencyList					NetworkGraph;
+#else
+typedef std::unordered_set<Edge>		NetworkGraph;
+#endif
+
+#ifdef USE_GOOGLE_SPARSE_HASH
+class GoogleHashMap : public google::sparse_hash_map<Edge, bool, std::hash<Edge>, EdgeEquals> {
+public:
+	GoogleHashMap() {
+		// this->set_empty_key(Edge(-1, -1));
+		this->set_deleted_key(Edge(-2, -2));
+	}
+};
+typedef GoogleHashMap					EdgeMap;
+#else
+typedef std::unordered_map<Edge, bool>	EdgeMap;
+#endif
+
+typedef std::unordered_set<Edge>		MinibatchSet;
+typedef std::list<Edge>					EdgeList;
+
+#endif	// def RANDOM_FOLLOWS_PYTHON
+
+
+std::ostream &dump_edgeset(std::ostream &out, ::size_t N,
+						   const std::unordered_set<Edge> &E) {
+	// out << "Edge set size " << N << std::endl;
+	for (auto edge : E) {
+		out << edge.first << "\t" << edge.second << std::endl;
+	}
+
+	return out;
+}
+
+
+std::ostream &dump_edgeset(std::ostream &out, ::size_t N, const AdjacencyList &E) {
+	// out << "Edge set size " << N << std::endl;
+	for (::size_t n = 0; n < E.size(); n++) {
+		for (auto e : E[n]) {
+			if (e > static_cast<int>(n)) {
+				out << n << "\t" << e << std::endl;
+			}
+		}
+	}
+
+	return out;
+}
+
+bool present(const std::unordered_set<Edge> &s, const Edge &edge) {
+	for (auto e : s) {
+		if (e == edge) {
 			return true;
 		}
-		assert(e->first != edge.first || e->second != edge.second);
+		assert(e.first != edge.first || e.second != edge.second);
+	}
+
+	return false;
+}
+
+bool present(const AdjacencyList &s, const Edge &edge) {
+	for (auto e : s[edge.first]) {
+		if (e == edge.second) {
+			return true;
+		}
 	}
 
 	return false;
@@ -183,26 +332,24 @@ void dump(const EdgeContainer &s) {
  */
 class Data {
 public:
-	Data(const void *V, const EdgeSet *E, int N, const std::string &header = "") :
+	Data(const void *V, const NetworkGraph *E, int N, const std::string &header = "") :
 		V(V), E(E), N(N), header_(header) {
 	}
 
 	~Data() {
 		// delete const_cast<void *>(V); FIXME: somebody must delete V; the 'owner' of this dataset, I presume
-		delete const_cast<EdgeSet *>(E);
+		delete const_cast<NetworkGraph *>(E);
 	}
 
 	void dump_data() const {
 		// std::cout << "Edge set size " << N << std::endl;
 		std::cout << header_;
-		for (EdgeSet::const_iterator edge = E->begin(); edge != E->end(); edge++) {
-			std::cout << edge->first << "\t" << edge->second << std::endl;
-		}
+		(void)dump_edgeset(std::cout, N, *E);
 	}
 
 public:
 	const void *V;	// mapping between vertices and attributes.
-	const EdgeSet *E;	// all pair of "linked" edges.
+	const NetworkGraph *E;	// all pair of "linked" edges.
 	int N;				// number of vertices
 	std::string header_;
 };

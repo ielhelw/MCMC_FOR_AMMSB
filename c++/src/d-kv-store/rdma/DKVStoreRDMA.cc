@@ -34,7 +34,7 @@ struct ibv_device **global_dev_list = NULL;
 
 void DKVStoreRDMA::mpi_error_test(int r, const std::string &message) {
   if (r != MPI_SUCCESS) {
-	std::cerr << "It throws me error code " << r << std::endl;
+    std::cerr << "It throws me error code " << r << std::endl;
     throw NetworkException("MPI error " + r + message);
   }
 }
@@ -190,9 +190,9 @@ void DKVStoreRDMA::barrier() {
  */
 DKVStoreRDMA::DKVStoreRDMA()
 #ifndef USE_MPI
-	: network_(NULL)
+    : network_(NULL)
 #endif
-	{
+      {
 }
 
 DKVStoreRDMA::~DKVStoreRDMA() {
@@ -216,10 +216,10 @@ DKVStoreRDMA::~DKVStoreRDMA() {
 #endif
 
   if (false) {
-	  std::cerr << "Should linger a bit to allow gracious shutdown" << std::endl;
+    std::cerr << "Should linger a bit to allow gracious shutdown" << std::endl;
   } else {
-	  std::cerr << "Linger a bit to allow gracious shutdown" << std::endl;
-	  usleep(500000);
+    std::cerr << "Linger a bit to allow gracious shutdown" << std::endl;
+    usleep(500000);
   }
 
   Timer::printHeader(std::cout);
@@ -291,6 +291,8 @@ void DKVStoreRDMA::Init(::size_t value_size, ::size_t total_values,
   int ib_port;
   int mtu;
 
+  bool force_include_master;
+
   po::options_description desc("RDMA options");
   desc.add_options()
     // ("rdma.oob-port", po::value(&config_.tcp_port)->default_value(0), "RDMA out-of-band TCP port")
@@ -309,12 +311,15 @@ void DKVStoreRDMA::Init(::size_t value_size, ::size_t total_values,
     ("rdma:peers",
      po::value(&batch_size_)->default_value(0),
      "RDMA max number of peers to address in one post")
+    ("rdma:include-master",
+     po::bool_switch(&force_include_master)->default_value(false),
+     "RDMA KV-store includes master node")
     // ("rdma:oob-network",
     // po::value(&oob_impl_)->default_value("socket"),
     // "RDMA OOB network implementation")
 #ifdef USE_MPI
     ("rdma:mpi-initialized",
-     po::bool_switch()->default_value(false),
+     po::bool_switch(&mpi_initialized)->default_value(false),
      "MPI is already initialized")
 #else
     ("rdma:oob-interface",
@@ -328,12 +333,6 @@ void DKVStoreRDMA::Init(::size_t value_size, ::size_t total_values,
   clp.options(desc);
   po::store(clp.run(), vm);
   po::notify(vm);
-
-#ifdef USE_MPI
-  if (vm.count("rdma:mpi-initialized") > 0) {
-    mpi_initialized = true;
-  }
-#endif
 
   // Feed the options to the QPerf Req
   Req.mtu_size = mtu;
@@ -362,6 +361,14 @@ void DKVStoreRDMA::Init(::size_t value_size, ::size_t total_values,
 
   init_networking();  // along the way, defines my_rank_ and num_servers_
 
+  if (force_include_master) {
+    include_master_ = true;
+  } else {
+    include_master_ = (num_servers_ == 1);
+  }
+  std::cout << "RDMA D-KV store " << (include_master_ ? "in" : "ex") <<
+    "cludes the master node" << std::endl;
+
   if (rd_open(&res_, IBV_QPT_RC, post_send_chunk_, 0) != 0) {
     throw QPerfException("rd_open");
   }
@@ -385,7 +392,17 @@ void DKVStoreRDMA::Init(::size_t value_size, ::size_t total_values,
   value_size_ = value_size;
   total_values_ = total_values;
   /* memory buffer to hold the value data */
-  ::size_t my_values = (total_values + num_servers_ - 1) / num_servers_;
+  ::size_t my_values;
+  if (include_master_) {
+    my_values = (total_values + num_servers_ - 1) / num_servers_;
+  } else {
+    if (my_rank_ == 0) {
+      // something smallish, does not matter how much
+      my_values = max_cache_capacity;
+    } else {
+      my_values = (total_values + (num_servers_ - 1) - 1) / (num_servers_ - 1);
+    }
+  }
   value_.Init(&res_, my_values * value_size);
   std::cout << "MR/value " << value_ << std::endl;
 
@@ -500,11 +517,19 @@ std::vector<const T*>& constify(std::vector<T*>& v) {
 
 
 int32_t DKVStoreRDMA::HostOf(DKVStoreRDMA::KeyType key) {
-  return key % num_servers_;
+  if (include_master_) {
+    return key % num_servers_;
+  } else {
+    return 1 + key % (num_servers_ - 1);
+  }
 }
 
 uint64_t DKVStoreRDMA::OffsetOf(DKVStoreRDMA::KeyType key) {
-  return key / num_servers_ * value_size_;
+  if (include_master_) {
+    return key / num_servers_ * value_size_;
+  } else {
+    return key / (num_servers_ - 1) * value_size_;
+  }
 }
 
 
@@ -654,8 +679,8 @@ void DKVStoreRDMA::WriteKVRecords(const std::vector<KeyType> &key,
         memcpy(v, value[i], value_size_ * sizeof(ValueType));
         source = v;
       }
-	  assert(source >= write_buffer_.buffer());
-	  assert(source + value_size_ <= write_buffer_.buffer() + write_buffer_.capacity());
+      assert(source >= write_buffer_.buffer());
+      assert(source + value_size_ <= write_buffer_.buffer() + write_buffer_.capacity());
 
       ::size_t batch = owner / batch_size_;
       ::size_t n = posts_[batch];

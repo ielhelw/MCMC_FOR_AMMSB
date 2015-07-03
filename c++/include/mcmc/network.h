@@ -14,7 +14,7 @@
 
 namespace mcmc {
 
-typedef std::pair<OrderedEdgeSet *, double>		EdgeSample;
+typedef std::pair<MinibatchSet *, double>		EdgeSample;
 
 /**
  * Network class represents the whole graph that we read from the
@@ -50,12 +50,17 @@ public:
 	Network(const Data *data, double held_out_ratio) {
 		N = data->N;							// number of nodes in the graph
 		linked_edges = data->E;					// all pair of linked edges.
-		num_total_edges = linked_edges->size(); // number of total edges.
+#ifdef EDGESET_IS_ADJACENCY_LIST
+		adjacency_list_init();
+		num_total_edges = cumulative_edges[N - 1] / 2; // number of undirected edges.
+#else
+		num_total_edges = get_num_linked_edges(); // number of total edges.
+#endif
 	   	this->held_out_ratio = held_out_ratio;	// percentage of held-out data size
 
 		// Based on the a-MMSB paper, it samples equal number of
 		// linked edges and non-linked edges.
-		held_out_size = held_out_ratio * linked_edges->size();
+		held_out_size = held_out_ratio * get_num_linked_edges();
 
 		// initialize train_link_map
 		init_train_link_map();
@@ -67,6 +72,9 @@ public:
 	}
 
 	virtual ~Network() {
+#ifdef EDGESET_IS_ADJACENCY_LIST
+		adjacency_list_end();
+#endif
 	}
 
 	/**
@@ -144,7 +152,11 @@ public:
 	}
 
 	::size_t get_num_linked_edges() const {
+#ifdef EDGESET_IS_ADJACENCY_LIST
+		return cumulative_edges[N - 1] / 2; // number of undirected edges.
+#else
 		return linked_edges->size();
+#endif
 	}
 
 	::size_t get_num_total_edges() const {
@@ -159,7 +171,7 @@ public:
 		return N;
 	}
 
-	const EdgeSet &get_linked_edges() const {
+	const NetworkGraph &get_linked_edges() const {
 		return *linked_edges;
 	}
 
@@ -185,7 +197,7 @@ public:
 	 */
 	EdgeSample random_pair_sampling(::size_t mini_batch_size) const {
 
-		OrderedEdgeSet *mini_batch_set = new OrderedEdgeSet();
+		MinibatchSet *mini_batch_set = new MinibatchSet();
 
 		// iterate until we get $p$ valid edges.
 		for (::size_t p = mini_batch_size; p > 0; p--) {
@@ -205,7 +217,7 @@ public:
 			}
 
 			// great, we put it into the mini_batch list.
-			mini_batch_set->insert(edge);
+			edge.insertMe(mini_batch_set);
 		}
 
 		double scale = ((N * (N - 1)) / 2) / mini_batch_size;
@@ -219,7 +231,7 @@ public:
 	 * the node from N nodes, and sample all the edges for that node. h(x) = 1/N
 	 */
 	EdgeSample random_node_sampling() const {
-		OrderedEdgeSet *mini_batch_set = new OrderedEdgeSet();
+		MinibatchSet *mini_batch_set = new MinibatchSet();
 
 		// randomly select the node ID
 		int nodeId = Random::random->randint(0, N - 1);
@@ -231,7 +243,7 @@ public:
 				continue;
 			}
 
-			mini_batch_set->insert(edge);
+			edge.insertMe(mini_batch_set);
 		}
 
 		return EdgeSample(mini_batch_set, N);
@@ -244,9 +256,12 @@ public:
 	 * 1/N_1 for link, where N_0-> number of non-linked edges, N_1-> # of linked edges.
 	 */
 	EdgeSample stratified_random_pair_sampling(::size_t mini_batch_size) const {
+#ifdef EDGESET_IS_ADJACENCY_LIST
+		throw UnimplementedException("Port stratified random pair sampling to AdjacencyList implementation");
+#else
 		int p = (int)mini_batch_size;
 
-		OrderedEdgeSet *mini_batch_set = new OrderedEdgeSet();
+		MinibatchSet *mini_batch_set = new MinibatchSet();
 
 		int flag = Random::random->randint(0, 1);
 
@@ -258,25 +273,23 @@ public:
 #else
 			auto sampled_linked_edges = Random::random->sample(linked_edges, mini_batch_size * 2);
 #endif
-			for (auto edge = sampled_linked_edges->cbegin();
-				 	edge != sampled_linked_edges->cend();
-					edge++) {
+			for (auto edge : *sampled_linked_edges) {
 				if (p < 0) {
 					std::cerr << __func__ << ": Are you sure p < 0 is a good idea?" << std::endl;
 					break;
 				}
 
-				if (edge->in(held_out_map) || edge->in(test_map) || edge->in(*mini_batch_set)) {
+				if (edge.in(held_out_map) || edge.in(test_map) || edge.in(*mini_batch_set)) {
 					continue;
 				}
 
-				mini_batch_set->insert(*edge);
+				edge.insertMe(mini_batch_set);
 				p--;
 			}
 
 			delete sampled_linked_edges;
 
-			return EdgeSample(mini_batch_set, linked_edges->size() / (double)mini_batch_size);
+			return EdgeSample(mini_batch_set, get_num_linked_edges() / (double)mini_batch_size);
 
 		} else {
 			// sample mini-batch from non-linked edges
@@ -297,13 +310,14 @@ public:
 					continue;
 				}
 
-				mini_batch_set->insert(edge);
+				edge.insertMe(mini_batch_set);
 				p--;
 			}
 
 			return EdgeSample(mini_batch_set,
-							  (N * (N - 1)) / 2 - linked_edges->size() / (double)mini_batch_size);
+							  (N * (N - 1)) / 2 - get_num_linked_edges() / (double)mini_batch_size);
 		}
+#endif
 	}
 
 
@@ -326,7 +340,7 @@ public:
 			int flag = Random::random->randint(0, 1);	// flag=0: non-link edges  flag=1: link edges
 			// std::cerr << "num_pieces " << num_pieces << " flag " << flag << std::endl;
 
-			OrderedEdgeSet *mini_batch_set = new OrderedEdgeSet();
+			MinibatchSet *mini_batch_set = new MinibatchSet();
 
 			if (flag == 0) {
 				/* sample non-link edges */
@@ -363,7 +377,7 @@ public:
 							continue;
 						}
 
-						mini_batch_set->insert(edge);
+						edge.insertMe(mini_batch_set);
 						p--;
 					}
 
@@ -379,15 +393,25 @@ public:
 			} else {
 				/* sample linked edges */
 				// return all linked edges
+#ifdef EDGESET_IS_ADJACENCY_LIST
+				for (auto neighborId : (*linked_edges)[nodeId]) {
+					Edge e(std::min(nodeId, neighborId), std::max(nodeId, neighborId));
+					if (! e.in(test_map) && ! e.in(held_out_map)) {
+						e.insertMe(mini_batch_set);
+					}
+				}
+#else
 				if (false) {
 					std::cerr << "train_link_map[" << nodeId << "] size " << train_link_map[nodeId].size() << std::endl;
 				}
 				for (VertexSet::const_iterator neighborId = train_link_map[nodeId].begin();
 						neighborId != train_link_map[nodeId].end();
 						neighborId++) {
-					mini_batch_set->insert(Edge(std::min(nodeId, *neighborId),
-												std::max(nodeId, *neighborId)));
+					Edge edge(std::min(nodeId, *neighborId),
+							  std::max(nodeId, *neighborId));
+					edge.insertMe(mini_batch_set);
 				}
+#endif
 
 				if (false) {
 					std::cerr << "B Create mini batch size " << mini_batch_set->size() << " scale " << N << std::endl;
@@ -407,6 +431,9 @@ protected:
 	 * the later.
 	 */
 	void init_train_link_map() {
+#ifdef EDGESET_IS_ADJACENCY_LIST
+		std::cerr << "train_link_map is gone; calculate membership for each edge as linked_edges - held_out_map - test_map" << std::endl;
+#else
 		train_link_map = std::vector<VertexSet>(N);
 		for (auto edge = linked_edges->begin();
 			 	edge != linked_edges->end();
@@ -414,7 +441,122 @@ protected:
 			train_link_map[edge->first].insert(edge->second);
 			train_link_map[edge->second].insert(edge->first);
 		}
+#endif
 	}
+
+
+#ifdef EDGESET_IS_ADJACENCY_LIST
+
+	// FIXME: move into np/
+	template <typename T>
+	static void prefix_sum(std::vector<T> *a) {
+#ifndef NDEBUG
+		std::vector<T> orig(a->size());
+#pragma omp parallel for schedule(static, 1)
+		for (::size_t i = 0; i < a->size(); ++i) {
+			orig[i] = (*a)[i];
+		}
+#endif
+		std::cerr << "omp max threads " << omp_get_max_threads() << std::endl;
+		::size_t chunk = (a->size() + omp_get_max_threads() - 1) /
+							omp_get_max_threads();
+		std::vector<::size_t> chunk_sum(omp_get_max_threads());
+#pragma omp parallel for
+		for (::size_t t = 0; t < omp_get_max_threads(); ++t) {
+			for (::size_t i = chunk * t + 1;
+				 	i < std::min(a->size(), chunk * (t + 1));
+				   	++i) {
+				(*a)[i] += (*a)[i - 1];
+			}
+		}
+		chunk_sum[0] = 0;
+		for (::size_t t = 1; t < omp_get_max_threads(); ++t) {
+			chunk_sum[t] = chunk_sum[t - 1] + (*a)[t * chunk - 1];
+		}
+#pragma omp parallel for
+		for (::size_t t = 0; t < omp_get_max_threads(); ++t) {
+			for (::size_t i = chunk * t;
+				 	i < std::min(a->size(), chunk * (t + 1));
+				   	++i) {
+				(*a)[i] += chunk_sum[t];
+			}
+		}
+#ifndef NDEBUG
+		assert((*a)[0] == orig[0]);
+#pragma omp parallel for schedule(static, 1)
+		for (::size_t i = 1; i < a->size(); ++i) {
+			assert((*a)[i] == (*a)[i - 1] + orig[i]);
+		}
+#endif
+	}
+
+
+	void adjacency_list_init() {
+		cumulative_edges.resize(N);
+
+#pragma omp parallel for
+		for (int i = 0; i < N; ++i) {
+			cumulative_edges[i] = (*linked_edges)[i].size();
+		}
+		prefix_sum(&cumulative_edges);
+
+		std::cerr << "Initializing the held-out set on multiple machines will create randomness bugs" << std::endl;
+		thread_random.resize(omp_get_max_threads());
+		for (::size_t i = 0; i < thread_random.size(); ++i) {
+			thread_random[i] = new Random::Random(i, 47);
+		}
+	}
+
+	void adjacency_list_end() {
+		for (auto r : thread_random) {
+			delete r;
+		}
+	}
+
+
+	void sample_random_edges(const NetworkGraph *linked_edges,
+							 ::size_t p, std::vector<Edge> *edges) {
+		std::unordered_set<Edge> collector;
+
+		// The graph has a hit for (a,b) as well as (b,a). Therefore it contains
+		// duplicates. Trust on unordered_set to filter out the duplicates. We need to
+		// iterate until the requested number of edges has been inserted though.
+		while (collector.size() < p) {
+			std::vector<std::unordered_set<Edge>> thread_edges(omp_get_max_threads());
+
+#pragma omp parallel for
+			for (::size_t i = 0; i < p - collector.size(); ++i) {
+				// Draw from 2 |Edges| since each edge is represented twice
+				::size_t edge_index = thread_random[omp_get_thread_num()]->randint(0, 2 * num_total_edges);
+				// locate the vertex where this edge lives
+				// Actually search for find_ge, so do edge_index + 1
+				int v1 = np::find_le(cumulative_edges, edge_index + 1);
+				if (v1 != 0) {
+					edge_index -= cumulative_edges[v1 - 1];
+				}
+				int v2 = -1;
+				// draw edge_index'th neighbor within this edge list
+				for (auto n : (*linked_edges)[v1]) {
+					if (edge_index == 0) {
+						v2 = n;
+						break;
+					}
+					edge_index--;
+				}
+				assert(v2 >= 0);
+				Edge e(std::min(v1, v2), std::max(v1, v2));
+				thread_edges[omp_get_thread_num()].insert(e);
+			}
+
+			for (auto e : thread_edges) {
+				collector.insert(e.begin(), e.end());
+			}
+		}
+
+		edges->assign(collector.begin(), collector.end());
+	}
+
+#endif // def EDGESET_IS_ADJACENCY_LIST
 
 
 	/**
@@ -425,14 +567,18 @@ protected:
 		::size_t p = held_out_size / 2;
 
 		// Sample p linked-edges from the network.
-		if (linked_edges->size() < p) {
+		if (get_num_linked_edges() < p) {
 			throw MCMCException("There are not enough linked edges that can sample from. "
 							    "please use smaller held out ratio.");
 		}
 
+		// FIXME make sampled_linked_edges an out param
 #if defined RANDOM_FOLLOWS_CPP_WENZHE || defined RANDOM_FOLLOWS_PYTHON
 		std::cerr << __func__ << ": FIXME: replace EdgeList w/ (unordered) EdgeSet again" << std::endl;
 		auto sampled_linked_edges = Random::random->sampleList(linked_edges, p);
+#elif defined EDGESET_IS_ADJACENCY_LIST
+		std::vector<Edge> *sampled_linked_edges = new std::vector<Edge>();
+		sample_random_edges(linked_edges, p, sampled_linked_edges);
 #else
 		auto sampled_linked_edges = Random::random->sample(linked_edges, p);
 #endif
@@ -440,15 +586,10 @@ protected:
 			 	edge != sampled_linked_edges->end();
 				edge++) {
 			held_out_map[*edge] = true;
+#ifndef EDGESET_IS_ADJACENCY_LIST
 			train_link_map[edge->first].erase(edge->second);
 			train_link_map[edge->second].erase(edge->first);
-		}
-
-		// sample p non-linked edges from the network
-		while (p > 0) {
-			Edge edge = sample_non_link_edge_for_held_out();
-			held_out_map[edge] = false;
-			p--;
+#endif
 		}
 
 		if (false) {
@@ -459,6 +600,13 @@ protected:
 		}
 
 		delete sampled_linked_edges;
+
+		// sample p non-linked edges from the network
+		while (p > 0) {
+			Edge edge = sample_non_link_edge_for_held_out();
+			held_out_map[edge] = false;
+			p--;
+		}
 	}
 
 
@@ -475,8 +623,13 @@ protected:
 			// is likely to contain valid p linked edges.
 #if defined RANDOM_FOLLOWS_CPP_WENZHE || defined RANDOM_FOLLOWS_PYTHON
 			std::cerr << __func__ << ": FIXME: replace EdgeList w/ (unordered) EdgeSet again" << std::endl;
+			// FIXME make sampled_linked_edges an out param
 			auto sampled_linked_edges = Random::random->sampleList(linked_edges, 2 * p);
+#elif defined EDGESET_IS_ADJACENCY_LIST
+			std::vector<Edge> *sampled_linked_edges = new std::vector<Edge>();
+			sample_random_edges(linked_edges, 2 * p, sampled_linked_edges);
 #else
+			// FIXME make sampled_linked_edges an out param
 			auto sampled_linked_edges = Random::random->sample(linked_edges, 2 * p);
 #endif
 			for (auto edge = sampled_linked_edges->cbegin();
@@ -493,8 +646,10 @@ protected:
 				}
 
 				test_map[*edge] = true;
+#ifndef EDGESET_IS_ADJACENCY_LIST
 				train_link_map[edge->first].erase(edge->second);
 				train_link_map[edge->second].erase(edge->first);
+#endif
 				p--;
 			}
 
@@ -514,6 +669,32 @@ protected:
 	static bool descending(T i, T j) { return (i > j); }
 
 	void calc_max_fan_out() {
+#ifdef EDGESET_IS_ADJACENCY_LIST
+		// The AdjacencyList is a directed link representation; an edge
+		// <me, other> in adj_list[me] is matched by an edge <other, me> in
+		// adj_list[other]
+		// Need to count edges only for
+		//    train_link_map = linked_edges - held_out_map - test_map.
+		std::vector<int> fan_out(N, 0);
+		for (::size_t i = 0; i < linked_edges->size(); ++i) {
+			for (auto n : (*linked_edges)[i]) {
+				if (n >= static_cast<int>(i)) {	// don't count (a,b) as well as (b,a)
+					Edge e(i, n);
+					if (! e.in(held_out_map) && ! e.in(test_map)) {
+						fan_out[i]++;
+						fan_out[n]++;
+					}
+				}
+			}
+		}
+
+		fan_out_cumul_distro.resize(fan_out.size());
+#pragma omp parallel for schedule(static, 1)
+		for (::size_t i = 0; i < fan_out.size(); ++i) {
+			fan_out_cumul_distro[i] = fan_out[i];
+		}
+
+#else // ifdef EDGESET_IS_ADJACENCY_LIST
 		std::unordered_map<int, ::size_t> fan_out;
 
 		::size_t i = 0;
@@ -525,6 +706,8 @@ protected:
 		std::transform(fan_out.begin(), fan_out.end(),
 					   std::back_inserter(fan_out_cumul_distro),
 					   boost::bind(&std::unordered_map<int, ::size_t>::value_type::second, _1));
+#endif
+
 		std::sort(fan_out_cumul_distro.begin(), fan_out_cumul_distro.end(), descending< ::size_t>);
 		std::partial_sum(fan_out_cumul_distro.begin(), fan_out_cumul_distro.end(),
 						 fan_out_cumul_distro.begin());
@@ -605,10 +788,15 @@ protected:
 
 protected:
 	int			N;					// number of nodes in the graph
-	const EdgeSet *linked_edges;	// all pair of linked edges.
+	const NetworkGraph *linked_edges;	// all pair of linked edges.
 	::size_t	num_total_edges;	// number of total edges.
 	double		held_out_ratio;		// percentage of held-out data size
 	::size_t	held_out_size;
+
+#ifdef EDGESET_IS_ADJACENCY_LIST
+	std::vector<::size_t> cumulative_edges;
+	std::vector<Random::Random *> thread_random;
+#endif
 
 	// The map stores all the neighboring nodes for each node, within the training
 	// set. The purpose of keeping this object is to make the stratified sampling
@@ -620,7 +808,9 @@ protected:
 	//   .............
 	// 10000: [0,441,9000]
 	//                         }
+#ifndef EDGESET_IS_ADJACENCY_LIST
 	std::vector<VertexSet> train_link_map;	//
+#endif
 	EdgeMap held_out_map;			// store all held out edges
 	EdgeMap test_map;				// store all test edges
 

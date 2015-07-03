@@ -540,7 +540,7 @@ public:
 			EdgeSample edgeSample = network.sample_mini_batch(mini_batch_size, strategy);
 			t_mini_batch.stop();
 			// std::cerr << "Done sample_mini_batch" << std::endl;
-			const OrderedEdgeSet &mini_batch = *edgeSample.first;
+			const MinibatchSet &mini_batch = *edgeSample.first;
 			assert(mini_batch.size() <= num_edges_in_batch);
 			double scale = edgeSample.second;
 
@@ -713,7 +713,7 @@ protected:
 	}
 #endif
 
-	void stage_edges(const OrderedEdgeSet &mini_batch, const std::vector<int> &nodes) {
+	void stage_edges(const MinibatchSet &mini_batch, const std::vector<int> &nodes) {
 		::size_t i;
 		std::vector<cl_int2> edges(mini_batch.size());
 		std::unordered_map<int, int> node_index(N);
@@ -741,7 +741,7 @@ protected:
 				edges.data());
 	}
 
-	void update_beta(const OrderedEdgeSet &mini_batch, double scale, const std::vector<int> &nodes) {
+	void update_beta(const MinibatchSet &mini_batch, double scale, const std::vector<int> &nodes) {
 		int arg;
 
 		// We assume that are staged correctly:
@@ -1107,7 +1107,7 @@ protected:
 		}
 	}
 
-	std::vector<int> nodes_in_batch(const OrderedEdgeSet &mini_batch) const {
+	std::vector<int> nodes_in_batch(const MinibatchSet &mini_batch) const {
         /**
         Get all the unique nodes in the mini_batch.
          */

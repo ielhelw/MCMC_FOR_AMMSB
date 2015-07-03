@@ -1,3 +1,5 @@
+DEPRECATED, PLEASE REMOVE!
+
 /*
  * Copyright notice goes here
  */
@@ -24,10 +26,8 @@ namespace preprocess {
 
 class HepPH : public DataSet {
 public:
-	HepPH(const std::string &filename,
-		  bool compressed = false, bool contiguous = false)
-			: DataSet(filename == "" ?  "datasets/CA-HepPh.txt" : filename,
-					  compressed, contiguous) {
+	HepPH(const std::string &filename)
+			: DataSet(filename == "" ?  "datasets/CA-HepPh.txt" : filename) {
 	}
 
 	virtual ~HepPH() {
@@ -50,9 +50,9 @@ public:
 	 * the node ID first.
 	 */
 	virtual const Data *process() {
-		std::ifstream infile(filename);
+		std::ifstream infile(filename_);
 		if (! infile) {
-			throw mcmc::IOException("Cannot open " + filename);
+			throw mcmc::IOException("Cannot open " + filename_);
 		}
 
 		std::string line;
@@ -89,7 +89,7 @@ public:
 			i++;
 		}
 
-		mcmc::EdgeSet *E = new mcmc::EdgeSet();	// store all pair of edges.
+		mcmc::NetworkGraph *E = new mcmc::NetworkGraph();	// store all pair of edges.
 		for (std::vector<Edge>::iterator i = edge.begin();
 				 i != edge.end();
 				 i++) {
