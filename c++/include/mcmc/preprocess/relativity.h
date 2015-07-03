@@ -80,10 +80,12 @@ public:
 		std::istream instream(&inbuf);
 
 		std::string line;
+		std::string header;
 
 		// start from the 5th line.
 		for (int i = 0; i < 4; i++) {
 			std::getline(instream, line);
+			header = header + line + "\n";
 		}
 
 		mcmc::EdgeSet *E = new mcmc::EdgeSet();	// store all pair of edges.
@@ -164,7 +166,7 @@ public:
 
 		infile.close();
 
-		return new Data(NULL, E, N);
+		return new Data(NULL, E, N, header);
 	}
 
 };

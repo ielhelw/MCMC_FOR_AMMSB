@@ -1,3 +1,7 @@
+# Directed graph (each unordered pair of nodes is saved once): CA-AstroPh.txt 
+# Toy network
+# Nodes: 75 Edges: 1442
+# FromNodeId	ToNodeId
 2	1
 6	1
 10	1

@@ -255,6 +255,7 @@ public:
 		t_load_pi_minibatch     = Timer("      load minibatch pi");
 		t_load_pi_neighbor      = Timer("      load neighbor pi");
 		t_update_phi            = Timer("      update_phi");
+		t_update_phi_in         = Timer("      update_phi in graph");
 		t_barrier_phi           = Timer("    barrier to update phi");
 		t_update_pi             = Timer("    update_pi");
 		t_store_pi_minibatch    = Timer("      store minibatch pi");
@@ -619,6 +620,7 @@ public:
 		std::cout << t_load_pi_minibatch << std::endl;
 		std::cout << t_load_pi_neighbor << std::endl;
 		std::cout << t_update_phi << std::endl;
+		std::cout << t_update_phi_in << std::endl;
 		std::cout << t_barrier_phi << std::endl;
 		std::cout << t_update_pi << std::endl;
 		std::cout << t_store_pi_minibatch << std::endl;
@@ -951,8 +953,14 @@ protected:
 			if (i != neighbor) {
 				int y_ab = 0;		// observation
 				Edge edge(std::min(i, neighbor), std::max(i, neighbor));
+				if (omp_get_max_threads() == 1) {
+					t_update_phi_in.start();
+				}
 				if (edge.in(network.get_linked_edges())) {
 					y_ab = 1;
+				}
+				if (omp_get_max_threads() == 1) {
+					t_update_phi_in.stop();
 				}
 
 				std::vector<double> probs(K);
@@ -1313,6 +1321,7 @@ protected:
 	Timer t_sample_neighbor_nodes;
 	Timer t_update_phi_pi;
 	Timer t_update_phi;
+	Timer t_update_phi_in;
 	Timer t_load_pi_minibatch;
 	Timer t_load_pi_neighbor;
    	Timer t_barrier_phi;

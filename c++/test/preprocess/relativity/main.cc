@@ -7,7 +7,7 @@ int main(int argc, char *argv[]) {
 
   mcmc::Options options(argc, argv);
 
-  DataFactory df("relativity", options.filename,
+  DataFactory df(options.dataset_class, options.filename,
 				 options.compressed, options.contiguous);
 
   const Data *data = df.get_data();

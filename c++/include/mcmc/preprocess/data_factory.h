@@ -31,7 +31,7 @@ public:
 		} else if (dataset_name == "relativity") {
 			dataObj = new Relativity(filename, compressed, contiguous);
 		} else if (dataset_name == "rc") {
-			dataObj = new Relativity(filename, true);
+			dataObj = new Relativity(filename, compressed, true);
 		} else if (dataset_name == "hep_ph") {
 			// dataObj = new HepPH(filename, compressed, contiguous);
 		} else if (dataset_name == "astro_ph") {

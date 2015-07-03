@@ -183,10 +183,8 @@ void dump(const EdgeContainer &s) {
  */
 class Data {
 public:
-	Data(const void *V, const EdgeSet *E, int N) {
-		this->V = V;
-		this->E = E;
-		this->N = N;
+	Data(const void *V, const EdgeSet *E, int N, const std::string &header = "") :
+		V(V), E(E), N(N), header_(header) {
 	}
 
 	~Data() {
@@ -195,10 +193,10 @@ public:
 	}
 
 	void dump_data() const {
-		std::cout << "Edge set size " << N << std::endl;
+		// std::cout << "Edge set size " << N << std::endl;
+		std::cout << header_;
 		for (EdgeSet::const_iterator edge = E->begin(); edge != E->end(); edge++) {
-			std::cout << "    " << std::setw(10) << edge->first <<
-				" " << std::setw(10) << edge->second << std::endl;
+			std::cout << edge->first << "\t" << edge->second << std::endl;
 		}
 	}
 
@@ -206,6 +204,7 @@ public:
 	const void *V;	// mapping between vertices and attributes.
 	const EdgeSet *E;	// all pair of "linked" edges.
 	int N;				// number of vertices
+	std::string header_;
 };
 
 }	// namespace mcmc
