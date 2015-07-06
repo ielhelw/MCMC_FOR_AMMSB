@@ -131,7 +131,7 @@ namespace learning {
 
 #ifdef RANDOM_FOLLOWS_SCALABLE_GRAPH
 #  define NEIGHBOR_SET_IS_VECTOR
-typedef std::vector<int> NeighborSet;
+typedef std::vector<Vertex> NeighborSet;
 #else
 typedef OrderedVertexSet NeighborSet;
 #endif
@@ -194,8 +194,8 @@ public:
     parameters for each iteration, here we only use mini-batch (subset) of the examples.
     This method is great marriage between MCMC and stochastic methods.
     */
-    MCMCSamplerStochasticDistributed(const Options &args, const Network &graph)
-			: MCMCSamplerStochastic(args, graph), mpi_master(0), args(args) {
+    MCMCSamplerStochasticDistributed(const Options &args)
+			: MCMCSamplerStochastic(args), mpi_master(0) {
 #ifdef RANDOM_FOLLOWS_CPP_WENZHE
 		throw MCMCException("No support for Wenzhe Random compatibility");
 #endif
@@ -278,7 +278,7 @@ public:
 		DKV::TYPE::DKV_TYPE dkv_type = DKV::TYPE::FILE;
 
 		max_minibatch_chunk = 0;
-		const std::vector<std::string> &a = args.getRemains();
+		const std::vector<std::string> &a = args_.getRemains();
 		std::vector<std::string> dkv_args;
 		for (::size_t i = 0; i < a.size(); i++) {
 			if (false) {
@@ -484,7 +484,7 @@ public:
 				flat_neighbors.resize(chunk_nodes.size() * real_num_node_sample());
 #pragma omp parallel for // num_threads (12)
 				for (::size_t i = 0; i < chunk_nodes.size(); ++i) {
-					int node = chunk_nodes[i];
+					Vertex node = chunk_nodes[i];
 					// sample a mini-batch of neighbors
 					NeighborSet neighbors = sample_neighbor_nodes(num_node_sample, node,
 																  threadRandom[omp_get_thread_num()]);
@@ -522,7 +522,7 @@ public:
 				t_update_phi.start();
 #pragma omp parallel for // num_threads (12)
 				for (::size_t i = 0; i < chunk_nodes.size(); ++i) {
-					int node = chunk_nodes[i];
+					Vertex node = chunk_nodes[i];
 					// std::cerr << "Random seed " << std::hex << "0x" << kernelRandom->seed(0) << ",0x" << kernelRandom->seed(1) << std::endl << std::dec;
 					update_phi(node, pi_node[i],
 							   flat_neighbors.begin() + i * real_num_node_sample(),
@@ -797,8 +797,8 @@ protected:
 			}
 			// std::cerr << "Done sample_mini_batch" << std::endl;
 
-			//std::unordered_map<int, std::vector<int> > latent_vars;
-			//std::unordered_map<int, ::size_t> size;
+			//std::unordered_map<Vertex, std::vector<int> > latent_vars;
+			//std::unordered_map<Vertex, ::size_t> size;
 
 			// iterate through each node in the mini batch.
 			t_nodes_in_mini_batch.start();
@@ -806,10 +806,10 @@ protected:
 			t_nodes_in_mini_batch.stop();
 // std::cerr << "mini_batch size " << mini_batch.size() << " num_node_sample " << num_node_sample << std::endl;
 
-			std::vector<std::vector<int>> subminibatch(mpi_size);
+			std::vector<std::vector<Vertex>> subminibatch(mpi_size);
 
 			::size_t upper_bound = (nodes.size() + mpi_size - 1) / mpi_size;
-			std::unordered_set<int> unassigned;
+			std::unordered_set<Vertex> unassigned;
 			for (auto n: nodes) {
 				::size_t owner = node_owner(n);
 				if (subminibatch[owner].size() == upper_bound) {
@@ -887,7 +887,7 @@ protected:
 	}
 
 
-    void update_phi(int i, const double *pi_node,
+    void update_phi(Vertex i, const double *pi_node,
 					const std::vector<int32_t>::iterator &neighbors,
 					const std::vector<double *>::iterator &pi,
                     double eps_t, Random::Random *rnd,
@@ -1013,11 +1013,11 @@ protected:
 
 		t_beta_rank.start();
         // FIXME: already did the nodes_in_batch() -- only the ranking remains
-		std::unordered_map<int, int> node_rank;
-		std::vector<int> nodes;
+		std::unordered_map<Vertex, Vertex> node_rank;
+		std::vector<Vertex> nodes;
 		for (auto e : mini_batch) {
-			int i = e.first;
-			int j = e.second;
+			Vertex i = e.first;
+			Vertex j = e.second;
 			if (node_rank.find(i) == node_rank.end()) {
 				::size_t next = node_rank.size();
 				node_rank[i] = next;
@@ -1052,8 +1052,8 @@ protected:
             if (edge->in(network.get_linked_edges())) {
                 y = 1;
 			}
-			int i = node_rank[edge->first];
-			int j = node_rank[edge->second];
+			Vertex i = node_rank[edge->first];
+			Vertex j = node_rank[edge->second];
 
 			double pi_sum = 0.0;
 			for (::size_t k = 0; k < K; k++) {
@@ -1153,12 +1153,12 @@ protected:
         // FIXME isn't the held-out set fixed across iterations
         // so we can memo the ranking?
 		t_rank_pi_perp.start();
-		std::unordered_map<int, int> node_rank;
-		std::vector<int> nodes;
+		std::unordered_map<Vertex, Vertex> node_rank;
+		std::vector<Vertex> nodes;
 		for (auto edge : data) {
 			const Edge &e = edge.first;
-			int i = e.first;
-			int j = e.second;
+			Vertex i = e.first;
+			Vertex j = e.second;
 			if (node_rank.find(i) == node_rank.end()) {
 				::size_t next = node_rank.size();
 				node_rank[i] = next;
@@ -1182,8 +1182,8 @@ protected:
 		::size_t i = 0;
 		for (auto edge : data) {
 			const Edge &e = edge.first;
-			int a = node_rank[e.first];
-			int b = node_rank[e.second];
+			Vertex a = node_rank[e.first];
+			Vertex b = node_rank[e.second];
 			t_cal_edge_likelihood.start();
 			double edge_likelihood = cal_edge_likelihood(pi[a], pi[b],
 														 edge.second, beta);
@@ -1253,7 +1253,7 @@ protected:
 	}
 
 
-	int node_owner(int node) const {
+	int node_owner(Vertex node) const {
 		return node % mpi_size;
 	}
 
@@ -1275,8 +1275,6 @@ protected:
 	const int mpi_master;
 	int		mpi_size;
 	int		mpi_rank;
-
-	const Options &args;
 
 	DKV::DKVStoreInterface *d_kv_store;
 

@@ -69,16 +69,16 @@ public:
 	 * 	   network:    representation of the graph.
 	 * 	   args:       containing priors, control parameters for the model.
 	 */
-	SVI(const Options &args, const Network &graph)
-   			: Learner(args, graph) {
+	SVI(const Options &args)
+   			: Learner(args) {
 		// variational parameters.
 		lamda = Random::random->gamma(eta[0], eta[1], K, 2);	// variational parameters for beta
 		gamma = Random::random->gamma(1, 1, N, K);			// variational parameters for pi
 		std::cerr << "gamma.size() " << gamma.size() << " gamma[0].size() " << gamma[0].size() << std::endl;
 		update_pi_beta();
 		// step size parameters.
-		kappa = args.b;
-		tao = args.c;
+		kappa = args_.b;
+		tao = args_.c;
 
 		// control parameters for learning
 		online_iterations = 50;
@@ -182,8 +182,8 @@ protected:
 			std::cerr << "Minibatch size " << mini_batch.size() << std::endl;
 		}
 		for (auto edge = mini_batch.begin(); edge != mini_batch.end(); edge++) {
-			int a = edge->first;
-			int b = edge->second;
+			Vertex a = edge->first;
+			Vertex b = edge->second;
 			//estimate_phi_for_edge(edge, phi)  // this can be done in parallel.
 
 			if (false) {
@@ -235,14 +235,14 @@ protected:
 
 		// calculate the gradient for gamma
 		std::vector<std::vector<double> > grad_lamda(K, std::vector<double>(2, 0.0));
-		std::unordered_map<int, std::vector<double> > grad_gamma(N);	// ie. grad[a] = array[] which is K dimensional vector
-		std::unordered_map<int, ::size_t> counter;	// used for scaling
+		std::unordered_map<Vertex, std::vector<double> > grad_gamma(N);	// ie. grad[a] = array[] which is K dimensional vector
+		std::unordered_map<Vertex, ::size_t> counter;	// used for scaling
 		for (auto edge = mini_batch.begin(); edge != mini_batch.end(); edge++) {
 			/*
 			 * calculate the gradient for gamma
 			 */
-			int a = edge->first;
-			int b = edge->second;
+			Vertex a = edge->first;
+			Vertex b = edge->second;
 			const std::vector<double> &phi_ab = phi[Edge(a,b)];
 			const std::vector<double> &phi_ba = phi[Edge(b,a)];
 			if (grad_gamma.find(a) != grad_gamma.end()) {
@@ -326,7 +326,7 @@ protected:
 			}
 		}
 #if 0
-		for (std::unordered_map<int, std::vector<double> >::iterator node = grad_gamma.begin();
+		for (std::unordered_map<Vertex, std::vector<double> >::iterator node = grad_gamma.begin();
 			 	node != grad_gamma.end();
 				node++) {
 			if (counter[node->first] == 0) {
@@ -392,8 +392,8 @@ protected:
 
 		using ::boost::math::digamma;
 
-		int a = edge.first;
-		int b = edge.second;
+		Vertex a = edge.first;
+		Vertex b = edge.second;
 		// initialize
 		std::vector<double> phi_ab(K, 1.0 / K);
 		std::vector<double> phi_ba(K, 1.0 / K);

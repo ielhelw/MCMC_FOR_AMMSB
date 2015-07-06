@@ -47,7 +47,7 @@ namespace preprocess {
 
 using namespace tinyxml2;
 
-typedef std::unordered_map<int, std::string> Vertex;
+typedef std::unordered_map<Vertex, std::string> VertexAttrib;
 
 class NetScience : public DataSet {
 public:
@@ -68,7 +68,7 @@ public:
 
 		// V stores the mapping between node ID and attribute. i.e title, name. etc
 		// i.e {0: "WU, C", 1 :CHUA, L"}
-		Vertex *V = new Vertex();
+		VertexAttrib *V = new VertexAttrib();
 		XMLDocument tree;
 		if (tree.LoadFile(filename_.c_str()) != XML_NO_ERROR) {
 			throw mcmc::IOException("Cannot open " + filename_);
@@ -118,7 +118,7 @@ public:
 		for (XMLElement *n = c->FirstChildElement("node");
 				 n != NULL;
 				 n = n->NextSiblingElement("node")) {
-			int id;
+			Vertex id;
 			if (n->QueryIntAttribute("id", &id) != XML_NO_ERROR) {
 				throw XMLException("Cannot get int attribute 'id'");
 			}
@@ -152,8 +152,8 @@ public:
 		for (XMLElement *n = c->FirstChildElement("link");
 				 n != NULL;
 				 n = n->NextSiblingElement("link")) {
-			int a;
-			int b;
+			Vertex a;
+			Vertex b;
 			if (n->QueryIntAttribute("source", &a) != XML_NO_ERROR) {
 				throw XMLException("Cannot get int attribute 'source'");
 			}

@@ -61,28 +61,28 @@ public:
 		}
 
 		// start from the 5th line.
-		std::set<int> vertex;	// ordered set
+		std::set<Vertex> vertex;	// ordered set
 		std::vector<mcmc::Edge> edge;
 		while (std::getline(infile, line)) {
-			int a;
-			int b;
+			Vertex a;
+			Vertex b;
 			std::istringstream iss(line);
 			if (! (iss >> a >> b)) {
-				throw mcmc::IOException("Fail to parse int");
+				throw mcmc::IOException("Fail to parse Vertex");
 			}
 			vertex.insert(a);
 			vertex.insert(b);
 			edge.push_back(Edge(a, b));
 		}
 
-		std::vector<int> nodelist(vertex.begin(), vertex.end()); // use range constructor, retain order
+		std::vector<Vertex> nodelist(vertex.begin(), vertex.end()); // use range constructor, retain order
 
 		::size_t N = nodelist.size();
 
 		// change the node ID to make it start from 0
-		std::unordered_map<int, int> node_id_map;
-		int i = 0;
-		for (std::vector<int>::iterator node_id = nodelist.begin();
+		std::unordered_map<Vertex, Vertex> node_id_map;
+		Vertex i = 0;
+		for (std::vector<Vertex>::iterator node_id = nodelist.begin();
 			 	node_id != nodelist.end();
 				node_id++) {
 			node_id_map[*node_id] = i;
@@ -93,8 +93,8 @@ public:
 		for (std::vector<Edge>::iterator i = edge.begin();
 				 i != edge.end();
 				 i++) {
-			int node1 = node_id_map[i->first];
-			int node2 = node_id_map[i->second];
+			Vertex node1 = node_id_map[i->first];
+			Vertex node2 = node_id_map[i->second];
 			if (node1 == node2) {
 				continue;
 			}

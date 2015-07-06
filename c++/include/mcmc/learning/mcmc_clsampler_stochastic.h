@@ -32,7 +32,7 @@ class MCMCClSamplerStochastic : public Learner {
 	public:
 		// TODO: share buffers for clNodes clEdges
 
-		void init(MCMCClSamplerStochastic &learner, cl::Buffer *clGraph, const std::map<int, std::vector<int> > &edges, ::size_t N, ::size_t num_nodes_in_batch, ::size_t num_edges_in_batch) {
+		void init(MCMCClSamplerStochastic &learner, cl::Buffer *clGraph, const std::map<Vertex, std::vector<Vertex> > &edges, ::size_t N, ::size_t num_nodes_in_batch, ::size_t num_edges_in_batch) {
 			this->clGraph = clGraph;
 			this->num_nodes_in_batch = num_nodes_in_batch;
 			this->num_edges_in_batch = num_edges_in_batch;
@@ -69,7 +69,7 @@ class MCMCClSamplerStochastic : public Learner {
 			learner.clContext.queue.finish();
 		}
 
-		std::vector<std::vector<int> >	adjacency_list;
+		std::vector<std::vector<Vertex> >	adjacency_list;
 
 		cl::Buffer						*clGraph;
 		cl::Buffer						clNodes;
@@ -84,8 +84,8 @@ class MCMCClSamplerStochastic : public Learner {
 
 
 public:
-	MCMCClSamplerStochastic(const Options &args, const Network &graph, cl::ClContext clContext)
-		: Learner(args, graph), clContext(clContext),
+	MCMCClSamplerStochastic(const Options &args, cl::ClContext clContext)
+		: Learner(args), clContext(clContext),
 		  vexContext(std::vector<cl::Context>(1, clContext.getContext()),
 					 std::vector<cl::CommandQueue>(1, clContext.getQueue())),
 		  csumDouble(vexContext), csumInt(vexContext),
@@ -109,24 +109,24 @@ public:
 #endif
 
         // step size parameters.
-        this->a = args.a;
-        this->b = args.b;
-        this->c = args.c;
+        this->a = args_.a;
+        this->b = args_.b;
+        this->c = args_.c;
 
         // control parameters for learning
 		// num_node_sample = N / 5;
-		if (args.num_node_sample == 0) {
+		if (args_.num_node_sample == 0) {
 			// num_node_sample = static_cast< ::size_t>(std::sqrt(network.get_num_nodes()));
 			num_node_sample = N / 50;
 		} else {
-			num_node_sample = args.num_node_sample;
+			num_node_sample = args_.num_node_sample;
 		}
-		if (args.interval == 0) {
+		if (args_.interval == 0) {
 			interval = 50;
 		} else {
-			interval = args.interval;
+			interval = args_.interval;
 		}
-		if (args.mini_batch_size == 0) {
+		if (args_.mini_batch_size == 0) {
 			mini_batch_size = N / 10;	// old default for STRATIFIED_RANDOM_NODE_SAMPLING
 		}
 		std::cerr << "num_node_sample " << num_node_sample << " a " << a << " b " << b << " c " << c << " alpha " << alpha << " eta (" << eta[0] << "," << eta[1] << ")" << std::endl;
@@ -186,7 +186,7 @@ public:
 		num_outgoing_edges_from_batch = network.get_max_fan_out(num_nodes_in_batch);
 
 		const ::size_t deviceMem = clContext.device.getInfo<CL_DEVICE_MAX_MEM_ALLOC_SIZE>();
-		bufferSize = args.openclBufferSize;
+		bufferSize = args_.openclBufferSize;
 		if (bufferSize == 0) {
 			bufferSize = deviceMem;
 		}
@@ -365,8 +365,8 @@ public:
 		random_gamma_dummy_kernel.setArg(Idx++, clBuffers);
 		random_gamma_dummy_kernel.setArg(Idx++, (double)1.0);
 		random_gamma_dummy_kernel.setArg(Idx++, (double)1.0);
-		random_gamma_dummy_kernel.setArg(Idx++, (int)N);
-		random_gamma_dummy_kernel.setArg(Idx++, (int)K);
+		random_gamma_dummy_kernel.setArg(Idx++, (cl_int)N);
+		random_gamma_dummy_kernel.setArg(Idx++, (cl_int)K);
 		clContext.queue.enqueueNDRangeKernel(random_gamma_dummy_kernel, cl::NullRange, cl::NDRange(globalThreads), cl::NDRange(1));
 		clContext.queue.finish();
 		std::cerr << "Done N * K = " << (N * K) << " device dummy randoms" << std::endl;
@@ -553,7 +553,7 @@ public:
 
 			// iterate through each node in the mini batch.
 			t_nodes_in_mini_batch.start();
-			const std::vector<int> nodes = nodes_in_batch(mini_batch);
+			const std::vector<Vertex> nodes = nodes_in_batch(mini_batch);
 			t_nodes_in_mini_batch.stop();
 
             if (true) {
@@ -591,7 +591,7 @@ public:
 			t_stage_phi.stop();
 
 			if (false) {
-				std::unordered_set<int> unique;
+				std::unordered_set<Vertex> unique;
 				for (auto i = hostNeighbors.begin(); i < hostNeighbors.begin() + nodes.size() * real_num_node_sample(); i++) {
 					unique.insert(*i);
 				}
@@ -713,10 +713,10 @@ protected:
 	}
 #endif
 
-	void stage_edges(const MinibatchSet &mini_batch, const std::vector<int> &nodes) {
+	void stage_edges(const MinibatchSet &mini_batch, const std::vector<Vertex> &nodes) {
 		::size_t i;
 		std::vector<cl_int2> edges(mini_batch.size());
-		std::unordered_map<int, int> node_index(N);
+		std::unordered_map<Vertex, Vertex> node_index(N);
 		i = 0;
 		for (auto n: nodes) {
 			node_index[n] = i;
@@ -741,7 +741,7 @@ protected:
 				edges.data());
 	}
 
-	void update_beta(const MinibatchSet &mini_batch, double scale, const std::vector<int> &nodes) {
+	void update_beta(const MinibatchSet &mini_batch, double scale, const std::vector<Vertex> &nodes) {
 		int arg;
 
 		// We assume that are staged correctly:
@@ -798,7 +798,7 @@ protected:
 		update_beta_calculate_theta_kernel.setArg(arg++, (cl_double)scale);
 		update_beta_calculate_theta_kernel.setArg(arg++, (cl_double)eps_t);
 		update_beta_calculate_theta_kernel.setArg(arg++, clEta);
-		update_beta_calculate_theta_kernel.setArg(arg++, (int)countPartialSums);
+		update_beta_calculate_theta_kernel.setArg(arg++, (cl_int)countPartialSums);
 
 		clContext.queue.enqueueTask(update_beta_calculate_theta_kernel);
 		clContext.queue.finish();
@@ -838,7 +838,7 @@ protected:
 		return num_node_sample + 1;
 	}
 
-	void stage_subgraph(GraphWrapper *graph, const std::vector<int> &nodes) {
+	void stage_subgraph(GraphWrapper *graph, const std::vector<Vertex> &nodes) {
 		// Copy held_out_set subgraph for nodes
 		// ::size_t edge_elts = nodes.size() * std::max(network.get_max_fan_out(), num_node_sample + 1);
 		if (nodes.size() == 0) {
@@ -885,10 +885,10 @@ protected:
 	void stage_sub_vectors(cl::Buffer &buffer,
 						   const std::vector<std::vector<double> > &data,
 						   std::vector<double> &hostBuffer,
-						   const std::vector<int> &nodes) {
-		static int first = 1;
+						   const std::vector<Vertex> &nodes) {
+		static bool first = true;
 		if (first) {
-			first = 0;
+			first = false;
 			std::cerr << "FIXME: " << __func__ << "(): ensure neighbor indirect at both host and device" << std::endl;
 			std::cerr << "FIXME: " << __func__ << "(): implement subrange of matrix" << std::endl;
 			std::cerr << "FIXME: " << __func__ << "(): if this is mapped memory: no need for intermediate copy" << std::endl;
@@ -926,13 +926,13 @@ protected:
 	void stage_sub_neighbor_vectors(cl::Buffer &buffer,
 									const std::vector<std::vector<double> > &data,
 									std::vector<double> &hostBuffer,
-									const std::vector<int> &neighbors,
+									const std::vector<Vertex> &neighbors,
 									::size_t numNodes,
 									::size_t offset, ::size_t stride, ::size_t size,
 									::size_t bufferOffset) {
-		static int first = 1;
+		static bool first = true;
 		if (first) {
-			first = 0;
+			first = false;
 			std::cerr << "FIXME: " << __func__ << "(): ensure neighbor indirect at both host and device" << std::endl;
 			std::cerr << "FIXME: " << __func__ << "(): implement subrange of matrix" << std::endl;
 			std::cerr << "FIXME: " << __func__ << "(): if this is mapped memory: no need for intermediate copy" << std::endl;
@@ -990,7 +990,7 @@ protected:
 		clContext.queue.enqueueReadBuffer(buffer, CL_TRUE, 0, size * K * sizeof(cl_double), hostBuffer.data() + offset);
 	}
 
-	void sample_neighbor_nodes(const std::vector<int> &nodes) {
+	void sample_neighbor_nodes(const std::vector<Vertex> &nodes) {
 
 		if (nodes.size() == 0) {
 			return;
@@ -1010,9 +1010,9 @@ protected:
 
 		clContext.queue.enqueueReadBuffer(clNodesNeighbors, CL_FALSE, 0, nodes.size() * real_num_node_sample() * sizeof(cl_int), hostNeighbors.data());
 
-		static int first = 1;
+		static bool first = true;
 		if (first) {
-			first = 0;
+			first = false;
 			std::cerr << "FIXME FIXME FIXME: shuffle/indirect/restage neighbor table" << std::endl;
 		}
 
@@ -1031,7 +1031,7 @@ protected:
         }
 	}
 
-	void update_phi(const std::vector<int> &nodes, ::size_t offset, ::size_t stride) {
+	void update_phi(const std::vector<Vertex> &nodes, ::size_t offset, ::size_t stride) {
 
 		// Pi is staged in two contiguous sections:
 		// 1) pi(i) for i in nodes, before the loop that calls us
@@ -1068,7 +1068,7 @@ protected:
 		check_for_kernel_errors(); // update_phi_kernel
 	}
 
-	void update_pi(const std::vector<int> &nodes) {
+	void update_pi(const std::vector<Vertex> &nodes) {
 		if (nodes.size() == 0) {
 			return;
 		}
@@ -1098,7 +1098,7 @@ protected:
 		retrieve_sub_vectors(clPhi, hostPhiBuffer, 0, nodes.size());
 	}
 
-	void commit_phi(const std::vector<int> &nodes) {
+	void commit_phi(const std::vector<Vertex> &nodes) {
 		::size_t i = 0;
 		for (auto n: nodes) {
 			pi[n] = std::vector<cl_double>(hostPiBuffer.begin() + i * K, hostPiBuffer.begin() + (i + 1) * K);
@@ -1107,7 +1107,7 @@ protected:
 		}
 	}
 
-	std::vector<int> nodes_in_batch(const MinibatchSet &mini_batch) const {
+	std::vector<Vertex> nodes_in_batch(const MinibatchSet &mini_batch) const {
         /**
         Get all the unique nodes in the mini_batch.
          */
@@ -1117,7 +1117,7 @@ protected:
             node_set.insert(edge->second);
 		}
 
-        std::vector<int> nodes(node_set.begin(), node_set.end());
+        std::vector<Vertex> nodes(node_set.begin(), node_set.end());
 #ifdef RANDOM_FOLLOWS_GLASSWING
         std::cerr << "Unsorted nodes: ";
         for (auto n : nodes) {
@@ -1151,11 +1151,11 @@ protected:
 		return y;
 	}
 
-	int deviceSumInt(cl::Buffer &xBuffer) {
-		vex::backend::opencl::device_vector<int> xDev(xBuffer);
-		vex::vector<int> X(vexContext.queue(0), xDev);
+	cl_int deviceSumInt(cl::Buffer &xBuffer) {
+		vex::backend::opencl::device_vector<cl_int> xDev(xBuffer);
+		vex::vector<cl_int> X(vexContext.queue(0), xDev);
 
-		int y = csumInt(X);
+		cl_int y = csumInt(X);
 
 		return y;
 	}
@@ -1209,8 +1209,8 @@ protected:
 
 		link_likelihood = deviceSum<double>(clLinkLikelihood);
 		non_link_likelihood = deviceSum<double>(clNonLinkLikelihood);
-		link_count = deviceSum<int>(clLinkCount);
-		non_link_count = deviceSum<int>(clNonLinkCount);
+		link_count = deviceSum<cl_int>(clLinkCount);
+		non_link_count = deviceSum<cl_int>(clNonLinkCount);
 
 		clContext.queue.finish();
 		// direct calculation.
@@ -1244,7 +1244,7 @@ protected:
 	void init_graph() {
 		graph_program = this->clContext.createProgram(BOOST_STRINGIZE(PROJECT_HOME) "/../OpenCL/graph.cl", progOpts);
 		graph_init_kernel = cl::Kernel(graph_program, "graph_init");
-		std::map<int, std::vector<int>> linkedMap;
+		std::map<Vertex, std::vector<Vertex>> linkedMap;
 
 		for (auto e : network.get_linked_edges()) {
 			linkedMap[e.first].push_back(e.second);

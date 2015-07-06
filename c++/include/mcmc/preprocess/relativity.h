@@ -69,6 +69,7 @@ public:
 		}
 
 		std::cerr << duration_cast<milliseconds>((system_clock::now() - start)).count() << "ms open file" << std::endl;
+		print_mem_usage(std::cerr);
 
 		boost::iostreams::filtering_streambuf<boost::iostreams::input> inbuf;
 
@@ -91,12 +92,12 @@ public:
 		::size_t N;
 
 		if (contiguous_) {
-			int max = -1;
-			std::unordered_set<int> vertex;
+			Vertex max = -1;
+			std::unordered_set<Vertex> vertex;
 			::size_t count = 0;
 			while (std::getline(instream, line)) {
-				int a;
-				int b;
+				Vertex a;
+				Vertex b;
 				std::istringstream iss(line);
 				if (! (iss >> a >> b)) {
 					throw mcmc::IOException("Fail to parse int");
@@ -116,12 +117,14 @@ public:
 					count++;
 				   	if (count % progress_ == 0) {
 						std::cerr << "Edges read " << count << std::endl;
+						print_mem_usage(std::cerr);
 					}
 				}
 			}
 			std::cerr << duration_cast<milliseconds>((system_clock::now() - start)).count() << "ms read unordered set" << std::endl;
+			print_mem_usage(std::cerr);
 			N = max + 1;
-			if (max + 1 != (int)vertex.size()) {
+			if (max + 1 != (Vertex)vertex.size()) {
 				std::ostringstream s;
 				for (::size_t i = 0; i < N; i++) {
 					if (vertex.find(i) == vertex.end()) {
@@ -129,21 +132,22 @@ public:
 					}
 				}
 				s << "# vertices " << vertex.size() << " max vertex " << max;
+				print_mem_usage(std::cerr);
 			}
 
 		} else {
-			// std::set<int> vertex;	// ordered set	WHY????????????????
-			std::unordered_set<int> vertex;
+			// std::set<Vertex> vertex;	// ordered set	WHY????????????????
+			std::unordered_set<Vertex> vertex;
 			std::vector<mcmc::Edge> edge;
-			int max = std::numeric_limits<int>::min();
-			int min = std::numeric_limits<int>::max();
+			Vertex max = std::numeric_limits<Vertex>::min();
+			Vertex min = std::numeric_limits<Vertex>::max();
 			::size_t count = 0;
 			while (std::getline(instream, line)) {
-				int a;
-				int b;
+				Vertex a;
+				Vertex b;
 				std::istringstream iss(line);
 				if (! (iss >> a >> b)) {
-					throw mcmc::IOException("Fail to parse int");
+					throw mcmc::IOException("Fail to parse Vertex");
 				}
 				vertex.insert(a);
 				vertex.insert(b);
@@ -154,33 +158,36 @@ public:
 					count++;
 				   	if (count % progress_ == 0) {
 						std::cerr << "Edges read " << count << std::endl;
+						print_mem_usage(std::cerr);
 					}
 				}
 			}
 			std::cerr << duration_cast<milliseconds>((system_clock::now() - start)).count() << "ms read ordered set" << std::endl;
+			print_mem_usage(std::cerr);
 			std::cerr << "#nodes " << vertex.size() <<
 				" min " << min << " max " << max <<
 			   	" #edges " << edge.size() << std::endl;
 
-			std::vector<int> nodelist(vertex.begin(), vertex.end()); // use range constructor, retain order
+			std::vector<Vertex> nodelist(vertex.begin(), vertex.end()); // use range constructor, retain order
 
 			N = nodelist.size();
 
 			// change the node ID to make it start from 0
-			std::unordered_map<int, int> node_id_map;
-			int i = 0;
+			std::unordered_map<Vertex, Vertex> node_id_map;
+			Vertex i = 0;
 			for (auto node_id: nodelist) {
 				node_id_map[node_id] = i;
 				i++;
 			}
 			std::cerr << duration_cast<milliseconds>((system_clock::now() - start)).count() << "ms create map" << std::endl;
+			print_mem_usage(std::cerr);
 
 			::size_t duplicates = 0;
 			::size_t self_links = 0;
 			count = 0;
 			for (auto i: edge) {
-				int node1 = node_id_map[i.first];
-				int node2 = node_id_map[i.second];
+				Vertex node1 = node_id_map[i.first];
+				Vertex node2 = node_id_map[i.second];
 				Edge eIdent(i.first, i.second);
 				if (node1 == node2) {
 					std::cerr << "Self-link " << eIdent << ": ignore" << std::endl;
@@ -198,11 +205,13 @@ public:
 					count++;
 				   	if (count % progress_ == 0) {
 						std::cerr << "Edges inserted " << count << std::endl;
+						print_mem_usage(std::cerr);
 					}
 				}
 			}
 			std::cerr << "#edges original " << edge.size() << " undirected subsets " << E->size() << " duplicates " << duplicates << " self-links " << self_links << std::endl;
 			std::cerr << duration_cast<milliseconds>((system_clock::now() - start)).count() << "ms create NetworkGraph" << std::endl;
+			print_mem_usage(std::cerr);
 			for (::size_t i = 0; i < E->size(); i++) {
 				if ((*E)[i].size() == 0) {
 					std::cerr << "Find no edges to/from " << i << std::endl;
@@ -212,11 +221,13 @@ public:
 
 		infile.close();
 
+		print_mem_usage(std::cerr);
+
 		return new Data(NULL, E, N, header);
 	}
 
 private:
-	int contiguous_offset_ = 0;
+	Vertex contiguous_offset_ = 0;
 
 };
 

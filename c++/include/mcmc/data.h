@@ -12,6 +12,8 @@
 #ifndef MCMC_DATA_H__
 #define MCMC_DATA_H__
 
+#include <unistd.h>
+
 #include <utility>
 #include <map>
 #include <unordered_map>
@@ -35,10 +37,46 @@
 
 namespace mcmc {
 
+typedef int32_t		Vertex;
+
+
+static void print_mem_usage(std::ostream &s) {
+	static const int64_t MEGA = 1 << 20;
+	static int64_t pagesize = 0;
+	static std::string proc_statm;
+	if (pagesize == 0) {
+		pagesize = sysconf(_SC_PAGESIZE);
+		std::ostringstream ss;
+		ss << "/proc/" << getpid() << "/statm";
+		proc_statm = ss.str();
+		s << "For memory query file " << proc_statm << std::endl;
+	}
+
+	std::ifstream statm(proc_statm);
+	if (! statm) {
+		std::cerr << "Cannot open input file \"" << proc_statm << "\"" << std::endl;
+		return;
+	}
+
+	::size_t total;
+	::size_t resident;
+	::size_t shared;
+	::size_t text;
+	::size_t data;
+	::size_t library;
+	::size_t dirty;
+	statm >> total >> resident >> shared >> text >> data >> library >> dirty;
+
+	// s << "Memory pages: total " << total << " resident " << resident << std::endl;
+	s << "Memory usage: total " << ((total * pagesize) / MEGA) << "MB " <<
+	   	"resident " << ((resident * pagesize) / MEGA) << "MB " << std::endl;
+}
+
+
 #define EDGESET_IS_ADJACENCY_LIST
 
 #ifdef USE_GOOGLE_SPARSE_HASH
-class GoogleHashSet : public google::sparse_hash_set<int> {
+class GoogleHashSet : public google::sparse_hash_set<Vertex> {
 public:
 	GoogleHashSet() {
 		// this->set_empty_key(-1);
@@ -48,7 +86,7 @@ public:
 typedef std::vector<GoogleHashSet> AdjacencyList;
 
 #else
-typedef std::vector<std::unordered_set<int>> AdjacencyList;
+typedef std::vector<std::unordered_set<Vertex>> AdjacencyList;
 #endif
 
 
@@ -58,7 +96,7 @@ public:
 	Edge() {
 	}
 
-	Edge(int a, int b) : first(a), second(b) {
+	Edge(Vertex a, Vertex b) : first(a), second(b) {
 	}
 
 	Edge(std::istream &s) {
@@ -116,14 +154,6 @@ public:
 			(*s)[second].reserve(4);
 		}
 #endif
-
-		if (first < 10) {
-			std::cerr << "Adjacency elt[" << first << "] size " << (*s)[first].size() << " capacity " << (*s)[first].bucket_count() << std::endl;
-			std::cerr << "sizeof elt " << sizeof((*s)[second]) << std::endl;
-		}
-		if (second < 10) {
-			std::cerr << "Adjacency elt[" << second << "] size " << (*s)[second].size() << " capacity " << (*s)[second].bucket_count() << std::endl;
-		}
 	}
 
 	bool operator== (const Edge &a) const {
@@ -175,8 +205,8 @@ public:
 		return s;
 	}
 
-	int		first;
-	int		second;
+	Vertex		first;
+	Vertex		second;
 };
 
 
@@ -206,7 +236,7 @@ template<>
 struct hash<mcmc::Edge> {
 public:
 #ifdef RANDOM_FOLLOWS_CPP_WENZHE
-	int operator()(const mcmc::Edge &x) const;
+	int32_t operator()(const mcmc::Edge &x) const;
 #else
 	::size_t operator()(const mcmc::Edge &x) const;
 #endif
@@ -222,8 +252,8 @@ namespace mcmc {
 #error "RANDOM_FOLLOWS_CPP is incompatible with RANDOM_FOLLOWS_PYTHON"
 #endif
 
-typedef std::unordered_set<int>			VertexSet;
-typedef std::set<int>					OrderedVertexSet;
+typedef std::unordered_set<Vertex>		VertexSet;
+typedef std::set<Vertex>				OrderedVertexSet;
 
 typedef std::unordered_set<Edge>		NetworkGraph;
 typedef std::set<Edge>					MinibatchSet;
@@ -232,9 +262,9 @@ typedef std::list<Edge>					EdgeList;
 typedef std::map<Edge, bool>			EdgeMap;
 
 #else	// def RANDOM_FOLLOWS_PYTHON
-typedef std::unordered_set<int>			VertexSet;
+typedef std::unordered_set<Vertex>		VertexSet;
 #ifdef RANDOM_FOLLOWS_CPP
-typedef std::set<int>					OrderedVertexSet;
+typedef std::set<Vertext>				OrderedVertexSet;
 #else
 typedef VertexSet						OrderedVertexSet;
 #endif
@@ -279,7 +309,7 @@ std::ostream &dump_edgeset(std::ostream &out, ::size_t N, const AdjacencyList &E
 	// out << "Edge set size " << N << std::endl;
 	for (::size_t n = 0; n < E.size(); n++) {
 		for (auto e : E[n]) {
-			if (e > static_cast<int>(n)) {
+			if (e > static_cast<Vertex>(n)) {
 				out << n << "\t" << e << std::endl;
 			}
 		}
@@ -332,7 +362,7 @@ void dump(const EdgeContainer &s) {
  */
 class Data {
 public:
-	Data(const void *V, const NetworkGraph *E, int N, const std::string &header = "") :
+	Data(const void *V, const NetworkGraph *E, Vertex N, const std::string &header = "") :
 		V(V), E(E), N(N), header_(header) {
 	}
 
@@ -350,7 +380,7 @@ public:
 public:
 	const void *V;	// mapping between vertices and attributes.
 	const NetworkGraph *E;	// all pair of "linked" edges.
-	int N;				// number of vertices
+	Vertex N;				// number of vertices
 	std::string header_;
 };
 
@@ -358,8 +388,8 @@ public:
 
 namespace std {
 #ifdef RANDOM_FOLLOWS_CPP_WENZHE
-int hash<mcmc::Edge>::operator()(const mcmc::Edge &x) const {
-	int h = std::hash<int>()(x.first) ^ std::hash<int>()(x.second);
+int32_t hash<mcmc::Edge>::operator()(const mcmc::Edge &x) const {
+	int32_t h = std::hash<int32_t>()(x.first) ^ std::hash<int32_t>()(x.second);
 	return h;
 }
 #else

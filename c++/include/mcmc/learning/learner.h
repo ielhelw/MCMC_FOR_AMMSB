@@ -6,6 +6,7 @@
 #include "mcmc/types.h"
 #include "mcmc/options.h"
 #include "mcmc/network.h"
+#include "mcmc/preprocess/data_factory.h"
 
 namespace mcmc {
 namespace learning {
@@ -16,22 +17,27 @@ namespace learning {
  */
 class Learner {
 public:
-	/**
-	 * initialize base learner parameters.
-	 */
-	Learner(const Options &args, const Network &network)
-			: network(network) {
+	Learner(const Options &args) : args_(args) {
+		preprocess::DataFactory df(args);
+		data_ = df.get_data();
+		double held_out_ratio = args.held_out_ratio;
+		if (args.held_out_ratio == 0.0) {
+			held_out_ratio = 0.01;
+			std::cerr << "Set held_out_ratio to default " << held_out_ratio << std::endl;
+		}
+		// FIXME: make Network the owner of data
+		network = Network(data_, held_out_ratio);
 
 		// model priors
-		alpha = args.alpha;
+		alpha = args_.alpha;
 		eta.resize(2);
-		eta[0] = args.eta0;
-		eta[1] = args.eta1;
+		eta[0] = args_.eta0;
+		eta[1] = args_.eta1;
 		average_count = 1;
 
 		// parameters related to control model
-		K = args.K;
-		epsilon = args.epsilon;
+		K = args_.K;
+		epsilon = args_.epsilon;
 
 		// parameters related to network
 		N = network.get_num_nodes();
@@ -41,7 +47,7 @@ public:
 		pi   = std::vector<std::vector<double> >(N, std::vector<double>(K, 0.0));
 
 		// parameters related to sampling
-		mini_batch_size = args.mini_batch_size;
+		mini_batch_size = args_.mini_batch_size;
 		if (mini_batch_size < 1) {
 			mini_batch_size = N / 2;	// default option.
 		}
@@ -54,29 +60,31 @@ public:
 		// ppxs_held_out = [];
 		// ppxs_test = [];
 
-		max_iteration = args.max_iteration;
+		max_iteration = args_.max_iteration;
 		CONVERGENCE_THRESHOLD = 0.000000000001;
 
 		stepsize_switch = false;
 
 		ppx_for_heldout = std::vector<double>(network.get_held_out_size(), 0.0);
 
-		if (args.strategy == "unspecified") {
+		if (args_.strategy == "unspecified") {
 			strategy = strategy::STRATIFIED_RANDOM_NODE;
-		} else if (args.strategy == "random-pair") {
+		} else if (args_.strategy == "random-pair") {
 			strategy = strategy::RANDOM_PAIR;
-		} else if (args.strategy == "random-node") {
+		} else if (args_.strategy == "random-node") {
 			strategy = strategy::RANDOM_NODE;
-		} else if (args.strategy == "stratified-random-pair") {
+		} else if (args_.strategy == "stratified-random-pair") {
 			strategy = strategy::STRATIFIED_RANDOM_PAIR;
-		} else if (args.strategy == "stratified-random-node") {
+		} else if (args_.strategy == "stratified-random-node") {
 			strategy = strategy::STRATIFIED_RANDOM_NODE;
 		} else {
-			throw MCMCException("Unknown strategy type: " + args.strategy);
+			throw MCMCException("Unknown strategy type: " + args_.strategy);
 		}
 	}
 
 	virtual ~Learner() {
+		// FIXME: make Network the owner of data
+		delete const_cast<Data *>(data_);
 	}
 
 	/**
@@ -321,7 +329,9 @@ protected:
 	}
 
 protected:
-	const Network &network;
+	const Options args_;
+	const Data *data_;
+	Network network;
 
 	double alpha;
 	std::vector<double> eta;

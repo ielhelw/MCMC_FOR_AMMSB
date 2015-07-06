@@ -82,7 +82,7 @@ public:
 	// use system ::rand()
 #endif
 
-	int randint(int from, int upto) {
+	int64_t randint(int64_t from, int64_t upto) {
 		return (rand() % (upto + 1 - from)) + from;
 	}
 
@@ -650,11 +650,11 @@ public:
 	}
 
 
-	int randint(int from, int upto) {
+	int64_t randint(int64_t from, int64_t upto) {
 		std::string line;
 		getline(intReader, line);
 
-		int r;
+		int64_t r;
 		std::istringstream is(line);
 		if (! (is >> r)) {
 			throw IOException("end of line");
