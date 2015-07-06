@@ -79,7 +79,7 @@ CXXFLAGS += -I$(PROJECT_HOME)/3rdparty/daslib/include
 LIB_LDFLAGS += -L$(PROJECT_HOME)/3rdparty/daslib/lib/$(shell uname -m)_$(shell uname -s)
 LIB_LDLIBS += -ldas
 endif
-CXXFLAGS += -I$(PROJECT_HOME)/3rdparty/sparsehash-2.0.2/include
+CXXFLAGS += -I$(PROJECT_HOME)/3rdparty/sparsehash-2.0.2/install/include
 
 CFLAGS += -std=gnu99
 CFLAGS += -fPIC
@@ -185,7 +185,8 @@ LIBDIR = $(PROJECT_HOME)/lib
 CXX_OBJECTS += $(CXX_SOURCES:%.cc=$(OBJDIR)/%.o)
 CXX_OBJECTS += $(CPP_SOURCES:%.cpp=$(OBJDIR)/%.o)
 CXX_OBJECTS += $(C_SOURCES:%.c=$(OBJDIR)/%.o)
-CLEANSUBDIRS = $(SUBDIRS:%=%.clean)
+CLEANSUBDIRS := $(filter-out $(PRECIOUSDIRS), $(SUBDIRS))
+CLEANSUBDIRS := $(CLEANSUBDIRS:%=%.clean)
 DEPENDS = $(CXX_OBJECTS:%.o=%.d) $(TARGETS:%=$(OBJDIR)/%.d)
 
 .PHONY: all clean subdirs $(SUBDIRS) cleansubdirs $(CLEANSUBDIRS) depends
