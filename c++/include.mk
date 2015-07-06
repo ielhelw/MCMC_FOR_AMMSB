@@ -79,7 +79,6 @@ CXXFLAGS += -I$(PROJECT_HOME)/3rdparty/daslib/include
 LIB_LDFLAGS += -L$(PROJECT_HOME)/3rdparty/daslib/lib/$(shell uname -m)_$(shell uname -s)
 LIB_LDLIBS += -ldas
 endif
-CXXFLAGS += -I$(PROJECT_HOME)/3rdparty/sparsehash-2.0.2/install/include
 
 CFLAGS += -std=gnu99
 CFLAGS += -fPIC
