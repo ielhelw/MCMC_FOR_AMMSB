@@ -34,6 +34,8 @@ typedef std::pair<MinibatchSet *, double>		EdgeSample;
 class Network {
 
 public:
+	Network() {
+	}
 
 	/**
 	 * In this initialization step, we separate the whole data set
@@ -48,6 +50,8 @@ public:
 	 *     vlaidation_ratio:  the percentage of data used for validation and testing.
 	 */
 	Network(const Data *data, double held_out_ratio) {
+		progress = 1 << 20;		// FIXME: make this a parameter
+
 		N = data->N;							// number of nodes in the graph
 		linked_edges = data->E;					// all pair of linked edges.
 #ifdef EDGESET_IS_ADJACENCY_LIST
@@ -494,12 +498,17 @@ protected:
 	void adjacency_list_init() {
 		cumulative_edges.resize(N);
 
+		if (linked_edges->size() != static_cast<::size_t>(N)) {
+			throw MCMCException("AdjList size and/or cumul size corrupt");
+		}
+
 #pragma omp parallel for
-		for (int i = 0; i < N; ++i) {
+		for (int32_t i = 0; i < N; ++i) {
 			cumulative_edges[i] = (*linked_edges)[i].size();
 		}
 		prefix_sum(&cumulative_edges);
-
+		std::cerr << "Found prefix sum for edges in AdjacencyList graph: top bucket edge " << cumulative_edges[cumulative_edges.size() - 1] << " max edge " << (cumulative_edges[cumulative_edges.size() - 1] + (*linked_edges)[cumulative_edges.size() - 1].size()) << std::endl;
+ 
 		std::cerr << "Initializing the held-out set on multiple machines will create randomness bugs" << std::endl;
 		thread_random.resize(omp_get_max_threads());
 		for (::size_t i = 0; i < thread_random.size(); ++i) {
@@ -531,11 +540,20 @@ protected:
 				// locate the vertex where this edge lives
 				// Actually search for find_ge, so do edge_index + 1
 				int v1 = np::find_le(cumulative_edges, edge_index + 1);
+				if (v1 == -1) {
+					throw MCMCException("Cannot find edge " + to_string(edge_index) + " max is " + to_string(cumulative_edges[cumulative_edges.size() - 1]));
+				}
 				if (v1 != 0) {
 					edge_index -= cumulative_edges[v1 - 1];
 				}
 				int v2 = -1;
 				// draw edge_index'th neighbor within this edge list
+				if ((::size_t)v1 >= linked_edges->size()) {
+					std::cerr << "OOOOOOOPPPPPPPPPPPPPSSSSSSSS outside vector" << std::endl;
+				}
+				if ((*linked_edges)[v1].size() <= 0) {
+					std::cerr << "OOOOPPPPPPPPPPSSSSSSSSSSSS empty elt" << std::endl;
+				}
 				for (auto n : (*linked_edges)[v1]) {
 					if (edge_index == 0) {
 						v2 = n;
@@ -573,6 +591,7 @@ protected:
 		}
 
 		// FIXME make sampled_linked_edges an out param
+						print_mem_usage(std::cerr);
 #if defined RANDOM_FOLLOWS_CPP_WENZHE || defined RANDOM_FOLLOWS_PYTHON
 		std::cerr << __func__ << ": FIXME: replace EdgeList w/ (unordered) EdgeSet again" << std::endl;
 		auto sampled_linked_edges = Random::random->sampleList(linked_edges, p);
@@ -582,6 +601,7 @@ protected:
 #else
 		auto sampled_linked_edges = Random::random->sample(linked_edges, p);
 #endif
+		::size_t count = 0;
 		for (auto edge = sampled_linked_edges->begin();
 			 	edge != sampled_linked_edges->end();
 				edge++) {
@@ -590,6 +610,11 @@ protected:
 			train_link_map[edge->first].erase(edge->second);
 			train_link_map[edge->second].erase(edge->first);
 #endif
+			if (progress != 0 && count % progress == 0) {
+				std::cerr << "Edges/in in held-out set " << count << std::endl;
+				print_mem_usage(std::cerr);
+			}
+			count++;
 		}
 
 		if (false) {
@@ -606,6 +631,11 @@ protected:
 			Edge edge = sample_non_link_edge_for_held_out();
 			held_out_map[edge] = false;
 			p--;
+			if (progress != 0 && count % progress == 0) {
+				std::cerr << "Edges/out in held-out set " << count << std::endl;
+				print_mem_usage(std::cerr);
+			}
+			count++;
 		}
 	}
 
@@ -617,6 +647,7 @@ protected:
 	void init_test_set() {
 		int p = (int)(held_out_size / 2);
 		// sample p linked edges from the network
+		::size_t count = 0;
 		while (p > 0) {
 			// Because we already used some of the linked edges for held_out sets,
 			// here we sample twice as much as links, and select among them, which
@@ -651,6 +682,11 @@ protected:
 				train_link_map[edge->second].erase(edge->first);
 #endif
 				p--;
+				if (progress != 0 && count % progress == 0) {
+					std::cerr << "Edges/in in test set " << count << std::endl;
+					print_mem_usage(std::cerr);
+				}
+				count++;
 			}
 
 			delete sampled_linked_edges;
@@ -662,6 +698,11 @@ protected:
 			Edge edge = sample_non_link_edge_for_test();
 			test_map[edge] = false;
 			p--;
+			if (progress != 0 && count % progress == 0) {
+				std::cerr << "Edges/out in test set " << count << std::endl;
+				print_mem_usage(std::cerr);
+			}
+			count++;
 		}
 	}
 
@@ -787,7 +828,7 @@ protected:
 
 
 protected:
-	int			N;					// number of nodes in the graph
+	int32_t		N;					// number of nodes in the graph
 	const NetworkGraph *linked_edges;	// all pair of linked edges.
 	::size_t	num_total_edges;	// number of total edges.
 	double		held_out_ratio;		// percentage of held-out data size
@@ -817,6 +858,7 @@ protected:
 	::size_t	num_pieces;
 
 	std::vector< ::size_t> fan_out_cumul_distro;
+	::size_t progress = 0;
 };
 
 }; // namespace mcmc

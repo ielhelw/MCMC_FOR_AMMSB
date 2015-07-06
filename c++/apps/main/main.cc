@@ -1,3 +1,4 @@
+
 #include "mcmc/mcmc.h"
 
 using namespace mcmc;
@@ -31,38 +32,29 @@ int main(int argc, char *argv[]) {
 			std::cerr << "No compute device selected. Is that what you wanted?" << std::endl;
 		}
 
-		DataFactory df(args);
-		const Data *data = df.get_data();
-		double held_out_ratio = args.held_out_ratio;
-		if (args.held_out_ratio == 0.0) {
-			held_out_ratio = 0.01;
-			std::cerr << "Set held_out_ratio to default " << held_out_ratio << std::endl;
-		}
-		Network network(data, held_out_ratio);
-
 		if (args.run.mcmc_stochastical) {
 			std::cout << "start MCMC stochastical" << std::endl;
-			MCMCSamplerStochastic mcmcSampler(args, network);
+			MCMCSamplerStochastic mcmcSampler(args);
 			mcmcSampler.init();
 			mcmcSampler.run();
 		}
 
 		if (args.run.mcmc_batch) {
 			std::cout << "start MCMC batch" << std::endl;
-			MCMCSamplerBatch mcmcSampler(args, network);
+			MCMCSamplerBatch mcmcSampler(args);
 			mcmcSampler.run();
 		}
 
 #ifdef ENABLE_OPENCL
 		if (args.run.mcmc_stochastical_cl) {
 			std::cout << "start MCMC stochastical CL" << std::endl;
-			MCMCClSamplerStochastic mcmcclSampler(args, network, context);
+			MCMCClSamplerStochastic mcmcclSampler(args, context);
 			mcmcclSampler.run();
 		}
 #ifdef IMPLEMENT_MCMC_CL_BATCH
 		if (args.run.mcmc_batch_cl) {
 			std::cout << "start MCMC batch CL" << std::endl;
-			MCMCClSamplerBatch mcmcclSampler(args, network, context);
+			MCMCClSamplerBatch mcmcclSampler(args, context);
 			mcmcclSampler.run();
 		}
 #endif
@@ -70,24 +62,22 @@ int main(int argc, char *argv[]) {
 
 		if (args.run.mcmc_stochastical_distr) {
 			std::cout << "start MCMC stochastical distributed " << std::endl;
-			MCMCSamplerStochasticDistributed mcmcSampler(args, network);
+			MCMCSamplerStochasticDistributed mcmcSampler(args);
 			mcmcSampler.init();
 			mcmcSampler.run();
 		}
 
 		if (false) {
 			std::cout << "start variational inference batch" << std::endl;
-			SV svSampler(args, network);
+			SV svSampler(args);
 			svSampler.run();
 		}
 
 		if (false) {
 			std::cout << "start variational inference stochastical" << std::endl;
-			SVI sviSampler(args, network);
+			SVI sviSampler(args);
 			sviSampler.run();
 		}
-
-		delete const_cast<Data *>(data);
 
 		return 0;
 #ifdef ENABLE_OPENCL

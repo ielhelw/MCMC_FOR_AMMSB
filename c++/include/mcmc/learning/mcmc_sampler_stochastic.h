@@ -33,7 +33,7 @@ typedef std::unordered_map<Edge, int>   EdgeMapZ;
 
 #ifdef RANDOM_FOLLOWS_SCALABLE_GRAPH
 #  define NEIGHBOR_SET_IS_VECTOR
-typedef std::vector<int> NeighborSet;
+typedef std::vector<Vertex> NeighborSet;
 #else
 typedef OrderedVertexSet NeighborSet;
 #endif
@@ -69,9 +69,8 @@ public:
     parameters for each iteration, here we only use mini-batch (subset) of the examples.
     This method is great marriage between MCMC and stochastic methods.
     */
-    MCMCSamplerStochastic(const Options &args, const Network &graph)
-			: Learner(args, graph),
-			args(args),
+    MCMCSamplerStochastic(const Options &args)
+			: Learner(args),
 #ifdef RANDOM_FOLLOWS_CPP_WENZHE
 			kernelRandom(Random::random)
 #else
@@ -95,24 +94,24 @@ public:
 #endif
 
         // step size parameters.
-        this->a = args.a;
-        this->b = args.b;
-        this->c = args.c;
+        this->a = args_.a;
+        this->b = args_.b;
+        this->c = args_.c;
 
         // control parameters for learning
         //num_node_sample = static_cast< ::size_t>(std::sqrt(network.get_num_nodes()));
-		if (args.num_node_sample == 0) {
+		if (args_.num_node_sample == 0) {
 			// TODO: automative update..... 
 			num_node_sample = N/50;
 		} else {
-			num_node_sample = args.num_node_sample;
+			num_node_sample = args_.num_node_sample;
 		}
-		if (args.interval == 0) {
+		if (args_.interval == 0) {
 			interval = 50;
 		} else {
-			interval = args.interval;
+			interval = args_.interval;
 		}
-		if (args.mini_batch_size == 0) {
+		if (args_.mini_batch_size == 0) {
 			mini_batch_size = N / 10;   // old default for STRATIFIED_RANDOM_NODE_SAMPLING
 		}
 		std::cerr << "num_node_sample " << num_node_sample << " a " << a << " b " << b << " c " << c << " alpha " << alpha << " eta (" << eta[0] << "," << eta[1] << ")" << std::endl;
@@ -325,8 +324,8 @@ public:
 			const MinibatchSet &mini_batch = *edgeSample.first;
 			double scale = edgeSample.second;
 
-			//std::unordered_map<int, std::vector<int> > latent_vars;
-			//std::unordered_map<int, ::size_t> size;
+			//std::unordered_map<Vertex, std::vector<int> > latent_vars;
+			//std::unordered_map<Vertex, ::size_t> size;
 
             // iterate through each node in the mini batch.
 			t_nodes_in_mini_batch.start();
@@ -342,9 +341,9 @@ public:
 			// ************ do in parallel at each host
 			// std::cerr << "Sample neighbor nodes" << std::endl;
 			// FIXME: nodes_in_batch should generate a vector, not an OrderedVertexSet
-			std::vector<int> node_vector(nodes.begin(), nodes.end());
+			std::vector<Vertex> node_vector(nodes.begin(), nodes.end());
 			for (::size_t n = 0; n < node_vector.size(); ++n) {
-				int node = node_vector[n];
+				Vertex node = node_vector[n];
 				t_sample_neighbor_nodes.start();
 				// sample a mini-batch of neighbors
 				NeighborSet neighbors = sample_neighbor_nodes(num_node_sample, node, kernelRandom);
@@ -550,7 +549,7 @@ protected:
 	}
 
 
-    void update_phi(int i, const NeighborSet &neighbors
+    void update_phi(Vertex i, const NeighborSet &neighbors
 #ifndef EFFICIENCY_FOLLOWS_CPP_WENZHE
 						   , double eps_t
 #endif
@@ -692,7 +691,7 @@ protected:
 #endif
 
 	// TODO FIXME make VertexSet an out parameter
-    NeighborSet sample_neighbor_nodes(::size_t sample_size, int nodeId, Random::Random *rnd) {
+    NeighborSet sample_neighbor_nodes(::size_t sample_size, Vertex nodeId, Random::Random *rnd) {
         /**
         Sample subset of neighborhood nodes.
          */
@@ -710,7 +709,7 @@ protected:
 			auto nodeList = Random::random->sampleRange(N, sample_size * 2);
 #endif
 
-            for (std::vector<int>::const_iterator neighborId = nodeList->begin();
+            for (std::vector<Vertex>::const_iterator neighborId = nodeList->begin();
 				 	neighborId != nodeList->end();
 					neighborId++) {
 				if (p < 0) {
@@ -747,7 +746,7 @@ protected:
 		}
 #else	// if defined RANDOM_FOLLOWS_CPP_WENZHE || defined EFFICIENCY_FOLLOWS_PYTHON
         for (int i = 0; i <= p; ++i) {
-			int neighborId;
+			Vertex neighborId;
 			Edge edge(0, 0);
 			do {
 				neighborId = rnd->randint(0, N - 1);
@@ -874,7 +873,6 @@ protected:
 
 	std::vector<std::vector<double> > theta;		// parameterization for \beta
 	std::vector<std::vector<double> > phi;			// parameterization for \pi
-	const Options &args;
 	Random::Random *kernelRandom;
 };
 

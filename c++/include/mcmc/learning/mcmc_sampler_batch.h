@@ -30,13 +30,13 @@ namespace learning {
 class MCMCSamplerBatch : public Learner {
 
 public:
-    MCMCSamplerBatch(const Options &args, const Network &graph)
-			: Learner(args, graph) {
+    MCMCSamplerBatch(const Options &args)
+			: Learner(args) {
 
         // step size parameters. step size = (a*(1+t/b))^(-c), t is the number of steps so far
-        this->a = args.a;
-        this->b = args.b;
-        this->c = args.c;
+        this->a = args_.a;
+        this->b = args_.b;
+        this->c = args_.c;
 
         // control parameters for learning
         // TODO need to find the optimal value from experiments. If the value is too small
@@ -81,9 +81,9 @@ public:
 
 
 	// FIXME make VertexSet a result parameter
-    OrderedVertexSet sample_neighbor_nodes_batch(int node) const {
+    OrderedVertexSet sample_neighbor_nodes_batch(Vertex node) const {
         OrderedVertexSet neighbor_nodes;
-		for (int i = 0; i < (int)N; i++) {
+		for (Vertex i = 0; i < (Vertex)N; i++) {
 			Edge edge(std::min(node, i), std::max(node, i));
 			if (! edge.in(network.get_held_out_set()) && ! edge.in(network.get_test_set())) {
 				if (false && i == node) {
@@ -102,7 +102,7 @@ public:
 	 * update pi for current node i.
 	   could leave this function as it is, but we don't use this for now... [wenzhe]
 	 */
-    void update_pi_for_node(::size_t i, const std::vector<int> &z, std::vector<std::vector<double> > *phi_star, ::size_t n) const {
+    void update_pi_for_node(::size_t i, const std::vector<Vertex> &z, std::vector<std::vector<double> > *phi_star, ::size_t n) const {
         // update gamma, only update node in the grad
 		double eps_t;
 
@@ -364,7 +364,7 @@ public:
 
 
 	// could leave this function as it is, but we don't use this for now...	 [wenzhe]
-	std::vector<int> sample_latent_vars(int node, const OrderedVertexSet &neighbor_nodes) const {
+	std::vector<Vertex> sample_latent_vars(Vertex node, const OrderedVertexSet &neighbor_nodes) const {
         /**
 		 * given a node and its neighbors (either linked or non-linked), return the latent value
 		 * z_ab for each pair (node, neighbor_nodes[i].
@@ -394,7 +394,7 @@ public:
 	// wenzhe's version. The version is different from previous one that:
 	// in the previous version, we use gibbs sampler to sample from distribution
 	// but in this version, we actually analytically calculate the probability
-	void update_phi(int i, const OrderedVertexSet &neighbor_nodes){
+	void update_phi(Vertex i, const OrderedVertexSet &neighbor_nodes){
 		double eps_t = a * std::pow(1 + step_count / b, -c);	// step size
 		double phi_i_sum = np::sum(phi[i]);	
 		std::vector<double> grads(K, 0.0);						// gradient for K classes

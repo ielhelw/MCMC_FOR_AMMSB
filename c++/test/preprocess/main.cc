@@ -28,6 +28,7 @@ int main(int argc, char *argv[]) {
   }
 
   if (quiet) {
+	  print_mem_usage(std::cerr);
 	  std::cerr << "Hit <enter> to create Network" << std::endl;
 	  std::string dummy;
 	  getline(std::cin, dummy);
@@ -44,6 +45,7 @@ int main(int argc, char *argv[]) {
 	  std::endl;
 
   if (quiet) {
+	  print_mem_usage(std::cerr);
 	  std::cerr << "Hit <enter> to quit" << std::endl;
 	  std::string dummy;
 	  getline(std::cin, dummy);
