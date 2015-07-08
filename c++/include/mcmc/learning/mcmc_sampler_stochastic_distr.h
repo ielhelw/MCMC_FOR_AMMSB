@@ -311,13 +311,13 @@ public:
 
 		max_minibatch_chunk = 0;
 		desc.add_options()
-			("dkv:type",
+			("dkv.type",
 			 po::value<DKV::TYPE::TYPE>(&dkv_type)->multitoken()->default_value(DKV::TYPE::TYPE::FILE),
 			 "D-KV store type (file/ramcloud/rdma)")
-			("mcmc:mini-batch-chunk",
+			("mcmc.mini-batch-chunk",
 			 po::value<::size_t>(&max_minibatch_chunk)->default_value(0),
 			 "minibatch chunk size")
-			("mcmc:replicated-graph",
+			("mcmc.replicated-graph",
 			 po::bool_switch(&REPLICATED_NETWORK)->default_value(false),
 			 "replicate Network graph")
 			;
@@ -331,7 +331,7 @@ public:
 		po::notify(vm);
 
 		std::vector<std::string> dkv_args = po::collect_unrecognized(parsed.options, po::include_positional);
-		dkv_args.push_back("rdma:mpi-initialized");
+		dkv_args.push_back("rdma.mpi-initialized");
 
 		// d_kv_store = new DKV::DKVRamCloud::DKVStoreRamCloud();
 		std::cerr << "Use D-KV store type " << dkv_type << std::endl;

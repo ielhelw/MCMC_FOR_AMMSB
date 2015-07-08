@@ -296,33 +296,33 @@ void DKVStoreRDMA::Init(::size_t value_size, ::size_t total_values,
   po::options_description desc("RDMA options");
   desc.add_options()
     // ("rdma.oob-port", po::value(&config_.tcp_port)->default_value(0), "RDMA out-of-band TCP port")
-    ("rdma:dev", 
+    ("rdma.dev", 
      po::value(&dev_name_),
      "RDMA device name")
-    ("rdma:port",
+    ("rdma.port",
      po::value(&ib_port),
      "RDMA device port")
-    ("rdma:mtu",
+    ("rdma.mtu",
      po::value(&mtu)->default_value(2048),
      "RDMA MTU (256/512/1024/2048/4096) (512)")
-    ("rdma:chunk",
+    ("rdma.chunk",
      po::value(&post_send_chunk_),
      "RDMA max number of messages per post")
-    ("rdma:peers",
+    ("rdma.peers",
      po::value(&batch_size_)->default_value(0),
      "RDMA max number of peers to address in one post")
-    ("rdma:include-master",
+    ("rdma.include-master",
      po::bool_switch(&force_include_master)->default_value(false),
      "RDMA KV-store includes master node")
-    // ("rdma:oob-network",
+    // ("rdma.oob-network",
     // po::value(&oob_impl_)->default_value("socket"),
     // "RDMA OOB network implementation")
 #ifdef USE_MPI
-    ("rdma:mpi-initialized",
+    ("rdma.mpi-initialized",
      po::bool_switch(&mpi_initialized)->default_value(false),
      "MPI is already initialized")
 #else
-    ("rdma:oob-interface",
+    ("rdma.oob-interface",
      po::value(&oob_interface_)->default_value("ib0"),
      "RDMA OOB network interface")
 #endif

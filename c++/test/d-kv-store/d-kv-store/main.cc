@@ -238,7 +238,7 @@ int main(int argc, char *argv[]) {
 	DKV::TYPE::TYPE dkv_type;
     po::options_description desc("D-KV store test program");
     desc.add_options()
-      ("dkv:type",
+      ("dkv.type",
        po::value<DKV::TYPE::TYPE>(&dkv_type)->multitoken()->default_value(DKV::TYPE::FILE),
        "D-KV store type (file/ramcloud/rdma)")
       ;

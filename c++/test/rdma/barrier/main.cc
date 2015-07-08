@@ -337,7 +337,7 @@ int main(int argc, char *argv[]) {
     std::string dkv_type_string;
     po::options_description desc("D-KV store test program");
     desc.add_options()
-      ("dkv:type",
+      ("dkv.type",
        po::value<std::string>(&dkv_type_string)->default_value("file"),
        "D-KV store type (file/ramcloud/rdma)")
       ;
@@ -360,7 +360,7 @@ int main(int argc, char *argv[]) {
     CHECK_DEV_LIST();
 
     DKV_TYPE::TYPE dkv_type = DKV_TYPE::FILE;
-    if (vm.count("dkv:type") > 0) {
+    if (vm.count("dkv.type") > 0) {
         if (false) {
         } else if (dkv_type_string == "file") {
             dkv_type = DKV_TYPE::FILE;
@@ -374,7 +374,7 @@ int main(int argc, char *argv[]) {
 #endif
         } else {
             desc.print(std::cerr);
-            throw mcmc::InvalidArgumentException("Unsupported value '" + dkv_type_string + "' for dkv:type");
+            throw mcmc::InvalidArgumentException("Unsupported value '" + dkv_type_string + "' for dkv.type");
         }
     }
     CHECK_DEV_LIST();
