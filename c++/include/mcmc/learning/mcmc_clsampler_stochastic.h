@@ -1023,7 +1023,7 @@ protected:
             std::cerr << "Node " << n << ": neighbors ";
             for (::size_t j = 0; j < real_num_node_sample(); j++) {
               Edge e(n, hostNeighbors[i * real_num_node_sample() + j]);
-              std::cerr << hostNeighbors[i * real_num_node_sample() + j] << "(" << e.in(network.get_linked_edges()) <<  ") ";
+              std::cerr << hostNeighbors[i * real_num_node_sample() + j] << "(" << EdgeIn(e, network.get_linked_edges()) <<  ") ";
             }
             std::cerr << std::endl;
             i++;

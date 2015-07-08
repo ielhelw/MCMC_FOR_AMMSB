@@ -49,7 +49,7 @@ public:
 	 *     data:   representation of the while graph.
 	 *     vlaidation_ratio:  the percentage of data used for validation and testing.
 	 */
-	Network(const Data *data, double held_out_ratio) {
+	void Init(const Data *data, double held_out_ratio) {
 		progress = 1 << 20;		// FIXME: make this a parameter
 
 		N = data->N;							// number of nodes in the graph
@@ -216,7 +216,7 @@ public:
 			Edge edge(std::min(firstIdx, secondIdx), std::max(firstIdx, secondIdx));
 
 			// the edge should not be in  1)hold_out set, 2)test_set  3) mini_batch_set (avoid duplicate)
-			if (edge.in(held_out_map) || edge.in(test_map) || edge.in(*mini_batch_set)) {
+			if (EdgeIn(edge, held_out_map) || EdgeIn(edge, test_map) || EdgeIn(edge, *mini_batch_set)) {
 				continue;
 			}
 
@@ -243,7 +243,7 @@ public:
 			// make sure the first index is smaller than the second one, since
 			// we are dealing with undirected graph.
 			Edge edge(std::min(nodeId, i), std::max(nodeId, i));
-			if (edge.in(held_out_map) || edge.in(test_map) || edge.in(*mini_batch_set)) {
+			if (EdgeIn(edge, held_out_map) || EdgeIn(edge, test_map) || EdgeIn(edge, *mini_batch_set)) {
 				continue;
 			}
 
@@ -283,7 +283,7 @@ public:
 					break;
 				}
 
-				if (edge.in(held_out_map) || edge.in(test_map) || edge.in(*mini_batch_set)) {
+				if (EdgeIn(edge, held_out_map) || EdgeIn(edge, test_map) || EdgeIn(edge, *mini_batch_set)) {
 					continue;
 				}
 
@@ -309,8 +309,8 @@ public:
 				Edge edge(std::min(firstIdx, secondIdx), std::max(firstIdx, secondIdx));
 
 				// check conditions:
-				if (edge.in(*linked_edges) || edge.in(held_out_map) ||
-						edge.in(test_map) || edge.in(*mini_batch_set)) {
+				if (EdgeIn(edge, *linked_edges) || EdgeIn(edge, held_out_map) ||
+						EdgeIn(edge, test_map) || EdgeIn(edge, *mini_batch_set)) {
 					continue;
 				}
 
@@ -376,8 +376,8 @@ public:
 
 						// check condition, and insert into mini_batch_set if it is valid.
 						Edge edge(std::min(nodeId, *neighborId), std::max(nodeId, *neighborId));
-						if (edge.in(*linked_edges) || edge.in(held_out_map) ||
-								edge.in(test_map) || edge.in(*mini_batch_set)) {
+						if (EdgeIn(edge, *linked_edges) || EdgeIn(edge, held_out_map) ||
+								EdgeIn(edge, test_map) || EdgeIn(edge, *mini_batch_set)) {
 							continue;
 						}
 
@@ -400,7 +400,7 @@ public:
 #ifdef EDGESET_IS_ADJACENCY_LIST
 				for (auto neighborId : (*linked_edges)[nodeId]) {
 					Edge e(std::min(nodeId, neighborId), std::max(nodeId, neighborId));
-					if (! e.in(test_map) && ! e.in(held_out_map)) {
+					if (! EdgeIn(e, test_map) && ! EdgeIn(e, held_out_map)) {
 						e.insertMe(mini_batch_set);
 					}
 				}
@@ -672,7 +672,7 @@ protected:
 				}
 
 				// check whether it is already used in hold_out set
-				if (edge->in(held_out_map) || edge->in(test_map)) {
+				if (EdgeIn(*edge, held_out_map) || EdgeIn(*edge, test_map)) {
 					continue;
 				}
 
@@ -721,7 +721,7 @@ protected:
 			for (auto n : (*linked_edges)[i]) {
 				if (n >= static_cast<int>(i)) {	// don't count (a,b) as well as (b,a)
 					Edge e(i, n);
-					if (! e.in(held_out_map) && ! e.in(test_map)) {
+					if (! EdgeIn(e, held_out_map) && ! EdgeIn(e, test_map)) {
 						fan_out[i]++;
 						fan_out[n]++;
 					}
@@ -771,6 +771,36 @@ public:
 	}
 
 
+	::size_t get_fan_out(Vertex i) {
+#ifdef EDGESET_IS_ADJACENCY_LIST
+		return (*linked_edges)[i].size();
+#else
+#  error Need to implement get_fan_out() for each node in the full graph
+#endif
+	}
+
+
+	::size_t marshall_edges_from(Vertex node, Vertex *marshall_area) {
+#ifdef EDGESET_IS_ADJACENCY_LIST
+		::size_t i = 0;
+		for (auto n : (*linked_edges)[node]) {
+			marshall_area[i] = n;
+			i++;
+		}
+
+		return i;
+#else
+#  error Need to implement marshall_edges_from() for each node in the full graph
+		return 0;
+#endif
+	}
+
+	void unmarshall_local_graph(Vertex node, Vertex node_rank,
+								const Vertex *linked, ::size_t size) {
+		std::cerr << "Please implement notion of Local Graph" << std::endl;
+	}
+
+
 protected:
 	/**
 	 * sample one non-link edge for held out set from the network. We should make sure the edge is not
@@ -791,7 +821,7 @@ protected:
 			Edge edge(std::min(firstIdx, secondIdx), std::max(firstIdx, secondIdx));
 
 			// check conditions.
-			if (edge.in(*linked_edges) || edge.in(held_out_map)) {
+			if (EdgeIn(edge, *linked_edges) || EdgeIn(edge, held_out_map)) {
 				continue;
 			}
 
@@ -818,7 +848,7 @@ protected:
 			Edge edge(std::min(firstIdx, secondIdx), std::max(firstIdx, secondIdx));
 
 			// check conditions.
-			if (edge.in(*linked_edges) || edge.in(held_out_map) || edge.in(test_map)) {
+			if (EdgeIn(edge, *linked_edges) || EdgeIn(edge, held_out_map) || EdgeIn(edge, test_map)) {
 				continue;
 			}
 

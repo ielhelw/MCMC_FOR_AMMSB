@@ -467,7 +467,7 @@ protected:
 		//double eps_t = std::pow(1024+step_count, -0.5);
 		for (auto edge = mini_batch.begin(); edge != mini_batch.end(); edge++) {
             int y = 0;
-            if (edge->in(network.get_linked_edges())) {
+            if (EdgeIn(*edge, network.get_linked_edges())) {
                 y = 1;
 			}
 			int i = edge->first;
@@ -590,7 +590,7 @@ protected:
 
 			int y_ab = 0;		// observation
 			Edge edge(std::min(i, neighbor), std::max(i, neighbor));
-			if (edge.in(network.get_linked_edges())) {
+			if (EdgeIn(edge, network.get_linked_edges())) {
 				y_ab = 1;
 			}
 
@@ -723,7 +723,7 @@ protected:
 				}
 				// check condition, and insert into mini_batch_set if it is valid.
 				Edge edge(std::min(nodeId, *neighborId), std::max(nodeId, *neighborId));
-				if (edge.in(held_out_set) || edge.in(test_set) ||
+				if (EdgeIn(edge, held_out_set) || EdgeIn(edge, test_set) ||
 #ifdef RANDOM_FOLLOWS_SCALABLE_GRAPH
 						find(neighbor_nodes.begin(), neighbor_nodes.end(), neighborId) != neighbor_nodes.end()
 #else
@@ -751,10 +751,10 @@ protected:
 			do {
 				neighborId = rnd->randint(0, N - 1);
 				edge = Edge(std::min(nodeId, neighborId), std::max(nodeId, neighborId));
-				// std::cerr << std::fixed << std::setprecision(12) << "node " << nodeId << " neighbor " << neighborId << " peer " << ! (edge.in(held_out_set) || edge.in(test_set)) << " randint " << neighborId << " seed " << kernelRandom->state() << std::endl;
+				// std::cerr << std::fixed << std::setprecision(12) << "node " << nodeId << " neighbor " << neighborId << " peer " << ! (EdgeIn(edge, held_out_set) || EdgeIn(edge, test_set)) << " randint " << neighborId << " seed " << kernelRandom->state() << std::endl;
 			} while (neighborId == nodeId
-					|| edge.in(held_out_set)
-					|| edge.in(test_set)
+					|| EdgeIn(edge, held_out_set)
+					|| EdgeIn(edge, test_set)
 #ifdef RANDOM_FOLLOWS_SCALABLE_GRAPH
 					|| find(neighbor_nodes.begin(), neighbor_nodes.end(), neighborId) != neighbor_nodes.end()
 #else

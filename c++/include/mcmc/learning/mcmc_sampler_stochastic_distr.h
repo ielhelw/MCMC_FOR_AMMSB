@@ -114,20 +114,14 @@ int MPI_Scatterv(void *sendbuf, int *sendcounts, int *displs, MPI_Datatype sendt
 #include "mcmc/learning/learner.h"
 #include "mcmc/learning/mcmc_sampler_stochastic.h"
 
-namespace DKV { namespace TYPE {
-	enum DKV_TYPE {
-		FILE,
-#ifdef ENABLE_RAMCLOUD
-		RAMCLOUD,
-#endif
-#ifdef ENABLE_RDMA
-		RDMA,
-#endif
-	};
-} }
-
 namespace mcmc {
 namespace learning {
+
+#define PRINT_MEM_USAGE() \
+	do { \
+		std::cerr << __func__ << "():" << __LINE__ << " "; \
+		print_mem_usage(std::cerr); \
+	} while (0)
 
 #ifdef RANDOM_FOLLOWS_SCALABLE_GRAPH
 #  define NEIGHBOR_SET_IS_VECTOR
@@ -137,6 +131,42 @@ typedef OrderedVertexSet NeighborSet;
 #endif
 
 using ::mr::timer::Timer;
+
+
+// Mirror of the global Network Graph that contains only a small slice of
+// the edges, i.c. the edges whose first element is in the minibatch
+class LocalNetwork {
+public:
+	typedef typename std::unordered_set<Vertex> EndpointSet;
+
+	void unmarshall_local_graph(Vertex node, const Vertex *linked, ::size_t size) {
+		if (size == 0) {
+			linked_edges[node] = EndpointSet();
+		} else {
+			for (::size_t i = 0; i < size; i++) {
+				linked_edges[node].insert(linked[i]);
+			}
+		}
+	}
+
+	void reset() {
+		linked_edges.clear();
+	}
+
+	bool in(const Edge &edge) const {
+		const auto &adj = linked_edges.find(edge.first);
+
+		return adj->second.find(edge.second) != adj->second.end();
+	}
+
+protected:
+	std::unordered_map<Vertex, EndpointSet> linked_edges;
+};
+
+
+bool EdgeIn(const Edge &edge, const LocalNetwork &network) {
+	return network.in(edge);
+}
 
 /**
  * The distributed version differs in these aspects from the parallel version:
@@ -275,63 +305,47 @@ public:
 		r = MPI_Comm_rank(MPI_COMM_WORLD, &mpi_rank);
 		mpi_error_test(r, "MPI_Comm_rank() fails");
 
-		DKV::TYPE::DKV_TYPE dkv_type = DKV::TYPE::FILE;
+		DKV::TYPE::TYPE dkv_type;
+
+		po::options_description desc("MCMC Stochastic Distributed");
 
 		max_minibatch_chunk = 0;
-		const std::vector<std::string> &a = args_.getRemains();
-		std::vector<std::string> dkv_args;
-		for (::size_t i = 0; i < a.size(); i++) {
-			if (false) {
-			} else if (i < a.size() - 1 &&
-					   	(a[i] == "--mcmc:mini-batch-chunk" || a[i] == "-M")) {
-				i++;
-				max_minibatch_chunk = parse_size_t(a[i]);
-			} else if (i < a.size() - 1 && a[i] == "--dkv:type") {
-				i++;
-				if (false) {
-				} else if (a[i] == "file") {
-					dkv_type = DKV::TYPE::FILE;
-#ifdef ENABLE_RAMCLOUD
-				} else if (a[i] == "ramcloud") {
-					dkv_type = DKV::TYPE::RAMCLOUD;
-#endif
-#ifdef ENABLE_RDMA
-				} else if (a[i] == "rdma") {
-					dkv_type = DKV::TYPE::RDMA;
-#endif
-				} else {
-					std::cerr << "Possible values for dkv:file:" << std::endl;
-					std::cerr << "   " << "file" << std::endl;
-#ifdef ENABLE_RAMCLOUD
-					std::cerr << "   " << "ramcloud" << std::endl;
-#endif
-#ifdef ENABLE_RDMA
-					std::cerr << "   " << "rdma" << std::endl;
-#endif
-					throw mcmc::InvalidArgumentException("Unknown value \"" + a[i] +
-														 "\" for dkv:type option");
-				}
-			} else {
-				dkv_args.push_back(a[i]);
-			}
-		}
+		desc.add_options()
+			("dkv:type",
+			 po::value<DKV::TYPE::TYPE>(&dkv_type)->multitoken()->default_value(DKV::TYPE::TYPE::FILE),
+			 "D-KV store type (file/ramcloud/rdma)")
+			("mcmc:mini-batch-chunk",
+			 po::value<::size_t>(&max_minibatch_chunk)->default_value(0),
+			 "minibatch chunk size")
+			("mcmc:replicated-graph",
+			 po::bool_switch(&REPLICATED_NETWORK)->default_value(false),
+			 "replicate Network graph")
+			;
+
+		po::variables_map vm;
+		po::parsed_options parsed = po::basic_command_line_parser<char>(args_.getRemains()).options(desc).allow_unregistered().run();
+		po::store(parsed, vm);
+		// po::basic_command_line_parser<char> clp(options.getRemains());
+		// clp.options(desc).allow_unregistered.run();
+		// po::store(clp.run(), vm);
+		po::notify(vm);
+
+		std::vector<std::string> dkv_args = po::collect_unrecognized(parsed.options, po::include_positional);
 		dkv_args.push_back("rdma:mpi-initialized");
 
 		// d_kv_store = new DKV::DKVRamCloud::DKVStoreRamCloud();
+		std::cerr << "Use D-KV store type " << dkv_type << std::endl;
 		switch (dkv_type) {
 		case DKV::TYPE::FILE:
-			std::cerr << "Use D-KV store type FILE" << std::endl;
 			d_kv_store = new DKV::DKVFile::DKVStoreFile();
 			break;
 #ifdef ENABLE_RAMCLOUD
 		case DKV::TYPE::RAMCLOUD:
-			std::cerr << "Use D-KV store type RamCloud" << std::endl;
 			d_kv_store = new DKV::DKVRamCloud::DKVStoreRamCloud();
 			break;
 #endif
 #ifdef ENABLE_RDMA
 		case DKV::TYPE::RDMA:
-			std::cerr << "Use D-KV store type RDMA" << std::endl;
 			d_kv_store = new DKV::DKVRDMA::DKVStoreRDMA();
 			break;
 #endif
@@ -427,6 +441,8 @@ public:
     virtual void run() {
         /** run mini-batch based MCMC sampler, based on the sungjin's note */
 
+		PRINT_MEM_USAGE();
+
         using namespace std::chrono;
 
 		std::vector<int32_t> flat_neighbors(max_minibatch_chunk * real_num_node_sample());
@@ -454,12 +470,16 @@ public:
 			mpi_error_test(r, "MPI_Bcast of beta fails");
 			t_broadcast_beta.stop();
 
+			// PRINT_MEM_USAGE();
+
 			t_deploy_minibatch.start();
 			// edgeSample is nonempty only at the master
 			// assigns nodes_
 			EdgeSample edgeSample = deploy_mini_batch();
 			t_deploy_minibatch.stop();
 			std::cerr << "Minibatch nodes " << nodes_.size() << std::endl;
+
+			// PRINT_MEM_USAGE();
 
 			for (::size_t chunk_start = 0;
 				 	chunk_start < nodes_.size();
@@ -475,6 +495,8 @@ public:
 				pi_node.resize(chunk_nodes.size());
 				d_kv_store->ReadKVRecords(pi_node, chunk_nodes, DKV::RW_MODE::READ_ONLY);
 				t_load_pi_minibatch.stop();
+
+				// PRINT_MEM_USAGE();
 
 				// ************ do in parallel at each host
 				// std::cerr << "Sample neighbor nodes" << std::endl;
@@ -508,6 +530,8 @@ public:
 				// flat_neighbors.resize(chunk_nodes.size() * real_num_node_sample());
 				assert(flat_neighbors.size() == chunk_nodes.size() * real_num_node_sample());
 
+				// PRINT_MEM_USAGE();
+
 				// t_update_phi_pi.start();
 				// ************ load neighor pi from D-KV store **********
 				t_load_pi_neighbor.start();
@@ -515,6 +539,8 @@ public:
 										  flat_neighbors,
 										  DKV::RW_MODE::READ_ONLY);
 				t_load_pi_neighbor.stop();
+
+				// PRINT_MEM_USAGE();
 
 				double eps_t  = a * std::pow(1 + step_count / b, -c);	// step size
 				// double eps_t = std::pow(1024+step_count, -0.5);
@@ -532,6 +558,8 @@ public:
 				}
 				t_update_phi.stop();
 			}
+
+			// PRINT_MEM_USAGE();
 
 			// all synchronize with barrier: ensure we read pi/phi_sum from current iteration
 			t_barrier_phi.start();
@@ -553,17 +581,23 @@ public:
 			t_store_pi_minibatch.stop();
 			d_kv_store->PurgeKVRecords();
 
+			// PRINT_MEM_USAGE();
+
 			// all synchronize with barrier
 			t_barrier_pi.start();
 			r = MPI_Barrier(MPI_COMM_WORLD);
 			mpi_error_test(r, "MPI_Barrier(post pi) fails");
 			t_barrier_pi.stop();
 
+			// PRINT_MEM_USAGE();
+
 			if (mpi_rank == mpi_master) {
 				// TODO load pi/phi values for the minibatch nodes
 				t_update_beta.start();
 				update_beta(*edgeSample.first, edgeSample.second);
 				t_update_beta.stop();
+
+				// PRINT_MEM_USAGE();
 
 				// TODO FIXME allocate this outside the loop
 				delete edgeSample.first;
@@ -576,6 +610,8 @@ public:
 				std::cout << "LOOP  = " << (l2-l1).count() << std::endl;
 			}
 		}
+
+		// PRINT_MEM_USAGE();
 
 		check_perplexity();
 
@@ -726,12 +762,16 @@ protected:
 	void check_perplexity() {
 		if (mpi_rank == mpi_master) {
 			if (step_count % interval == 0) {
+
+				// PRINT_MEM_USAGE();
 				t_perplexity.start();
 				// TODO load pi for the held-out set to calculate perplexity
 				double ppx_score = cal_perplexity_held_out();
 				t_perplexity.stop();
 				std::cout << std::fixed << std::setprecision(12) << "step count: " << step_count << " perplexity for hold out set: " << ppx_score << std::endl;
 				ppxs_held_out.push_back(ppx_score);
+
+				PRINT_MEM_USAGE();
 
 				clock_t t2 = clock();
 				double diff = (double)t2 - (double)t_start;
@@ -772,7 +812,118 @@ protected:
 	}
 
 
+	void ScatterSubGraph(const std::vector<std::vector<int32_t>> &subminibatch) {
+		std::vector<int32_t> set_size(nodes_.size());
+		std::vector<Vertex> flat_subgraph;
+		int r;
+
+		local_network_.reset();
+
+		if (mpi_rank == mpi_master) {
+			std::vector<int32_t> size_count(mpi_size);	// FIXME: lift to class
+			std::vector<int32_t> size_displ(mpi_size);	// FIXME: lift to class
+			std::vector<int32_t> subgraph_count(mpi_size);	// FIXME: lift to class
+			std::vector<int32_t> subgraph_displ(mpi_size);	// FIXME: lift to class
+			std::vector<int32_t> workers_set_size;
+
+			// Data dependency on workers_set_size
+			for (int i = 0; i < mpi_size; ++i) {
+				subgraph_count[i] = 0;
+				for (::size_t j = 0; j < subminibatch[i].size(); ++j) {
+					::size_t fan_out = network.get_fan_out(subminibatch[i][j]);
+					workers_set_size.push_back(fan_out);
+					subgraph_count[i] += fan_out;
+				}
+				size_count[i] = subminibatch[i].size();
+			}
+
+			size_displ[0] = 0;
+			subgraph_displ[0] = 0;
+			for (int i = 1; i < mpi_size; i++) {
+				size_displ[i] = size_count[i] - size_count[i - 1];
+				subgraph_displ[i] = subgraph_count[i] - subgraph_count[i - 1];
+			}
+
+			// Scatter the fanout of each minibatch node
+			r = MPI_Scatterv(workers_set_size.data(),
+							 size_count.data(),
+							 size_displ.data(),
+							 MPI_INT,
+							 set_size.data(),
+							 set_size.size(),
+							 MPI_INT,
+							 mpi_master,
+							 MPI_COMM_WORLD);
+			mpi_error_test(r, "MPI_Scatterv of minibatch fails");
+
+			// Marshall the subgraphs
+			::size_t total_edges = np::sum(workers_set_size);
+			std::vector<Vertex> subgraphs(total_edges);
+			::size_t marshalled = 0;
+			for (int i = 0; i < mpi_size; ++i) {
+				for (::size_t j = 0; j < subminibatch[i].size(); ++j) {
+					assert(marshalled + network.get_fan_out(subminibatch[i][j]) <= total_edges);
+					Vertex *marshall = subgraphs.data() + marshalled;
+					::size_t n = network.marshall_edges_from(subminibatch[i][j], marshall);
+					// std::cerr << "Marshall to peer " << i << ": " << n << " edges" << std::endl;
+					marshalled += n;
+				}
+			}
+			// std::cerr << "Total marshalled " << marshalled << " presumed " << total_edges << std::endl;
+			assert(marshalled == total_edges);
+
+			// Scatter the marshalled subgraphs
+			::size_t total_set_size = np::sum(set_size);
+			flat_subgraph.resize(total_set_size);
+			r = MPI_Scatterv(subgraphs.data(),
+							 subgraph_count.data(),
+							 subgraph_displ.data(),
+							 MPI_INT,
+							 flat_subgraph.data(),
+							 flat_subgraph.size(),
+							 MPI_INT,
+							 mpi_master,
+							 MPI_COMM_WORLD);
+
+		} else {
+			// Scatter the fanout of each minibatch node
+			r = MPI_Scatterv(NULL,
+							 NULL,
+							 NULL,
+							 MPI_INT,
+							 set_size.data(),
+							 set_size.size(),
+							 MPI_INT,
+							 mpi_master,
+							 MPI_COMM_WORLD);
+			mpi_error_test(r, "MPI_Scatterv of minibatch fails");
+
+			// Scatter the marshalled subgraphs
+			::size_t total_set_size = np::sum(set_size);
+			flat_subgraph.resize(total_set_size);
+			r = MPI_Scatterv(NULL,
+							 NULL,
+							 NULL,
+							 MPI_INT,
+							 flat_subgraph.data(),
+							 flat_subgraph.size(),
+							 MPI_INT,
+							 mpi_master,
+							 MPI_COMM_WORLD);
+		}
+
+		::size_t offset = 0;
+		for (::size_t i = 0; i < set_size.size(); i++) {
+			Vertex *marshall = &flat_subgraph[offset];
+			local_network_.unmarshall_local_graph(nodes_[i],
+												  marshall, set_size[i]);
+			offset += set_size[i];
+		}
+	}
+
+
 	EdgeSample deploy_mini_batch() {
+		std::vector<std::vector<int>> subminibatch;	// used only at Master
 		std::vector<int32_t> minibatch_chunk(mpi_size);	// used only at Master	FIXME: lift to class
 		std::vector<int32_t> scatter_minibatch;			// used only at Master	FIXME: lift to class
 		std::vector<int32_t> scatter_displs(mpi_size);	// used only at Master	FIXME: lift to class
@@ -806,7 +957,7 @@ protected:
 			t_nodes_in_mini_batch.stop();
 // std::cerr << "mini_batch size " << mini_batch.size() << " num_node_sample " << num_node_sample << std::endl;
 
-			std::vector<std::vector<Vertex>> subminibatch(mpi_size);
+			subminibatch.resize(mpi_size);		// FIXME: lift to class, size is static
 
 			::size_t upper_bound = (nodes.size() + mpi_size - 1) / mpi_size;
 			std::unordered_set<Vertex> unassigned;
@@ -883,6 +1034,10 @@ protected:
 			std::cerr << std::endl;
 		}
 
+		if (! REPLICATED_NETWORK) {
+			ScatterSubGraph(subminibatch);
+		}
+
 		return edgeSample;
 	}
 
@@ -924,12 +1079,19 @@ protected:
 			int32_t neighbor = neighbors[ix];
 			if (i != neighbor) {
 				int y_ab = 0;		// observation
-				Edge edge(std::min(i, neighbor), std::max(i, neighbor));
 				if (omp_get_max_threads() == 1) {
 					t_update_phi_in.start();
 				}
-				if (edge.in(network.get_linked_edges())) {
-					y_ab = 1;
+				if (REPLICATED_NETWORK) {
+					Edge edge(std::min(i, neighbor), std::max(i, neighbor));
+					if (EdgeIn(edge, network.get_linked_edges())) {
+						y_ab = 1;
+					}
+				} else {
+					Edge edge(i, neighbor);
+					if (EdgeIn(edge, local_network_)) {
+						y_ab = 1;
+					}
 				}
 				if (omp_get_max_threads() == 1) {
 					t_update_phi_in.stop();
@@ -1049,7 +1211,7 @@ protected:
 			std::vector<double> probs(K);
 
             int y = 0;
-            if (edge->in(network.get_linked_edges())) {
+            if (EdgeIn(*edge, network.get_linked_edges())) {
                 y = 1;
 			}
 			Vertex i = node_rank[edge->first];
@@ -1194,8 +1356,8 @@ protected:
 
 			//cout<<"AVERAGE COUNT: " <<average_count;
 			ppx_for_heldout[i] = (ppx_for_heldout[i] * (average_count-1) + edge_likelihood)/(average_count);
-			// std::cout << std::fixed << std::setprecision(12) << e << " in? " << (e.in(network.get_linked_edges()) ? "True" : "False") << " -> " << edge_likelihood << " av. " << average_count << " ppx[" << i << "] " << ppx_for_heldout[i] << std::endl;
-			// assert(edge->second == e.in(network.get_linked_edges()));
+			// std::cout << std::fixed << std::setprecision(12) << e << " in? " << (EdgeIn(e, network.get_linked_edges()) ? "True" : "False") << " -> " << edge_likelihood << " av. " << average_count << " ppx[" << i << "] " << ppx_for_heldout[i] << std::endl;
+			// assert(edge->second == EdgeIn(e, network.get_linked_edges()));
             t_perp_log.start();
 			if (edge.second) {
 				link_count++;
@@ -1279,6 +1441,9 @@ protected:
 	DKV::DKVStoreInterface *d_kv_store;
 
 	std::vector<Random::Random *> threadRandom;
+
+	bool REPLICATED_NETWORK = false;
+	LocalNetwork local_network_;
 
 	Timer t_outer;
 	Timer t_populate_pi;

@@ -40,18 +40,6 @@ static double GB(::size_t n, ::size_t k) {
     (1 << 30);
 }
 
-namespace DKV_TYPE {
-enum TYPE {
-    FILE,
-#ifdef ENABLE_RAMCLOUD
-    RAMCLOUD,
-#endif
-#ifdef ENABLE_RDMA
-    RDMA,
-#endif
-};
-}   // namespace DKV_TYPE
-
 
 namespace DKV {
 namespace DKVRDMA {
@@ -386,11 +374,11 @@ int main(int argc, char *argv[]) {
 
     mcmc::Options options(argc, argv);
 
-    std::string dkv_type_string;
+	DKV::TYPE::TYPE dkv_type;
     po::options_description desc("D-KV store test program");
     desc.add_options()
       ("dkv:type",
-       po::value<std::string>(&dkv_type_string)->default_value("file"),
+       po::value<DKV::TYPE::TYPE>(&dkv_type)->multitoken()->default_value(DKV::TYPE::FILE),
        "D-KV store type (file/ramcloud/rdma)")
       ;
 
@@ -407,40 +395,7 @@ int main(int argc, char *argv[]) {
         return 0;
     }
 
-    DKV_TYPE::TYPE dkv_type = DKV_TYPE::FILE;
-    if (vm.count("dkv:type") > 0) {
-        if (false) {
-        } else if (dkv_type_string == "file") {
-            dkv_type = DKV_TYPE::FILE;
-#ifdef ENABLE_RAMCLOUD
-        } else if (dkv_type_string == "ramcloud") {
-            dkv_type = DKV_TYPE::RAMCLOUD;
-#endif
-#ifdef ENABLE_RDMA
-        } else if (dkv_type_string == "rdma") {
-            dkv_type = DKV_TYPE::RDMA;
-#endif
-        } else {
-            desc.print(std::cerr);
-            throw mcmc::InvalidArgumentException("Unsupported value '" + dkv_type_string + "' for dkv:type");
-        }
-    }
-
-    switch (dkv_type) {
-    case DKV_TYPE::FILE:
-      std::cerr << "D-KV store FILE" << std::endl;
-      break;
-#ifdef ENABLE_RAMCLOUD
-    case DKV_TYPE::RAMCLOUD:
-      std::cerr << "D-KV store RAMCLOUD" << std::endl;
-      break;
-#endif
-#ifdef ENABLE_RDMA
-    case DKV_TYPE::RDMA:
-      std::cerr << "D-KV store RDMA" << std::endl;
-      break;
-#endif
-    }
+	std::cerr << "D-KV store " << dkv_type << std::endl;
 
     std::vector<std::string> remains = po::collect_unrecognized(parsed.options, po::include_positional);
     std::cerr << "main has unparsed options: \"";
@@ -450,20 +405,20 @@ int main(int argc, char *argv[]) {
     std::cerr << "\"" << std::endl;
 
     switch (dkv_type) {
-    case DKV_TYPE::FILE: {
+	case DKV::TYPE::FILE: {
         DKVWrapper<DKV::DKVFile::DKVStoreFile> dkv_store(options, remains);
         dkv_store.run();
         break;
     }
 #ifdef ENABLE_RAMCLOUD
-    case DKV_TYPE::RAMCLOUD: {
+	case DKV::TYPE::RAMCLOUD: {
         DKVWrapper<DKV::DKVRamCloud::DKVStoreRamCloud> dkv_store(options, remains);
         dkv_store.run();
         break;
     }
 #endif
 #ifdef ENABLE_RDMA
-    case DKV_TYPE::RDMA: {
+	case DKV::TYPE::RDMA: {
         DKVWrapper<DKV::DKVRDMA::DKVStoreRDMA> dkv_store(options, remains);
         dkv_store.run();
         break;
