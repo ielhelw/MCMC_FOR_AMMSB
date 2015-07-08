@@ -306,6 +306,7 @@ public:
 		mpi_error_test(r, "MPI_Comm_rank() fails");
 
 		DKV::TYPE::TYPE dkv_type;
+		bool forced_master_is_worker;
 
 		po::options_description desc("MCMC Stochastic Distributed");
 
@@ -317,6 +318,9 @@ public:
 			("mcmc.mini-batch-chunk",
 			 po::value<::size_t>(&max_minibatch_chunk)->default_value(0),
 			 "minibatch chunk size")
+			("mcmc.master_is_worker",
+			 po::bool_switch(&forced_master_is_worker)->default_value(false),
+			 "master host also is a worker")
 			("mcmc.replicated-graph",
 			 po::bool_switch(&REPLICATED_NETWORK)->default_value(false),
 			 "replicate Network graph")
@@ -331,7 +335,7 @@ public:
 		po::notify(vm);
 
 		std::vector<std::string> dkv_args = po::collect_unrecognized(parsed.options, po::include_positional);
-		dkv_args.push_back("rdma.mpi-initialized");
+		dkv_args.push_back("--rdma.mpi-initialized");
 
 		// d_kv_store = new DKV::DKVRamCloud::DKVStoreRamCloud();
 		std::cerr << "Use D-KV store type " << dkv_type << std::endl;
@@ -349,6 +353,12 @@ public:
 			d_kv_store = new DKV::DKVRDMA::DKVStoreRDMA();
 			break;
 #endif
+		}
+
+		if (forced_master_is_worker) {
+			master_is_worker_ = true;
+		} else {
+			master_is_worker_ = (mpi_size == 1);
 		}
 
 		if (max_minibatch_chunk == 0) {
@@ -374,7 +384,14 @@ public:
 		}
 
 		max_minibatch_nodes = network.minibatch_nodes_for_strategy(mini_batch_size, strategy);
-        ::size_t max_my_minibatch_nodes = (std::min(max_minibatch_chunk, max_minibatch_nodes) + mpi_size - 1) / mpi_size;
+		::size_t workers;
+		if (master_is_worker_) {
+			workers = mpi_size;
+		} else {
+			std::cerr << "********** FIXME: master must load minibatch pi for beta" << std::endl;
+			workers = mpi_size - 1;
+		}
+        ::size_t max_my_minibatch_nodes = (std::min(max_minibatch_chunk, max_minibatch_nodes) + workers - 1) / workers;
 		::size_t max_minibatch_neighbors = max_my_minibatch_nodes * real_num_node_sample();
 		std::cerr << "minibatch size param " << mini_batch_size << " max " << max_minibatch_nodes << " chunk " << max_minibatch_chunk << " #neighbors(total) " << max_minibatch_neighbors << std::endl;
 
@@ -383,6 +400,12 @@ public:
 						 max_my_minibatch_nodes + max_minibatch_neighbors,
                          max_my_minibatch_nodes,
 						 dkv_args);
+
+		master_hosts_pi_ = d_kv_store->include_master();
+
+		std::cerr << "Master is " << (master_is_worker_ ? "" : "not ") <<
+		   	"a worker, does " << (master_hosts_pi_ ? "" : "not ") <<
+			"host pi values" << std::endl;
 
 		if (mpi_rank == mpi_master) {
 			init_beta();
@@ -830,7 +853,7 @@ protected:
 			for (int i = 0; i < mpi_size; ++i) {
 				subgraph_count[i] = 0;
 				for (::size_t j = 0; j < subminibatch[i].size(); ++j) {
-					::size_t fan_out = network.get_fan_out(subminibatch[i][j]);
+					int32_t fan_out = network.get_fan_out(subminibatch[i][j]);
 					workers_set_size.push_back(fan_out);
 					subgraph_count[i] += fan_out;
 				}
@@ -840,8 +863,8 @@ protected:
 			size_displ[0] = 0;
 			subgraph_displ[0] = 0;
 			for (int i = 1; i < mpi_size; i++) {
-				size_displ[i] = size_count[i] - size_count[i - 1];
-				subgraph_displ[i] = subgraph_count[i] - subgraph_count[i - 1];
+				size_displ[i] = size_displ[i - 1] + size_count[i - 1];
+				subgraph_displ[i] = subgraph_displ[i - 1] + subgraph_count[i - 1];
 			}
 
 			// Scatter the fanout of each minibatch node
@@ -869,7 +892,7 @@ protected:
 					marshalled += n;
 				}
 			}
-			// std::cerr << "Total marshalled " << marshalled << " presumed " << total_edges << std::endl;
+			std::cerr << "Total marshalled " << marshalled << " presumed " << total_edges << std::endl;
 			assert(marshalled == total_edges);
 
 			// Scatter the marshalled subgraphs
@@ -918,6 +941,7 @@ protected:
 			local_network_.unmarshall_local_graph(nodes_[i],
 												  marshall, set_size[i]);
 			offset += set_size[i];
+			std::cerr << "Unmarshalled " << set_size[i] << " edges" << std::endl;
 		}
 	}
 
@@ -959,7 +983,8 @@ protected:
 
 			subminibatch.resize(mpi_size);		// FIXME: lift to class, size is static
 
-			::size_t upper_bound = (nodes.size() + mpi_size - 1) / mpi_size;
+			::size_t workers = master_is_worker_ ? mpi_size : mpi_size - 1;
+			::size_t upper_bound = (nodes.size() + workers - 1) / workers;
 			std::unordered_set<Vertex> unassigned;
 			for (auto n: nodes) {
 				::size_t owner = node_owner(n);
@@ -977,7 +1002,7 @@ protected:
 			}
 			std::cerr << "]" << std::endl;
 
-			::size_t i = 0;
+			::size_t i = master_is_worker_ ? 0 : 1;
 			for (auto n: unassigned) {
 				while (subminibatch[i].size() == upper_bound) {
 					i++;
@@ -1026,7 +1051,7 @@ protected:
 			mpi_error_test(r, "MPI_Scatterv of minibatch fails");
 		}
 
-		if (false) {
+		if (true) {
 			std::cerr << "Master gives me minibatch nodes[" << my_minibatch_size << "] ";
 			for (auto n : nodes_) {
 				std::cerr << n << " ";
@@ -1416,7 +1441,11 @@ protected:
 
 
 	int node_owner(Vertex node) const {
-		return node % mpi_size;
+		if (master_is_worker_) {
+			return node % mpi_size;
+		} else {
+			return 1 + (node % (mpi_size - 1));
+		}
 	}
 
 
@@ -1437,6 +1466,9 @@ protected:
 	const int mpi_master;
 	int		mpi_size;
 	int		mpi_rank;
+
+	bool    master_is_worker_;
+	bool    master_hosts_pi_;
 
 	DKV::DKVStoreInterface *d_kv_store;
 
