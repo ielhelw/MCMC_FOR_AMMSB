@@ -239,8 +239,6 @@ public:
 		throw MCMCException("No support for Python Efficiency compatibility");
 #endif
 
-		std::cerr << "***************** FIXME: make an array of kernelRandoms, one for each of the OpenMP threads" << std::endl;
-
 		t_populate_pi           = Timer("  populate pi");
 		t_outer                 = Timer("  iteration");
 		t_deploy_minibatch      = Timer("    deploy minibatch");
@@ -287,6 +285,60 @@ public:
 		}
 
 		(void)MPI_Finalize();
+	}
+
+
+	void BroadcastNetworkInfo() {
+		NetworkInfo info;
+		int r;
+
+		if (mpi_rank == mpi_master) {
+			network.FillInfo(&info);
+		}
+
+		r = MPI_Bcast(&info, sizeof info, MPI_BYTE, mpi_master, MPI_COMM_WORLD);
+		mpi_error_test(r, "MPI_Bcast of Network stub info fails");
+
+		if (mpi_rank != mpi_master) {
+			network = Network(info);
+
+			N = network.get_num_nodes();
+			assert(N != 0);
+
+			beta = std::vector<double>(K, 0.0);
+			pi   = std::vector<std::vector<double> >(N, std::vector<double>(K, 0.0));
+
+			// parameters related to sampling
+			mini_batch_size = args_.mini_batch_size;
+			if (mini_batch_size < 1) {
+				mini_batch_size = N / 2;    // default option.
+			}
+
+			// ration between link edges and non-link edges
+			link_ratio = network.get_num_linked_edges() / ((N * (N - 1)) / 2.0);
+
+			if (false) {
+				// store perplexity for all the iterations
+				// ppxs_held_out = [];
+				// ppxs_test = [];
+				ppx_for_heldout = std::vector<double>(network.get_held_out_size(), 0.0);
+			}
+
+			this->info(std::cerr);
+		}
+	}
+
+
+	void MasterAwareLoadNetwork() {
+		std::cerr << "************* FIXME: (optionally) load Network only at master's, then broadcast the network parameters" << std::endl;
+		if (REPLICATED_NETWORK) {
+			LoadNetwork();
+		} else {
+			if (mpi_rank == mpi_master) {
+				LoadNetwork();
+			}
+			BroadcastNetworkInfo();
+		}
 	}
 
 
@@ -361,6 +413,21 @@ public:
 			master_is_worker_ = (mpi_size == 1);
 		}
 
+		MasterAwareLoadNetwork();
+
+		// control parameters for learning
+		//num_node_sample = static_cast< ::size_t>(std::sqrt(network.get_num_nodes()));
+		if (args_.num_node_sample == 0) {
+			// TODO: automative update..... 
+			num_node_sample = N/50;
+		} else {
+			num_node_sample = args_.num_node_sample;
+		}
+		if (args_.mini_batch_size == 0) {
+			mini_batch_size = N / 10;   // old default for STRATIFIED_RANDOM_NODE_SAMPLING
+		}
+		std::cerr << "num_node_sample " << num_node_sample << " a " << a << " b " << b << " c " << c << " alpha " << alpha << " eta (" << eta[0] << "," << eta[1] << ")" << std::endl;
+
 		if (max_minibatch_chunk == 0) {
 			std::ifstream meminfo("/proc/meminfo");
 			int64_t mem_total = -1;
@@ -388,7 +455,7 @@ public:
 		if (master_is_worker_) {
 			workers = mpi_size;
 		} else {
-			std::cerr << "********** FIXME: master must load minibatch pi for beta" << std::endl;
+			std::cerr << "********** FIXME: CHECK: master must load minibatch pi for beta" << std::endl;
 			workers = mpi_size - 1;
 		}
         ::size_t max_my_minibatch_nodes = (std::min(max_minibatch_chunk, max_minibatch_nodes) + workers - 1) / workers;
@@ -744,6 +811,7 @@ protected:
 
 	void init_pi() {
 		double pi[K + 1];
+		std::cerr << "*************** FIXME: load pi only on pi-hoster nodes" << std::endl;
 		for (int32_t i = mpi_rank; i < static_cast<int32_t>(N); i += mpi_size) {
 			std::vector<double> phi_pi = kernelRandom->gamma(1, 1, 1, K)[0];
 			if (true) {

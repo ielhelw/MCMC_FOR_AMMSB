@@ -1,6 +1,8 @@
 #ifndef MCMC_MSB_NETWORK_H__
 #define MCMC_MSB_NETWORK_H__
 
+#include <cstdio>
+
 #include <algorithm>
 #include <set>
 #include <unordered_set>
@@ -31,11 +33,94 @@ typedef std::pair<MinibatchSet *, double>		EdgeSample;
  * the function within this class, each learner can get different types of
  * data.
  */
+
+struct NetworkInfo {
+	int32_t		N;
+	int64_t		E;
+	int32_t		max_fan_out;
+	double		held_out_ratio;
+	int64_t		held_out_size;
+};
+
+
 class Network {
 
 public:
 	Network() {
 	}
+
+
+	// Stub for the distributed implementation that does not replicate the graph
+	Network(const NetworkInfo& info)
+		: N(info.N), linked_edges(NULL), num_total_edges(info.E),
+		  held_out_ratio(info.held_out_ratio), held_out_size(info.held_out_size) {
+		fan_out_cumul_distro = std::vector<::size_t>(1, info.max_fan_out);
+		assert(N != 0);
+	}
+
+#ifdef USE_GOOGLE_SPARSE_HASH
+	Network(const std::string& filename, bool compressed) {
+		FILE* f;
+		if (compressed) {
+			std::string cmd("zcat " + filename);
+			f = popen(cmd.c_str(), "r");
+			if (f == NULL) {
+				throw mcmc::MCMCException("Cannot popen(" + cmd + ")");
+			}
+		} else {
+			f = fopen(filename.c_str(), "r");
+			if (f == NULL) {
+				throw mcmc::MCMCException("Cannot fopen(" + filename + ")");
+			}
+		}
+
+		// Read linked_edges
+		read_fully(f, &N, sizeof N);
+		linked_edges = new std::vector<GoogleHashSet>(N);
+		std::vector<GoogleHashSet>& data = *const_cast<std::vector<GoogleHashSet> *>(linked_edges);
+		for (int32_t i = 0; i < N; i++) {
+			data[i].read_metadata(f);
+			data[i].read_nopointer_data(f);
+		}
+
+		// Read held_out set
+		held_out_map.read_metadata(f);
+		held_out_map.read_nopointer_data(f);
+		// Read test set
+		test_map.read_metadata(f);
+		test_map.read_nopointer_data(f);
+
+		if (compressed) {
+			pclose(f);
+		} else {
+			fclose(f);
+		}
+	}
+
+
+	static void read_fully(FILE *f, void *v_data, ::size_t size) {
+		char *data = static_cast<char *>(v_data);
+		::size_t rd = 0;
+		while (rd < size) {
+			::size_t r = fread(data + rd, 1, size - rd, f);
+			if (r == 0) {
+				throw mcmc::MCMCException("Cannot fread()");
+			}
+			rd += r;
+		}
+	}
+#endif
+
+	// Stub info for the distributed implementation that does not replicate the graph
+	void FillInfo(NetworkInfo *info) {
+		assert(N != 0);
+		info->N = N;
+		info->E = num_total_edges;
+		info->held_out_ratio = held_out_ratio;
+		info->held_out_size = held_out_size;
+		info->max_fan_out = fan_out_cumul_distro[0];
+	}
+
 
 	/**
 	 * In this initialization step, we separate the whole data set
@@ -54,23 +139,38 @@ public:
 
 		N = data->N;							// number of nodes in the graph
 		linked_edges = data->E;					// all pair of linked edges.
-#ifdef EDGESET_IS_ADJACENCY_LIST
-		adjacency_list_init();
-		num_total_edges = cumulative_edges[N - 1] / 2; // number of undirected edges.
-#else
-		num_total_edges = get_num_linked_edges(); // number of total edges.
-#endif
-	   	this->held_out_ratio = held_out_ratio;	// percentage of held-out data size
 
-		// Based on the a-MMSB paper, it samples equal number of
-		// linked edges and non-linked edges.
-		held_out_size = held_out_ratio * get_num_linked_edges();
+		Init(held_out_ratio);
 
 		// initialize train_link_map
 		init_train_link_map();
 		// randomly sample hold-out and test sets.
 		init_held_out_set();
 		init_test_set();
+
+		calc_max_fan_out();
+	}
+
+
+	void Init(double held_out_ratio) {
+#ifdef EDGESET_IS_ADJACENCY_LIST
+		adjacency_list_init();
+		num_total_edges = cumulative_edges[N - 1] / 2; // number of undirected edges.
+#else
+		num_total_edges = linked_edges->size();		// number of total edges.
+#endif
+
+	   	this->held_out_ratio = held_out_ratio;	// percentage of held-out data size
+
+		// Based on the a-MMSB paper, it samples equal number of
+		// linked edges and non-linked edges.
+		held_out_size = held_out_ratio * get_num_linked_edges();
+
+	   	this->held_out_ratio = held_out_ratio;	// percentage of held-out data size
+
+		// Based on the a-MMSB paper, it samples equal number of
+		// linked edges and non-linked edges.
+		held_out_size = held_out_ratio * get_num_linked_edges();
 
 		calc_max_fan_out();
 	}
@@ -156,14 +256,6 @@ public:
 	}
 
 	::size_t get_num_linked_edges() const {
-#ifdef EDGESET_IS_ADJACENCY_LIST
-		return cumulative_edges[N - 1] / 2; // number of undirected edges.
-#else
-		return linked_edges->size();
-#endif
-	}
-
-	::size_t get_num_total_edges() const {
 		return num_total_edges;
 	}
 
@@ -187,9 +279,11 @@ public:
 		return test_map;
 	}
 
+#ifdef UNUSED
 	void set_num_pieces(::size_t num_pieces) {
 		this->num_pieces = num_pieces;
 	}
+#endif
 
 	/**
 	 * sample list of edges from the whole training network uniformly, regardless
@@ -885,7 +979,9 @@ protected:
 	EdgeMap held_out_map;			// store all held out edges
 	EdgeMap test_map;				// store all test edges
 
+#ifdef UNUSED
 	::size_t	num_pieces;
+#endif
 
 	std::vector< ::size_t> fan_out_cumul_distro;
 	::size_t progress = 0;

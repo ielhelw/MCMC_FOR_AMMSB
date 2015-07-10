@@ -317,11 +317,10 @@ void DKVStoreRDMA::Init(::size_t value_size, ::size_t total_values,
     // ("rdma.oob-network",
     // po::value(&oob_impl_)->default_value("socket"),
     // "RDMA OOB network implementation")
-#ifdef USE_MPI
     ("rdma.mpi-initialized",
      po::bool_switch(&mpi_initialized)->default_value(false),
      "MPI is already initialized")
-#else
+#ifndef USE_MPI
     ("rdma.oob-interface",
      po::value(&oob_interface_)->default_value("ib0"),
      "RDMA OOB network interface")

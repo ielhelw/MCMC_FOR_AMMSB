@@ -23,49 +23,55 @@ int main(int argc, char *argv[]) {
 		 po::value<std::string>(&network_save),
 		 "save network in some native format")
 		("compress,Z",
-		 po::bool_switch(&compressed)->default_value(true),
+		 po::bool_switch(&compressed)->default_value(false),
 		 "compress saved network file")
 		;
 
-  mcmc::Options mcmc_options(argc, argv, &options);
+	mcmc::Options mcmc_options(argc, argv, &options);
 
-  DataFactory df(mcmc_options);
-  df.setProgress(progress);
+	DataFactory df(mcmc_options);
+	Network network;
+  const Data *data = NULL;
+  if (mcmc_options.dataset_class == "gz" ||
+		  mcmc_options.dataset_class == "sparsehash") {
+	  network = Network(mcmc_options.filename, mcmc_options.compressed);
+	  network.Init(0.1);
+  } else {
+	  df.setProgress(progress);
 
-  const Data *data = df.get_data();
-  if (! quiet) {
-	  data->dump_data();
+	  data = df.get_data();
+	  if (! quiet) {
+		  data->dump_data();
+	  }
+
+	  if (quiet) {
+		  print_mem_usage(std::cerr);
+		  std::cerr << "Hit <enter> to create Network" << std::endl;
+		  std::string dummy;
+		  getline(std::cin, dummy);
+	  }
+
+	  network.Init(data, 0.1);
   }
-
-  if (quiet) {
-	  print_mem_usage(std::cerr);
-	  std::cerr << "Hit <enter> to create Network" << std::endl;
-	  std::string dummy;
-	  getline(std::cin, dummy);
-  }
-
-  Network network;
-  network.Init(data, 0.1);
 
   std::cerr << "Network: N " << network.get_num_nodes() <<
-	  " E " << network.get_num_total_edges() <<
-	  " linked edges " << network.get_num_linked_edges() <<
+	  " E " << network.get_num_linked_edges() <<
 	  " max.fan-out " << network.get_max_fan_out() <<
 	  " held-out set " << network.get_held_out_set().size() <<
 	  " test set " << network.get_test_set().size() <<
 	  std::endl;
 
-  if (quiet) {
-	  print_mem_usage(std::cerr);
-	  std::cerr << "Hit <enter> to quit" << std::endl;
-	  std::string dummy;
-	  getline(std::cin, dummy);
-  }
-
   if (network_save != "") {
+	  if (quiet) {
+		  print_mem_usage(std::cerr);
+		  std::cerr << "Hit <enter> to save" << std::endl;
+		  std::string dummy;
+		  getline(std::cin, dummy);
+	  }
+
 	  FILE *os;
 	  if (compressed) {
-		  std::string cmd("zcat > " + network_save);
+		  std::string cmd("gzip > " + network_save);
 		  os = popen(cmd.c_str(), "w");
 		  if (os == NULL) {
 			  throw mcmc::MCMCException("Cannot popen(" + cmd + ")");
@@ -86,6 +92,7 @@ int main(int argc, char *argv[]) {
 		  rc.write_metadata(os);
 		  rc.write_nopointer_data(os);
 	  }
+
 	  GoogleHashMap &hc = const_cast<GoogleHashMap &>(network.get_held_out_set());
 	  hc.write_metadata(os);
 	  hc.write_nopointer_data(os);
@@ -93,9 +100,22 @@ int main(int argc, char *argv[]) {
 	  tc.write_metadata(os);
 	  tc.write_nopointer_data(os);
 
-	  if (os != NULL) {
-		  fclose(os);
+	  if (compressed) {
+		  if (os != NULL) {
+			  pclose(os);
+		  }
+	  } else {
+		  if (os != NULL) {
+			  fclose(os);
+		  }
 	  }
+  }
+
+  if (quiet) {
+	  print_mem_usage(std::cerr);
+	  std::cerr << "Hit <enter> to quit" << std::endl;
+	  std::string dummy;
+	  getline(std::cin, dummy);
   }
 
   df.deleteData(data);

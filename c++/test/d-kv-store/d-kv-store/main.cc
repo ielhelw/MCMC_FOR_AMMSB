@@ -115,6 +115,10 @@ class DKVWrapper {
     ::size_t n = options_.num_node_sample;          // #neighbors for each minibatch node
     ::size_t iterations = options_.max_iteration;
 
+	if (m == 0 || n == 0) {
+		throw mcmc::MCMCException("minibatch size and neighborset size must be > 0");
+	}
+
     ::size_t my_m = (m + n_hosts - 1) / n_hosts;
 
     d_kv_store_.Init(K, N, my_m * n, my_m, remains);
@@ -143,6 +147,7 @@ class DKVWrapper {
         std::vector<int32_t> k(1, static_cast<int32_t>(i));
         std::vector<const double *> v(1, pi.data());
         d_kv_store_.WriteKVRecords(k, v);
+        d_kv_store_.PurgeKVRecords();
       }
       duration dur = std::chrono::duration_cast<duration>(hires::now() - t);
       std::cout << "Populate " << N << "x" << K << " takes " <<

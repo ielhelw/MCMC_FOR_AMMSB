@@ -58,6 +58,8 @@ public:
 	 *     args:       containing priors, control parameters for the model.
 	 */
 	SV(const Options &args) : Learner(args) {
+		LoadNetwork();
+
 		// variational parameters.
 		lamda = Random::random->gamma(eta[0], eta[1], K, 2);	// variational parameters for beta
 		gamma = Random::random->gamma(1, 1, N, K);			// variational parameters for pi

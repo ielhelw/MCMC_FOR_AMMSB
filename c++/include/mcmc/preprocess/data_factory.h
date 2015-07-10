@@ -26,6 +26,9 @@ public:
 		} else if (dataset_class_ == "rc") {
 			contiguous_ = true;
 			dataset_class_ = "relativity";
+		} else if (dataset_class_ == "gz") {
+			compressed_ = true;
+			dataset_class_ = "sparsehash";
 		}
 	}
 

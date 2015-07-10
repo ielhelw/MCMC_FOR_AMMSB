@@ -99,6 +99,19 @@ public:
         this->c = args_.c;
 
         // control parameters for learning
+		if (args_.interval == 0) {
+			interval = 50;
+		} else {
+			interval = args_.interval;
+		}
+
+		std::cerr << "Done " << __func__ << "()" << std::endl;
+	}
+
+	virtual void init() {
+		LoadNetwork();
+
+        // control parameters for learning
         //num_node_sample = static_cast< ::size_t>(std::sqrt(network.get_num_nodes()));
 		if (args_.num_node_sample == 0) {
 			// TODO: automative update..... 
@@ -106,20 +119,11 @@ public:
 		} else {
 			num_node_sample = args_.num_node_sample;
 		}
-		if (args_.interval == 0) {
-			interval = 50;
-		} else {
-			interval = args_.interval;
-		}
 		if (args_.mini_batch_size == 0) {
 			mini_batch_size = N / 10;   // old default for STRATIFIED_RANDOM_NODE_SAMPLING
 		}
 		std::cerr << "num_node_sample " << num_node_sample << " a " << a << " b " << b << " c " << c << " alpha " << alpha << " eta (" << eta[0] << "," << eta[1] << ")" << std::endl;
 
-		info(std::cout);
-	}
-
-	virtual void init() {
         // model parameters and re-parameterization
         // since the model parameter - \pi and \beta should stay in the simplex,
         // we need to restrict the sum of probability equals to 1.  The way we
@@ -197,7 +201,7 @@ public:
 		}
 
         std::cerr << "Random seed " << std::hex << "0x" << kernelRandom->seed(0) << ",0x" << kernelRandom->seed(1) << std::endl << std::dec;
-		std::cerr << "Done constructor" << std::endl;
+		std::cerr << "Done " << __func__ << "()" << std::endl;
 	}
 
 	virtual ~MCMCSamplerStochastic() {

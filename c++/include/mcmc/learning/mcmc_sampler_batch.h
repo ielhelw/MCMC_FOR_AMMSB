@@ -32,6 +32,7 @@ class MCMCSamplerBatch : public Learner {
 public:
     MCMCSamplerBatch(const Options &args)
 			: Learner(args) {
+		LoadNetwork();
 
         // step size parameters. step size = (a*(1+t/b))^(-c), t is the number of steps so far
         this->a = args_.a;
