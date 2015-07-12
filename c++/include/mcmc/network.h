@@ -1,13 +1,12 @@
 #ifndef MCMC_MSB_NETWORK_H__
 #define MCMC_MSB_NETWORK_H__
 
-#include <cstdio>
-
 #include <algorithm>
 #include <set>
 #include <unordered_set>
 
 #include <boost/bind.hpp>
+#include <boost/filesystem.hpp>
 
 #include "mcmc/types.h"
 #include "mcmc/data.h"
@@ -43,6 +42,13 @@ struct NetworkInfo {
 };
 
 
+struct EdgeMapItem {
+	int32_t		first;
+	int32_t		second;
+	bool		is_edge;
+};
+
+
 class Network {
 
 public:
@@ -53,72 +59,17 @@ public:
 	// Stub for the distributed implementation that does not replicate the graph
 	Network(const NetworkInfo& info)
 		: N(info.N), linked_edges(NULL), num_total_edges(info.E),
-		  held_out_ratio(info.held_out_ratio), held_out_size(info.held_out_size) {
+		  held_out_ratio_(info.held_out_ratio), held_out_size(info.held_out_size) {
 		fan_out_cumul_distro = std::vector<::size_t>(1, info.max_fan_out);
 		assert(N != 0);
 	}
 
-#ifdef USE_GOOGLE_SPARSE_HASH
-	Network(const std::string& filename, bool compressed) {
-		FILE* f;
-		if (compressed) {
-			std::string cmd("zcat " + filename);
-			f = popen(cmd.c_str(), "r");
-			if (f == NULL) {
-				throw mcmc::MCMCException("Cannot popen(" + cmd + ")");
-			}
-		} else {
-			f = fopen(filename.c_str(), "r");
-			if (f == NULL) {
-				throw mcmc::MCMCException("Cannot fopen(" + filename + ")");
-			}
-		}
 
-		// Read linked_edges
-		read_fully(f, &N, sizeof N);
-		linked_edges = new std::vector<GoogleHashSet>(N);
-		std::vector<GoogleHashSet>& data = *const_cast<std::vector<GoogleHashSet> *>(linked_edges);
-		for (int32_t i = 0; i < N; i++) {
-			data[i].read_metadata(f);
-			data[i].read_nopointer_data(f);
-		}
-
-		// Read held_out set
-		held_out_map.read_metadata(f);
-		held_out_map.read_nopointer_data(f);
-		// Read test set
-		test_map.read_metadata(f);
-		test_map.read_nopointer_data(f);
-
-		if (compressed) {
-			pclose(f);
-		} else {
-			fclose(f);
-		}
-	}
-
-
-	static void read_fully(FILE *f, void *v_data, ::size_t size) {
-		char *data = static_cast<char *>(v_data);
-		::size_t rd = 0;
-		while (rd < size) {
-			::size_t r = fread(data + rd, 1, size - rd, f);
-			if (r == 0) {
-				throw mcmc::MCMCException("Cannot fread()");
-			}
-			rd += r;
-		}
-	}
+	virtual ~Network() {
+#ifdef EDGESET_IS_ADJACENCY_LIST
+		adjacency_list_end();
 #endif
-
-	// Stub info for the distributed implementation that does not replicate the graph
-	void FillInfo(NetworkInfo *info) {
-		assert(N != 0);
-		info->N = N;
-		info->E = num_total_edges;
-		info->held_out_ratio = held_out_ratio;
-		info->held_out_size = held_out_size;
-		info->max_fan_out = fan_out_cumul_distro[0];
+		delete const_cast<Data *>(data_);
 	}
 
 
@@ -132,54 +83,169 @@ public:
 	 *
 	 * Arguments:
 	 *     data:   representation of the while graph.
-	 *     vlaidation_ratio:  the percentage of data used for validation and testing.
+	 *     held_out_ratio:  the percentage of data used for validation and testing.
+	 *     create_held_out: create held-out set and test set; otherwise, caller must
+	 *     					read them from file
 	 */
-	void Init(const Data *data, double held_out_ratio) {
+	void Init(const Options& args, double held_out_ratio) {
+		held_out_ratio_ = held_out_ratio;
+		if (held_out_ratio_ == 0) {
+			held_out_ratio_ = 0.1;
+			std::cerr << "Choose default held_out_ratio: " << held_out_ratio << std::endl;
+		}
+
 		progress = 1 << 20;		// FIXME: make this a parameter
 
-		N = data->N;							// number of nodes in the graph
-		linked_edges = data->E;					// all pair of linked edges.
+		preprocess::DataFactory df(args);
+		df.setProgress(progress);
+		data_ = df.get_data();
 
-		Init(held_out_ratio);
+		N = data_->N;							// number of nodes in the graph
+		linked_edges = data_->E;					// all pair of linked edges.
 
-		// initialize train_link_map
-		init_train_link_map();
-		// randomly sample hold-out and test sets.
-		init_held_out_set();
-		init_test_set();
-
-		calc_max_fan_out();
-	}
-
-
-	void Init(double held_out_ratio) {
+		if (args.dataset_class == "preprocessed") {
+			ReadAuxData(args.filename + "/aux.gz", true);
 #ifdef EDGESET_IS_ADJACENCY_LIST
-		adjacency_list_init();
-		num_total_edges = cumulative_edges[N - 1] / 2; // number of undirected edges.
+			num_total_edges = cumulative_edges[N - 1] / 2; // number of undirected edges.
 #else
-		num_total_edges = linked_edges->size();		// number of total edges.
+			num_total_edges = linked_edges->size();		// number of total edges.
 #endif
 
-	   	this->held_out_ratio = held_out_ratio;	// percentage of held-out data size
+			::size_t my_held_out_size = held_out_ratio_ * get_num_linked_edges();
+			std::string held_out = args.filename + "/held-out.gz";
+			ReadHeldOutSet(args.filename + "/held-out.gz", true);
+			ReadTestSet(args.filename + "/test.gz", true);
 
-		// Based on the a-MMSB paper, it samples equal number of
-		// linked edges and non-linked edges.
-		held_out_size = held_out_ratio * get_num_linked_edges();
+			if (held_out_size != my_held_out_size) {
+				throw MCMCException("Expect held-out size " +
+								   		to_string(my_held_out_size) +
+										", get " + to_string(held_out_size));
+			}
 
-	   	this->held_out_ratio = held_out_ratio;	// percentage of held-out data size
-
-		// Based on the a-MMSB paper, it samples equal number of
-		// linked edges and non-linked edges.
-		held_out_size = held_out_ratio * get_num_linked_edges();
-
-		calc_max_fan_out();
-	}
-
-	virtual ~Network() {
+		} else {
 #ifdef EDGESET_IS_ADJACENCY_LIST
-		adjacency_list_end();
+			adjacency_list_init();
+			num_total_edges = cumulative_edges[N - 1] / 2; // number of undirected edges.
+#else
+			num_total_edges = linked_edges->size();		// number of total edges.
+#endif
+
+			// Based on the a-MMSB paper, it samples equal number of
+			// linked edges and non-linked edges.
+			held_out_size = held_out_ratio_ * get_num_linked_edges();
+
+			// initialize train_link_map
+			init_train_link_map();
+			// randomly sample hold-out and test sets.
+			init_held_out_set();
+			init_test_set();
+
+			calc_max_fan_out();
+		}
+	}
+
+
+	const Data* get_data() const {
+		return data_;
+	}
+
+
+	void ReadSet(FileHandle& f, EdgeMap* set) {
+#ifdef USE_GOOGLE_SPARSE_HASH
+		// Read held_out set
+		set->read_metadata(f.handle());
+		set->read_nopointer_data(f.handle());
+#else
+		throw MCMCException("Cannot read set for this representation");
 #endif
 	}
+
+	void ReadHeldOutSet(const std::string& filename, bool compressed) {
+		FileHandle f(filename, compressed, "r");
+		f.read_fully(&held_out_ratio_, sizeof held_out_ratio_);
+		f.read_fully(&held_out_size, sizeof held_out_size);
+		ReadSet(f, &held_out_map);
+	}
+
+	void ReadTestSet(const std::string& filename, bool compressed) {
+		FileHandle f(filename, compressed, "r");
+		ReadSet(f, &test_map);
+	}
+
+	void ReadAuxData(const std::string& filename, bool compressed) {
+		FileHandle f(filename, compressed, "r");
+		fan_out_cumul_distro.resize(N);
+		f.read_fully(fan_out_cumul_distro.data(),
+					 fan_out_cumul_distro.size() * sizeof fan_out_cumul_distro[0]);
+		cumulative_edges.resize(N);
+		f.read_fully(cumulative_edges.data(),
+					 cumulative_edges.size() * sizeof cumulative_edges[0]);
+	}
+
+
+	template <typename T>
+	void WriteSet(FileHandle& f, const T* set) {
+#ifdef USE_GOOGLE_SPARSE_HASH
+		T* mset = const_cast<T*>(set);
+		// Read held_out set
+		mset->write_metadata(f.handle());
+		mset->write_nopointer_data(f.handle());
+#else
+		throw MCMCException("Cannot write set for this representation");
+#endif
+	}
+
+	void WriteHeldOutSet(const std::string& filename, bool compressed) {
+		FileHandle f(filename, compressed, "w");
+		f.write_fully(&held_out_ratio_, sizeof held_out_ratio_);
+		f.write_fully(&held_out_size, sizeof held_out_size);
+		WriteSet(f, &held_out_map);
+	}
+
+	void WriteTestSet(const std::string& filename, bool compressed) {
+		FileHandle f(filename, compressed, "w");
+		WriteSet(f, &test_map);
+	}
+
+	void WriteAuxData(const std::string& filename, bool compressed) {
+		FileHandle f(filename, compressed, "w");
+		f.write_fully(fan_out_cumul_distro.data(),
+					  fan_out_cumul_distro.size() * sizeof fan_out_cumul_distro[0]);
+		f.write_fully(cumulative_edges.data(),
+					  cumulative_edges.size() * sizeof cumulative_edges[0]);
+	}
+
+
+	void save(const std::string& dirname) {
+		if (! boost::filesystem::exists(dirname)) {
+			boost::filesystem::create_directories(dirname);
+		}
+
+		data_->save(dirname + "/graph.gz", true);
+		WriteHeldOutSet(dirname + "/held-out.gz", true);
+		WriteTestSet(dirname + "/test.gz", true);
+		WriteAuxData(dirname + "/aux.gz", true);
+	}
+
+
+	// Stub info for the distributed implementation that does not replicate the graph
+	void FillInfo(NetworkInfo* info) {
+		assert(N != 0);
+		info->N = N;
+		info->E = num_total_edges;
+		info->held_out_ratio = held_out_ratio_;
+		info->held_out_size = held_out_size;
+		info->max_fan_out = fan_out_cumul_distro[0];
+	}
+
+
+	void unmarshall_held_out(const std::vector<EdgeMapItem> &buffer) {
+		for (auto i : buffer) {
+			Edge e(i.first, i.second);
+			held_out_map[e] = i.is_edge;
+		}
+	}
+
 
 	/**
 	 * Sample a mini-batch of edges from the training data.
@@ -603,7 +669,7 @@ protected:
 		prefix_sum(&cumulative_edges);
 		std::cerr << "Found prefix sum for edges in AdjacencyList graph: top bucket edge " << cumulative_edges[cumulative_edges.size() - 1] << " max edge " << (cumulative_edges[cumulative_edges.size() - 1] + (*linked_edges)[cumulative_edges.size() - 1].size()) << std::endl;
  
-		std::cerr << "Initializing the held-out set on multiple machines will create randomness bugs" << std::endl;
+		// std::cerr << "Initializing the held-out set on multiple machines will create randomness bugs" << std::endl;
 		thread_random.resize(omp_get_max_threads());
 		for (::size_t i = 0; i < thread_random.size(); ++i) {
 			thread_random[i] = new Random::Random(i, 47);
@@ -684,52 +750,60 @@ protected:
 							    "please use smaller held out ratio.");
 		}
 
-		// FIXME make sampled_linked_edges an out param
-						print_mem_usage(std::cerr);
-#if defined RANDOM_FOLLOWS_CPP_WENZHE || defined RANDOM_FOLLOWS_PYTHON
-		std::cerr << __func__ << ": FIXME: replace EdgeList w/ (unordered) EdgeSet again" << std::endl;
-		auto sampled_linked_edges = Random::random->sampleList(linked_edges, p);
-#elif defined EDGESET_IS_ADJACENCY_LIST
-		std::vector<Edge> *sampled_linked_edges = new std::vector<Edge>();
-		sample_random_edges(linked_edges, p, sampled_linked_edges);
-#else
-		auto sampled_linked_edges = Random::random->sample(linked_edges, p);
-#endif
 		::size_t count = 0;
-		for (auto edge = sampled_linked_edges->begin();
-			 	edge != sampled_linked_edges->end();
-				edge++) {
-			held_out_map[*edge] = true;
-#ifndef EDGESET_IS_ADJACENCY_LIST
-			train_link_map[edge->first].erase(edge->second);
-			train_link_map[edge->second].erase(edge->first);
+		// FIXME make sampled_linked_edges an out param
+		print_mem_usage(std::cerr);
+		while (count < p) {
+#if defined RANDOM_FOLLOWS_CPP_WENZHE || defined RANDOM_FOLLOWS_PYTHON
+			std::cerr << __func__ << ": FIXME: replace EdgeList w/ (unordered) EdgeSet again" << std::endl;
+			auto sampled_linked_edges = Random::random->sampleList(linked_edges, p);
+#elif defined EDGESET_IS_ADJACENCY_LIST
+			std::vector<Edge> *sampled_linked_edges = new std::vector<Edge>();
+			sample_random_edges(linked_edges, p, sampled_linked_edges);
+#else
+			auto sampled_linked_edges = Random::random->sample(linked_edges, p);
 #endif
-			if (progress != 0 && count % progress == 0) {
-				std::cerr << "Edges/in in held-out set " << count << std::endl;
-				print_mem_usage(std::cerr);
+			for (auto edge : *sampled_linked_edges) {
+				// EdgeMap is an undirected graph, unfit for partitioning
+				assert(edge.first < edge.second);
+				held_out_map[edge] = true;
+#ifndef EDGESET_IS_ADJACENCY_LIST
+				train_link_map[edge.first].erase(edge.second);
+				train_link_map[edge.second].erase(edge.first);
+#endif
+				if (progress != 0 && count % progress == 0) {
+					std::cerr << "Edges/in in held-out set " << count << std::endl;
+					print_mem_usage(std::cerr);
+				}
+				count++;
 			}
-			count++;
-		}
 
-		if (false) {
-			std::cout << "sampled_linked_edges:" << std::endl;
-			dump(*sampled_linked_edges);
-			std::cout << "held_out_set:" << std::endl;
-			dump(held_out_map);
-		}
+			if (false) {
+				std::cout << "sampled_linked_edges:" << std::endl;
+				dump(*sampled_linked_edges);
+				std::cout << "held_out_set:" << std::endl;
+				dump(held_out_map);
+			}
 
-		delete sampled_linked_edges;
+			delete sampled_linked_edges;
+		}
 
 		// sample p non-linked edges from the network
-		while (p > 0) {
+		while (count < 2 * p) {
 			Edge edge = sample_non_link_edge_for_held_out();
+			// EdgeMap is an undirected graph, unfit for partitioning
+			assert(edge.first < edge.second);
 			held_out_map[edge] = false;
-			p--;
 			if (progress != 0 && count % progress == 0) {
 				std::cerr << "Edges/out in held-out set " << count << std::endl;
 				print_mem_usage(std::cerr);
 			}
 			count++;
+		}
+
+		if (progress != 0) {
+			std::cerr << "Edges in held-out set " << count << std::endl;
+			print_mem_usage(std::cerr);
 		}
 	}
 
@@ -757,23 +831,21 @@ protected:
 			// FIXME make sampled_linked_edges an out param
 			auto sampled_linked_edges = Random::random->sample(linked_edges, 2 * p);
 #endif
-			for (auto edge = sampled_linked_edges->cbegin();
-				 	edge != sampled_linked_edges->cend();
-					edge++) {
+			for (auto edge : *sampled_linked_edges) {
 				if (p < 0) {
 					// std::cerr << __func__ << ": Are you sure p < 0 is a good idea?" << std::endl;
 					break;
 				}
 
 				// check whether it is already used in hold_out set
-				if (EdgeIn(*edge, held_out_map) || EdgeIn(*edge, test_map)) {
+				if (EdgeIn(edge, held_out_map) || EdgeIn(edge, test_map)) {
 					continue;
 				}
 
-				test_map[*edge] = true;
+				test_map[edge] = true;
 #ifndef EDGESET_IS_ADJACENCY_LIST
-				train_link_map[edge->first].erase(edge->second);
-				train_link_map[edge->second].erase(edge->first);
+				train_link_map[edge.first].erase(edge.second);
+				train_link_map[edge.second].erase(edge.first);
 #endif
 				p--;
 				if (progress != 0 && count % progress == 0) {
@@ -790,6 +862,8 @@ protected:
 		p = held_out_size / 2;
 		while (p > 0) {
 			Edge edge = sample_non_link_edge_for_test();
+			assert(! EdgeIn(edge, test_map));
+			assert(! EdgeIn(edge, held_out_map));
 			test_map[edge] = false;
 			p--;
 			if (progress != 0 && count % progress == 0) {
@@ -797,6 +871,11 @@ protected:
 				print_mem_usage(std::cerr);
 			}
 			count++;
+		}
+
+		if (progress != 0) {
+			std::cerr << "Edges in test set " << count << std::endl;
+			print_mem_usage(std::cerr);
 		}
 	}
 
@@ -811,6 +890,9 @@ protected:
 		// Need to count edges only for
 		//    train_link_map = linked_edges - held_out_map - test_map.
 		std::vector<int> fan_out(N, 0);
+		std::cerr << "FIXME: can't I parallelize by not doing the order check?" << std::endl;
+		// abort();
+
 		for (::size_t i = 0; i < linked_edges->size(); ++i) {
 			for (auto n : (*linked_edges)[i]) {
 				if (n >= static_cast<int>(i)) {	// don't count (a,b) as well as (b,a)
@@ -889,11 +971,6 @@ public:
 #endif
 	}
 
-	void unmarshall_local_graph(Vertex node, Vertex node_rank,
-								const Vertex *linked, ::size_t size) {
-		std::cerr << "Please implement notion of Local Graph" << std::endl;
-	}
-
 
 protected:
 	/**
@@ -952,10 +1029,11 @@ protected:
 
 
 protected:
+	const Data *data_ = NULL;
 	int32_t		N;					// number of nodes in the graph
 	const NetworkGraph *linked_edges;	// all pair of linked edges.
 	::size_t	num_total_edges;	// number of total edges.
-	double		held_out_ratio;		// percentage of held-out data size
+   	double		held_out_ratio_;	// percentage of held-out data size
 	::size_t	held_out_size;
 
 #ifdef EDGESET_IS_ADJACENCY_LIST
@@ -978,10 +1056,6 @@ protected:
 #endif
 	EdgeMap held_out_map;			// store all held out edges
 	EdgeMap test_map;				// store all test edges
-
-#ifdef UNUSED
-	::size_t	num_pieces;
-#endif
 
 	std::vector< ::size_t> fan_out_cumul_distro;
 	::size_t progress = 0;

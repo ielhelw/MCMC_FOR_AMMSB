@@ -149,6 +149,9 @@ public:
 		}
 	}
 
+	void unmarshall_local_graph_map(...) {
+	}
+
 	void reset() {
 		linked_edges.clear();
 	}
@@ -329,6 +332,36 @@ public:
 	}
 
 
+	void BroadcastHeldOut() {
+		int r;
+
+		int64_t held_out_marshall_size = 0;
+		if (mpi_rank == mpi_master) {
+			held_out_marshall_size = network.get_held_out_set().size();
+		}
+		r = MPI_Bcast(&held_out_marshall_size, 1, MPI_LONG, mpi_master, MPI_COMM_WORLD);
+		mpi_error_test(r, "MPI_Bcast of held-out set size fails");
+
+		std::vector<EdgeMapItem> buffer(held_out_marshall_size);
+		if (mpi_rank == mpi_master) {
+			struct EdgeMapItem *p = buffer.data();
+
+			for (auto e : network.get_held_out_set()) {
+				p->first = e.first.first;
+				p->second = e.first.second;
+				p->is_edge = e.second;
+				p++;
+			}
+		}
+		r = MPI_Bcast(buffer.data(), held_out_marshall_size, MPI_BYTE, mpi_master, MPI_COMM_WORLD);
+		mpi_error_test(r, "MPI_Bcast of held-out set data fails");
+
+		if (mpi_rank != mpi_master) {
+			network.unmarshall_held_out(buffer);
+		}
+	}
+
+
 	void MasterAwareLoadNetwork() {
 		std::cerr << "************* FIXME: (optionally) load Network only at master's, then broadcast the network parameters" << std::endl;
 		if (REPLICATED_NETWORK) {
@@ -338,6 +371,9 @@ public:
 				LoadNetwork();
 			}
 			BroadcastNetworkInfo();
+			// No need to broadcast the Network aux stuff, fan_out_cumul_distro and
+			// cumulative_edges: it is used at the master only
+			BroadcastHeldOut();
 		}
 	}
 
@@ -560,16 +596,12 @@ public:
 			mpi_error_test(r, "MPI_Bcast of beta fails");
 			t_broadcast_beta.stop();
 
-			// PRINT_MEM_USAGE();
-
 			t_deploy_minibatch.start();
 			// edgeSample is nonempty only at the master
 			// assigns nodes_
 			EdgeSample edgeSample = deploy_mini_batch();
 			t_deploy_minibatch.stop();
 			std::cerr << "Minibatch nodes " << nodes_.size() << std::endl;
-
-			// PRINT_MEM_USAGE();
 
 			for (::size_t chunk_start = 0;
 				 	chunk_start < nodes_.size();
@@ -585,8 +617,6 @@ public:
 				pi_node.resize(chunk_nodes.size());
 				d_kv_store->ReadKVRecords(pi_node, chunk_nodes, DKV::RW_MODE::READ_ONLY);
 				t_load_pi_minibatch.stop();
-
-				// PRINT_MEM_USAGE();
 
 				// ************ do in parallel at each host
 				// std::cerr << "Sample neighbor nodes" << std::endl;
@@ -620,8 +650,6 @@ public:
 				// flat_neighbors.resize(chunk_nodes.size() * real_num_node_sample());
 				assert(flat_neighbors.size() == chunk_nodes.size() * real_num_node_sample());
 
-				// PRINT_MEM_USAGE();
-
 				// t_update_phi_pi.start();
 				// ************ load neighor pi from D-KV store **********
 				t_load_pi_neighbor.start();
@@ -629,8 +657,6 @@ public:
 										  flat_neighbors,
 										  DKV::RW_MODE::READ_ONLY);
 				t_load_pi_neighbor.stop();
-
-				// PRINT_MEM_USAGE();
 
 				double eps_t  = a * std::pow(1 + step_count / b, -c);	// step size
 				// double eps_t = std::pow(1024+step_count, -0.5);
@@ -648,8 +674,6 @@ public:
 				}
 				t_update_phi.stop();
 			}
-
-			// PRINT_MEM_USAGE();
 
 			// all synchronize with barrier: ensure we read pi/phi_sum from current iteration
 			t_barrier_phi.start();
@@ -671,23 +695,17 @@ public:
 			t_store_pi_minibatch.stop();
 			d_kv_store->PurgeKVRecords();
 
-			// PRINT_MEM_USAGE();
-
 			// all synchronize with barrier
 			t_barrier_pi.start();
 			r = MPI_Barrier(MPI_COMM_WORLD);
 			mpi_error_test(r, "MPI_Barrier(post pi) fails");
 			t_barrier_pi.stop();
 
-			// PRINT_MEM_USAGE();
-
 			if (mpi_rank == mpi_master) {
 				// TODO load pi/phi values for the minibatch nodes
 				t_update_beta.start();
 				update_beta(*edgeSample.first, edgeSample.second);
 				t_update_beta.stop();
-
-				// PRINT_MEM_USAGE();
 
 				// TODO FIXME allocate this outside the loop
 				delete edgeSample.first;
@@ -700,8 +718,6 @@ public:
 				std::cout << "LOOP  = " << (l2-l1).count() << std::endl;
 			}
 		}
-
-		// PRINT_MEM_USAGE();
 
 		check_perplexity();
 
@@ -854,7 +870,6 @@ protected:
 		if (mpi_rank == mpi_master) {
 			if (step_count % interval == 0) {
 
-				// PRINT_MEM_USAGE();
 				t_perplexity.start();
 				// TODO load pi for the held-out set to calculate perplexity
 				double ppx_score = cal_perplexity_held_out();

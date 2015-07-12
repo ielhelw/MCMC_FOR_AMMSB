@@ -55,22 +55,11 @@ public:
 
 	void LoadNetwork() {
 		double held_out_ratio = args_.held_out_ratio;
-#ifdef USE_GOOGLE_SPARSE_HASH
-		if (args_.dataset_class == "sparsehash") {
-			network = Network(args_.filename, args_.compressed);
-			network.Init(held_out_ratio);
-
-			return;
-		}
-#endif
-		preprocess::DataFactory df(args_);
-		data_ = df.get_data();
 		if (args_.held_out_ratio == 0.0) {
 			held_out_ratio = 0.01;
 			std::cerr << "Set held_out_ratio to default " << held_out_ratio << std::endl;
 		}
-		// FIXME: make Network the owner of data
-		network.Init(data_, held_out_ratio);
+		network.Init(args_, held_out_ratio);
 
 		// parameters related to network
 		N = network.get_num_nodes();
@@ -86,6 +75,7 @@ public:
 		}
 
 		// ration between link edges and non-link edges
+		std::cerr << "FIXME: link_ratio depends on (un)directed graph" << std::endl;
 		link_ratio = network.get_num_linked_edges() / ((N * (N - 1)) / 2.0);
 		// store perplexity for all the iterations
 		// ppxs_held_out = [];
@@ -98,8 +88,6 @@ public:
 
 
 	virtual ~Learner() {
-		// FIXME: make Network the owner of data
-		delete const_cast<Data *>(data_);
 	}
 
 	/**
@@ -345,7 +333,6 @@ protected:
 
 protected:
 	const Options args_;
-	const Data *data_ = NULL;
 	Network network;
 
 	double alpha;

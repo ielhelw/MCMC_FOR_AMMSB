@@ -34,6 +34,11 @@ obj
 
 # Generated stuff
 
+# Installed stuff
+include/google
+lib/pkgconfig
+share
+
 # executables
 apps/main/main
 test/preprocess/hep_ph/main
@@ -47,6 +52,7 @@ test/d-kv-store/d-kv-store/main
 test/d-kv-store/read-only/main
 test/rdma/qperf-read/main
 test/timer/main
+test/preprocess/main
 
 # log files
 apps/*/log-*

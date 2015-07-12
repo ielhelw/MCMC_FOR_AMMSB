@@ -1,11 +1,13 @@
 #ifndef MCMC_PREPROCESS_DATA_FACTORY_H__
 #define MCMC_PREPROCESS_DATA_FACTORY_H__
 
+#include "mcmc/fileio.h"
 #include "mcmc/data.h"
 #include "mcmc/preprocess/dataset.h"
 #include "mcmc/preprocess/netscience.h"
 // #include "mcmc/preprocess/hep_ph.h"
 #include "mcmc/preprocess/relativity.h"
+#include "mcmc/preprocess/sparsehash-graph.h"
 
 namespace mcmc {
 namespace preprocess {
@@ -29,6 +31,10 @@ public:
 		} else if (dataset_class_ == "gz") {
 			compressed_ = true;
 			dataset_class_ = "sparsehash";
+		} else if (dataset_class_ == "preprocessed") {
+			compressed_ = true;
+			dataset_class_ = "sparsehash";
+			filename_ = filename_ + "/graph.gz";
 		}
 	}
 
@@ -44,6 +50,8 @@ public:
 			dataObj = new NetScience(filename_);
 		} else if (dataset_class_ == "relativity") {
 			dataObj = new Relativity(filename_);
+		} else if (dataset_class_ == "sparsehash") {
+			dataObj = new SparseHashGraph(filename_);
 #if 0
 		} else if (dataset_class_ == "hep_ph") {
 			dataObj = new HepPH(filename_);
