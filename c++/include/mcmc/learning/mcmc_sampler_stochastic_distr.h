@@ -229,6 +229,7 @@ public:
 	std::vector<perp_accu> accu;
 };
 
+
 /**
  * The distributed version differs in these aspects from the parallel version:
  *  - the minibatch is distributed
@@ -250,7 +251,7 @@ public:
  *   Then, all synchronise. The master calculates an updated value for beta. This could
  *   plausibly be done in a distributed way, but it is so quick that we guess there is
  *   no point to do that.
- *   If needs, the master calculates the perplexity. If termination is met,
+ *   If needs, calculate the perplexity in parallel. If termination is met,
  *   let the workers know. Else, the master broadcasts its updated value for beta.
  * END LOOP
  */
@@ -327,6 +328,7 @@ public:
 		t_load_pi_perp          = Timer("      load perplexity pi");
 		t_cal_edge_likelihood   = Timer("      calc edge likelihood");
 		t_purge_pi_perp         = Timer("      purge perplexity pi");
+		t_reduce_perp           = Timer("      reduce/plus preplexity");
 		Timer::setTabular(true);
 	}
 
@@ -805,6 +807,7 @@ public:
 		std::cout << t_update_pi << std::endl;
 		std::cout << t_store_pi_minibatch << std::endl;
 		std::cout << t_purge_pi_perp << std::endl;
+		std::cout << t_reduce_perp << std::endl;
 		std::cout << t_barrier_pi << std::endl;
 		std::cout << t_update_beta << std::endl;
 		std::cout << t_beta_zero << std::endl;
@@ -817,6 +820,7 @@ public:
 		std::cout << t_perplexity << std::endl;
 		std::cout << t_load_pi_perp << std::endl;
 		std::cout << t_cal_edge_likelihood << std::endl;
+		std::cout << t_reduce_perp << std::endl;
 	}
 
 
@@ -1471,6 +1475,27 @@ protected:
 	}
 
 
+	void reduce_plus(const perp_accu &in, perp_accu *accu) {
+		int r;
+		::size_t count[2] = { in.link.count, in.non_link.count };
+		double likelihood[2] = { in.link.likelihood, in.non_link.likelihood };
+
+		t_reduce_perp.start();
+		r = MPI_Allreduce(MPI_IN_PLACE, count, 2, MPI_LONG, MPI_SUM,
+						  MPI_COMM_WORLD);
+		mpi_error_test(r, "Reduce/plus of perplexity counts fails");
+		r = MPI_Allreduce(MPI_IN_PLACE, likelihood, 2, MPI_DOUBLE, MPI_SUM,
+						  MPI_COMM_WORLD);
+		mpi_error_test(r, "Reduce/plus of perplexity likelihoods fails");
+		t_reduce_perp.stop();
+
+		accu->link.count = count[0];
+		accu->non_link.count = count[1];
+		accu->link.likelihood = likelihood[0];
+		accu->non_link.likelihood = likelihood[1];
+	}
+
+
 	/**
 	 * calculate the perplexity for data.
 	 * perplexity defines as exponential of negative average log likelihood. 
@@ -1549,25 +1574,30 @@ protected:
 		         (1-self._link_ratio)*(non_link_likelihood/non_link_count)
 		*/
 
+		perp_accu accu;
+		reduce_plus(perp_.accu[0], &accu);
+
 		// direct calculation.
 		double avg_likelihood = 0.0;
-		if (perp_.accu[0].link.count + perp_.accu[0].non_link.count != 0){
-			avg_likelihood = (perp_.accu[0].link.likelihood + perp_.accu[0].non_link.likelihood) / (perp_.accu[0].link.count + perp_.accu[0].non_link.count);
+		if (accu.link.count + accu.non_link.count != 0){
+			avg_likelihood = (accu.link.likelihood + accu.non_link.likelihood) / (accu.link.count + accu.non_link.count);
 		}
-		if (true) {
-			double avg_likelihood1 = link_ratio * (perp_.accu[0].link.likelihood / perp_.accu[0].link.count) + \
-										 (1.0 - link_ratio) * (perp_.accu[0].non_link.likelihood / perp_.accu[0].non_link.count);
-			std::cout << std::fixed << std::setprecision(12) << avg_likelihood << " " << (perp_.accu[0].link.likelihood / perp_.accu[0].link.count) << " " << perp_.accu[0].link.count << " " << \
-				(perp_.accu[0].non_link.likelihood / perp_.accu[0].non_link.count) << " " << perp_.accu[0].non_link.count << " " << avg_likelihood1 << std::endl;
+		if (true && mpi_rank == mpi_master) {
+			double avg_likelihood1 = link_ratio * (accu.link.likelihood / accu.link.count) + \
+										 (1.0 - link_ratio) * (accu.non_link.likelihood / accu.non_link.count);
+			std::cout << std::fixed << std::setprecision(12) << avg_likelihood << " " << (accu.link.likelihood / accu.link.count) << " " << accu.link.count << " " << \
+				(accu.non_link.likelihood / accu.non_link.count) << " " << accu.non_link.count << " " << avg_likelihood1 << std::endl;
 			// std::cout << "perplexity score is: " << exp(-avg_likelihood) << std::endl;
 		}
 
 		// return std::exp(-avg_likelihood);
 
-
 		//if (step_count > 1000000)
 		average_count = average_count + 1;
-		std::cout << "average_count is: " << average_count << " ";
+		if (mpi_rank == mpi_master) {
+			std::cout << "average_count is: " << average_count << " ";
+		}
+
 		return (-avg_likelihood);
 	}
 
@@ -1636,6 +1666,7 @@ protected:
 	Timer t_load_pi_perp;
 	Timer t_store_pi_minibatch;
 	Timer t_purge_pi_perp;
+	Timer t_reduce_perp;
 	Timer t_broadcast_beta;
 	Timer t_deploy_minibatch;
 
