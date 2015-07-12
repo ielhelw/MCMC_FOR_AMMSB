@@ -35,7 +35,7 @@ obj
 # Generated stuff
 
 # Installed stuff
-include/google
+include/sparsehash
 lib/pkgconfig
 share
 
