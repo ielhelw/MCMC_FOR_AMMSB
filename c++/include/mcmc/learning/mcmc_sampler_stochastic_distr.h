@@ -139,28 +139,32 @@ class LocalNetwork {
 public:
 	typedef typename std::unordered_set<Vertex> EndpointSet;
 
-	void unmarshall_local_graph(Vertex node, const Vertex *linked, ::size_t size) {
-		if (linked_edges.size() <= static_cast<::size_t>(node)) {
-			linked_edges.resize(node + 1);
+	void unmarshall_local_graph(::size_t index, const Vertex* linked, ::size_t size) {
+		if (linked_edges_.size() <= index) {
+			linked_edges_.resize(index + 1);
 		}
-		linked_edges[node] = EndpointSet();
+		linked_edges_[index] = EndpointSet();
 		for (::size_t i = 0; i < size; i++) {
-			linked_edges[node].insert(linked[i]);
+			linked_edges_[index].insert(linked[i]);
 		}
 	}
 
 	void reset() {
-		linked_edges.clear();
+		linked_edges_.clear();
 	}
 
-	bool in(const Edge &edge) const {
-		const auto &adj = linked_edges[edge.first];
+	bool in(const Edge& edge) const {
+		const auto &adj = linked_edges_[edge.first];
 
 		return adj.find(edge.second) != adj.end();
 	}
 
+	const EndpointSet &linked_edges(::size_t i) const {
+		return linked_edges_[i];
+	}
+
 protected:
-	std::vector<EndpointSet> linked_edges;
+	std::vector<EndpointSet> linked_edges_;
 };
 
 
@@ -360,7 +364,6 @@ public:
 
 
 	void MasterAwareLoadNetwork() {
-		std::cerr << "************* FIXME: (optionally) load Network only at master's, then broadcast the network parameters" << std::endl;
 		if (REPLICATED_NETWORK) {
 			LoadNetwork();
 		} else {
@@ -488,11 +491,22 @@ public:
 		if (master_is_worker_) {
 			workers = mpi_size;
 		} else {
-			std::cerr << "********** FIXME: CHECK: master must load minibatch pi for beta" << std::endl;
 			workers = mpi_size - 1;
 		}
         ::size_t max_my_minibatch_nodes = (std::min(max_minibatch_chunk, max_minibatch_nodes) + workers - 1) / workers;
 		::size_t max_minibatch_neighbors = max_my_minibatch_nodes * real_num_node_sample();
+		if (mpi_rank == mpi_master) {
+			// master must cache pi[minibatch] for update_beta
+			max_minibatch_neighbors = std::max(max_minibatch_neighbors,
+											   max_minibatch_nodes);
+			// while perplexity is not parallelized:
+			// master must cache pi[held_out_set] for calc_perplexity
+			std::cerr << "For now, the master does all the perplexity, so it must cache pi for all held-out nodes" << std::endl;
+			// get_held_out_size is the number of edges; we request an upper bound
+			max_minibatch_neighbors = std::max(max_minibatch_neighbors,
+											   2 * network.get_held_out_size());
+		}
+
 		std::cerr << "minibatch size param " << mini_batch_size << " max " << max_minibatch_nodes << " chunk " << max_minibatch_chunk << " #neighbors(total) " << max_minibatch_neighbors << std::endl;
 
 		d_kv_store->Init(K + 1,
@@ -1018,10 +1032,16 @@ protected:
 		::size_t offset = 0;
 		for (::size_t i = 0; i < set_size.size(); i++) {
 			Vertex *marshall = &flat_subgraph[offset];
-			local_network_.unmarshall_local_graph(i,
-												  marshall, set_size[i]);
+			local_network_.unmarshall_local_graph(i, marshall, set_size[i]);
 			offset += set_size[i];
-			std::cerr << "Unmarshalled " << set_size[i] << " edges" << std::endl;
+			if (false) {
+				std::cerr << "Vertex " << nodes_[i] << ": ";
+				for (auto p : local_network_.linked_edges(i)) {
+					std::cerr << p << " ";
+				}
+				std::cerr << std::endl;
+				std::cerr << "Unmarshalled " << set_size[i] << " edges" << std::endl;
+			}
 		}
 	}
 
