@@ -172,6 +172,63 @@ bool EdgeIn(const Edge &edge, const LocalNetwork &network) {
 	return network.in(edge);
 }
 
+
+struct perp_counter {
+	perp_counter() : count(0), likelihood(0.0) {
+	}
+
+	void reset() {
+		count = 0;
+		likelihood = 0.0;
+	}
+
+	::size_t count;
+	double	likelihood;
+}; 
+
+
+struct perp_accu {
+	perp_counter link;
+	perp_counter non_link;
+};
+
+
+class PerpData {
+public:
+	void Init(const EdgeMap &data) {
+		for (auto edge : data) {
+			const Edge &e = edge.first;
+			Vertex i = e.first;
+			Vertex j = e.second;
+			if (node_rank.find(i) == node_rank.end()) {
+				::size_t next = node_rank.size();
+				node_rank[i] = next;
+				nodes.push_back(i);
+			}
+			if (node_rank.find(j) == node_rank.end()) {
+				::size_t next = node_rank.size();
+				node_rank[j] = next;
+				nodes.push_back(j);
+			}
+			assert(node_rank.size() == nodes.size());
+		}
+
+		pi.resize(node_rank.size());
+
+		// OpenMP parallelism requires a vector
+		this->data = std::vector<EdgeMap::value_type>(data.begin(), data.end());
+
+		accu.resize(omp_get_max_threads());
+	}
+
+	std::unordered_map<Vertex, Vertex> node_rank;
+	std::vector<Vertex> nodes;
+	std::vector<double *> pi;
+	// OpenMP parallelism requires a vector
+	std::vector<EdgeMap::value_type> data;
+	std::vector<perp_accu> accu;
+};
+
 /**
  * The distributed version differs in these aspects from the parallel version:
  *  - the minibatch is distributed
@@ -268,9 +325,7 @@ public:
 		t_broadcast_beta        = Timer("      broadcast beta");
 		t_perplexity            = Timer("  perplexity");
 		t_load_pi_perp          = Timer("      load perplexity pi");
-		t_rank_pi_perp          = Timer("      rank pi perp");
 		t_cal_edge_likelihood   = Timer("      calc edge likelihood");
-		t_perp_log              = Timer("      calc log");
 		t_purge_pi_perp         = Timer("      purge perplexity pi");
 		Timer::setTabular(true);
 	}
@@ -500,7 +555,7 @@ public:
 			max_minibatch_neighbors = std::max(max_minibatch_neighbors,
 											   max_minibatch_nodes);
 			// while perplexity is not parallelized:
-			// master must cache pi[held_out_set] for calc_perplexity
+			// master must cache pi[held_out_set] for cal_perplexity
 			std::cerr << "For now, the master does all the perplexity, so it must cache pi for all held-out nodes" << std::endl;
 			// get_held_out_size is the number of edges; we request an upper bound
 			max_minibatch_neighbors = std::max(max_minibatch_neighbors,
@@ -570,6 +625,8 @@ public:
 		for (auto &g : grads_beta_) {
 			g = std::vector<std::vector<double> >(K, std::vector<double>(2));    // gradients K*2 dimension
 		}
+
+		perp_.Init(network.get_held_out_set());
 
         std::cerr << "Random seed " << std::hex << "0x" << kernelRandom->seed(0) << ",0x" << kernelRandom->seed(1) << std::endl << std::dec;
 		std::cerr << "Done constructor" << std::endl;
@@ -759,9 +816,7 @@ public:
 		std::cout << t_broadcast_beta << std::endl;
 		std::cout << t_perplexity << std::endl;
 		std::cout << t_load_pi_perp << std::endl;
-		std::cout << t_rank_pi_perp << std::endl;
 		std::cout << t_cal_edge_likelihood << std::endl;
-		std::cout << t_perp_log << std::endl;
 	}
 
 
@@ -1428,53 +1483,25 @@ protected:
 	 * which is not true representation of actual data set, which is extremely sparse.
 	 */
 	double cal_perplexity_held_out() {
-		const EdgeMap &data = network.get_held_out_set();
 
-		double link_likelihood = 0.0;
-		double non_link_likelihood = 0.0;
-		::size_t link_count = 0;
-		::size_t non_link_count = 0;
-
-		// FIXME code duplication w/ update_beta
-		// Is there also code duplication w/ update_phi?
-        // FIXME isn't the held-out set fixed across iterations
-        // so we can memo the ranking?
-		t_rank_pi_perp.start();
-		std::unordered_map<Vertex, Vertex> node_rank;
-		std::vector<Vertex> nodes;
-		for (auto edge : data) {
-			const Edge &e = edge.first;
-			Vertex i = e.first;
-			Vertex j = e.second;
-			if (node_rank.find(i) == node_rank.end()) {
-				::size_t next = node_rank.size();
-				node_rank[i] = next;
-				nodes.push_back(i);
-			}
-			if (node_rank.find(j) == node_rank.end()) {
-				::size_t next = node_rank.size();
-				node_rank[j] = next;
-				nodes.push_back(j);
-			}
-			assert(node_rank.size() == nodes.size());
-		}
-		t_rank_pi_perp.stop();
 		t_load_pi_perp.start();
-		std::vector<double *> pi(node_rank.size());
-		d_kv_store->ReadKVRecords(pi, nodes, DKV::RW_MODE::READ_ONLY);
+		d_kv_store->ReadKVRecords(perp_.pi, perp_.nodes, DKV::RW_MODE::READ_ONLY);
 		t_load_pi_perp.stop();
 
-        // FIXME: trivial to OpenMP-parallelize: memo the likelihoods, sum
-        // them in the end
-		::size_t i = 0;
-		for (auto edge : data) {
+		for (auto & a : perp_.accu) {
+			a.link.reset();
+			a.non_link.reset();
+		}
+
+		t_cal_edge_likelihood.start();
+#pragma omp parallel for
+		for (::size_t i = 0; i < perp_.data.size(); ++i) {
+			auto edge = perp_.data[i];
 			const Edge &e = edge.first;
-			Vertex a = node_rank[e.first];
-			Vertex b = node_rank[e.second];
-			t_cal_edge_likelihood.start();
-			double edge_likelihood = cal_edge_likelihood(pi[a], pi[b],
+			Vertex a = perp_.node_rank[e.first];
+			Vertex b = perp_.node_rank[e.second];
+			double edge_likelihood = cal_edge_likelihood(perp_.pi[a], perp_.pi[b],
 														 edge.second, beta);
-			t_cal_edge_likelihood.stop();
 			if (std::isnan(edge_likelihood)) {
 				std::cerr << "edge_likelihood is NaN; potential bug" << std::endl;
 			}
@@ -1483,27 +1510,32 @@ protected:
 			ppx_for_heldout[i] = (ppx_for_heldout[i] * (average_count-1) + edge_likelihood)/(average_count);
 			// std::cout << std::fixed << std::setprecision(12) << e << " in? " << (EdgeIn(e, network.get_linked_edges()) ? "True" : "False") << " -> " << edge_likelihood << " av. " << average_count << " ppx[" << i << "] " << ppx_for_heldout[i] << std::endl;
 			// assert(edge->second == EdgeIn(e, network.get_linked_edges()));
-            t_perp_log.start();
 			if (edge.second) {
-				link_count++;
-				link_likelihood += std::log(ppx_for_heldout[i]);
+				perp_.accu[omp_get_thread_num()].link.count++;
+				perp_.accu[omp_get_thread_num()].link.likelihood += std::log(ppx_for_heldout[i]);
 				//link_likelihood += edge_likelihood;
 
-				if (std::isnan(link_likelihood)){
+				if (std::isnan(perp_.accu[omp_get_thread_num()].link.likelihood)){
 					std::cerr << "link_likelihood is NaN; potential bug" << std::endl;
 				}
 			} else {
 				assert(! present(network.get_linked_edges(), e));
-				non_link_count++;
-				//non_link_likelihood += edge_likelihood;
-				non_link_likelihood += std::log(ppx_for_heldout[i]);
-				if (std::isnan(non_link_likelihood)){
+				perp_.accu[omp_get_thread_num()].non_link.count++;
+				//perp_.accu[omp_get_thread_num()].non_link.likelihood += edge_likelihood;
+				perp_.accu[omp_get_thread_num()].non_link.likelihood += std::log(ppx_for_heldout[i]);
+				if (std::isnan(perp_.accu[omp_get_thread_num()].non_link.likelihood)){
 					std::cerr << "non_link_likelihood is NaN; potential bug" << std::endl;
 				}
 			}
-            t_perp_log.stop();
-			i++;
 		}
+		for (auto i = 1; i < omp_get_max_threads(); ++i) {
+			perp_.accu[0].link.count += perp_.accu[i].link.count;
+			perp_.accu[0].link.likelihood += perp_.accu[i].link.likelihood;
+			perp_.accu[0].non_link.count += perp_.accu[i].non_link.count;
+			perp_.accu[0].non_link.likelihood += perp_.accu[i].non_link.likelihood;
+		}
+
+		t_cal_edge_likelihood.stop();
 
 		t_purge_pi_perp.start();
 		d_kv_store->PurgeKVRecords();
@@ -1519,14 +1551,14 @@ protected:
 
 		// direct calculation.
 		double avg_likelihood = 0.0;
-		if (link_count + non_link_count != 0){
-			avg_likelihood = (link_likelihood + non_link_likelihood) / (link_count + non_link_count);
+		if (perp_.accu[0].link.count + perp_.accu[0].non_link.count != 0){
+			avg_likelihood = (perp_.accu[0].link.likelihood + perp_.accu[0].non_link.likelihood) / (perp_.accu[0].link.count + perp_.accu[0].non_link.count);
 		}
 		if (true) {
-			double avg_likelihood1 = link_ratio * (link_likelihood / link_count) + \
-										 (1.0 - link_ratio) * (non_link_likelihood / non_link_count);
-			std::cout << std::fixed << std::setprecision(12) << avg_likelihood << " " << (link_likelihood / link_count) << " " << link_count << " " << \
-				(non_link_likelihood / non_link_count) << " " << non_link_count << " " << avg_likelihood1 << std::endl;
+			double avg_likelihood1 = link_ratio * (perp_.accu[0].link.likelihood / perp_.accu[0].link.count) + \
+										 (1.0 - link_ratio) * (perp_.accu[0].non_link.likelihood / perp_.accu[0].non_link.count);
+			std::cout << std::fixed << std::setprecision(12) << avg_likelihood << " " << (perp_.accu[0].link.likelihood / perp_.accu[0].link.count) << " " << perp_.accu[0].link.count << " " << \
+				(perp_.accu[0].non_link.likelihood / perp_.accu[0].non_link.count) << " " << perp_.accu[0].non_link.count << " " << avg_likelihood1 << std::endl;
 			// std::cout << "perplexity score is: " << exp(-avg_likelihood) << std::endl;
 		}
 
@@ -1577,12 +1609,12 @@ protected:
 	bool REPLICATED_NETWORK = false;
 	LocalNetwork local_network_;
 
+	PerpData perp_;
+
 	Timer t_outer;
 	Timer t_populate_pi;
 	Timer t_perplexity;
-	Timer t_rank_pi_perp;
 	Timer t_cal_edge_likelihood;
-	Timer t_perp_log;
 	Timer t_mini_batch;
 	Timer t_nodes_in_mini_batch;
 	Timer t_sample_neighbor_nodes;
