@@ -140,16 +140,13 @@ public:
 	typedef typename std::unordered_set<Vertex> EndpointSet;
 
 	void unmarshall_local_graph(Vertex node, const Vertex *linked, ::size_t size) {
-		if (size == 0) {
-			linked_edges[node] = EndpointSet();
-		} else {
-			for (::size_t i = 0; i < size; i++) {
-				linked_edges[node].insert(linked[i]);
-			}
+		if (linked_edges.size() <= static_cast<::size_t>(node)) {
+			linked_edges.resize(node + 1);
 		}
-	}
-
-	void unmarshall_local_graph_map(...) {
+		linked_edges[node] = EndpointSet();
+		for (::size_t i = 0; i < size; i++) {
+			linked_edges[node].insert(linked[i]);
+		}
 	}
 
 	void reset() {
@@ -157,13 +154,13 @@ public:
 	}
 
 	bool in(const Edge &edge) const {
-		const auto &adj = linked_edges.find(edge.first);
+		const auto &adj = linked_edges[edge.first];
 
-		return adj->second.find(edge.second) != adj->second.end();
+		return adj.find(edge.second) != adj.end();
 	}
 
 protected:
-	std::unordered_map<Vertex, EndpointSet> linked_edges;
+	std::vector<EndpointSet> linked_edges;
 };
 
 
@@ -666,7 +663,7 @@ public:
 				for (::size_t i = 0; i < chunk_nodes.size(); ++i) {
 					Vertex node = chunk_nodes[i];
 					// std::cerr << "Random seed " << std::hex << "0x" << kernelRandom->seed(0) << ",0x" << kernelRandom->seed(1) << std::endl << std::dec;
-					update_phi(node, pi_node[i],
+					update_phi(chunk_start + i, node, pi_node[i],
 							   flat_neighbors.begin() + i * real_num_node_sample(),
 							   pi_neighbor.begin() + i * real_num_node_sample(),
 							   eps_t, threadRandom[omp_get_thread_num()],
@@ -1021,7 +1018,7 @@ protected:
 		::size_t offset = 0;
 		for (::size_t i = 0; i < set_size.size(); i++) {
 			Vertex *marshall = &flat_subgraph[offset];
-			local_network_.unmarshall_local_graph(nodes_[i],
+			local_network_.unmarshall_local_graph(i,
 												  marshall, set_size[i]);
 			offset += set_size[i];
 			std::cerr << "Unmarshalled " << set_size[i] << " edges" << std::endl;
@@ -1150,7 +1147,7 @@ protected:
 	}
 
 
-    void update_phi(Vertex i, const double *pi_node,
+    void update_phi(::size_t index, Vertex i, const double *pi_node,
 					const std::vector<int32_t>::iterator &neighbors,
 					const std::vector<double *>::iterator &pi,
                     double eps_t, Random::Random *rnd,
@@ -1196,7 +1193,7 @@ protected:
 						y_ab = 1;
 					}
 				} else {
-					Edge edge(i, neighbor);
+					Edge edge(index, neighbor);
 					if (EdgeIn(edge, local_network_)) {
 						y_ab = 1;
 					}
