@@ -26,14 +26,13 @@
 #endif
 
 #include <mcmc/timer.h>
-#include <mr/timer.h>
 
 typedef std::chrono::high_resolution_clock hires;
 typedef std::chrono::duration<double> duration;
 
 namespace po = boost::program_options;
 
-using mr::timer::Timer;
+using mcmc::timer::Timer;
 
 static double GB(::size_t n, ::size_t k) {
   return static_cast<double>(n * k * sizeof(double)) /

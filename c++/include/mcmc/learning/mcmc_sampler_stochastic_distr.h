@@ -109,7 +109,6 @@ int MPI_Scatterv(void *sendbuf, int *sendcounts, int *displs, MPI_Datatype sendt
 #include "mcmc/np.h"
 #include "mcmc/random.h"
 #include "mcmc/timer.h"
-#include <mr/timer.h>
 
 #include "mcmc/learning/learner.h"
 #include "mcmc/learning/mcmc_sampler_stochastic.h"
@@ -136,7 +135,7 @@ typedef std::vector<Vertex> NeighborSet;
 typedef OrderedVertexSet NeighborSet;
 #endif
 
-using ::mr::timer::Timer;
+using ::mcmc::timer::Timer;
 
 /**
  * The distributed version differs in these aspects from the parallel version:

@@ -56,6 +56,7 @@ CXXFLAGS += -Wno-unused-parameter
 
 CXXFLAGS += -I$(PROJECT_HOME)/include
 CXXFLAGS += -I$(PROJECT_HOME)/3rdparty/tinyxml2/include
+CXXFLAGS += -I$(CONFIG_GLASSWING_ROOT)/include
 ifneq (, $(OPENCL_ROOT))
 CXXFLAGS += -I$(OPENCL_ROOT)/include
 CXXFLAGS += -DENABLE_OPENCL
@@ -120,8 +121,10 @@ endif
 
 LDFLAGS += -L$(PROJECT_HOME)/lib
 LDLIBS += -lmcmc
+LDLIBS += -lglasswing -lglasswing-net -lclpp
 LDFLAGS	+= -Wl,-rpath,$(PROJECT_HOME)/lib
 LIB_LDFLAGS += -L$(PROJECT_HOME)/3rdparty/tinyxml2/lib
+LIB_LDFLAGS += -L$(CONFIG_GLASSWING_ROOT)/lib
 LIB_LDLIBS += -ltinyxml2
 LIB_LDFLAGS	+= -Wl,-rpath,$(PROJECT_HOME)/3rdparty/tinyxml2/lib
 # export LD_RUN_PATH := $(PROJECT_HOME)/lib

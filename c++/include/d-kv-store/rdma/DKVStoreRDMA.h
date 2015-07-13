@@ -28,7 +28,6 @@
 #endif
 
 #include <mcmc/timer.h>
-#include <mr/timer.h>
 
 #if 0 && defined ENABLE_DISTRIBUTED
 #  define USE_MPI
@@ -36,10 +35,6 @@
 
 #ifdef USE_MPI
 #  include <mpi.h>
-#else
-#  include <mr/net/netio.h>
-#  include <mr/net/broadcast.h>
-#  include <../src/mr/net/sockets/netio_sockets.h>
 #endif
 
 #include <d-kv-store/DKVStore.h>
@@ -50,7 +45,7 @@
 namespace DKV {
 namespace DKVRDMA {
 
-using ::mr::timer::Timer;
+using ::mcmc::timer::Timer;
 
 
 template <typename T>
@@ -367,9 +362,6 @@ class DKVStoreRDMA : public DKVStoreInterface {
 #else
   std::string oob_impl_;
   std::string oob_interface_;
-  mr::net::Network *network_;
-  mr::net::Broadcast broadcast_;
-  mr::net::Network::RWList rw_list_;
 #endif
 
   Timer t_poll_cq_;
