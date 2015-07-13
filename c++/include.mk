@@ -80,10 +80,6 @@ CXXFLAGS += -DENABLE_DISTRIBUTED
 endif
 ifeq (0, $(CONFIG_NETWORKING))
 CXXFLAGS += -DDISABLE_NETWORKING
-else
-CXXFLAGS += -I$(PROJECT_HOME)/3rdparty/daslib/include
-LIB_LDFLAGS += -L$(PROJECT_HOME)/3rdparty/daslib/lib/$(shell uname -m)_$(shell uname -s)
-LIB_LDLIBS += -ldas
 endif
 
 CFLAGS += -std=gnu99
@@ -114,8 +110,6 @@ CPPFLAGS += -DENABLE_DISTRIBUTED
 endif
 ifeq (0, $(CONFIG_NETWORKING))
 CPPFLAGS += -DDISABLE_NETWORKING
-else
-CPPFLAGS += -I$(PROJECT_HOME)/3rdparty/daslib/include
 endif
 
 ifneq (, $(OPENCL_ROOT))

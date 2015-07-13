@@ -6,9 +6,6 @@ SUBDIRS += lib
 SUBDIRS += apps
 SUBDIRS += test
 
-PRECIOUSDIRS =
-PRECIOUSDIRS += 3rdparty/daslib
-
 include $(PROJECT)/include.mk
 
 .PHONY: src lib apps test
