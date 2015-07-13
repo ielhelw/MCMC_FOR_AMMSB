@@ -150,52 +150,6 @@ public:
 		pi.resize(phi.size(), std::vector<double>(phi[0].size()));
 		np::row_normalize(&pi, phi);
 
-		if (true) {
-			std::cout << std::fixed << std::setprecision(12) << "beta[0] " << beta[0] << std::endl;
-		} else {
-			std::cerr << "beta ";
-			for (::size_t k = 0; k < K; k++) {
-				std::cerr << std::fixed << std::setprecision(12) << beta[k] << " ";
-			}
-			std::cerr << std::endl;
-		}
-
-		if (false) {
-			std::cout << "theta[*][0]: ";
-			for (::size_t k = 0; k < K; k++) {
-				std::cout << std::fixed << std::setprecision(12) << theta[k][0] << " ";
-			}
-			std::cout << std::endl;
-			std::cout << "theta[*][1]: ";
-			for (::size_t k = 0; k < K; k++) {
-				std::cout << std::fixed << std::setprecision(12) << theta[k][1] << " ";
-			}
-			std::cout << std::endl;
-		}
-		std::cout << "phi[0][0] " << phi[0][0] << std::endl;
-		if (false) {
-			std::cout << "pi[0] ";
-			for (::size_t k = 0; k < K; k++) {
-				std::cout << pi[0][k] << " ";
-			}
-			std::cout << std::endl;
-		}
-
-		if (true) {
-			for (::size_t i = 0; i < 10; i++) {
-				std::cerr << "phi[" << i << "]: ";
-				for (::size_t k = 0; k < 10; k++) {
-					std::cerr << std::fixed << std::setprecision(12) << phi[i][k] << " ";
-				}
-				std::cerr << std::endl;
-				std::cerr << "pi[" << i << "]: ";
-				for (::size_t k = 0; k < 10; k++) {
-					std::cerr << std::fixed << std::setprecision(12) << pi[i][k] << " ";
-				}
-				std::cerr << std::endl;
-			}
-		}
-
         std::cerr << "Random seed " << std::hex << "0x" << kernelRandom->seed(0) << ",0x" << kernelRandom->seed(1) << std::endl << std::dec;
 		std::cerr << "Done constructor" << std::endl;
 	}
@@ -205,42 +159,6 @@ public:
 		delete kernelRandom;
 #endif
 	}
-
-#if 0
-    def run1(self):
-        while self._step_count < self._max_iteration and not self._is_converged():
-            /**
-            pr = cProfile.Profile()
-            pr.enable()
-             */
-            (mini_batch, scale) = self._network.sample_mini_batch(self._mini_batch_size, "stratified-random-node")
-            //print "iteration: " + str(self._step_count)
-
-            if self._step_count % 1 == 0:
-				#print str(self._beta)
-                ppx_score = self._cal_perplexity_held_out()
-				#print "perplexity for hold out set is: "  + str(ppx_score)
-                self._ppxs_held_out.append(ppx_score)
-
-            self.__update_pi1(mini_batch, scale)
-
-            // sample (z_ab, z_ba) for each edge in the mini_batch.
-            // z is map structure. i.e  z = {(1,10):3, (2,4):-1}
-            z = self.__sample_latent_vars2(mini_batch)
-            self.__update_beta(mini_batch, scale,z)
-
-            /**
-            pr.disable()
-            s = StringIO.StringIO()
-            sortby = 'cumulative'
-            ps = pstats.Stats(pr, stream=s).sort_stats(sortby)
-            ps.print_stats()
-            print s.getvalue()
-             */
-            self._step_count += 1
-
-        print "terminated"
-#endif
 
     virtual void run() {
         /** run mini-batch based MCMC sampler, based on the sungjin's note */
@@ -261,7 +179,6 @@ public:
 		t1 = clock();
         while (step_count < max_iteration && ! is_converged()) {
 			t_outer.start();
-			auto l1 = std::chrono::system_clock::now();
 			//if (step_count > 200000){
 				//interval = 2;
 			//}
@@ -277,49 +194,13 @@ public:
 				double seconds = diff / CLOCKS_PER_SEC;
 				timings.push_back(seconds);
 				iterations.push_back(step_count);
-#if 0
-				if (ppx_score < 5.0) {
-					stepsize_switch = true;
-					//print "switching to smaller step size mode!"
-				}
-#endif
 			}
-
-			// write into file
-			if (step_count % 2000 == 1) {
-				if (false) {
-					std::ofstream myfile;
-					std::string file_name = "mcmc_stochastic_" + to_string (K) + "_num_nodes_" + to_string(num_node_sample) + "_us_air.txt";
-					myfile.open (file_name);
-					int size = ppxs_held_out.size();
-					for (int i = 0; i < size; i++){
-
-						//int iteration = i * 100 + 1;
-						myfile <<iterations[i]<<"    "<<timings[i]<<"    "<<ppxs_held_out[i]<<"\n";
-					}
-
-					myfile.close();
-				}
-			}
-
-            //print "step: " + str(self._step_count)
-            /**
-            pr = cProfile.Profile()
-            pr.enable()
-             */
 
             // (mini_batch, scale) = self._network.sample_mini_batch(self._mini_batch_size, "stratified-random-node")
 			// std::cerr << "Invoke sample_mini_batch" << std::endl;
 			t_mini_batch.start();
 			EdgeSample edgeSample = network.sample_mini_batch(mini_batch_size, strategy::STRATIFIED_RANDOM_NODE);
 			t_mini_batch.stop();
-			if (false) {
-				std::cerr << "Minibatch: ";
-				for (auto e : *edgeSample.first) {
-					std::cerr << e << " ";
-				}
-				std::cerr << std::endl;
-			}
 			// std::cerr << "Done sample_mini_batch" << std::endl;
 			const MinibatchSet &mini_batch = *edgeSample.first;
 			double scale = edgeSample.second;
@@ -380,10 +261,6 @@ public:
 
             step_count++;
 			t_outer.stop();
-			auto l2 = std::chrono::system_clock::now();
-			if (false) {
-				std::cout << "LOOP  = " << (l2-l1).count() << std::endl;
-			}
 		}
 
 		timer::Timer::printHeader(std::cout);
@@ -399,60 +276,6 @@ public:
 
 
 protected:
-
-#if 0
-    def __update_pi1(self, mini_batch, scale):
-
-        grads = np.zeros((self._N, self._K))
-        counter = np.zeros(self._N)
-        phi_star = np.zeros((self._N, self._K))
-
-        for edge in mini_batch:
-            a = edge[0]
-            b = edge[1]
-
-            y_ab = 0      // observation
-            if (min(a, b), max(a, b)) in self._network.get_linked_edges():
-                y_ab = 1
-
-            z_ab = self.sample_z_ab_from_edge(y_ab, self._pi[a], self._pi[b], self._beta, self._epsilon, self._K)
-            z_ba = self.sample_z_ab_from_edge(y_ab, self._pi[b], self._pi[a], self._beta, self._epsilon, self._K)
-
-
-            counter[a] += 1
-            counter[b] += 1
-
-            grads[a][z_ab] += 1/self.__phi[a][z_ab]
-            grads[b][z_ba] += 1/self.__phi[b][z_ba]
-
-         // update gamma, only update node in the grad
-        if self.stepsize_switch == False:
-            eps_t = (1024+self._step_count)**(-0.5)
-        else:
-            eps_t  = self.__a*((1 + self._step_count/self.__b)**-self.__c)
-
-        for i in range(0, self._N):
-            noise = random.randn(self._K)
-            sum_phi_i = np.sum(self.__phi[i])
-            for k in range(0, self._K):
-
-                if counter[i] < 1:
-                    phi_star[i][k] = abs((self.__phi[i,k]) + eps_t*(self._alpha - self.__phi[i,k])+(2*eps_t)**.5*self.__phi[i,k]**.5 * noise[k])
-                else:
-                    phi_star[i][k] = abs(self.__phi[i,k] + eps_t * (self._alpha - self.__phi[i,k] + \
-                                scale * (grads[i][k]-(1.0/sum_phi_i)*counter[i])) \
-                                + (2*eps_t)**.5*self.__phi[i,k]**.5 * noise[k])
-
-                if self._step_count < 50000:
-                    self.__phi[i][k] = phi_star[i][k]
-                else:
-                    self.__phi[i][k] = phi_star[i][k] * (1.0/(self._step_count)) + \
-                                                (1-(1.0/(self._step_count)))*self.__phi[i][k]
-
-            sum_phi = np.sum(self.__phi[i])
-            self._pi[i] = [self.__phi[i,k]/sum_phi for k in range(0, self._K)]
-#endif
-
 
     void update_beta(const MinibatchSet &mini_batch, double scale) {
 
@@ -531,21 +354,6 @@ protected:
 		std::vector<std::vector<double> > temp(theta.size(), std::vector<double>(theta[0].size()));
 		np::row_normalize(&temp, theta);
 		std::transform(temp.begin(), temp.end(), beta.begin(), np::SelectColumn<double>(1));
-
-        if (false) {
-          for (auto n : noise) {
-            std::cerr << "noise ";
-            for (auto b : n) {
-              std::cerr << std::fixed << std::setprecision(12) << b << " ";
-            }  
-            std::cerr << std::endl;
-          }
-          std::cerr << "beta ";
-          for (auto b : beta) {
-            std::cerr << std::fixed << std::setprecision(12) << b << " ";
-          }
-          std::cerr << std::endl;
-        }
 	}
 
 
@@ -558,26 +366,6 @@ protected:
 		double eps_t  = a * std::pow(1 + step_count / b, -c);	// step size
 		// double eps_t = std::pow(1024+step_count, -0.5);
 #endif
-
-		if (false) {
-			std::cerr << "update_phi pre phi[" << i << "] ";
-			for (::size_t k = 0; k < K; k++) {
-				std::cerr << std::fixed << std::setprecision(12) << phi[i][k] << " ";
-			}
-			std::cerr << std::endl;
-			std::cerr << "pi[" << i << "] ";
-			for (::size_t k = 0; k < K; k++) {
-				std::cerr << std::fixed << std::setprecision(12) << pi[i][k] << " ";
-			}
-			std::cerr << std::endl;
-			for (auto n: neighbors) {
-				std::cerr << "pi[" << n << "] ";
-				for (::size_t k = 0; k < K; k++) {
-					std::cerr << std::fixed << std::setprecision(12) << pi[n][k] << " ";
-				}
-				std::cerr << std::endl;
-			}
-		}
 
 		double phi_i_sum = np::sum(phi[i]);
         std::vector<double> grads(K, 0.0);	// gradient for K classes
@@ -615,11 +403,6 @@ protected:
 		}
 
 		std::vector<double> noise = kernelRandom->randn(K);	// random gaussian noise.
-		if (false) {
-			for (::size_t k = 0; k < K; ++k) {
-				std::cerr << "randn " << std::fixed << std::setprecision(12) << noise[k] << std::endl;
-			}
-		}
 #ifndef EFFICIENCY_FOLLOWS_CPP_WENZHE
 		double Nn = (1.0 * N) / num_node_sample;
 #endif
@@ -636,59 +419,8 @@ protected:
 								 sqrt(eps_t * phi[i][k]) * noise[k]);
 #endif
 		}
-
-		if (false) {
-			std::cerr << std::fixed << std::setprecision(12) << "update_phi post Nn " << Nn << " phi[" << i << "] ";
-			for (::size_t k = 0; k < K; k++) {
-				std::cerr << std::fixed << std::setprecision(12) << phi[i][k] << " ";
-			}
-			std::cerr << std::endl;
-			std::cerr << "pi[" << i << "] ";
-			for (::size_t k = 0; k < K; k++) {
-				std::cerr << std::fixed << std::setprecision(12) << pi[i][k] << " ";
-			}
-			std::cerr << std::endl;
-			std::cerr << "grads ";
-			for (::size_t k = 0; k < K; k++) {
-				std::cerr << std::fixed << std::setprecision(12) << grads[k] << " ";
-			}
-			std::cerr << std::endl;
-			std::cerr << "noise ";
-			for (::size_t k = 0; k < K; k++) {
-				std::cerr << std::fixed << std::setprecision(12) << noise[k] << " ";
-			}
-			std::cerr << std::endl;
-		}
-
-		// assign back to phi.
-		//phi[i] = phi_star;
 	}
 
-
-#if 0
-    def __sample_z_ab_from_edge(self, y, pi_a, pi_b, beta, epsilon, K):
-        /**
-        we need to calculate z_ab. We can use deterministic way to calculate this
-        for each k,  p[k] = p(z_ab=k|*) = \sum_{i}^{} p(z_ab=k, z_ba=i|*)
-        then we simply sample z_ab based on the distribution p.
-        this runs in O(K)
-         */
-        p = np.zeros(K)
-        for i in range(0, K):
-            tmp = beta[i]**y*(1-beta[i])**(1-y)*pi_a[i]*pi_b[i]
-            tmp += epsilon**y*(1-epsilon)**(1-y)*pi_a[i]*(1-pi_b[i])
-            p[i] = tmp
-        // sample community based on probability distribution p.
-        bounds = np.cumsum(p)
-        location = random.random() * bounds[K-1]
-
-        // get the index of bounds that containing location.
-        for i in range(0, K):
-                if location <= bounds[i]:
-                    return i
-        // failed, should not happen!
-        return -1
-#endif
 
 	// TODO FIXME make VertexSet an out parameter
     NeighborSet sample_neighbor_nodes(::size_t sample_size, Vertex nodeId, Random::Random *rnd) {
@@ -768,14 +500,6 @@ protected:
 #endif
 		}
 #endif
-		if (false) {
-			std::cerr << "Node " << nodeId << ": neighbors ";
-			for (auto n : neighbor_nodes) {
-				std::cerr << n << " ";
-			}
-			std::cerr << std::endl;
-		}
-
 		return neighbor_nodes;
 	}
 
@@ -791,76 +515,6 @@ protected:
 
         return node_set;
 	}
-
-#if 0
-    def _save(self):
-        f = open('ppx_mcmc.txt', 'wb')
-        for i in range(0, len(self._avg_log)):
-            f.write(str(math.exp(self._avg_log[i])) + "\t" + str(self._timing[i]) +"\n")
-        f.close()
-#endif
-
-
-#if 0
-	// in this case, we need to sample randoms from kernelRandom
-    int sample_z_ab_from_edge(int y,
-							  const std::vector<double> &pi_a,
-							  const std::vector<double> &pi_b,
-							  const std::vector<double> &beta,
-							  double epsilon, ::size_t K) {
-		std::vector<double> p(K);
-
-#ifdef EFFICIENCY_FOLLOWS_PYTHON
-        for (::size_t i = 0; i < K; i++) {
-			// FIMXE lift common expressions
-            double tmp = std::pow(beta[i], y) * std::pow(1-beta[i], 1-y) * pi_a[i] * pi_b[i];
-            // tmp += std::pow(epsilon, y) * std::pow(1-epsilon, 1-y) * pi_a[i] * (1 - pi_b[i]);
-			double fac = std::pow(epsilon, y) * std::pow(1.0 - epsilon, 1 - y);
-            tmp += fac * pi_a[i] * (1 - pi_b[i]);
-            p[i] = tmp;
-		}
-#else
-		if (y == 1) {
-			for (::size_t i = 0; i < K; i++) {
-				// p[i] = beta[i] * pi_a[i] * pi_b[i] + epsilon * pi_a[i] * (1 - pi_b[i])
-				//      = pi_a[i] * (beta[i] * pi_b[i] + epsilon * (1 - pi_b[i]))
-				//      = pi_a[i] * (pi_b[i] * (beta[i] - epsilon) + epsilon)
-				p[i] = pi_a[i] * (pi_b[i] * (beta[i] - epsilon) + epsilon);
-			}
-		} else {
-			double one_eps = 1.0 - epsilon;
-			for (::size_t i = 0; i < K; i++) {
-				// p[i] = (1 - beta[i]) * pi_a[i] * pi_b[i] + (1 - epsilon) * pi_a[i] * (1 - pi_b[i])
-				//      = pi_a[i] * ((1 - beta[i]) * pi_b[i] + (1 - epsilon) * (1 - pi_b[i]))
-				//      = pi_a[i] * (pi_b[i] * (1 - beta[i] - (1 - epsilon)) + (1 - epsilon) * 1)
-				//      = pi_a[i] * (pi_b[i] * (-beta[i] + epsilon) + 1 - epsilon)
-				p[i] = pi_a[i] * (pi_b[i] * (epsilon - beta[i]) + one_eps);
-			}
-		}
-#endif
-
-        for (::size_t k = 1; k < K; k++) {
-            p[k] += p[k-1];
-		}
-
-        double r = kernelRandom->random();
-        double location = r * p[K-1];
-#if 0
-        // get the index of bounds that containing location.
-        for (::size_t i = 0; i < K; i++) {
-            if (location <= p[i]) {
-                return i;
-			}
-		}
-
-        // failed, should not happen!
-        return -1;
-#else
-		return np::find_le(p, location);
-#endif
-	}
-#endif
-
 
 protected:
 	// replicated in both mcmc_sampler_

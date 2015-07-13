@@ -301,31 +301,6 @@ protected:
 		}
 
 		return s;
-#if 0
-		double prob = 0.0;
-		double s = 0.0;
-
-		for (::size_t k = 0; k < K; k++) {
-			if (! y) {
-				prob += pi_a[k] * pi_b[k] * (1 - beta[k]);
-			} else {
-				prob += pi_a[k] * pi_b[k] * beta[k];
-			}
-			s += pi_a[k] * pi_b[k];		// common expr w/ above
-		}
-
-		if (! y) {
-			prob += (1.0 - s) * (1 - epsilon);
-		} else {
-			prob += (1.0 - s) * epsilon;
-		}
-		// std::cerr << "Calculate s " << s << " prob " << prob << std::endl;
-		if (prob < 0.0) {
-			std::cerr << "adsfadsfadsf" << std::endl;
-		}
-
-		return log(prob);
-#endif
 	}
 
 protected:
