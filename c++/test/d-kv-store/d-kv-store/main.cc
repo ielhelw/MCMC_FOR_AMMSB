@@ -12,6 +12,7 @@
 
 #include <mcmc/random.h>
 #include <mcmc/options.h>
+#include <mcmc/timer.h>
 
 #include <d-kv-store/file/DKVStoreFile.h>
 #ifdef ENABLE_RAMCLOUD
@@ -45,11 +46,13 @@ enum TYPE {
 }   // namespace DKV_TYPE
 
 
+#ifdef ENABLE_RDMA
 namespace DKV {
 namespace DKVRDMA {
 extern struct ibv_device **global_dev_list;
 }
 }
+#endif
 
 template <typename T>
 std::vector<const T*>& constify(std::vector<T*>& v) {
@@ -251,13 +254,14 @@ protected:
 };
 
 int main(int argc, char *argv[]) {
-
+#ifdef ENABLE_RDMA
   int num_devices;
   DKV::DKVRDMA::global_dev_list = ibv_get_device_list(&num_devices);
   std::cerr << "IB devices: " << num_devices << std::endl;
   for (int i = 0; i < num_devices; i++) {
     std::cerr << "  IB device[" << i << "] device_name " << (void *)DKV::DKVRDMA::global_dev_list[0] << " " << DKV::DKVRDMA::global_dev_list[i]->dev_name << std::endl;
   }
+#endif
 
     mcmc::Options options(argc, argv);
 

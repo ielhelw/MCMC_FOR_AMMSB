@@ -466,7 +466,7 @@ protected:
 							omp_get_max_threads();
 		std::vector<::size_t> chunk_sum(omp_get_max_threads());
 #pragma omp parallel for
-		for (::size_t t = 0; t < omp_get_max_threads(); ++t) {
+		for (::size_t t = 0; t < static_cast<::size_t>(omp_get_max_threads()); ++t) {
 			for (::size_t i = chunk * t + 1;
 				 	i < std::min(a->size(), chunk * (t + 1));
 				   	++i) {
@@ -474,11 +474,11 @@ protected:
 			}
 		}
 		chunk_sum[0] = 0;
-		for (::size_t t = 1; t < omp_get_max_threads(); ++t) {
+		for (::size_t t = 1; t < static_cast<::size_t>(omp_get_max_threads()); ++t) {
 			chunk_sum[t] = chunk_sum[t - 1] + (*a)[t * chunk - 1];
 		}
 #pragma omp parallel for
-		for (::size_t t = 0; t < omp_get_max_threads(); ++t) {
+		for (::size_t t = 0; t < static_cast<::size_t>(omp_get_max_threads()); ++t) {
 			for (::size_t i = chunk * t;
 				 	i < std::min(a->size(), chunk * (t + 1));
 				   	++i) {
