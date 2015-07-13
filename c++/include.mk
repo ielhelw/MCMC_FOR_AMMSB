@@ -55,8 +55,13 @@ CXXFLAGS += -Wextra
 CXXFLAGS += -Wno-unused-parameter
 
 CXXFLAGS += -I$(PROJECT_HOME)/include
-CXXFLAGS += -I$(PROJECT_HOME)/3rdparty/tinyxml2/include
 CXXFLAGS += -I$(CONFIG_GLASSWING_ROOT)/include
+ifneq (, $(CONFIG_SPARSEHASH_ROOT))
+CXXFLAGS += -I$(CONFIG_SPARSEHASH_ROOT)/include
+endif
+ifneq (, $(CONFIG_TINYXML2_ROOT))
+CXXFLAGS += -I$(CONFIG_TINYXML2_ROOT)/include
+endif
 ifneq (, $(OPENCL_ROOT))
 CXXFLAGS += -I$(OPENCL_ROOT)/include
 CXXFLAGS += -DENABLE_OPENCL
@@ -99,7 +104,6 @@ CFLAGS += -Wextra
 CFLAGS += -Wno-unused-parameter
 
 CPPFLAGS += -I$(PROJECT_HOME)/include
-CPPFLAGS += -I$(PROJECT_HOME)/3rdparty/tinyxml2/include
 ifneq (, $(OPENCL_ROOT))
 CPPFLAGS += -I$(OPENCL_ROOT)/include
 CPPFLAGS += -DENABLE_OPENCL
@@ -123,10 +127,16 @@ LDFLAGS += -L$(PROJECT_HOME)/lib
 LDLIBS += -lmcmc
 LDLIBS += -lglasswing -lglasswing-net -lclpp
 LDFLAGS	+= -Wl,-rpath,$(PROJECT_HOME)/lib
-LIB_LDFLAGS += -L$(PROJECT_HOME)/3rdparty/tinyxml2/lib
 LIB_LDFLAGS += -L$(CONFIG_GLASSWING_ROOT)/lib
+
+ifneq (, $(CONFIG_SPARSEHASH_ROOT))
+LIB_LDFLAGS += -L$(CONFIG_SPARSEHASH_ROOT)/lib
+endif
+ifneq (, $(CONFIG_TINYXML2_ROOT))
+LIB_LDFLAGS += -L$(CONFIG_TINYXML2_ROOT)/lib
+endif
+
 LIB_LDLIBS += -ltinyxml2
-LIB_LDFLAGS	+= -Wl,-rpath,$(PROJECT_HOME)/3rdparty/tinyxml2/lib
 # export LD_RUN_PATH := $(PROJECT_HOME)/lib
 ifneq (, $(OPENCL_ROOT))
 LIB_LDFLAGS += -L$(OPENCL_ROOT)/lib -L$(OPENCL_ROOT)/lib/x86_64
