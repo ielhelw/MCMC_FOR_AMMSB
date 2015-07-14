@@ -6,12 +6,7 @@
 #include "mcmc/preprocess/data_factory.h"
 
 #include "mcmc/learning/mcmc_sampler_stochastic.h"
-#ifdef ENABLE_OPENCL
-#include "mcmc/learning/mcmc_clsampler_stochastic.h"
-#endif
 #include "mcmc/learning/mcmc_sampler_stochastic_distr.h"
 #include "mcmc/learning/mcmc_sampler_batch.h"
-#include "mcmc/learning/variational_inference_stochastic.h"
-#include "mcmc/learning/variational_inference_batch.h"
 
 #endif	// ndef MCMC_MCMC_H__

@@ -86,9 +86,6 @@ public:
 		for (Vertex i = 0; i < (Vertex)N; i++) {
 			Edge edge(std::min(node, i), std::max(node, i));
 			if (! edge.in(network.get_held_out_set()) && ! edge.in(network.get_test_set())) {
-				if (false && i == node) {
-					std::cerr << "Ooppssss.... is a self-cycle OK? " << i << std::endl;
-				}
                 neighbor_nodes.insert(i);
 			}
 		}
@@ -348,16 +345,6 @@ public:
 		std::partial_sum(p.begin(), p.end(), bounds.begin());
         double location = Random::random->random() * bounds[K];
 
-#if 0
-        // get the index of bounds that containing location.
-        for (::size_t i = 0; i < K; i++) {
-			if (location <= bounds[i]) {
-				return i;
-			}
-		}
-
-        return -1;
-#else
 		return np::find_le(bounds, location, K);
 #endif
 	}
@@ -543,14 +530,6 @@ public:
 			std::cout << t_update_beta << std::endl;
 		}
 
-#if 0
-        pr.disable()
-        s = StringIO.StringIO()
-        sortby = 'cumulative'
-        ps = pstats.Stats(pr, stream=s).sort_stats(sortby)
-        ps.print_stats()
-        print s.getvalue()
-#endif
 	}
 
 

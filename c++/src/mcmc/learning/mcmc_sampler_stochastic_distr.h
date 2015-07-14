@@ -280,15 +280,13 @@ public:
 		const std::vector<std::string> &a = args_.getRemains();
 		std::vector<std::string> dkv_args;
 		for (::size_t i = 0; i < a.size(); i++) {
-			if (false) {
-			} else if (i < a.size() - 1 &&
+			if (i < a.size() - 1 &&
 					   	(a[i] == "--mcmc:mini-batch-chunk" || a[i] == "-M")) {
 				i++;
 				max_minibatch_chunk = parse_size_t(a[i]);
 			} else if (i < a.size() - 1 && a[i] == "--dkv:type") {
 				i++;
-				if (false) {
-				} else if (a[i] == "file") {
+				if (a[i] == "file") {
 					dkv_type = DKV::TYPE::FILE;
 #ifdef ENABLE_RAMCLOUD
 				} else if (a[i] == "ramcloud") {
@@ -386,13 +384,6 @@ public:
 		t_populate_pi.stop();
 #ifdef DOESNT_WORK_FOR_DISTRIBUTED
 		std::cout << "phi[0][0] " << phi[0][0] << std::endl;
-		if (false) {
-			std::cout << "pi[0] ";
-			for (::size_t k = 0; k < K; k++) {
-				std::cout << pi[0][k] << " ";
-			}
-			std::cout << std::endl;
-		}
 
 		if (true) {
 			for (::size_t i = 0; i < 10; i++) {
@@ -571,9 +562,6 @@ public:
             step_count++;
 			t_outer.stop();
 			auto l2 = std::chrono::system_clock::now();
-			if (false) {
-				std::cout << "LOOP  = " << (l2-l1).count() << std::endl;
-			}
 		}
 
 		check_perplexity();
@@ -656,18 +644,6 @@ protected:
 			std::cerr << std::endl;
 		}
 
-		if (false) {
-			std::cout << "theta[*][0]: ";
-			for (::size_t k = 0; k < K; k++) {
-				std::cout << std::fixed << std::setprecision(12) << theta[k][0] << " ";
-			}
-			std::cout << std::endl;
-			std::cout << "theta[*][1]: ";
-			for (::size_t k = 0; k < K; k++) {
-				std::cout << std::fixed << std::setprecision(12) << theta[k][1] << " ";
-			}
-			std::cout << std::endl;
-		}
 	}
 
 
@@ -737,29 +713,10 @@ protected:
 				double seconds = diff / CLOCKS_PER_SEC;
 				timings.push_back(seconds);
 				iterations.push_back(step_count);
-#if 0
-				if (ppx_score < 5.0) {
-					stepsize_switch = true;
-					//print "switching to smaller step size mode!"
-				}
-#endif
 			}
 
 			// write into file
 			if (step_count % 2000 == 1) {
-				if (false) {
-					std::ofstream myfile;
-					std::string file_name = "mcmc_stochastic_" + to_string (K) + "_num_nodes_" + to_string(num_node_sample) + "_us_air.txt";
-					myfile.open (file_name);
-					int size = ppxs_held_out.size();
-					for (int i = 0; i < size; i++){
-
-						//int iteration = i * 100 + 1;
-						myfile <<iterations[i]<<"    "<<timings[i]<<"    "<<ppxs_held_out[i]<<"\n";
-					}
-
-					myfile.close();
-				}
 			}
 		}
 
@@ -874,13 +831,6 @@ protected:
 			mpi_error_test(r, "MPI_Scatterv of minibatch fails");
 		}
 
-		if (false) {
-			std::cerr << "Master gives me minibatch nodes[" << my_minibatch_size << "] ";
-			for (auto n : nodes_) {
-				std::cerr << n << " ";
-			}
-			std::cerr << std::endl;
-		}
 
 		return edgeSample;
 	}
@@ -892,28 +842,6 @@ protected:
                     double eps_t, Random::Random *rnd,
 					std::vector<double> *phi_node	// out parameter
 					) {
-		if (false) {
-			std::cerr << "update_phi pre ";
-			std::cerr << "phi[" << i << "] ";
-			for (::size_t k = 0; k < K; k++) {
-				std::cerr << std::fixed << std::setprecision(12) << (pi_node[k] * pi_node[K]) << " ";
-			}
-			std::cerr << std::endl;
-			std::cerr << "pi[" << i << "] ";
-			for (::size_t k = 0; k < K; k++) {
-				std::cerr << std::fixed << std::setprecision(12) << pi_node[k] << " ";
-			}
-			std::cerr << std::endl;
-			for (::size_t ix = 0; ix < real_num_node_sample(); ix++) {
-				int32_t neighbor = neighbors[ix];
-				std::cerr << "pi[" << neighbor << "] ";
-				for (::size_t k = 0; k < K; k++) {
-					std::cerr << std::fixed << std::setprecision(12) << pi[ix][k] << " ";
-				}
-				std::cerr << std::endl;
-				ix++;
-			}
-		}
 
 		double phi_i_sum = pi_node[K];
         std::vector<double> grads(K, 0.0);	// gradient for K classes
@@ -953,11 +881,6 @@ protected:
 		}
 
 		std::vector<double> noise = rnd->randn(K);	// random gaussian noise.
-		if (false) {
-			for (::size_t k = 0; k < K; ++k) {
-				std::cerr << "randn " << std::fixed << std::setprecision(12) << noise[k] << std::endl;
-			}
-		}
 		double Nn = (1.0 * N) / num_node_sample;
         // update phi for node i
         for (::size_t k = 0; k < K; k++) {
@@ -967,28 +890,6 @@ protected:
 								   sqrt(eps_t * phi_node_k) * noise[k]);
 		}
 
-		if (false) {
-			std::cerr << std::fixed << std::setprecision(12) << "update_phi post Nn " << Nn << " phi[" << i << "] ";
-			for (::size_t k = 0; k < K; k++) {
-				std::cerr << std::fixed << std::setprecision(12) << (*phi_node)[k] << " ";
-			}
-			std::cerr << std::endl;
-			std::cerr << "pi[" << i << "] ";
-			for (::size_t k = 0; k < K; k++) {
-				std::cerr << std::fixed << std::setprecision(12) << pi_node[k] << " ";
-			}
-			std::cerr << std::endl;
-			std::cerr << "grads ";
-			for (::size_t k = 0; k < K; k++) {
-				std::cerr << std::fixed << std::setprecision(12) << grads[k] << " ";
-			}
-			std::cerr << std::endl;
-			std::cerr << "noise ";
-			for (::size_t k = 0; k < K; k++) {
-				std::cerr << std::fixed << std::setprecision(12) << noise[k] << " ";
-			}
-			std::cerr << std::endl;
-		}
 
 		// assign back to phi.
 		//phi[i] = phi_star;
@@ -1111,20 +1012,6 @@ protected:
 		d_kv_store->PurgeKVRecords();
 		t_beta_update_theta.stop();
 
-        if (false) {
-          for (auto n : noise) {
-            std::cerr << "noise ";
-            for (auto b : n) {
-              std::cerr << std::fixed << std::setprecision(12) << b << " ";
-            }  
-            std::cerr << std::endl;
-          }
-          std::cerr << "beta ";
-          for (auto b : beta) {
-            std::cerr << std::fixed << std::setprecision(12) << b << " ";
-          }
-          std::cerr << std::endl;
-        }
 	}
 
 
