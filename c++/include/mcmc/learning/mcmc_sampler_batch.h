@@ -86,7 +86,7 @@ public:
         OrderedVertexSet neighbor_nodes;
 		for (Vertex i = 0; i < (Vertex)N; i++) {
 			Edge edge(std::min(node, i), std::max(node, i));
-			if (! EdgeIn(edge, network.get_held_out_set()) && ! EdgeIn(edge, network.get_test_set())) {
+			if (! edge.in(network.get_held_out_set()) && ! edge.in(network.get_test_set())) {
 				if (false && i == node) {
 					std::cerr << "Ooppssss.... is a self-cycle OK? " << i << std::endl;
 				}
@@ -171,13 +171,13 @@ public:
 				Edge edge(i, j);
 
 #if USE_SAMPLE_LATENT_VARS || (1 || defined NOT_IN_PYTHON)
-				if (EdgeIn(edge, network.get_held_out_set()) || EdgeIn(edge, network.get_test_set())) {
+				if (edge.in(network.get_held_out_set()) || edge.in(network.get_test_set())) {
                     continue;
 				}
 #endif
 
                 int y = 0;
-                if (EdgeIn(edge, network.get_linked_edges())) {
+                if (edge.in(network.get_linked_edges())) {
                     y = 1;
 				}
 
@@ -376,7 +376,7 @@ public:
 				 neighbor++) {
             int y_ab = 0;      // observation
 			Edge edge(std::min(node, *neighbor), std::max(node, *neighbor));
-            if (EdgeIn(edge, network.get_linked_edges())) {
+            if (edge.in(network.get_linked_edges())) {
                 y_ab = 1;
 			}
 
@@ -410,7 +410,7 @@ public:
 
 			int y = 0;      // observation
 			Edge edge(std::min(i, j), std::max(i, j));
-			if (EdgeIn(edge, network.get_linked_edges())) {
+			if (edge.in(network.get_linked_edges())) {
 				y = 1;
 			}
 

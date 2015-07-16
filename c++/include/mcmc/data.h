@@ -103,6 +103,26 @@ public:
 		(void)get(s);
 	}
 
+
+	template <typename SET>
+	bool in(const SET &s) const {
+		return s.find(*this) != s.end();
+	}
+
+	template <typename SET>
+	bool in(const std::vector<SET> &s) const {
+		if (static_cast<::size_t>(first) >= s.size() ||
+			static_cast<::size_t>(second) >= s.size()) {
+			return false;
+		}
+
+		if (s[first].size() > s[second].size()) {
+			return s[second].find(first) != s[second].end();
+		} else {
+			return s[first].find(second) != s[first].end();
+		}
+	}
+
 	template <typename SET>
 	void insertMe(SET *s) const {
 		s->insert(*this);
@@ -199,25 +219,6 @@ inline std::ostream &operator<< (std::ostream &s, const Edge &e) {
 
 inline std::istream &operator>> (std::istream &s, Edge &e) {
 	return e.get(s);
-}
-
-
-template <typename SET>
-bool EdgeIn(const Edge &edge, const SET &s) {
-	return s.find(edge) != s.end();
-}
-
-bool EdgeIn(const Edge &edge, const AdjacencyList &s) {
-	if (static_cast<::size_t>(edge.first) >= s.size() ||
-		static_cast<::size_t>(edge.second) >= s.size()) {
-		return false;
-	}
-
-	if (s[edge.first].size() > s[edge.second].size()) {
-		return s[edge.second].find(edge.first) != s[edge.second].end();
-	} else {
-		return s[edge.first].find(edge.second) != s[edge.first].end();
-	}
 }
 
 

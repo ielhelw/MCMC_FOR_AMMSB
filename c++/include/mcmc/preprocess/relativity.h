@@ -195,7 +195,7 @@ public:
 					continue;
 				}
 				Edge e(std::min(node1, node2), std::max(node1, node2));
-				if (EdgeIn(e, *E)) {
+				if (e.in(*E)) {
 					// std::cerr << "Duplicate link " << eIdent << ": ignore" << std::endl;
 					duplicates++;
 				} else {

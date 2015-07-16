@@ -124,7 +124,7 @@ protected:
 		for (::size_t a = 0; a < N; a++) {
 			for (::size_t b = a + 1; b < N; b++) {
 				Edge edge(a, b);
-				if (EdgeIn(edge, network.get_held_out_set()) || EdgeIn(edge, network.get_test_set())) {
+				if (edge.in(network.get_held_out_set()) || edge.in(network.get_test_set())) {
                     continue;
 				}
 
@@ -157,7 +157,7 @@ protected:
 							   std::plus<double>());
 
                 int y = 0;
-				if (EdgeIn(edge, network.get_linked_edges())) {
+				if (edge.in(network.get_linked_edges())) {
                     y = 1;
 				}
 

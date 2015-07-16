@@ -153,7 +153,7 @@ public:
 		linked_edges_.clear();
 	}
 
-	bool in(const Edge& edge) const {
+	bool find(const Edge& edge) const {
 		const auto &adj = linked_edges_[edge.first];
 
 		return adj.find(edge.second) != adj.end();
@@ -166,11 +166,6 @@ public:
 protected:
 	std::vector<EndpointSet> linked_edges_;
 };
-
-
-bool EdgeIn(const Edge &edge, const LocalNetwork &network) {
-	return network.in(edge);
-}
 
 
 struct perp_counter {
@@ -195,38 +190,44 @@ struct perp_accu {
 
 class PerpData {
 public:
-	void Init(const EdgeMap &data) {
-		for (auto edge : data) {
-			const Edge &e = edge.first;
+	void Init() {
+		// Convert the vertices into their rank, that is all we need
+
+		// Find the ranks
+		std::unordered_map<Vertex, Vertex> node_rank;
+		for (auto edge : data_) {
+			const Edge &e = edge.edge;
 			Vertex i = e.first;
 			Vertex j = e.second;
 			if (node_rank.find(i) == node_rank.end()) {
 				::size_t next = node_rank.size();
 				node_rank[i] = next;
-				nodes.push_back(i);
+				nodes_.push_back(i);
 			}
 			if (node_rank.find(j) == node_rank.end()) {
 				::size_t next = node_rank.size();
 				node_rank[j] = next;
-				nodes.push_back(j);
+				nodes_.push_back(j);
 			}
-			assert(node_rank.size() == nodes.size());
+			assert(node_rank.size() == nodes_.size());
 		}
 
-		pi.resize(node_rank.size());
+		// Set to rank
+		for (auto & edge : data_) {
+			edge.edge.first = node_rank[edge.edge.first];
+			edge.edge.second = node_rank[edge.edge.second];
+		}
 
-		// OpenMP parallelism requires a vector
-		this->data = std::vector<EdgeMap::value_type>(data.begin(), data.end());
+		pi_.resize(node_rank.size());
 
-		accu.resize(omp_get_max_threads());
+		accu_.resize(omp_get_max_threads());
 	}
 
-	std::unordered_map<Vertex, Vertex> node_rank;
-	std::vector<Vertex> nodes;
-	std::vector<double *> pi;
+	std::vector<Vertex> nodes_;
+	std::vector<double *> pi_;
 	// OpenMP parallelism requires a vector
-	std::vector<EdgeMap::value_type> data;
-	std::vector<perp_accu> accu;
+	std::vector<EdgeMapItem> data_;
+	std::vector<perp_accu> accu_;
 };
 
 
@@ -378,13 +379,6 @@ public:
 			// ration between link edges and non-link edges
 			link_ratio = network.get_num_linked_edges() / ((N * (N - 1)) / 2.0);
 
-			if (false) {
-				// store perplexity for all the iterations
-				// ppxs_held_out = [];
-				// ppxs_test = [];
-				ppx_for_heldout = std::vector<double>(network.get_held_out_size(), 0.0);
-			}
-
 			this->info(std::cerr);
 		}
 	}
@@ -392,31 +386,71 @@ public:
 
 	void BroadcastHeldOut() {
 		int r;
+		::size_t my_held_out_size;
 
-		int64_t held_out_marshall_size = 0;
 		if (mpi_rank == mpi_master) {
-			held_out_marshall_size = network.get_held_out_set().size();
-		}
-		r = MPI_Bcast(&held_out_marshall_size, 1, MPI_LONG, mpi_master, MPI_COMM_WORLD);
-		mpi_error_test(r, "MPI_Bcast of held-out set size fails");
+			std::vector<int32_t> count(mpi_size);	// FIXME: lift to class
+			std::vector<int32_t> displ(mpi_size);	// FIXME: lift to class
 
-		std::vector<EdgeMapItem> buffer(held_out_marshall_size);
-		if (mpi_rank == mpi_master) {
+			int32_t held_out_marshall_size = network.get_held_out_set().size() / mpi_size;
+			::size_t surplus = network.get_held_out_set().size() % mpi_size;
+			for (::size_t i = 0; i < surplus; ++i) {
+				count[i] = held_out_marshall_size + 1;
+			}
+			for (::size_t i = surplus; i < static_cast<::size_t>(mpi_size); ++i) {
+				count[i] = held_out_marshall_size;
+			}
+
+			// Scatter the size of each held-out set subset
+			r = MPI_Scatter(count.data(), 1, MPI_INT,
+							&my_held_out_size, 1, MPI_INT,
+							mpi_master,
+							MPI_COMM_WORLD);
+			mpi_error_test(r, "MPI_Scatter of held_out_set size fails");
+
+			// Marshall the subsets
+			std::vector<EdgeMapItem> buffer(network.get_held_out_set().size());
 			struct EdgeMapItem *p = buffer.data();
 
 			for (auto e : network.get_held_out_set()) {
-				p->first = e.first.first;
-				p->second = e.first.second;
+				p->edge = e.first;
 				p->is_edge = e.second;
 				p++;
 			}
-		}
-		r = MPI_Bcast(buffer.data(), held_out_marshall_size, MPI_BYTE, mpi_master, MPI_COMM_WORLD);
-		mpi_error_test(r, "MPI_Bcast of held-out set data fails");
 
-		if (mpi_rank != mpi_master) {
-			network.unmarshall_held_out(buffer);
+			std::vector<int32_t> bytes(count.size());
+			for (::size_t i = 0; i < count.size(); ++i) {
+				bytes[i] = count[i] * sizeof(EdgeMapItem);
+			}
+			displ[0] = 0;
+			for (int i = 1; i < mpi_size; i++) {
+				displ[i] = displ[i - 1] + bytes[i];
+			}
+			// Scatter the marshalled subgraphs
+			perp_.data_.resize(my_held_out_size);
+			r = MPI_Scatterv(buffer.data(), bytes.data(), displ.data(), MPI_BYTE,
+							 perp_.data_.data(),
+							 perp_.data_.size() * sizeof(EdgeMapItem), MPI_BYTE,
+							 mpi_master, MPI_COMM_WORLD);
+			mpi_error_test(r, "MPI_Scatterv of held-out set data fails");
+
+		} else {
+			// Scatter the fanout of each minibatch node
+			r = MPI_Scatter(NULL, 1, MPI_INT,
+							&my_held_out_size, 1, MPI_INT,
+							mpi_master,
+							MPI_COMM_WORLD);
+			mpi_error_test(r, "MPI_Scatter of held_out_set size fails");
+
+			// Scatter the marshalled subgraphs
+			perp_.data_.resize(my_held_out_size);
+			r = MPI_Scatterv(NULL, NULL, NULL, MPI_BYTE,
+							 perp_.data_.data(),
+							 perp_.data_.size() * sizeof(EdgeMapItem), MPI_BYTE,
+							 mpi_master, MPI_COMM_WORLD);
 		}
+
+		perp_.Init();
 	}
 
 
@@ -627,8 +661,6 @@ public:
 		for (auto &g : grads_beta_) {
 			g = std::vector<std::vector<double> >(K, std::vector<double>(2));    // gradients K*2 dimension
 		}
-
-		perp_.Init(network.get_held_out_set());
 
         std::cerr << "Random seed " << std::hex << "0x" << kernelRandom->seed(0) << ",0x" << kernelRandom->seed(1) << std::endl << std::dec;
 		std::cerr << "Done constructor" << std::endl;
@@ -1268,12 +1300,12 @@ protected:
 				}
 				if (REPLICATED_NETWORK) {
 					Edge edge(std::min(i, neighbor), std::max(i, neighbor));
-					if (EdgeIn(edge, network.get_linked_edges())) {
+					if (edge.in(network.get_linked_edges())) {
 						y_ab = 1;
 					}
 				} else {
 					Edge edge(index, neighbor);
-					if (EdgeIn(edge, local_network_)) {
+					if (local_network_.find(edge)) {
 						y_ab = 1;
 					}
 				}
@@ -1395,7 +1427,7 @@ protected:
 			std::vector<double> probs(K);
 
             int y = 0;
-            if (EdgeIn(*edge, network.get_linked_edges())) {
+            if (edge->in(network.get_linked_edges())) {
                 y = 1;
 			}
 			Vertex i = node_rank[edge->first];
@@ -1477,11 +1509,11 @@ protected:
 
 	void reduce_plus(const perp_accu &in, perp_accu *accu) {
 		int r;
-		::size_t count[2] = { in.link.count, in.non_link.count };
+		uint64_t count[2] = { in.link.count, in.non_link.count };
 		double likelihood[2] = { in.link.likelihood, in.non_link.likelihood };
 
 		t_reduce_perp.start();
-		r = MPI_Allreduce(MPI_IN_PLACE, count, 2, MPI_LONG, MPI_SUM,
+		r = MPI_Allreduce(MPI_IN_PLACE, count, 2, MPI_UNSIGNED_LONG, MPI_SUM,
 						  MPI_COMM_WORLD);
 		mpi_error_test(r, "Reduce/plus of perplexity counts fails");
 		r = MPI_Allreduce(MPI_IN_PLACE, likelihood, 2, MPI_DOUBLE, MPI_SUM,
@@ -1510,54 +1542,54 @@ protected:
 	double cal_perplexity_held_out() {
 
 		t_load_pi_perp.start();
-		d_kv_store->ReadKVRecords(perp_.pi, perp_.nodes, DKV::RW_MODE::READ_ONLY);
+		d_kv_store->ReadKVRecords(perp_.pi_, perp_.nodes_, DKV::RW_MODE::READ_ONLY);
 		t_load_pi_perp.stop();
 
-		for (auto & a : perp_.accu) {
+		for (auto & a : perp_.accu_) {
 			a.link.reset();
 			a.non_link.reset();
 		}
 
 		t_cal_edge_likelihood.start();
 #pragma omp parallel for
-		for (::size_t i = 0; i < perp_.data.size(); ++i) {
-			auto edge = perp_.data[i];
-			const Edge &e = edge.first;
-			Vertex a = perp_.node_rank[e.first];
-			Vertex b = perp_.node_rank[e.second];
-			double edge_likelihood = cal_edge_likelihood(perp_.pi[a], perp_.pi[b],
-														 edge.second, beta);
+		for (::size_t i = 0; i < perp_.data_.size(); ++i) {
+			const auto& edge_in = perp_.data_[i];
+			const Edge& e = edge_in.edge;
+			// The vertex numbers are ranks, i.c. into the pi_ vector
+			Vertex a = e.first;
+			Vertex b = e.second;
+			double edge_likelihood = cal_edge_likelihood(perp_.pi_[a], perp_.pi_[b],
+														 edge_in.is_edge, beta);
 			if (std::isnan(edge_likelihood)) {
 				std::cerr << "edge_likelihood is NaN; potential bug" << std::endl;
 			}
 
 			//cout<<"AVERAGE COUNT: " <<average_count;
 			ppx_for_heldout[i] = (ppx_for_heldout[i] * (average_count-1) + edge_likelihood)/(average_count);
-			// std::cout << std::fixed << std::setprecision(12) << e << " in? " << (EdgeIn(e, network.get_linked_edges()) ? "True" : "False") << " -> " << edge_likelihood << " av. " << average_count << " ppx[" << i << "] " << ppx_for_heldout[i] << std::endl;
-			// assert(edge->second == EdgeIn(e, network.get_linked_edges()));
-			if (edge.second) {
-				perp_.accu[omp_get_thread_num()].link.count++;
-				perp_.accu[omp_get_thread_num()].link.likelihood += std::log(ppx_for_heldout[i]);
+			// std::cout << std::fixed << std::setprecision(12) << e << " in? " << (e.in(network.get_linked_edges()) ? "True" : "False") << " -> " << edge_likelihood << " av. " << average_count << " ppx[" << i << "] " << ppx_for_heldout[i] << std::endl;
+			// assert(edge_in.is_edge == e.in(network.get_linked_edges()));
+			if (edge_in.is_edge) {
+				perp_.accu_[omp_get_thread_num()].link.count++;
+				perp_.accu_[omp_get_thread_num()].link.likelihood += std::log(ppx_for_heldout[i]);
 				//link_likelihood += edge_likelihood;
 
-				if (std::isnan(perp_.accu[omp_get_thread_num()].link.likelihood)){
+				if (std::isnan(perp_.accu_[omp_get_thread_num()].link.likelihood)){
 					std::cerr << "link_likelihood is NaN; potential bug" << std::endl;
 				}
 			} else {
-				assert(! present(network.get_linked_edges(), e));
-				perp_.accu[omp_get_thread_num()].non_link.count++;
-				//perp_.accu[omp_get_thread_num()].non_link.likelihood += edge_likelihood;
-				perp_.accu[omp_get_thread_num()].non_link.likelihood += std::log(ppx_for_heldout[i]);
-				if (std::isnan(perp_.accu[omp_get_thread_num()].non_link.likelihood)){
+				perp_.accu_[omp_get_thread_num()].non_link.count++;
+				//perp_.accu_[omp_get_thread_num()].non_link.likelihood += edge_likelihood;
+				perp_.accu_[omp_get_thread_num()].non_link.likelihood += std::log(ppx_for_heldout[i]);
+				if (std::isnan(perp_.accu_[omp_get_thread_num()].non_link.likelihood)){
 					std::cerr << "non_link_likelihood is NaN; potential bug" << std::endl;
 				}
 			}
 		}
 		for (auto i = 1; i < omp_get_max_threads(); ++i) {
-			perp_.accu[0].link.count += perp_.accu[i].link.count;
-			perp_.accu[0].link.likelihood += perp_.accu[i].link.likelihood;
-			perp_.accu[0].non_link.count += perp_.accu[i].non_link.count;
-			perp_.accu[0].non_link.likelihood += perp_.accu[i].non_link.likelihood;
+			perp_.accu_[0].link.count += perp_.accu_[i].link.count;
+			perp_.accu_[0].link.likelihood += perp_.accu_[i].link.likelihood;
+			perp_.accu_[0].non_link.count += perp_.accu_[i].non_link.count;
+			perp_.accu_[0].non_link.likelihood += perp_.accu_[i].non_link.likelihood;
 		}
 
 		t_cal_edge_likelihood.stop();
@@ -1575,7 +1607,7 @@ protected:
 		*/
 
 		perp_accu accu;
-		reduce_plus(perp_.accu[0], &accu);
+		reduce_plus(perp_.accu_[0], &accu);
 
 		// direct calculation.
 		double avg_likelihood = 0.0;
