@@ -7,7 +7,6 @@ SUBDIRS	+= net
 endif
 
 CXX_SOURCES =
-CXX_SOURCES += fileio.cc
 CXX_SOURCES += rdtsc_timer.cc
 
 TARGET_LIBS = libmcmc
