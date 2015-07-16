@@ -7,6 +7,24 @@ find_package(Boost 1.54.0
   program_options
   iostreams
   system
+  filesystem
+)
+
+add_library(dkvstore SHARED
+  dkvstore/DKVStoreRamCloud.cc
+  dkvstore/DKVStoreFile.cc
+  #  dkvstore/DKVStoreRDMA.cc
+)
+target_include_directories(dkvstore PUBLIC
+  ${CMAKE_CURRENT_SOURCE_DIR}
+  ${GLASSWING_INCLUDE_DIRS}
+  ${RAMCLOUD_INCLUDE_DIRS}
+)
+target_link_libraries(dkvstore
+  ${RAMCLOUD_LIBRARIES}
+  ${GLASSWING_LIBRARIES}
+  ${Boost_FILESYSTEM_LIBRARY}
+  ${Boost_PROGRAM_OPTIONS_LIBRARY}
 )
 
 add_library(mcmc SHARED
@@ -31,22 +49,9 @@ target_include_directories(mcmc PUBLIC
   ${Boost_INCLUDE_DIRS}
 )
 target_link_libraries(mcmc
-  ${Boost_LIBRARIES}
+  ${Boost_PROGRAM_OPTIONS_LIBRARY}
+  ${Boost_IOSTREAMS_LIBRARY}
+  ${Boost_SYSTEM_LIBRARY}
   ${TINYXML2_LIBRARIES}
-)
-
-add_library(dkvstore SHARED
-  dkvstore/DKVStoreRamCloud.cc
-  dkvstore/DKVStoreFile.cc
-  #  dkvstore/DKVStoreRDMA.cc
-)
-target_include_directories(dkvstore PUBLIC
-  ${CMAKE_CURRENT_SOURCE_DIR}
-  ${GLASSWING_INCLUDE_DIRS}
-  ${RAMCLOUD_INCLUDE_DIRS}
-)
-target_link_libraries(dkvstore
-  mcmc
-  ${RAMCLOUD_LIBRARIES}
-  ${GLASSWING_LIBRARIES}
+  dkvstore
 )

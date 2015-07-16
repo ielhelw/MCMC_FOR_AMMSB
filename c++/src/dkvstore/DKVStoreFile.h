@@ -15,8 +15,6 @@
 #ifndef APPS_MCMC_D_KV_STORE_FILE_DKV_STORE_H__
 #define APPS_MCMC_D_KV_STORE_FILE_DKV_STORE_H__
 
-#include "glasswing/fileio.h"
-
 #include "dkvstore/DKVStore.h"
 
 namespace DKV {
@@ -52,9 +50,9 @@ class DKVStoreFile : public DKVStoreInterface {
 
  private:
   const std::string PiFileName(KeyType node) const;
+  void CreateDirNameOf(const std::string &filename) const;
   void WriteKVRecord(const KeyType key, const ValueType *cached);
 
-  mr::FileSystem *inputFileSystem_ = NULL;
   std::string file_base_;
   std::string dir_;
 };
