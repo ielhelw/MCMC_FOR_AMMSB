@@ -27,7 +27,7 @@
 #include <infiniband/verbs.h>
 #endif
 
-#include <mcmc/timer.h>
+#include "mcmc/timer.h"
 
 #if 0 && defined ENABLE_DISTRIBUTED
 #  define USE_MPI
@@ -37,9 +37,9 @@
 #  include <mpi.h>
 #endif
 
-#include <d-kv-store/DKVStore.h>
+#include "dkvstore/DKVStore.h"
 
-#include <d-kv-store/rdma/qperf-rdma.h>
+#include "dkvstore/qperf-rdma.h"
 
 
 namespace DKV {

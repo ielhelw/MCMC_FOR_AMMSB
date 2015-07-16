@@ -1,0 +1,24 @@
+# follows TINYXML2_ROOT
+
+#defines:
+#- TINYXML2_INCLUDE_DIRS
+#- TINYXML2_LIBRARIES
+
+FIND_PACKAGE(PackageHandleStandardArgs)
+
+if (DEFINED ENV{TINYXML2_ROOT})
+	set(TINYXML2_ROOT "$ENV{TINYXML2_ROOT}")
+endif()
+
+find_path(TINYXML2_INCLUDE_DIRS tinyxml2.h
+  PATHS "${TINYXML2_ROOT}"
+  PATH_SUFFIXES include
+)
+
+find_library(TINYXML2_LIBRARIES NAMES tinyxml2
+  PATHS ${TINYXML2_ROOT}
+  PATH_SUFFIXES lib libs
+)
+
+find_package_handle_standard_args(TINYXML2 DEFAULT_MSG
+    TINYXML2_INCLUDE_DIRS TINYXML2_LIBRARIES)

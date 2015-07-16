@@ -1,0 +1,31 @@
+# follows RAMCLOUD_ROOT
+
+#defines:
+#- RAMCLOUD_INCLUDE_DIRS
+#- RAMCLOUD_LIBRARIES
+
+FIND_PACKAGE(PackageHandleStandardArgs)
+
+if (DEFINED ENV{RAMCLOUD_ROOT})
+	set(RAMCLOUD_ROOT "$ENV{RAMCLOUD_ROOT}")
+endif()
+
+find_path(RAMCLOUD_INCLUDE RamCloud.h
+  PATHS "${RAMCLOUD_ROOT}"
+  PATH_SUFFIXES include src
+)
+find_path(RAMCLOUD_LIB libramcloud.so
+  PATHS "${RAMCLOUD_ROOT}"
+  PATH_SUFFIXES include src obj.master
+)
+
+SET(RAMCLOUD_INCLUDE_DIRS "${RAMCLOUD_INCLUDE};${RAMCLOUD_LIB}")
+
+find_library(RAMCLOUD_LIBRARIES NAMES ramcloud
+  PATHS ${RAMCLOUD_ROOT}
+  PATH_SUFFIXES lib libs obj.master
+)
+
+
+find_package_handle_standard_args(RAMCLOUD DEFAULT_MSG
+    RAMCLOUD_INCLUDE_DIRS RAMCLOUD_LIBRARIES)

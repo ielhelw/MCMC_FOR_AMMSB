@@ -1,9 +1,6 @@
-.PHONY:	default cc python clean
+.PHONY:	default python clean
 
-default:	cc python
-
-cc:
-	$(MAKE) $(MFLAGS) -C c++
+default: python
 
 python:
 	python setup.py install_lib --install-dir=.

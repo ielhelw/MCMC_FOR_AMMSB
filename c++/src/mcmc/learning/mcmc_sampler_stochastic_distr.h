@@ -9,7 +9,7 @@
 #include <algorithm>	// min, max
 #include <chrono>
 
-#include <mcmc/exception.h>
+#include "mcmc/exception.h"
 
 #ifdef ENABLE_DISTRIBUTED
 #  include <mpi.h>
@@ -97,13 +97,13 @@ int MPI_Scatterv(void *sendbuf, int *sendcounts, int *displs, MPI_Datatype sendt
 
 #endif
 
-#include <d-kv-store/DKVStore.h>
-#include <d-kv-store/file/DKVStoreFile.h>
+#include "dkvstore/DKVStore.h"
+#include "dkvstore/DKVStoreFile.h"
 #ifdef ENABLE_RAMCLOUD
-#include <d-kv-store/ramcloud/DKVStoreRamCloud.h>
+#include "dkvstore/DKVStoreRamCloud.h"
 #endif
 #ifdef ENABLE_RDMA
-#include <d-kv-store/rdma/DKVStoreRDMA.h>
+#include "dkvstore/DKVStoreRDMA.h"
 #endif
 
 #include "mcmc/np.h"

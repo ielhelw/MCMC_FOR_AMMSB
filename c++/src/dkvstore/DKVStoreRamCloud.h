@@ -25,7 +25,7 @@
 #pragma GCC diagnostic pop
 #endif
 
-#include <d-kv-store/DKVStore.h>
+#include "dkvstore/DKVStore.h"
 
 namespace DKV {
 namespace DKVRamCloud {

@@ -7,6 +7,5 @@
 
 #include "mcmc/learning/mcmc_sampler_stochastic.h"
 #include "mcmc/learning/mcmc_sampler_stochastic_distr.h"
-#include "mcmc/learning/mcmc_sampler_batch.h"
 
 #endif	// ndef MCMC_MCMC_H__

@@ -2,7 +2,7 @@
  * Copyright notice
  */
 
-#include "d-kv-store/file/DKVStoreFile.h"
+#include "dkvstore/DKVStoreFile.h"
 
 #include <sys/types.h>
 #include <sys/stat.h>

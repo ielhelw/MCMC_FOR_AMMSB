@@ -2,7 +2,7 @@
  * Copyright notice
  */
 
-#include "d-kv-store/ramcloud/DKVStoreRamCloud.h"
+#include "dkvstore/DKVStoreRamCloud.h"
 
 #include <cassert>
 #include <sstream>

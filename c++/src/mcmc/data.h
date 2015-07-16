@@ -72,7 +72,7 @@ typedef std::map<Edge, bool> EdgeMap;
 typedef std::unordered_set<Vertex> VertexSet;
 
 #ifdef RANDOM_FOLLOWS_CPP
-typedef std::set<Vertext> OrderedVertexSet;
+typedef std::set<Vertex> OrderedVertexSet;
 #else   // def RANDOM_FOLLOWS_CPP
 typedef VertexSet OrderedVertexSet;
 #endif  // def RANDOM_FOLLOWS_CPP

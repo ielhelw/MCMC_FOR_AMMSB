@@ -2,7 +2,7 @@
  * Copyright notice
  */
 #ifdef ENABLE_RDMA
-#include <d-kv-store/rdma/DKVStoreRDMA.h>
+#include "dkvstore/DKVStoreRDMA.h"
 #endif
 
 #include <unistd.h>
@@ -17,8 +17,8 @@
 #endif
 #include <boost/lexical_cast.hpp>
 
-#include <mcmc/random.h>
-#include <mcmc/options.h>
+#include "mcmc/random.h"
+#include "mcmc/options.h"
 
 #ifdef ENABLE_RDMA
 #include <infiniband/verbs.h>

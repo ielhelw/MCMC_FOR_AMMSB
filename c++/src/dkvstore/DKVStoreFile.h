@@ -17,7 +17,7 @@
 
 #include "glasswing/fileio.h"
 
-#include <d-kv-store/DKVStore.h>
+#include "dkvstore/DKVStore.h"
 
 namespace DKV {
 namespace DKVFile {
