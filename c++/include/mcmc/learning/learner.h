@@ -26,7 +26,7 @@ public:
 			std::cerr << "Set held_out_ratio to default " << held_out_ratio << std::endl;
 		}
 		// FIXME: make Network the owner of data
-		network = Network(data_, held_out_ratio);
+		network.Init(data_, held_out_ratio);
 
 		// model priors
 		alpha = args_.alpha;

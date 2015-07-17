@@ -34,9 +34,6 @@ typedef std::pair<MinibatchSet *, double>		EdgeSample;
 class Network {
 
 public:
-	Network() {
-	}
-
 	/**
 	 * In this initialization step, we separate the whole data set
 	 * into training, validation and testing sets. Basically,
@@ -49,7 +46,7 @@ public:
 	 *     data:   representation of the while graph.
 	 *     vlaidation_ratio:  the percentage of data used for validation and testing.
 	 */
-	Network(const Data *data, double held_out_ratio) {
+	void Init(const Data *data, double held_out_ratio) {
 		progress = 1 << 20;		// FIXME: make this a parameter
 
 		N = data->N;							// number of nodes in the graph
