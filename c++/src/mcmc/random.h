@@ -35,7 +35,7 @@ class Random {
 
   Random(unsigned int seed_hi, unsigned int seed_lo);
 
-  virtual ~Random();
+  ~Random();
 
 #ifndef RANDOM_SYSTEM
   inline uint64_t xorshift_128plus();
@@ -114,59 +114,7 @@ class Random {
 #endif  // ndef RANDOM_SYSTEM
 };
 
-class FileReaderRandom : public Random {
- public:
-  FileReaderRandom(unsigned int seed);
-
-  virtual ~FileReaderRandom();
-
-  std::vector<double> randn(::size_t K);
-
-  std::vector<std::vector<double> > randn(::size_t K, ::size_t N);
-
-  double random();
-
-  int64_t randint(int64_t from, int64_t upto);
-
-  template <class List>
-  List *sample(const List &population, ::size_t count);
-
-  template <class List>
-  List *sample(const List *population, ::size_t count);
-
-  template <class Element>
-  std::vector<Element> *sample(const std::vector<Element> &population,
-                               ::size_t count);
-
-  std::vector<int> *sampleRange(int N, ::size_t count);
-
-  template <class Container>
-  std::list<typename Container::value_type> *sampleList(
-      const Container &population, ::size_t count);
-
-  template <class Container>
-  std::list<typename Container::value_type> *sampleList(
-      const Container *population, ::size_t count);
-
-  std::vector<std::vector<double> > gamma(double p1, double p2, ::size_t n1,
-                                          ::size_t n2);
-
- protected:
-  void getline(std::ifstream &f, std::string &line);
-
-  std::ifstream floatReader;
-  std::ifstream intReader;
-  std::ifstream sampleReader;
-  std::ifstream choiceReader;
-  std::ifstream gammaReader;
-  std::ifstream noiseReader;
-};
-
-#ifdef RANDOM_FOLLOWS_PYTHON
-extern FileReaderRandom *random;
-#else
 extern Random *random;
-#endif
 
 // Random
 template <class Input, class Result, class Inserter>
@@ -244,67 +192,6 @@ std::list<typename Container::value_type> *Random::sampleList(
 
 template <class Container>
 std::list<typename Container::value_type> *Random::sampleList(
-    const Container *population, ::size_t count) {
-  return sampleList(*population, count);
-}
-
-// FileReaderRandom
-template <class List>
-List *FileReaderRandom::sample(const List &population, ::size_t count) {
-  std::string line;
-  List *result = new List();
-  getline(sampleReader, line);
-
-  std::istringstream is(line);
-
-  for (::size_t i = 0; i < count; i++) {
-    typename List::key_type key(is);
-    result->insert(key);
-  }
-  return result;
-}
-template <class List>
-List *FileReaderRandom::sample(const List *population, ::size_t count) {
-  return sample(*population, count);
-}
-template <class Element>
-std::vector<Element> *FileReaderRandom::sample(
-    const std::vector<Element> &population, ::size_t count) {
-  std::string line;
-  getline(sampleReader, line);
-  std::istringstream is(line);
-
-  std::vector<Element> *result = new std::vector<Element>(count);
-
-  for (::size_t i = 0; i < count; i++) {
-    int r;
-
-    if (!(is >> r)) {
-      throw IOException("end of line");
-    }
-    result->push_back(r);
-  }
-  return result;
-}
-
-template <class Container>
-std::list<typename Container::value_type> *FileReaderRandom::sampleList(
-    const Container &population, ::size_t count) {
-  std::string line;
-  auto *result = new std::list<typename Container::value_type>();
-  getline(sampleReader, line);
-
-  std::istringstream is(line);
-
-  for (::size_t i = 0; i < count; i++) {
-    typename Container::value_type key(is);
-    result->push_back(key);
-  }
-  return result;
-}
-
-template <class Container>
-std::list<typename Container::value_type> *FileReaderRandom::sampleList(
     const Container *population, ::size_t count) {
   return sampleList(*population, count);
 }

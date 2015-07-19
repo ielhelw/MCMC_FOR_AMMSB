@@ -3,9 +3,7 @@
 namespace mcmc {
 namespace Random {
 
-#ifdef RANDOM_FOLLOWS_PYTHON
-FileReaderRandom *random = new FileReaderRandom(0);
-#elif defined RANDOM_SYSTEM
+#if defined RANDOM_SYSTEM
 Random *random = new Random(0);
 #else
 Random *random = new Random(42);
@@ -473,118 +471,6 @@ std::string Random::state() {
 #else
   return "<nope>";
 #endif
-}
-
-FileReaderRandom::FileReaderRandom(unsigned int seed) : Random(seed) {
-  floatReader.open("random.random");
-  intReader.open("random.randint");
-  sampleReader.open("random.sample");
-  choiceReader.open("random.choice");
-  gammaReader.open("random.gamma");
-  noiseReader.open("random.noise");
-}
-
-FileReaderRandom::~FileReaderRandom() {}
-
-void FileReaderRandom::getline(std::ifstream &f, std::string &line) {
-  do {
-    std::getline(f, line);
-    if (!f) {
-      break;
-    }
-  } while (line[0] == '#');
-
-  if (!f) {
-    if (f.eof()) {
-      throw IOException("end of file");
-    } else {
-      throw IOException("file read error");
-    }
-  }
-}
-
-std::vector<double> FileReaderRandom::randn(::size_t K) {
-  std::string line;
-  std::vector<double> r(K);
-
-  getline(noiseReader, line);
-  std::istringstream is(line);
-  for (::size_t k = 0; k < K; k++) {
-    if (!(is >> r[k])) {
-      throw IOException("end of line");
-    }
-  }
-
-  std::cerr << "Read random.randn[" << K << "]" << std::endl;
-
-  return r;
-}
-
-std::vector<std::vector<double> > FileReaderRandom::randn(::size_t K,
-                                                          ::size_t N) {
-  // std::cerr << "Read random.randn[" << K << "," << N << "]" << std::endl;
-  std::vector<std::vector<double> > r(K);
-  for (::size_t k = 0; k < K; k++) {
-    r[k] = randn(N);
-  }
-
-  return r;
-}
-
-double FileReaderRandom::random() {
-  std::string line;
-  getline(floatReader, line);
-
-  double r;
-  std::istringstream is(line);
-  if (!(is >> r)) {
-    throw IOException("end of line");
-  }
-
-  return r;
-}
-
-int64_t FileReaderRandom::randint(int64_t from, int64_t upto) {
-  std::string line;
-  getline(intReader, line);
-
-  int64_t r;
-  std::istringstream is(line);
-  if (!(is >> r)) {
-    throw IOException("end of line");
-  }
-
-  // std::cerr << "Read random.randint " << r << std::endl;
-  return r;
-}
-
-std::vector<int> *FileReaderRandom::sampleRange(int N, ::size_t count) {
-  std::vector<int> dummy;
-
-  return sample(dummy, count);
-}
-
-std::vector<std::vector<double> > FileReaderRandom::gamma(double p1, double p2,
-                                                          ::size_t n1,
-                                                          ::size_t n2) {
-  std::vector<std::vector<double> > a(n1, std::vector<double>(n2));
-
-  std::string line;
-
-  for (::size_t i = 0; i < n1; i++) {
-    getline(gammaReader, line);
-
-    std::istringstream is(line);
-    for (::size_t j = 0; j < n2; j++) {
-      if (!(is >> a[i][j])) {
-        throw IOException("end of line");
-      }
-    }
-  }
-  // std::cerr << "Read random.gamma[" << n1 << "x" << n2 << "] values" <<
-  // std::endl;
-
-  return a;
 }
 
 }  // namespace Random
