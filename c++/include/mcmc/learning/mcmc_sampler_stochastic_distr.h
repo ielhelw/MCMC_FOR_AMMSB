@@ -386,7 +386,7 @@ public:
 
 	void BroadcastHeldOut() {
 		int r;
-		::size_t my_held_out_size;
+		int32_t my_held_out_size;
 
 		if (mpi_rank == mpi_master) {
 			std::vector<int32_t> count(mpi_size);	// FIXME: lift to class
