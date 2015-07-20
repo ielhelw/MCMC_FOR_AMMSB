@@ -47,6 +47,7 @@ public:
 	 * the node ID first.
 	 */
 	virtual const Data *process() {
+#ifdef EDGESET_IS_ADJACENCY_LIST
 		FileHandle f(filename_, compressed_, "r");
 
 		// Read linked_edges
@@ -74,6 +75,9 @@ public:
 		header += "# FromNodeId\tToNodeId\n";
 
 		return new Data(NULL, E, N, header);
+#else
+		throw MCMCException(std::string(__func__) + "() not implemented for this graph representation");
+#endif
 	}
 
 };

@@ -380,7 +380,7 @@ public:
 	}
 
 	void save(const std::string &filename, bool compressed = false) const {
-#ifdef USE_GOOGLE_SPARSE_HASH
+#if defined EDGESET_IS_ADJACENCY_LIST && defined USE_GOOGLE_SPARSE_HASH
 		FileHandle f(filename, compressed, "w");
 		int32_t num_nodes = N;
 		f.write_fully(&num_nodes, sizeof num_nodes);
@@ -390,7 +390,7 @@ public:
 			rc.write_nopointer_data(f.handle());
 		}
 #else
-		throw MCMCException(__func__ + "() not implemented for this graph representation");
+		throw MCMCException(std::string(__func__) + "() not implemented for this graph representation");
 #endif
 	}
 

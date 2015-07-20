@@ -176,9 +176,11 @@ public:
 		fan_out_cumul_distro.resize(N);
 		f.read_fully(fan_out_cumul_distro.data(),
 					 fan_out_cumul_distro.size() * sizeof fan_out_cumul_distro[0]);
+#ifdef EDGESET_IS_ADJACENCY_LIST
 		cumulative_edges.resize(N);
 		f.read_fully(cumulative_edges.data(),
 					 cumulative_edges.size() * sizeof cumulative_edges[0]);
+#endif
 	}
 
 
@@ -210,8 +212,10 @@ public:
 		FileHandle f(filename, compressed, "w");
 		f.write_fully(fan_out_cumul_distro.data(),
 					  fan_out_cumul_distro.size() * sizeof fan_out_cumul_distro[0]);
+#ifdef EDGESET_IS_ADJACENCY_LIST
 		f.write_fully(cumulative_edges.data(),
 					  cumulative_edges.size() * sizeof cumulative_edges[0]);
+#endif
 	}
 
 
@@ -942,7 +946,7 @@ public:
 #ifdef EDGESET_IS_ADJACENCY_LIST
 		return (*linked_edges)[i].size();
 #else
-#  error Need to implement get_fan_out() for each node in the full graph
+		throw MCMCException(std::string(__func__) + "() not implemented for this graph representation");
 #endif
 	}
 
@@ -957,8 +961,7 @@ public:
 
 		return i;
 #else
-#  error Need to implement marshall_edges_from() for each node in the full graph
-		return 0;
+		throw MCMCException(std::string(__func__) + "() not implemented for this graph representation");
 #endif
 	}
 
