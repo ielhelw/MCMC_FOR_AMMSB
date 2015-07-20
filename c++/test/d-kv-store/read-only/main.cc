@@ -40,13 +40,6 @@ static double GB(::size_t n, ::size_t k) {
     (1 << 30);
 }
 
-
-namespace DKV {
-namespace DKVRDMA {
-extern struct ibv_device **global_dev_list;
-}
-}
-
 template <typename T>
 std::vector<const T*>& constify(std::vector<T*>& v) {
   // Compiler doesn't know how to automatically convert
@@ -358,14 +351,6 @@ protected:
 };
 
 int main(int argc, char *argv[]) {
-
-  int num_devices;
-  DKV::DKVRDMA::global_dev_list = ibv_get_device_list(&num_devices);
-  std::cerr << "IB devices: " << num_devices << std::endl;
-  for (int i = 0; i < num_devices; i++) {
-    std::cerr << "  IB device[" << i << "] device_name " << (void *)DKV::DKVRDMA::global_dev_list[0] << " " << DKV::DKVRDMA::global_dev_list[i]->dev_name << std::endl;
-  }
-
   std::cout << "Pid " << getpid() << " invoked with options: ";
   for (int i = 0; i < argc; ++i) {
     std::cout << argv[i] << " ";

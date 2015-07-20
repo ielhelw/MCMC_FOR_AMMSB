@@ -11,7 +11,6 @@ using namespace mcmc::preprocess;
 int main(int argc, char *argv[]) {
 	bool quiet;
 	std::string network_save;
-	double held_out_ratio;
 
 	boost::program_options::options_description options;
 	options.add_options()
@@ -21,9 +20,6 @@ int main(int argc, char *argv[]) {
 		("save,O",
 		 po::value<std::string>(&network_save),
 		 "save network in some native format")
-		("held-out-ratio,H",
-		 po::value<double>(&held_out_ratio)->default_value(0.0),
-		 "compress saved network file")
 		;
 
 	mcmc::Options mcmc_options(argc, argv, &options);
@@ -33,17 +29,10 @@ int main(int argc, char *argv[]) {
 	print_mem_usage(std::cerr);
 
 	Network network;
-	network.Init(mcmc_options, held_out_ratio);
+	network.Init(mcmc_options, mcmc_options.held_out_ratio);
 
 	std::cerr << duration_cast<milliseconds>((system_clock::now() - start)).count() << "ms read Network" << std::endl;
 	print_mem_usage(std::cerr);
-
-	std::cerr << "Network: N " << network.get_num_nodes() <<
-		" E " << network.get_num_linked_edges() <<
-		" max.fan-out " << network.get_max_fan_out() <<
-		" held-out set " << network.get_held_out_set().size() <<
-		" test set " << network.get_test_set().size() <<
-		std::endl;
 
 	const Data *data = network.get_data();
 	if (! quiet) {

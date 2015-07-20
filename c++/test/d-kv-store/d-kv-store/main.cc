@@ -12,6 +12,7 @@
 
 #include <mcmc/random.h>
 #include <mcmc/options.h>
+#include <mcmc/timer.h>
 
 #include <d-kv-store/file/DKVStoreFile.h>
 #ifdef ENABLE_RAMCLOUD
@@ -237,7 +238,6 @@ protected:
 };
 
 int main(int argc, char *argv[]) {
-
     mcmc::Options options(argc, argv);
 
 	DKV::TYPE::TYPE dkv_type;

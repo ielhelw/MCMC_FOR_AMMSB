@@ -28,8 +28,6 @@
 namespace DKV {
 namespace DKVRDMA {
 
-struct ibv_device **global_dev_list = NULL;
-
 #ifdef USE_MPI
 
 void DKVStoreRDMA::mpi_error_test(int r, const std::string &message) {

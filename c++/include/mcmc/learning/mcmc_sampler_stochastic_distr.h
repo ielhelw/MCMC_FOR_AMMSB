@@ -769,7 +769,7 @@ public:
 		std::cout << t_deploy_minibatch << std::endl;
 		std::cout << t_mini_batch << std::endl;
 		std::cout << t_nodes_in_mini_batch << std::endl;
-		std::cout << "  update_phi" << std::endl;
+		std::cout << "    update_phi" << std::endl;
 		std::cout << t_sample_neighbor_nodes << std::endl;
 		std::cout << t_load_pi_minibatch << std::endl;
 		std::cout << t_load_pi_neighbor << std::endl;
@@ -1208,7 +1208,6 @@ protected:
 			::size_t chunk = std::min(max_minibatch_chunk,
 									  nodes_.size() - chunk_start);
 
-std::cerr << "Now do " << __func__ << " chunk start " << chunk_start << " size " << chunk << std::endl;
 			std::vector<int32_t> chunk_nodes(nodes_.begin() + chunk_start,
 											 nodes_.begin() + chunk_start + chunk);
 
@@ -1270,6 +1269,9 @@ std::cerr << "Now do " << __func__ << " chunk start " << chunk_start << " size "
 						 double eps_t, Random::Random *rnd,
 						 std::vector<double> *phi_node	// out parameter
 						) {
+if (omp_get_thread_num() == 0) {
+std::cerr << __func__ << "(): omp num threads" << omp_get_num_threads() << std::endl;
+}
 		if (false) {
 			std::cerr << "update_phi pre ";
 			std::cerr << "phi[" << i << "] ";
@@ -1558,7 +1560,6 @@ std::cerr << "Now do " << __func__ << " chunk start " << chunk_start << " size "
 			::size_t chunk = std::min(max_perplexity_chunk,
 									  perp_.data_.size() - chunk_start);
 
-std::cerr << "Now do " << __func__ << " chunk start " << chunk_start << " size " << chunk << std::endl;
 			// chunk_size is about edges; nodes are at 2i and 2i+1
 			std::vector<int32_t> chunk_nodes(perp_.nodes_.begin() + 2 * chunk_start,
 											 perp_.nodes_.begin() + 2 * (chunk_start + chunk));
