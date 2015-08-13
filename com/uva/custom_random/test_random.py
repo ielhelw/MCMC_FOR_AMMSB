@@ -19,7 +19,7 @@ class Edge(object):
 rgen = custom_random.CustomRandom(42)
 
 sys.stdout.write("gamma(1.0, 1.0):\n")
-a = rgen.gamma(1.0, 1.0, 2, 4)
+a = rgen.gamma(1.0, 1.0, (2, 4))
 for r in a:
     for c in r:
         sys.stdout.write("%.12f " % c)

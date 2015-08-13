@@ -47,15 +47,14 @@ cdef class CustomRandom:
     def _gamma2(self, p1, p2):
         return self.thisptr.gamma(p1, p2)
     def _gamma3(self, p1, p2, n):
-        a = []
-        for x in xrange(0, n):
-            a.append(self._gamma2(p1, p2))
+        n1, n2 = n
+        a = [ [] for x in xrange(0, n1) ]
+        for x in xrange(0, n1):
+            for y in xrange(0, n2):
+                a[x].append(self._gamma2(p1, p2))
         return a
     def _gamma4(self, p1, p2, n1, n2):
-        a = []
-        for x in xrange(0, n1):
-            a.append(self._gamma3(p1, p2, n2))
-        return a
+        return self._gamma3(p1, p2, (n1, n2))
 
     def sample(self, *args, **kwargs):
         return getattr(self, "_sample" + str(len(args)))(*args, **kwargs)
@@ -70,11 +69,12 @@ cdef class CustomRandom:
     def _sample2(self, population, count):
         # result = polulation.__class__.__new__(population.__class__)
         accu = self._sample3(0, len(population), count)
-        result = population.__class__();
         i = 0
         # BEWARE! sort the population for order compatibility w/ mcmc::Random
+        rlist = []
         for p in sorted(population):
             if i in accu:
-                result.add(p)
+                rlist.append(p)
             i += 1
+        result = population.__class__(rlist);
         return result
