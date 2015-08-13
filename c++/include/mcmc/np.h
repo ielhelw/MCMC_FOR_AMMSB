@@ -5,6 +5,28 @@
 #include <cassert>
 
 #include <algorithm>
+#include <limits>
+
+
+#ifdef ENABLE_OPENMP
+#  include <omp.h>
+#else
+
+static int omp_get_max_threads() {
+	    return 1;
+}
+
+static int omp_get_thread_num() {
+	    return 0;
+}
+
+#ifdef ACTUALLY_USED
+static int omp_get_num_threads() {
+	    return 1;
+}
+#endif
+
+#endif
 
 
 namespace mcmc {
@@ -85,12 +107,88 @@ Type sum_abs(const std::vector<Type> &a, const std::vector<Type> &b) {
 	return diff;
 }
 
+#ifdef EFFICIENCY_FOLLOWS_PYTHON
 std::vector<int> xrange(int from, int upto) {
 	std::vector<int> r(upto - from);
 	for (int i = 0; i < upto - from; i++) {
 		r[i] = from + i;
 	}
 	return r;
+}
+#endif
+
+
+template <typename T>
+static ::ssize_t find_le_linear(const std::vector<T> &p,
+								T location,
+								::size_t up = std::numeric_limits< ::size_t>::max(),
+								::size_t lo = 0) {
+	if (up == std::numeric_limits< ::size_t>::max()) {
+		up = p.size();
+	}
+
+	::size_t i;
+	for (i = lo; i < up; i++) {
+		if (location <= p[i]) {
+			break;
+		}
+	}
+	if (up == i) {
+		return -1;
+	}
+
+	return i;
+}
+
+
+template <typename T>
+static ::ssize_t find_le(const std::vector<T> &p,
+						 T location,
+						 ::size_t up = std::numeric_limits< ::size_t>::max(),
+						 ::size_t lo = 0) {
+#ifdef EFFICIENCY_FOLLOWS_PYTHON
+	static const ::size_t LINEAR_LIMIT = std::numerc_limits< ::size_t>::max();
+#else
+	static const ::size_t LINEAR_LIMIT = 30;
+#endif
+
+	if (up == std::numeric_limits< ::size_t>::max()) {
+		up = p.size();
+	}
+
+	if (location > p[up - 1]) {
+		return -1;
+	}
+
+	::ssize_t res;
+	if (up - lo < LINEAR_LIMIT) {
+		res = find_le_linear(p, location, up, lo);
+	} else {
+#ifndef NDEBUG
+		::ssize_t lin = find_le_linear(p, location, up, lo);
+#endif
+		while (up - lo > 1) {
+			::size_t m = (lo + up) / 2;
+			assert(m < p.size());
+			if (location < p[m]) {
+				up = m;
+			} else {
+				lo = m;
+			}
+		}
+		if (location > p[lo]) {
+			res = up;
+		} else {
+			res = lo;
+		}
+		while (res > 0 && p[res] == p[res - 1]) {
+			res--;
+		}
+		assert(lin == res);
+	}
+	assert(location <= p[res]);
+	assert(res == 0 || location > p[res - 1]);
+	return res;
 }
 
 }	// namespace np

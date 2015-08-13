@@ -2,6 +2,7 @@
 #define MCMC_SAMPLE_LATENT_VARS_H__
 
 #include <cmath>
+#include <cassert>
 
 #include "mcmc/exception.h"
 #include "mcmc/random.h"
@@ -37,19 +38,16 @@ int sample_z_ab_from_edge(int y, const std::vector<double> &pi_a,
 			// p_i = b_i * pa_i * pb_i + eps * pa_i * (1 - pb_i)
 			//     = pa_i * pb_i * (b_i - eps) + eps * pa_i
 			//     = pa_i * (pb_i * (b_i - eps) + eps)
-			double tmp = beta[i] * pi_a[i] * pi_b[i];
-			tmp += epsilon * pi_a[i] * (1.0 - pi_b[i]);
-			p[i] = tmp;
+			p[i] = pi_a[i] * (pi_b[i] * (beta[i] - epsilon) + epsilon);
 		}
 	} else {
+		double one_eps = 1.0 - epsilon;
 		for (::size_t i = 0; i < K; i++) {
 			// p_i = (1 - b_i) * pa_i * pb_i + (1 - eps) * pa_i (1 - pb_i)
 			//     = pa_i * pb_i * (1 - b_i - (1 - eps)) + (1 - eps) * pa_i
 			//     = pa_i * (pb_i * (1 - b_i - (1 - eps)) + (1 - eps))
 			//     = pa_i * (pb_i * (eps - b_i) + (1 - eps))
-			double tmp = (1.0 - beta[i]) * pi_a[i] * pi_b[i];
-			tmp += (1.0 - epsilon) * pi_a[i] * (1.0 - pi_b[i]);
-			p[i] = tmp;
+			p[i] = pi_a[i] * (pi_b[i] * (epsilon - beta[i]) + one_eps);
 		}
 	}
 #endif
@@ -60,6 +58,7 @@ int sample_z_ab_from_edge(int y, const std::vector<double> &pi_a,
 
     double r = Random::random->random();
     double location = r * p[K-1];
+#if 0
     // get the index of bounds that containing location.
     for (::size_t i = 0; i < K; i++) {
 		if (location <= p[i]) {
@@ -71,6 +70,9 @@ int sample_z_ab_from_edge(int y, const std::vector<double> &pi_a,
 
     // failed, should not happen!
     return -1;
+#else
+	return np::find_le(p, location);
+#endif
 }
 
 }	// namespace mcmc

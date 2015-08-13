@@ -1,3 +1,5 @@
+DEPRECATED, PLEASE REMOVE!
+
 /*
  * Copyright notice goes here
  */
@@ -24,7 +26,8 @@ namespace preprocess {
 
 class HepPH : public DataSet {
 public:
-	HepPH(const std::string &filename) : DataSet(filename == "" ?  "datasets/CA-HepPh.txt" : filename) {
+	HepPH(const std::string &filename)
+			: DataSet(filename == "" ?  "datasets/CA-HepPh.txt" : filename) {
 	}
 
 	virtual ~HepPH() {
@@ -32,8 +35,8 @@ public:
 
 	/**
 	 * The data is stored in .txt file. The format of data is as follows, the first column
-	 * is line number. Within each line, it is tab separated. 
-	 * 
+	 * is line number. Within each line, it is tab separated.
+	 *
 	 * [1] some texts
 	 * [2] some texts
 	 * [3] some texts
@@ -42,14 +45,14 @@ public:
 	 * [6] 1    103
 	 * [7] 4    400
 	 * [8] ............
-	 * 
+	 *
 	 * However, the node ID is not increasing by 1 every time. Thus, we re-format
-	 * the node ID first. 
+	 * the node ID first.
 	 */
-	virtual const mcmc::Data *process() {
-		std::ifstream infile(filename);
+	virtual const Data *process() {
+		std::ifstream infile(filename_);
 		if (! infile) {
-			throw mcmc::IOException("Cannot open " + filename);
+			throw mcmc::IOException("Cannot open " + filename_);
 		}
 
 		std::string line;
@@ -58,40 +61,40 @@ public:
 		}
 
 		// start from the 5th line.
-		std::set<int> vertex;	// ordered set
+		std::set<Vertex> vertex;	// ordered set
 		std::vector<mcmc::Edge> edge;
 		while (std::getline(infile, line)) {
-			int a;
-			int b;
+			Vertex a;
+			Vertex b;
 			std::istringstream iss(line);
 			if (! (iss >> a >> b)) {
-				throw mcmc::IOException("Fail to parse int");
+				throw mcmc::IOException("Fail to parse Vertex");
 			}
 			vertex.insert(a);
 			vertex.insert(b);
 			edge.push_back(Edge(a, b));
 		}
 
-		std::vector<int> nodelist(vertex.begin(), vertex.end()); // use range constructor, retain order
+		std::vector<Vertex> nodelist(vertex.begin(), vertex.end()); // use range constructor, retain order
 
 		::size_t N = nodelist.size();
 
 		// change the node ID to make it start from 0
-		std::unordered_map<int, int> node_id_map;
-		int i = 0;
-		for (std::vector<int>::iterator node_id = nodelist.begin();
+		std::unordered_map<Vertex, Vertex> node_id_map;
+		Vertex i = 0;
+		for (std::vector<Vertex>::iterator node_id = nodelist.begin();
 			 	node_id != nodelist.end();
 				node_id++) {
 			node_id_map[*node_id] = i;
 			i++;
 		}
 
-		mcmc::EdgeSet *E = new mcmc::EdgeSet();	// store all pair of edges.
+		mcmc::NetworkGraph *E = new mcmc::NetworkGraph();	// store all pair of edges.
 		for (std::vector<Edge>::iterator i = edge.begin();
 				 i != edge.end();
 				 i++) {
-			int node1 = node_id_map[i->first];
-			int node2 = node_id_map[i->second];
+			Vertex node1 = node_id_map[i->first];
+			Vertex node2 = node_id_map[i->second];
 			if (node1 == node2) {
 				continue;
 			}
@@ -101,7 +104,7 @@ public:
 			E->insert(Edge(std::min(node1, node2), std::max(node1, node2)));
 		}
 
-		return new mcmc::Data(NULL, E, N);
+		return new Data(NULL, E, N);
 	}
 };
 

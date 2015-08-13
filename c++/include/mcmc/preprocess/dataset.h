@@ -26,8 +26,8 @@ namespace preprocess {
  */
 class DataSet {
 public:
-	DataSet(const std::string &filename) : filename(filename) {
-		std::cerr << "Handle input dataset from file " << filename << std::endl;
+	DataSet(const std::string &filename) : filename_(filename) {
+		std::cerr << "Handle input dataset from file " << filename_ << std::endl;
 	}
 
 	virtual ~DataSet() {
@@ -43,8 +43,23 @@ public:
 	 */
 	virtual const ::mcmc::Data *process() = 0;
 
+	void setCompressed(bool on) {
+		compressed_ = on;
+	}
+
+	void setContiguous(bool on) {
+		contiguous_ = on;
+	}
+
+	void setProgress(::size_t progress) {
+		progress_ = progress;
+	}
+
 protected:
-	std::string filename;
+	std::string filename_;
+	bool compressed_;
+	bool contiguous_;
+	::size_t progress_;
 };
 
 } 	// namespace preprocess

@@ -1,6 +1,6 @@
 SUBDIRS	+= src
 
-.PHONY: default
+.PHONY: default clean
 
 default clean:
 	for d in $(SUBDIRS); do \

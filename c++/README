@@ -1,0 +1,8 @@
+OpenMP seems not to work together with MvaPIch2. It has single-threaded performance.
+OpenMPI seems to work fine. Don't know whether it has an RDMA implementation?
+
+To be determined:
+ - does OpenMP work with RamCloud?
+ - does OpenMPI work with RamCloud?
+ - does OpenMP work with our to-be-determined RDMA D-KV-store?
+ - does OpenMPI work with our to-be-determined RDMA D-KV-store?

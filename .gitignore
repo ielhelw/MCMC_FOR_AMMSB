@@ -5,6 +5,8 @@ __pycache__/
 # C extensions
 com/uva/*.so
 com/uva/*.c
+com/uva/custom_random/*.so
+com/uva/custom_random/*.cpp
 
 # Distribution / packaging
 .Python
@@ -14,8 +16,6 @@ build/
 develop-eggs/
 dist/
 eggs/
-lib/
-lib64/
 parts/
 sdist/
 var/
@@ -52,3 +52,6 @@ coverage.xml
 
 # Sphinx documentation
 docs/_build/
+
+# 3rdparty pulls
+c++/3rdparty/vexcl

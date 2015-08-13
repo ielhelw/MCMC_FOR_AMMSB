@@ -10,16 +10,34 @@
 
 #include "mcmc/np.h"
 #include "mcmc/random.h"
-// #include "mcmc/sample_latent_vars.h"
+#include "mcmc/timer.h"
 
 #include "mcmc/learning/learner.h"
-#include "mcmc/learning/mcmc_sampler_batch.h"
 
 namespace mcmc {
 namespace learning {
 
-// typedef std::unordered_map<Edge, int>	EdgeMapZ;
-typedef std::map<Edge, int>	EdgeMapZ;
+#ifdef UNUSED
+#ifdef RANDOM_FOLLOWS_CPP
+#define EDGEMAP_IS_VECTOR
+#endif
+
+// EDGEMAP_IS_VECTOR is a more efficient implementation anyway
+#ifdef EDGEMAP_IS_VECTOR
+typedef std::vector<int>    EdgeMapZ;
+#else
+// typedef std::map<Edge, int>	EdgeMapZ;
+typedef std::unordered_map<Edge, int>   EdgeMapZ;
+#endif
+#endif
+
+#ifdef RANDOM_FOLLOWS_SCALABLE_GRAPH
+#  define NEIGHBOR_SET_IS_VECTOR
+typedef std::vector<Vertex> NeighborSet;
+#else
+typedef OrderedVertexSet NeighborSet;
+#endif
+
 
 class MCMCSamplerStochastic : public Learner {
 public:
@@ -51,29 +69,66 @@ public:
     parameters for each iteration, here we only use mini-batch (subset) of the examples.
     This method is great marriage between MCMC and stochastic methods.
     */
-    MCMCSamplerStochastic(const Options &args, const Network &graph)
-			: Learner(args, graph) {
+    MCMCSamplerStochastic(const Options &args)
+			: Learner(args),
+#ifdef RANDOM_FOLLOWS_CPP_WENZHE
+			kernelRandom(Random::random)
+#else
+			kernelRandom(new Random::Random(42))
+#endif
+	{
+#ifdef RANDOM_FOLLOWS_CPP
+		std::cerr << "RANDOM_FOLLOWS_CPP enabled" << std::endl;
+#endif
+#ifdef EFFICIENCY_FOLLOWS_CPP_WENZHE
+		std::cerr << "EFFICIENCY_FOLLOWS_CPP_WENZHE enabled" << std::endl;
+#  ifndef RANDOM_FOLLOWS_CPP_WENZHE
+#    define RANDOM_FOLLOWS_CPP_WENZHE
+#  endif
+#endif
+#ifdef RANDOM_FOLLOWS_CPP_WENZHE
+		std::cerr << "RANDOM_FOLLOWS_CPP_WENZHE enabled" << std::endl;
+#endif
+#ifdef RANDOM_SYSTEM
+		std::cerr << "RANDOM_SYSTEM enabled" << std::endl;
+#endif
 
         // step size parameters.
-        this->a = args.a;
-        this->b = args.b;
-        this->c = args.c;
+        this->a = args_.a;
+        this->b = args_.b;
+        this->c = args_.c;
 
         // control parameters for learning
-        // num_node_sample = static_cast< ::size_t>(std::sqrt(network.get_num_nodes()));
+        //num_node_sample = static_cast< ::size_t>(std::sqrt(network.get_num_nodes()));
+		if (args_.num_node_sample == 0) {
+			// TODO: automative update..... 
+			num_node_sample = N/50;
+		} else {
+			num_node_sample = args_.num_node_sample;
+		}
+		if (args_.interval == 0) {
+			interval = 50;
+		} else {
+			interval = args_.interval;
+		}
+		if (args_.mini_batch_size == 0) {
+			mini_batch_size = N / 10;   // old default for STRATIFIED_RANDOM_NODE_SAMPLING
+		}
+		std::cerr << "num_node_sample " << num_node_sample << " a " << a << " b " << b << " c " << c << " alpha " << alpha << " eta (" << eta[0] << "," << eta[1] << ")" << std::endl;
 
-		num_node_sample = N / 5;
+		info(std::cout);
+	}
 
+	virtual void init() {
         // model parameters and re-parameterization
         // since the model parameter - \pi and \beta should stay in the simplex,
         // we need to restrict the sum of probability equals to 1.  The way we
         // restrict this is using re-reparameterization techniques, where we
         // introduce another set of variables, and update them first followed by
         // updating \pi and \beta.
-		std::cerr << "Ignore eta[] in random.gamma: use 100.0 and 0.01" << std::endl;
-		// theta = Random::random->gamma(eta[0], eta[1], K, 2);		// parameterization for \beta
-		theta = Random::random->gamma(100.0, 0.01, K, 2);		// parameterization for \beta
-		phi = Random::random->gamma(1, 1, N, K);					// parameterization for \pi
+		theta = kernelRandom->gamma(eta[0], eta[1], K, 2);		// parameterization for \beta
+		// std::cerr << "Ignore eta[] in random.gamma: use 100.0 and 0.01" << std::endl;
+		// theta = kernelRandom->gamma(100.0, 0.01, K, 2);		// parameterization for \beta
 
 		// FIXME RFHH -- code sharing with variational_inf*::update_pi_beta()
         // temp = self.__theta/np.sum(self.__theta,1)[:,np.newaxis]
@@ -81,31 +136,136 @@ public:
 		std::vector<std::vector<double> > temp(theta.size(), std::vector<double>(theta[0].size()));
 		np::row_normalize(&temp, theta);
 		std::transform(temp.begin(), temp.end(), beta.begin(), np::SelectColumn<double>(1));
+
+		phi = kernelRandom->gamma(1, 1, N, K);					// parameterization for \pi
+		std::cerr << "Done host random for phi" << std::endl;
+#ifndef NDEBUG
+        for (auto pph : phi) {
+          for (auto ph : pph) {
+            assert(ph >= 0.0);
+          }
+        }
+#endif
         // self._pi = self.__phi/np.sum(self.__phi,1)[:,np.newaxis]
 		pi.resize(phi.size(), std::vector<double>(phi[0].size()));
 		np::row_normalize(&pi, phi);
+
+		if (true) {
+			std::cout << std::fixed << std::setprecision(12) << "beta[0] " << beta[0] << std::endl;
+		} else {
+			std::cerr << "beta ";
+			for (::size_t k = 0; k < K; k++) {
+				std::cerr << std::fixed << std::setprecision(12) << beta[k] << " ";
+			}
+			std::cerr << std::endl;
+		}
+
+		if (false) {
+			std::cout << "theta[*][0]: ";
+			for (::size_t k = 0; k < K; k++) {
+				std::cout << std::fixed << std::setprecision(12) << theta[k][0] << " ";
+			}
+			std::cout << std::endl;
+			std::cout << "theta[*][1]: ";
+			for (::size_t k = 0; k < K; k++) {
+				std::cout << std::fixed << std::setprecision(12) << theta[k][1] << " ";
+			}
+			std::cout << std::endl;
+		}
+		std::cout << "phi[0][0] " << phi[0][0] << std::endl;
+		if (false) {
+			std::cout << "pi[0] ";
+			for (::size_t k = 0; k < K; k++) {
+				std::cout << pi[0][k] << " ";
+			}
+			std::cout << std::endl;
+		}
+
+		if (true) {
+			for (::size_t i = 0; i < 10; i++) {
+				std::cerr << "phi[" << i << "]: ";
+				for (::size_t k = 0; k < 10; k++) {
+					std::cerr << std::fixed << std::setprecision(12) << phi[i][k] << " ";
+				}
+				std::cerr << std::endl;
+				std::cerr << "pi[" << i << "]: ";
+				for (::size_t k = 0; k < 10; k++) {
+					std::cerr << std::fixed << std::setprecision(12) << pi[i][k] << " ";
+				}
+				std::cerr << std::endl;
+			}
+		}
+
+        std::cerr << "Random seed " << std::hex << "0x" << kernelRandom->seed(0) << ",0x" << kernelRandom->seed(1) << std::endl << std::dec;
+		std::cerr << "Done constructor" << std::endl;
 	}
 
 	virtual ~MCMCSamplerStochastic() {
+#ifndef RANDOM_FOLLOWS_CPP_WENZHE
+		delete kernelRandom;
+#endif
 	}
 
     virtual void run() {
         /** run mini-batch based MCMC sampler, based on the sungjin's note */
+		timer::Timer t_outer("  outer");
+		timer::Timer t_perplexity("  perplexity");
+		timer::Timer t_mini_batch("  sample_mini_batch");
+		timer::Timer t_nodes_in_mini_batch("  nodes_in_mini_batch");
+		timer::Timer t_sample_neighbor_nodes("  sample_neighbor_nodes");
+		timer::Timer t_update_phi("  update_phi");
+		timer::Timer t_update_pi("  update_pi");
+		timer::Timer t_update_beta("  update_beta");
+		timer::Timer::setTabular(true);
 
-		if (step_count % 1 == 0) {
-			double ppx_score = cal_perplexity_held_out();
-			std::cout << std::fixed << std::setprecision(15) << "perplexity for hold out set is: " << ppx_score << std::endl;
-			ppxs_held_out.push_back(ppx_score);
-#if 0
-			if (ppx_score < 5.0) {
-				stepsize_switch = true;
-				//print "switching to smaller step size mode!"
-			}
-#endif
-		}
+        using namespace std::chrono;
 
+		clock_t t1, t2;
+		std::vector<double> timings;
+		t1 = clock();
         while (step_count < max_iteration && ! is_converged()) {
+			t_outer.start();
 			auto l1 = std::chrono::system_clock::now();
+			//if (step_count > 200000){
+				//interval = 2;
+			//}
+			if (step_count % interval == 0) {
+				t_perplexity.start();
+				double ppx_score = cal_perplexity_held_out();
+				t_perplexity.stop();
+				std::cout << std::fixed << std::setprecision(12) << "step count: " << step_count << " perplexity for hold out set: " << ppx_score << std::endl;
+				ppxs_held_out.push_back(ppx_score);
+
+				t2 = clock();
+				double diff = (double)t2 - (double)t1;
+				double seconds = diff / CLOCKS_PER_SEC;
+				timings.push_back(seconds);
+				iterations.push_back(step_count);
+#if 0
+				if (ppx_score < 5.0) {
+					stepsize_switch = true;
+					//print "switching to smaller step size mode!"
+				}
+#endif
+			}
+
+			// write into file
+			if (step_count % 2000 == 1) {
+				if (false) {
+					std::ofstream myfile;
+					std::string file_name = "mcmc_stochastic_" + to_string (K) + "_num_nodes_" + to_string(num_node_sample) + "_us_air.txt";
+					myfile.open (file_name);
+					int size = ppxs_held_out.size();
+					for (int i = 0; i < size; i++){
+
+						//int iteration = i * 100 + 1;
+						myfile <<iterations[i]<<"    "<<timings[i]<<"    "<<ppxs_held_out[i]<<"\n";
+					}
+
+					myfile.close();
+				}
+			}
+
             //print "step: " + str(self._step_count)
             /**
             pr = cProfile.Profile()
@@ -113,311 +273,319 @@ public:
              */
 
             // (mini_batch, scale) = self._network.sample_mini_batch(self._mini_batch_size, "stratified-random-node")
+			// std::cerr << "Invoke sample_mini_batch" << std::endl;
+			t_mini_batch.start();
 			EdgeSample edgeSample = network.sample_mini_batch(mini_batch_size, strategy::STRATIFIED_RANDOM_NODE);
-			const OrderedEdgeSet &mini_batch = *edgeSample.first;
+			t_mini_batch.stop();
+			if (false) {
+				std::cerr << "Minibatch: ";
+				for (auto e : *edgeSample.first) {
+					std::cerr << e << " ";
+				}
+				std::cerr << std::endl;
+			}
+			// std::cerr << "Done sample_mini_batch" << std::endl;
+			const MinibatchSet &mini_batch = *edgeSample.first;
 			double scale = edgeSample.second;
 
-			std::unordered_map<int, std::vector<int> > latent_vars;
-			std::unordered_map<int, ::size_t> size;
+			//std::unordered_map<Vertex, std::vector<int> > latent_vars;
+			//std::unordered_map<Vertex, ::size_t> size;
 
             // iterate through each node in the mini batch.
+			t_nodes_in_mini_batch.start();
 			OrderedVertexSet nodes = nodes_in_batch(mini_batch);
+			t_nodes_in_mini_batch.stop();
+// std::cerr << "mini_batch size " << mini_batch.size() << " num_node_sample " << num_node_sample << std::endl;
 
-			sample_latent_vars_stub(nodes, size, latent_vars);
-
-			update_pi_for_node_stub(nodes, size, latent_vars, scale);
-
-            // sample (z_ab, z_ba) for each edge in the mini_batch.
-            // z is map structure. i.e  z = {(1,10):3, (2,4):-1}
-			EdgeMapZ z = sample_latent_vars2(mini_batch);
-            update_beta(mini_batch, scale, z);
-
-
-            if (step_count % 1 == 0) {
-                double ppx_score = cal_perplexity_held_out();
-				std::cout << "perplexity for hold out set is: " << ppx_score << std::endl;
-                ppxs_held_out.push_back(ppx_score);
-#if 0
-                if (ppx_score < 5.0) {
-                    stepsize_switch = true;
-                    //print "switching to smaller step size mode!"
-				}
+#ifndef EFFICIENCY_FOLLOWS_CPP_WENZHE
+			double eps_t  = a * std::pow(1 + step_count / b, -c);	// step size
+			// double eps_t = std::pow(1024+step_count, -0.5);
 #endif
+
+			// ************ do in parallel at each host
+			// std::cerr << "Sample neighbor nodes" << std::endl;
+			// FIXME: nodes_in_batch should generate a vector, not an OrderedVertexSet
+			std::vector<Vertex> node_vector(nodes.begin(), nodes.end());
+			for (::size_t n = 0; n < node_vector.size(); ++n) {
+				Vertex node = node_vector[n];
+				t_sample_neighbor_nodes.start();
+				// sample a mini-batch of neighbors
+				NeighborSet neighbors = sample_neighbor_nodes(num_node_sample, node, kernelRandom);
+				t_sample_neighbor_nodes.stop();
+
+                // std::cerr << "Random seed " << std::hex << "0x" << kernelRandom->seed(0) << ",0x" << kernelRandom->seed(1) << std::endl << std::dec;
+				t_update_phi.start();
+				update_phi(node, neighbors
+#ifndef EFFICIENCY_FOLLOWS_CPP_WENZHE
+						   , eps_t
+#endif
+						   );
+				t_update_phi.stop();
 			}
+
+			// ************ do in parallel at each host
+			t_update_pi.start();
+#if defined EFFICIENCY_FOLLOWS_CPP_WENZHE
+			// std::cerr << __func__ << ":" << __LINE__ << ":  FIXME" << std::endl;
+			np::row_normalize(&pi, phi);	// update pi from phi.
+#else
+			// No need to update pi where phi is unchanged
+			for (auto i: nodes) {
+				np::normalize(&pi[i], phi[i]);
+			}
+#endif
+			t_update_pi.stop();
+
+			t_update_beta.start();
+            update_beta(mini_batch, scale);
+			t_update_beta.stop();
 
 			delete edgeSample.first;
 
             step_count++;
+			t_outer.stop();
 			auto l2 = std::chrono::system_clock::now();
-			std::cout << "LOOP  = " << (l2-l1).count() << std::endl;
-
-            /**
-            pr.disable()
-            s = StringIO.StringIO()
-            sortby = 'cumulative'
-            ps = pstats.Stats(pr, stream=s).sort_stats(sortby)
-            ps.print_stats()
-            print s.getvalue()
-             */
+			if (false) {
+				std::cout << "LOOP  = " << (l2-l1).count() << std::endl;
+			}
 		}
+
+		timer::Timer::printHeader(std::cout);
+		std::cout << t_outer << std::endl;
+		std::cout << t_perplexity << std::endl;
+		std::cout << t_mini_batch << std::endl;
+		std::cout << t_nodes_in_mini_batch << std::endl;
+		std::cout << t_sample_neighbor_nodes << std::endl;
+		std::cout << t_update_phi << std::endl;
+		std::cout << t_update_pi << std::endl;
+		std::cout << t_update_beta << std::endl;
 	}
 
 
 protected:
 
-    void sample_latent_vars_stub(const OrderedVertexSet& nodes,
-    			std::unordered_map<int, ::size_t>& size,
-    			std::unordered_map<int, std::vector<int> >& latent_vars) {
-    	for (auto node = nodes.begin();
-				node != nodes.end();
-				node++) {
-			// sample a mini-batch of neighbors
-			OrderedVertexSet neighbor_nodes = sample_neighbor_nodes(num_node_sample, *node);
-			size[*node] = neighbor_nodes.size();
-			// sample latent variables z_ab for each pair of nodes
-			std::vector<int> z = this->sample_latent_vars(*node, neighbor_nodes);
-			// save for a while, in order to update together.
-			latent_vars[*node] = z;
-		}
-    }
-
-    void update_pi_for_node_stub(const OrderedVertexSet& nodes,
-			std::unordered_map<int, ::size_t>& size,
-			std::unordered_map<int, std::vector<int> >& latent_vars,
-			double scale) {
-    	// update pi for each node
-		for (auto node = nodes.begin();
-				node != nodes.end();
-				node++) {
-			update_pi_for_node(*node, latent_vars[*node], size[*node], scale);
-		}
-    }
-
-
-	// FIXME lots of code sharing w/ mcmc_sampler_batch
-    void update_beta(const OrderedEdgeSet &mini_batch, double scale, const EdgeMapZ &z) {
-        /**
-        update beta for mini_batch.
-         */
-		double eps_t = a * std::pow(1.0 + step_count / b, -c);
+    void update_beta(const MinibatchSet &mini_batch, double scale) {
 
 		std::vector<std::vector<double> > grads(K, std::vector<double>(2, 0.0));	// gradients K*2 dimension
+		std::vector<double> probs(K);
         // sums = np.sum(self.__theta,1)
-		std::vector<double> sums(theta.size());
-		std::transform(theta.begin(), theta.end(), sums.begin(), np::sum<double>);
-		std::vector<std::vector<double> > noise = Random::random->randn(K, 2);	// random noise.
+		std::vector<double> theta_sum(theta.size());
+		std::transform(theta.begin(), theta.end(), theta_sum.begin(), np::sum<double>);
 
-        for (EdgeMapZ::const_iterator edge = z.begin();
-			 	edge != z.end();
-				edge++) {
-            int y_ab = 0;
-            if (edge->first.in(network.get_linked_edges())) {
-                y_ab = 1;
+		// update gamma, only update node in the grad
+		double eps_t = a * std::pow(1.0 + step_count / b, -c);
+		//double eps_t = std::pow(1024+step_count, -0.5);
+		for (auto edge = mini_batch.begin(); edge != mini_batch.end(); edge++) {
+            int y = 0;
+            if (edge->in(network.get_linked_edges())) {
+                y = 1;
 			}
-            int k = edge->second;
-            // if k==-1 means z_ab != z_ba => gradient is 0.
-            if (k == -1) {
-                continue;
+			int i = edge->first;
+			int j = edge->second;
+
+			double pi_sum = 0.0;
+			for (::size_t k = 0; k < K; k++) {
+				pi_sum += pi[i][k] * pi[j][k];
+#ifdef EFFICIENCY_FOLLOWS_CPP_WENZHE
+				probs[k] = std::pow(beta[k], y) * std::pow(1 - beta[k], 1 - y) * pi[i][k] * pi[j][k];
+#else
+				double f = pi[i][k] * pi[j][k];
+				if (y == 1) {
+					probs[k] = beta[k] * f;
+				} else {
+					probs[k] = (1.0 - beta[k]) * f;
+				}
+#endif
 			}
 
-            grads[k][0] += std::abs(1-y_ab) / theta[k][0] - 1 / sums[k];
-            grads[k][1] += std::abs(-y_ab) / theta[k][1] - 1 / sums[k];
+#if defined EFFICIENCY_FOLLOWS_CPP_WENZHE
+			double prob_0 = std::pow(epsilon, y) * std::pow(1 - epsilon, 1 - y) * (1 - pi_sum);
+			double prob_sum = np::sum(probs) + prob_0;
+			for (::size_t k = 0; k < K; k++) {
+				grads[k][0] += (probs[k] / prob_sum) * (std::abs(1 - y) / theta[k][0] - 1 / theta_sum[k]);
+				grads[k][1] += (probs[k] / prob_sum) * (std::abs(-y) / theta[k][1] - 1 / theta_sum[k]);
+			}
+#else
+			double prob_0 = ((y == 1) ? epsilon : (1.0 - epsilon)) * (1.0 - pi_sum);
+			double prob_sum = np::sum(probs) + prob_0;
+			for (::size_t k = 0; k < K; k++) {
+				double f = probs[k] / prob_sum;
+				double one_over_theta_sum = 1.0 / theta_sum[k];
+				grads[k][0] += f * ((1 - y) / theta[k][0] - one_over_theta_sum);
+				grads[k][1] += f * (y / theta[k][1] - one_over_theta_sum);
+			}
+#endif
 		}
 
-        //if (mini_batch.size() < 1) {
-		//	scale = 1;
-		//} else {
-        //	scale = (N * (N-1)/2)/mini_batch.size();
-		//}
         // update theta
-		std::vector<std::vector<double> > theta_star(theta);
+		std::vector<std::vector<double> > noise = kernelRandom->randn(K, 2);	// random noise.
+		// std::vector<std::vector<double> > theta_star(theta);
         for (::size_t k = 0; k < K; k++) {
             for (::size_t i = 0; i < 2; i++) {
 #ifdef EFFICIENCY_FOLLOWS_PYTHON
 				// FIXME rewrite a**0.5 * b**0.5 as sqrt(a * b)
-                theta_star[k][i] = std::abs(theta[k][i] + eps_t * (eta[i] - theta[k][i] + \
-																   scale * grads[k][i]) +
-										   	std::pow(2.0 * eps_t, .5) * std::pow(theta[k][i], .5) * noise[k][i]);
+				theta[k][i] = std::abs(theta[k][i] + eps_t / 2 * (eta[i] - theta[k][i] + \
+																  scale * grads[k][i]) +
+									   std::pow(eps_t, .5) * std::pow(theta[k][i], .5) * noise[k][i]);
 #else
-                theta_star[k][i] = std::abs(theta[k][i] + eps_t * (eta[i] - theta[k][i] + \
-																   scale * grads[k][i]) +
-										   	sqrt(2.0 * eps_t * theta[k][i]) * noise[k][i]);
+				double f = std::sqrt(eps_t * theta[k][i]);
+				theta[k][i] = std::abs(theta[k][i] + eps_t / 2.0 * (eta[i] - theta[k][i] + \
+																	scale * grads[k][i]) +
+									   f * noise[k][i]);
 #endif
 			}
 		}
 
-		theta = theta_star;
 		// temp = self.__theta/np.sum(self.__theta,1)[:,np.newaxis]
 		// self._beta = temp[:,1]
 		std::vector<std::vector<double> > temp(theta.size(), std::vector<double>(theta[0].size()));
 		np::row_normalize(&temp, theta);
 		std::transform(temp.begin(), temp.end(), beta.begin(), np::SelectColumn<double>(1));
+
+        if (false) {
+          for (auto n : noise) {
+            std::cerr << "noise ";
+            for (auto b : n) {
+              std::cerr << std::fixed << std::setprecision(12) << b << " ";
+            }  
+            std::cerr << std::endl;
+          }
+          std::cerr << "beta ";
+          for (auto b : beta) {
+            std::cerr << std::fixed << std::setprecision(12) << b << " ";
+          }
+          std::cerr << std::endl;
+        }
 	}
 
 
-    void update_pi_for_node(int i, const std::vector<int> &z, int n, double scale) {
-        /**
-        update pi for current node i.
-         */
-        // update gamma, only update node in the grad
-		double eps_t;
-        // if (! stepsize_switch) {
-        //     eps_t = std::pow(1024+step_count, -0.5);
-		// } else {
-            eps_t  = a * std::pow(1 + step_count / b, -c);
-		// }
+    void update_phi(Vertex i, const NeighborSet &neighbors
+#ifndef EFFICIENCY_FOLLOWS_CPP_WENZHE
+						   , double eps_t
+#endif
+					) {
+#ifdef EFFICIENCY_FOLLOWS_CPP_WENZHE
+		double eps_t  = a * std::pow(1 + step_count / b, -c);	// step size
+		// double eps_t = std::pow(1024+step_count, -0.5);
+#endif
 
-		std::vector<double> phi_star(phi[i]);					// updated \phi
+		if (false) {
+			std::cerr << "update_phi pre phi[" << i << "] ";
+			for (::size_t k = 0; k < K; k++) {
+				std::cerr << std::fixed << std::setprecision(12) << phi[i][k] << " ";
+			}
+			std::cerr << std::endl;
+			std::cerr << "pi[" << i << "] ";
+			for (::size_t k = 0; k < K; k++) {
+				std::cerr << std::fixed << std::setprecision(12) << pi[i][k] << " ";
+			}
+			std::cerr << std::endl;
+			for (auto n: neighbors) {
+				std::cerr << "pi[" << n << "] ";
+				for (::size_t k = 0; k < K; k++) {
+					std::cerr << std::fixed << std::setprecision(12) << pi[n][k] << " ";
+				}
+				std::cerr << std::endl;
+			}
+		}
+
 		double phi_i_sum = np::sum(phi[i]);
-		std::vector<double> noise = Random::random->randn(K);	// random noise.
+        std::vector<double> grads(K, 0.0);	// gradient for K classes
+		// std::vector<double> phi_star(K);					// temp vars
 
-        // get the gradients
-        // grads = [-n * 1/phi_i_sum * j for j in np.ones(self._K)]
-        std::vector<double> grads(K, -n * 1.0/phi_i_sum);
-        for (::size_t k = 0; k < K; k++) {
-            grads[k] += 1.0 / phi[i][k] * z[k];
+		for (auto neighbor: neighbors) {
+			if (i == neighbor) {
+				continue;
+			}
+
+			int y_ab = 0;		// observation
+			Edge edge(std::min(i, neighbor), std::max(i, neighbor));
+			if (edge.in(network.get_linked_edges())) {
+				y_ab = 1;
+			}
+
+			std::vector<double> probs(K);
+#if ! defined EFFICIENCY_FOLLOWS_CPP_WENZHE
+			double e = (y_ab == 1) ? epsilon : 1.0 - epsilon;
+#endif
+			for (::size_t k = 0; k < K; k++) {
+#if defined EFFICIENCY_FOLLOWS_CPP_WENZHE
+				probs[k] = std::pow(beta[k], y_ab) * std::pow(1 - beta[k], 1 - y_ab) * pi[i][k] * pi[neighbor][k];
+				probs[k] += std::pow(epsilon, y_ab) * std::pow(1 - epsilon, 1 - y_ab) * pi[i][k] * (1 - pi[neighbor][k]);
+#else
+				double f = (y_ab == 1) ? (beta[k] - epsilon) : (epsilon - beta[k]);
+				probs[k] = pi[i][k] * (pi[neighbor][k] * f + e);
+#endif
+			}
+
+			double prob_sum = np::sum(probs);
+			for (::size_t k = 0; k < K; k++) {
+				grads[k] += (probs[k] / prob_sum) / phi[i][k] - 1.0 / phi_i_sum;
+			}
 		}
 
-        // update the phi
+		std::vector<double> noise = kernelRandom->randn(K);	// random gaussian noise.
+		if (false) {
+			for (::size_t k = 0; k < K; ++k) {
+				std::cerr << "randn " << std::fixed << std::setprecision(12) << noise[k] << std::endl;
+			}
+		}
+#ifndef EFFICIENCY_FOLLOWS_CPP_WENZHE
+		double Nn = (1.0 * N) / num_node_sample;
+#endif
+        // update phi for node i
         for (::size_t k = 0; k < K; k++) {
-#ifdef EFFICIENCY_FOLLOWS_PYTHON
+#ifdef EFFICIENCY_FOLLOWS_CPP_WENZHE
 			// FIXME replace a**0.5 * b**0.5 with sqrt(a * b)
-            phi_star[k] = std::abs(phi[i][k] + eps_t/2 * (alpha - phi[i][k] + \
-														  (N/n) * grads[k]) +
-								   std::pow(eps_t, .5) * std::pow(phi[i][k], .5) * noise[k]);
+			phi[i][k] = std::abs(phi[i][k] + eps_t / 2 * (alpha - phi[i][k] + \
+														  (N*1.0 / num_node_sample) * grads[k]) +
+								 std::pow(eps_t, 0.5) * std::pow(phi[i][k], 0.5) * noise[k]);
 #else
-            phi_star[k] = std::abs(phi[i][k] + eps_t/2 * (alpha - phi[i][k] + \
-														  (N/n) * grads[k]) +
-								   sqrt(eps_t * phi[i][k]) * noise[k]);
+			phi[i][k] = std::abs(phi[i][k] + eps_t / 2 * (alpha - phi[i][k] + \
+														  Nn * grads[k]) +
+								 sqrt(eps_t * phi[i][k]) * noise[k]);
 #endif
 		}
 
-        // self.__phi[i] = phi_star
-		phi[i] = phi_star;
-        //self.__phi[i] = phi_star * (1.0/(self._step_count+1)) + (1-1.0/(self._step_count+1))*self.__phi[i]
-
-        // update pi
-        // double sum_phi = np::sum(phi[i]);
-        // self._pi[i] = [self.__phi[i,k]/sum_phi for k in range(0, self._K)]
-		np::normalize(&pi[i], phi[i]);
-	}
-
-
-    EdgeMapZ sample_latent_vars2(const OrderedEdgeSet &mini_batch) {
-        /**
-        sample latent variable (z_ab, z_ba) for each pair of nodes. But we only consider 11 different cases,
-        since we only need indicator function in the gradient update. More details, please see the comments
-        within the sample_z_for_each_edge function.
-         */
-		EdgeMapZ z;
-		for (auto edge = mini_batch.begin(); edge != mini_batch.end(); edge++) {
-            int y_ab = 0;
-            if (edge->in(network.get_linked_edges())) {
-                y_ab = 1;
-			}
-
-            z[*edge] = sample_z_for_each_edge(y_ab, pi[edge->first], pi[edge->second], \
-											  beta, K);
-		}
-
-        return z;
-	}
-
-
-	// TODO FIXME shared code w/ mcmc_sampler_batch
-    int sample_z_for_each_edge(int y, const std::vector<double> &pi_a, const std::vector<double> &pi_b, const std::vector<double> &beta, ::size_t K) const {
-        /**
-		 * sample latent variables z_ab and z_ba
-         * but we don't need to consider all of the cases. i.e  (z_ab = j, z_ba = q) for all j and p.
-         * because of the gradient depends on indicator function  I(z_ab=z_ba=k), we only need to consider
-         * K+1 different cases:  p(z_ab=0, z_ba=0|*), p(z_ab=1,z_ba=1|*),...p(z_ab=K, z_ba=K|*),.. p(z_ab!=z_ba|*)
-		 *
-		 * Arguments:
-         *   y:        observation [0,1]
-         *   pi_a:     community membership for node a
-         *   pi_b:     community membership for node b
-         *   beta:     community strengh.
-         *   epsilon:  model parameter.
-         *   K:        number of communities.
-		 *
-		 * Returns the community index. If it falls into the case that z_ab!=z_ba, then return -1
-         */
-		std::vector<double> p(K + 1);
-#ifdef EFFICIENCY_FOLLOWS_PYTHON
-		for (::size_t k = 0; k < K; k++) {
-            p[k] = std::pow(beta[k], y) * pow(1-beta[k], 1-y) * pi_a[k] * pi_b[k];
-		}
-#else
-		if (y == 1) {
+		if (false) {
+			std::cerr << std::fixed << std::setprecision(12) << "update_phi post Nn " << Nn << " phi[" << i << "] ";
 			for (::size_t k = 0; k < K; k++) {
-				p[k] = beta[k] * pi_a[k] * pi_b[k];
+				std::cerr << std::fixed << std::setprecision(12) << phi[i][k] << " ";
 			}
-		} else {
+			std::cerr << std::endl;
+			std::cerr << "pi[" << i << "] ";
 			for (::size_t k = 0; k < K; k++) {
-				p[k] = (1-beta[k]) * pi_a[k] * pi_b[k];
+				std::cerr << std::fixed << std::setprecision(12) << pi[i][k] << " ";
 			}
-		}
-#endif
-        // p[K] = 1 - np.sum(p[0:K])
-        p[K] = 1.0 - std::accumulate(p.begin(), p.begin() + K, 0.0);
-
-        // sample community based on probability distribution p.
-		for (::size_t k = 1; k < K + 1; k++) {
-			p[k] += p[k - 1];
-		}
-        // // bounds = np.cumsum(p)
-		// // std::vector<double> bounds(K + 1);
-		// // std::partial_sum(p.begin(), p.end(), bounds.begin());
-		// FIXME: replace p[K] w/ p[K-1] here. Why? RFHH
-        // double location = Random::random->random() * p[K];
-        double r = Random::random->random();
-        double location = r * p[K-1];
-
-        // get the index of bounds that containing location.
-        for (::size_t i = 0; i < K; i++) {
-			if (location <= p[i]) {
-				return i;
+			std::cerr << std::endl;
+			std::cerr << "grads ";
+			for (::size_t k = 0; k < K; k++) {
+				std::cerr << std::fixed << std::setprecision(12) << grads[k] << " ";
 			}
-		}
-
-        return -1;
-	}
-
-
-    std::vector<int> sample_latent_vars(int node, const OrderedVertexSet &neighbor_nodes) const {
-        /**
-        given a node and its neighbors (either linked or non-linked), return the latent value
-        z_ab for each pair (node, neighbor_nodes[i].
-         */
-		std::vector<int> z(K, 0);
-		// std::cerr << "node " << node << " " << neighbor_nodes.size() << std::endl;
-        for (auto neighbor = neighbor_nodes.begin();
-			 	neighbor != neighbor_nodes.end();
-				neighbor++) {
-            int y_ab = 0;      // observation
-			Edge edge(std::min(node, *neighbor), std::max(node, *neighbor));
-            if (edge.in(network.get_linked_edges())) {
-                y_ab = 1;
+			std::cerr << std::endl;
+			std::cerr << "noise ";
+			for (::size_t k = 0; k < K; k++) {
+				std::cerr << std::fixed << std::setprecision(12) << noise[k] << " ";
 			}
-
-            int z_ab = this->sample_z_ab_from_edge(y_ab, pi[node], pi[*neighbor], beta, epsilon, K, node, *neighbor);
-            z[z_ab] += 1;
+			std::cerr << std::endl;
 		}
 
-        return z;
+		// assign back to phi.
+		//phi[i] = phi_star;
 	}
 
 
 	// TODO FIXME make VertexSet an out parameter
-    OrderedVertexSet sample_neighbor_nodes(::size_t sample_size, int nodeId) {
+    NeighborSet sample_neighbor_nodes(::size_t sample_size, Vertex nodeId, Random::Random *rnd) {
         /**
         Sample subset of neighborhood nodes.
          */
         int p = (int)sample_size;
-        OrderedVertexSet neighbor_nodes;
+        NeighborSet neighbor_nodes;
         const EdgeMap &held_out_set = network.get_held_out_set();
         const EdgeMap &test_set = network.get_test_set();
 
+#if defined RANDOM_FOLLOWS_CPP_WENZHE || defined EFFICIENCY_FOLLOWS_PYTHON
         while (p > 0) {
 #ifdef EFFICIENCY_FOLLOWS_PYTHON
 			std::cerr << "FIXME: horribly inefficient xrange thingy" << std::endl;
@@ -425,12 +593,13 @@ protected:
 #else
 			auto nodeList = Random::random->sampleRange(N, sample_size * 2);
 #endif
-            for (std::vector<int>::const_iterator neighborId = nodeList->begin();
+
+            for (std::vector<Vertex>::const_iterator neighborId = nodeList->begin();
 				 	neighborId != nodeList->end();
 					neighborId++) {
 				if (p < 0) {
 					if (p != 0) {
-//						std::cerr << __func__ << ": Are you sure p < 0 is a good idea?" << std::endl;
+						// std::cerr << __func__ << ": Are you sure p < 0 is a good idea?" << std::endl;
 					}
 					break;
 				}
@@ -439,22 +608,63 @@ protected:
 				}
 				// check condition, and insert into mini_batch_set if it is valid.
 				Edge edge(std::min(nodeId, *neighborId), std::max(nodeId, *neighborId));
-				if (edge.in(held_out_set) || edge.in(test_set) || neighbor_nodes.find(*neighborId) != neighbor_nodes.end()) {
+				if (edge.in(held_out_set) || edge.in(test_set) ||
+#ifdef RANDOM_FOLLOWS_SCALABLE_GRAPH
+						find(neighbor_nodes.begin(), neighbor_nodes.end(), neighborId) != neighbor_nodes.end()
+#else
+						neighbor_nodes.find(*neighborId) != neighbor_nodes.end()
+#endif
+						) {
 					continue;
 				} else {
 					// add it into mini_batch_set
+#ifdef RANDOM_FOLLOWS_SCALABLE_GRAPH
+					neighbor_nodes.push_back(*neighborId);
+#else
 					neighbor_nodes.insert(*neighborId);
+#endif
 					p -= 1;
 				}
 			}
 
 			delete nodeList;
 		}
+#else	// if defined RANDOM_FOLLOWS_CPP_WENZHE || defined EFFICIENCY_FOLLOWS_PYTHON
+        for (int i = 0; i <= p; ++i) {
+			Vertex neighborId;
+			Edge edge(0, 0);
+			do {
+				neighborId = rnd->randint(0, N - 1);
+				edge = Edge(std::min(nodeId, neighborId), std::max(nodeId, neighborId));
+				// std::cerr << std::fixed << std::setprecision(12) << "node " << nodeId << " neighbor " << neighborId << " peer " << ! (edge.in(held_out_set) || edge.in(test_set)) << " randint " << neighborId << " seed " << kernelRandom->state() << std::endl;
+			} while (neighborId == nodeId
+					|| edge.in(held_out_set)
+					|| edge.in(test_set)
+#ifdef RANDOM_FOLLOWS_SCALABLE_GRAPH
+					|| find(neighbor_nodes.begin(), neighbor_nodes.end(), neighborId) != neighbor_nodes.end()
+#else
+					|| neighbor_nodes.find(neighborId) != neighbor_nodes.end()
+#endif
+					);
+#ifdef RANDOM_FOLLOWS_SCALABLE_GRAPH
+			neighbor_nodes.push_back(neighborId);
+#else
+			neighbor_nodes.insert(neighborId);
+#endif
+		}
+#endif
+		if (false) {
+			std::cerr << "Node " << nodeId << ": neighbors ";
+			for (auto n : neighbor_nodes) {
+				std::cerr << n << " ";
+			}
+			std::cerr << std::endl;
+		}
 
-        return neighbor_nodes;
+		return neighbor_nodes;
 	}
 
-    OrderedVertexSet nodes_in_batch(const OrderedEdgeSet &mini_batch) const {
+    OrderedVertexSet nodes_in_batch(const MinibatchSet &mini_batch) const {
         /**
         Get all the unique nodes in the mini_batch.
          */
@@ -469,11 +679,13 @@ protected:
 
 
 
+#if 0
+	// in this case, we need to sample randoms from kernelRandom
     int sample_z_ab_from_edge(int y,
 							  const std::vector<double> &pi_a,
 							  const std::vector<double> &pi_b,
 							  const std::vector<double> &beta,
-							  double epsilon, ::size_t K, int node, int neighbor) const {
+							  double epsilon, ::size_t K) {
 		std::vector<double> p(K);
 
 #ifdef EFFICIENCY_FOLLOWS_PYTHON
@@ -509,8 +721,9 @@ protected:
             p[k] += p[k-1];
 		}
 
-        double r = Random::random->random();
+        double r = kernelRandom->random();
         double location = r * p[K-1];
+#if 0
         // get the index of bounds that containing location.
         for (::size_t i = 0; i < K; i++) {
             if (location <= p[i]) {
@@ -520,7 +733,11 @@ protected:
 
         // failed, should not happen!
         return -1;
+#else
+		return np::find_le(p, location);
+#endif
 	}
+#endif
 
 
 protected:
@@ -530,9 +747,11 @@ protected:
 	double	c;
 
 	::size_t num_node_sample;
+	::size_t interval;
 
 	std::vector<std::vector<double> > theta;		// parameterization for \beta
 	std::vector<std::vector<double> > phi;			// parameterization for \pi
+	Random::Random *kernelRandom;
 };
 
 }	// namespace learning

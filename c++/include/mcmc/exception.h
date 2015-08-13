@@ -51,6 +51,7 @@ public:
 			: MCMCException(reason) {
 	}
 };
+#endif
 
 
 class InvalidArgumentException : public MCMCException {
@@ -75,6 +76,7 @@ public:
 };
 
 
+#if 0
 class CorruptedStateException : public MCMCException {
 public:
 	CorruptedStateException() {

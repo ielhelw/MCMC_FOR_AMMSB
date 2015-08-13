@@ -12,27 +12,30 @@ typedef struct {
 
 // get number of peers for node
 inline int graph_peers_count(
-        global Graph *g,
+        const global Graph *g,
         int id) {
     return g->_g.node_edges[id].x;
 }
 
 inline int graph_peers_offset(
-        global Graph *g,
+        const global Graph *g,
         int id) {
     return g->_g.node_edges[id].y;
 }
 
 inline int graph_get_peer(
-        global Graph *g,
+        const global Graph *g,
         int id,
         int peerIdx /* value from 0 to graph_peers_count() */) {
     return g->_g.edges[graph_peers_offset(g, id) + peerIdx];
 }
 
-inline int graph_has_peer(global Graph *g, int u, int v) {
-    for (int i = 0; i < graph_peers_count(g, u); ++i) {
-        if (graph_get_peer(g, u, i) == v) return 1;
+int graph_has_peer(const global Graph *g, int u, int v) {
+	int2 desc = g->_g.node_edges[u];
+	const global int *p = g->_g.edges + desc.y;
+    for (int i = 0; i < desc.x; ++i,++p) {
+    	if (*p > v) return 0;
+    	else if (*p == v) return 1;
     }
     return 0;
 }
