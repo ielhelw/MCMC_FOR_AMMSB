@@ -89,42 +89,6 @@ public:
 	virtual ~MCMCSamplerStochastic() {
 	}
 
-#if 0
-    def run1(self):
-        while self._step_count < self._max_iteration and not self._is_converged():
-            /**
-            pr = cProfile.Profile()
-            pr.enable()
-             */
-            (mini_batch, scale) = self._network.sample_mini_batch(self._mini_batch_size, "stratified-random-node")
-            //print "iteration: " + str(self._step_count)
-
-            if self._step_count % 1 == 0:
-				#print str(self._beta)
-                ppx_score = self._cal_perplexity_held_out()
-				#print "perplexity for hold out set is: "  + str(ppx_score)
-                self._ppxs_held_out.append(ppx_score)
-
-            self.__update_pi1(mini_batch, scale)
-
-            // sample (z_ab, z_ba) for each edge in the mini_batch.
-            // z is map structure. i.e  z = {(1,10):3, (2,4):-1}
-            z = self.__sample_latent_vars2(mini_batch)
-            self.__update_beta(mini_batch, scale,z)
-
-            /**
-            pr.disable()
-            s = StringIO.StringIO()
-            sortby = 'cumulative'
-            ps = pstats.Stats(pr, stream=s).sort_stats(sortby)
-            ps.print_stats()
-            print s.getvalue()
-             */
-            self._step_count += 1
-
-        print "terminated"
-#endif
-
     virtual void run() {
         /** run mini-batch based MCMC sampler, based on the sungjin's note */
 
@@ -228,59 +192,6 @@ protected:
 			update_pi_for_node(*node, latent_vars[*node], size[*node], scale);
 		}
     }
-
-#if 0
-    def __update_pi1(self, mini_batch, scale):
-
-        grads = np.zeros((self._N, self._K))
-        counter = np.zeros(self._N)
-        phi_star = np.zeros((self._N, self._K))
-
-        for edge in mini_batch:
-            a = edge[0]
-            b = edge[1]
-
-            y_ab = 0      // observation
-            if (min(a, b), max(a, b)) in self._network.get_linked_edges():
-                y_ab = 1
-
-            z_ab = self.sample_z_ab_from_edge(y_ab, self._pi[a], self._pi[b], self._beta, self._epsilon, self._K)
-            z_ba = self.sample_z_ab_from_edge(y_ab, self._pi[b], self._pi[a], self._beta, self._epsilon, self._K)
-
-
-            counter[a] += 1
-            counter[b] += 1
-
-            grads[a][z_ab] += 1/self.__phi[a][z_ab]
-            grads[b][z_ba] += 1/self.__phi[b][z_ba]
-
-         // update gamma, only update node in the grad
-        if self.stepsize_switch == False:
-            eps_t = (1024+self._step_count)**(-0.5)
-        else:
-            eps_t  = self.__a*((1 + self._step_count/self.__b)**-self.__c)
-
-        for i in range(0, self._N):
-            noise = random.randn(self._K)
-            sum_phi_i = np.sum(self.__phi[i])
-            for k in range(0, self._K):
-
-                if counter[i] < 1:
-                    phi_star[i][k] = abs((self.__phi[i,k]) + eps_t*(self._alpha - self.__phi[i,k])+(2*eps_t)**.5*self.__phi[i,k]**.5 * noise[k])
-                else:
-                    phi_star[i][k] = abs(self.__phi[i,k] + eps_t * (self._alpha - self.__phi[i,k] + \
-                                scale * (grads[i][k]-(1.0/sum_phi_i)*counter[i])) \
-                                + (2*eps_t)**.5*self.__phi[i,k]**.5 * noise[k])
-
-                if self._step_count < 50000:
-                    self.__phi[i][k] = phi_star[i][k]
-                else:
-                    self.__phi[i][k] = phi_star[i][k] * (1.0/(self._step_count)) + \
-                                                (1-(1.0/(self._step_count)))*self.__phi[i][k]
-
-            sum_phi = np.sum(self.__phi[i])
-            self._pi[i] = [self.__phi[i,k]/sum_phi for k in range(0, self._K)]
-#endif
 
 
 	// FIXME lots of code sharing w/ mcmc_sampler_batch
@@ -496,30 +407,6 @@ protected:
         return z;
 	}
 
-#if 0
-    def __sample_z_ab_from_edge(self, y, pi_a, pi_b, beta, epsilon, K):
-        /**
-        we need to calculate z_ab. We can use deterministic way to calculate this
-        for each k,  p[k] = p(z_ab=k|*) = \sum_{i}^{} p(z_ab=k, z_ba=i|*)
-        then we simply sample z_ab based on the distribution p.
-        this runs in O(K)
-         */
-        p = np.zeros(K)
-        for i in range(0, K):
-            tmp = beta[i]**y*(1-beta[i])**(1-y)*pi_a[i]*pi_b[i]
-            tmp += epsilon**y*(1-epsilon)**(1-y)*pi_a[i]*(1-pi_b[i])
-            p[i] = tmp
-        // sample community based on probability distribution p.
-        bounds = np.cumsum(p)
-        location = random.random() * bounds[K-1]
-
-        // get the index of bounds that containing location.
-        for i in range(0, K):
-                if location <= bounds[i]:
-                    return i
-        // failed, should not happen!
-        return -1
-#endif
 
 	// TODO FIXME make VertexSet an out parameter
     OrderedVertexSet sample_neighbor_nodes(::size_t sample_size, int nodeId) {
@@ -580,13 +467,6 @@ protected:
         return node_set;
 	}
 
-#if 0
-    def _save(self):
-        f = open('ppx_mcmc.txt', 'wb')
-        for i in range(0, len(self._avg_log)):
-            f.write(str(math.exp(self._avg_log[i])) + "\t" + str(self._timing[i]) +"\n")
-        f.close()
-#endif
 
 
     int sample_z_ab_from_edge(int y,

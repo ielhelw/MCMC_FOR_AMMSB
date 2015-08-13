@@ -37,18 +37,22 @@ public:
 	}
 
 
-	std::vector<double> randn(::size_t K) {
+	double randn() {
 #if __GNUC_MINOR__ >= 5
+		return normalDistribution(generator);
+#else	// if __GNUC_MINOR__ >= 5
+		throw UnimplementedException("random::randn");
+#endif
+	}
+
+	std::vector<double> randn(::size_t K) {
 		auto r = std::vector<double>(K);
 		for (::size_t i = 0; i < K; i++) {
-			r[i] = normalDistribution(generator);
+			r[i] = randn();
 		}
 
 		return r;
 
-#else	// if __GNUC_MINOR__ >= 5
-		throw UnimplementedException("random::randn");
-#endif
 	}
 
 
@@ -106,9 +110,11 @@ public:
 		};
 		sample(result, population, count, Inserter());
 
+#ifndef NDEBUG
 		for (auto i : *result) {
 			assert(population.find(i) != population.end());
 		}
+#endif
 
 		return result;
 	}
@@ -168,21 +174,27 @@ public:
 	}
 
 
-	std::vector<std::vector<double> > gamma(double p1, double p2, ::size_t n1, ::size_t n2) {
+	double gamma(double p1, double p2) {
 		// std::vector<std::vector<double> > *a = new std::vector<double>(n1, std::vector<double>(n2, 0.0));
-		std::vector<std::vector<double> > a(n1, std::vector<double>(n2));
 #if __GNUC_MINOR__ >= 5
 
 		std::gamma_distribution<double> gammaDistribution(p1, p2);
 
-		for (::size_t i = 0; i < n1; i++) {
-			for (::size_t j = 0; j < n2; j++) {
-				a[i][j] = gammaDistribution(generator);
-			}
-		}
+		return gammaDistribution(generator);
 #else	// if __GNUC_MINOR__ >= 5
 		throw UnimplementedException("random::gamma");
 #endif
+	}
+
+
+	std::vector<std::vector<double> > gamma(double p1, double p2, ::size_t n1, ::size_t n2) {
+		// std::vector<std::vector<double> > *a = new std::vector<double>(n1, std::vector<double>(n2, 0.0));
+		std::vector<std::vector<double> > a(n1, std::vector<double>(n2));
+		for (::size_t i = 0; i < n1; i++) {
+			for (::size_t j = 0; j < n2; j++) {
+				a[i][j] = gamma(p1, p2);
+			}
+		}
 
 		return a;
 	}
