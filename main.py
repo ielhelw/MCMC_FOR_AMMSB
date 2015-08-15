@@ -17,6 +17,8 @@ def work_mcmc (sampler, ppxs):
         f.close()
 
 def main():
+    # default args for WenZhe's C++ implementation:
+    #   --K=15 --alpha=0.01 --epsilon=0.0000001 --hold_out_prob=0.009999999776
     parser = argparse.ArgumentParser()
     parser.add_argument('--alpha', type=float, default=0.01, required=False)
     parser.add_argument('--eta0', type=float, default=1, required=False)
@@ -40,11 +42,13 @@ def main():
 
     # data = DataFactory.get_data("netscience")
     data = DataFactory.get_data("relativity")
-    network = Network(data, 0.1)
+    network = Network(data, args.hold_out_prob)
+    network.set_num_pieces(10)  # from WenZhe's C++ implementation
         
     print "start MCMC stochastic"
     ppx_mcmc = []
     sampler = MCMCSamplerStochastic(args, network)
+    sampler.set_num_node_sample(10)     # from WenZhe's C++ implementation
     #work_mcmc(sampler, ppx_mcmc)
     sampler.run()
         

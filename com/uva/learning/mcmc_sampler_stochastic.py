@@ -63,8 +63,8 @@ class MCMCSamplerStochastic(Learner):
         # introduce another set of variables, and update them first followed by 
         # updating \pi and \beta.  
         # self.__theta = random.gamma(100,0.01,(self._K, 2))      # parameterization for \beta
-        self.__theta = random.get("create field").gamma(self._eta[0], self._eta[1], (self._K, 2))      # parameterization for \beta
-        self.__phi = random.get("create field").gamma(1,1,(self._N, self._K))       # parameterization for \pi
+        self.__theta = random.get("theta init").gamma(self._eta[0], self._eta[1], (self._K, 2))      # parameterization for \beta
+        self.__phi = random.get("phi init").gamma(1,1,(self._N, self._K))       # parameterization for \pi
         
         # temp = self.__theta/np.sum(self.__theta,1)[:,np.newaxis]
         # self._beta = temp[:,1]
@@ -72,12 +72,16 @@ class MCMCSamplerStochastic(Learner):
         self.update_pi_from_phi()
         self.update_beta_from_theta()
 
+        sys.stdout.write("beta[0] %.12f\n" % self._beta[0])
+        sys.stdout.write("phi[0][0] %.12f\n" % self.__phi[0][0])
+        sys.stdout.write("pi[0][0] %.12f\n" % self._pi[0][0])
+        sys.stdout.write("a %.12f b %.12f c %.12f\n" % (self.__a, self.__b, self.__c))
+
+
     def update_pi_from_phi(self):
-        sys.stderr.write("********* CHECK implementation\n")
         self._pi = self.__phi/np.sum(self.__phi,1)[:,np.newaxis]
 
     def update_beta_from_theta(self):
-        sys.stderr.write("********* CHECK implementation\n")
         temp = self.__theta/np.sum(self.__theta,1)[:,np.newaxis]
         self._beta = temp[:,1]
 
@@ -96,16 +100,19 @@ class MCMCSamplerStochastic(Learner):
             # size = {}
             
             nodes_in_mini_batch = list(self.__nodes_in_batch(mini_batch))
-            nodes_in_mini_batch.sort()  # to be able to replay from C++
+            nodes_in_mini_batch = sorted(nodes_in_mini_batch)  # to be able to replay from C++
+            # print "minibatch(" + str(len(mini_batch)) + " " + str(sorted(mini_batch))
 
             # iterate through each node in the mini batch. 
             for node in nodes_in_mini_batch:
                 # sample a mini-batch of neighbors
                 neighbors = self.__sample_neighbor_nodes(self.__num_node_sample, node)
+                neighbors = sorted(neighbors)  # to be able to replay from C++
                 self.__update_phi(node, neighbors)
 
             self.update_pi_from_phi()
             # update beta
+            mini_batch = sorted(mini_batch)   # to be able to replay from C++
             self.__update_beta(mini_batch, scale)
 
             if self._step_count % 1 == 0:
@@ -142,8 +149,9 @@ class MCMCSamplerStochastic(Learner):
 
             i, j = edge
             probs = np.zeros(self._K)
-            pi_sum = np.sum(self._pi[i])
+            pi_sum = 0.0
             for k in range(0,self._K):
+                pi_sum += self._pi[i][k] * self._pi[j][k]
                 probs[k] = self._beta[k] ** y * (1 - self._beta[k]) ** (1 - y) * self._pi[i][k] * self._pi[j][k]
 
             prob_0 = self._epsilon ** y * (1 - self._epsilon) ** (1 - y) * (1 - pi_sum)
@@ -153,13 +161,14 @@ class MCMCSamplerStochastic(Learner):
                 grads[k][1] += (probs[k] / prob_sum) * (abs(-y)/self.__theta[k][1] - 1/theta_sum[k])
         
         # update theta 
-        noise = random.get("update beta").randn(self._K, 2)                          # random noise. 
+        noise = random.get("beta update").randn(self._K, 2)                          # random noise. 
+
         for k in range(0,self._K):
             for i in range(0,2):
                 self.__theta[k][i] = abs(self.__theta[k][i] + eps_t / 2.0 * (self._eta[i] - self.__theta[k][i] + \
                                     scale * grads[k][i]) + eps_t**.5*self.__theta[k][i] ** .5 * noise[k][i])  
         self.update_beta_from_theta()
-    
+
     def __update_phi(self, i, neighbors):
         '''
         update phi for current node i. 
@@ -170,7 +179,7 @@ class MCMCSamplerStochastic(Learner):
         phi_star = copy.copy(self.__phi[i])                              # updated \phi
         phi_i_sum = np.sum(self.__phi[i])                                   
         grads = np.zeros(self._K)
-        noise = random.get("update phi").randn(self._K)                                 # random noise. 
+        noise = random.get("phi update").randn(self._K)                                 # random noise. 
 
         for neighbor in neighbors:
             if neighbor == i:
@@ -205,7 +214,7 @@ class MCMCSamplerStochastic(Learner):
         test_set = self._network.get_test_set()
         
         while p > 0:
-            nodeList = random.get("neighbor sampler").sample(list(xrange(self._N)), sample_size * 2)
+            nodeList = random.sample_range("neighbor sampler", self._N, sample_size * 2)
             for neighborId in nodeList:
                     if p < 0:
                         if False:
@@ -240,6 +249,8 @@ class MCMCSamplerStochastic(Learner):
             f.write(str(math.exp(self._avg_log[i])) + "\t" + str(self._timing[i]) +"\n")
         f.close()
         
+    def set_num_node_sample(self, num_node_sample):
+         self.__num_node_sample = num_node_sample
     
     """
     def sample_z_ab_from_edge(self, y, pi_a, pi_b, beta, epsilon, K):

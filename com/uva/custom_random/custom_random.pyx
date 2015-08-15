@@ -23,7 +23,8 @@ cdef class CustomRandom:
     # def rand(self):
     #     return self.thisptr.rand()
     def randint(self, start, upto):
-        return self.thisptr.randint(start, upto)
+        r = self.thisptr.randint(start, upto)
+        return r
     def random(self):
         return self.thisptr.random()
 
@@ -68,13 +69,28 @@ cdef class CustomRandom:
         return accu
     def _sample2(self, population, count):
         # result = polulation.__class__.__new__(population.__class__)
-        accu = self._sample3(0, len(population), count)
+        accu = self._sample3(0, len(population) - 1, count)
         i = 0
-        # BEWARE! sort the population for order compatibility w/ mcmc::Random
         rlist = []
+        # BEWARE! sort the population for order compatibility w/ mcmc::Random
         for p in sorted(population):
             if i in accu:
                 rlist.append(p)
             i += 1
         result = population.__class__(rlist);
+        return result
+
+    """
+    Random range is a special case: need to preserve the order in which random
+    values are queried
+    """
+    def sample_range(self, N, count):
+        accu = Set()
+        result = []
+        while count > 0:
+            r = self.randint(0, N - 1)
+            if not r in accu:
+                accu.add(r)
+                result.append(r)
+                count -= 1
         return result

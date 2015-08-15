@@ -6,11 +6,12 @@ class WrapperRandom:
     def __init__(self):
         self.random_sources = (
             "graph init",
-            "create field",
+            "theta init",
+            "phi init",
             "minibatch sampler",
             "neighbor sampler",
-            "update phi",
-            "update beta",
+            "phi update",
+            "beta update",
         )
         self.seed(0, False)
 
@@ -21,6 +22,7 @@ class WrapperRandom:
             i = 0
             self.custom_rng = { }
             for s in self.random_sources:
+                print "random source[" + str(i) + "] for \"" + s + "\""
                 self.custom_rng[s] = CustomRandom(seed + i)
                 i += 1
         else:
@@ -31,6 +33,12 @@ class WrapperRandom:
             return self.custom_rng[source]
         else:
             return self.rng
+
+    def sample_range(self, source, N, count):
+        if self.USE_MCMC_RANDOM:
+            return self.custom_rng[source].sample_range(N, count)
+        else:
+           return self.rng.sample(list(xrange(N, count)))
 
 WrapperRandom = WrapperRandom()
 # _inst.init(42, True)

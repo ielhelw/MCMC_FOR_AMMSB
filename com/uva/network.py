@@ -43,9 +43,13 @@ class Network(object):
         # Based on the a-MMSB paper, it samples equal number of 
         # linked edges and non-linked edges. 
         self.__held_out_size = int(held_out_ratio * len(self.__linked_edges))  
-        
+
         # it is used for stratified random node sampling. By default 10 
-        self.__num_pieces = 10    
+        # self.__num_pieces = 10    
+        self.__num_pieces = 50    
+
+        sys.stdout.write("held_out_ratio %.12f held_out_size %d num_pieces %d\n" % (self.__held_out_ratio, self.__held_out_size, self.__num_pieces))
+        
         
         # The map stores all the neighboring nodes for each node, within the training
         # set. The purpose of keeping this object is to make the stratified sampling
@@ -61,6 +65,7 @@ class Network(object):
         self.__held_out_map = {}                            # store all held out edges
         self.__test_map = {}                                # store all test edges
         
+        # print sorted(self.__linked_edges)
         
         # initialize train_link_map 
         self.__init_train_link_map()
@@ -127,6 +132,7 @@ class Network(object):
     
     def set_num_pieces(self, num_pieces):
         self.__num_pieces = num_pieces
+        print "**************** set num_pieces to " + str(num_pieces)
     
     
     def __stratified_random_node_sampling(self, num_pieces):
@@ -147,7 +153,7 @@ class Network(object):
         flag = random.get("minibatch sampler").randint(0,1)      # flag=0: non-link edges  flag=1: link edges
         
         mini_batch_set = Set()
-        
+
         if flag == 0:
             """ sample non-link edges """
             # this is approximation, since the size of self.train_link_map[nodeId]
@@ -157,7 +163,7 @@ class Network(object):
             while p > 0:
                 # because of the sparsity, when we sample $mini_batch_size*2$ nodes, the list likely
                 # contains at least mini_batch_size valid nodes. 
-                nodeList = random.get("minibatch sampler").sample(list(xrange(self.__N)), mini_batch_size * 2)
+                nodeList = random.sample_range("minibatch sampler", self.__N, mini_batch_size * 2)
                 for neighborId in nodeList:
                     if p < 0:
                         if False:
@@ -169,6 +175,7 @@ class Network(object):
                     edge = (min(nodeId, neighborId), max(nodeId, neighborId))
                     if edge in self.__linked_edges or edge in self.__held_out_map or \
                             edge in self.__test_map or edge in mini_batch_set:
+                        print "Discard edge " + str(edge)
                         continue
                     
                     # add it into mini_batch_set
@@ -226,12 +233,24 @@ class Network(object):
             self.__train_link_map[edge[0]].remove(edge[1])
             self.__train_link_map[edge[1]].remove(edge[0])
         # print sampled_linked_edges
+
+        sys.stdout.write("Sampled part of held out set:\n")
+        for m in sorted(sampled_linked_edges):
+            a, b = m
+            sys.stdout.write("(%d,%d) " % (a, b))
+        sys.stdout.write("\n")
         
         # sample p non-linked edges from the network 
         while p > 0:
             edge = self.__sample_non_link_edge_for_held_out()
             self.__held_out_map[edge] = False
             p -= 1
+
+        sys.stdout.write("Held out set:\n")
+        for m in sorted(self.__held_out_map):
+            a, b = m
+            sys.stdout.write("(%d,%d) " % (a, b))
+        sys.stdout.write("\n")
     
     
     def __init_test_set(self):

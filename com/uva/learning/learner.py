@@ -50,7 +50,11 @@ class Learner(object):
         self.stepsize_switch = False
 
         self._ppx_for_heldout = np.zeros(network.get_held_out_size())
-        
+
+        sys.stdout.write("K %d N %d\n" % (self._K, self._N))
+        sys.stdout.write("alpha %.12f eta %.12f,%.12f epsilon %.12f\n" % (self._alpha, self._eta[0], self._eta[1], self._epsilon))
+        sys.stdout.write("mini_batch size %d\n" % self._mini_batch_size)
+
         
     @abc.abstractmethod
     def run(self):
