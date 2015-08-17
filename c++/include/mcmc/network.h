@@ -667,7 +667,7 @@ protected:
 		// std::cerr << "Initializing the held-out set on multiple machines will create randomness bugs" << std::endl;
 		thread_random.resize(omp_get_max_threads());
 		for (::size_t i = 0; i < thread_random.size(); ++i) {
-			thread_random[i] = new Random::Random(i, 47);
+			thread_random[i] = new Random::Random(i, 47, false);
 		}
 	}
 

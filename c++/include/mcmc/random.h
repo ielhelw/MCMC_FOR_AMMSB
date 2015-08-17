@@ -6,6 +6,7 @@
 
 #include <fstream>
 #include <string>
+#include <set>
 #include <unordered_set>
 #include <vector>
 #include <list>
@@ -32,7 +33,7 @@ protected:
 	}
 
 public:
-	Random(unsigned int seed) {
+	Random(unsigned int seed, bool preserve_range_order = false) : preserve_range_order(preserve_range_order) {
 #ifndef RANDOM_SYSTEM
 		if (seed == 0) throw NumberFormatException("Random seed value 0 not allowed"); // zero value not allowed
 		xorshift_state[0] = seed;
@@ -42,7 +43,7 @@ public:
 		std::cerr << "Random seed [" << xorshift_state[0] << "," << xorshift_state[1] << "]" << std::endl;
 	}
 
-	Random(unsigned int seed_hi, unsigned int seed_lo) {
+	Random(unsigned int seed_hi, unsigned int seed_lo, bool preserve_range_order = false) : preserve_range_order(preserve_range_order) {
 #ifndef RANDOM_SYSTEM
 		if (seed_lo == 0) throw NumberFormatException("Random seed value 0 not allowed"); // zero value not allowed
 		xorshift_state[0] = seed_lo;
@@ -178,8 +179,52 @@ public:
 
 
 	std::vector<int> *sampleRange(int N, ::size_t count) {
-		auto accu = sample(0, N, count);
-		return new std::vector<int>(accu.begin(), accu.end());
+		if (preserve_range_order) {
+			assert((int)count <= N);
+
+			std::unordered_set<int> accu;
+			auto *result = new std::vector<int>();
+			for (::size_t i = 0; i < count; i++) {
+				int r = randint(0, N - 1);
+				if (accu.find(r) == accu.end()) {
+					accu.insert(r);
+					result->push_back(r);
+				} else {
+					i--;
+				}
+			}
+			return result;
+
+		} else {
+			auto accu = sample(0, N, count);
+			return new std::vector<int>(accu.begin(), accu.end());
+		}
+	}
+
+
+	template <class Element>
+	std::list<Element> *sampleList(const std::set<Element> &population, ::size_t count) {
+		std::list<Element> *result = new std::list<Element>();
+		struct Inserter {
+			void operator() (std::list<Element> &list, Element &item) {
+				list.push_back(item);
+			}
+		};
+		sample(result, population, count, Inserter());
+
+#ifndef NDEBUG
+		for (auto i : *result) {
+			assert(population.find(i) != population.end());
+		}
+#endif
+
+		return result;
+	}
+
+
+	template <class Element>
+	std::list<Element> *sampleList(const std::set<Element> *population, ::size_t count) {
+		return sampleList(*population, count);
 	}
 
 
@@ -209,28 +254,29 @@ public:
 	}
 
 
-	std::vector<std::vector<double> > gamma(double p1, double p2, ::size_t n1, ::size_t n2) {
-		// std::vector<std::vector<double> > *a = new std::vector<double>(n1, std::vector<double>(n2, 0.0));
-		std::vector<std::vector<double> > a(n1, std::vector<double>(n2));
+	double gamma(double p1, double p2) {
 #ifdef RANDOM_SYSTEM
 #if __GNUC_MINOR__ >= 5
 		std::gamma_distribution<double> gammaDistribution(p1, p2);
 
-		for (::size_t i = 0; i < n1; i++) {
-			for (::size_t j = 0; j < n2; j++) {
-				a[i][j] = gammaDistribution(generator);
-			}
-		}
+		return gammaDistribution(generator);
 #else	// if __GNUC_MINOR__ >= 5
 		throw UnimplementedException("random::gamma");
 #endif
 #else
+		return gsl_ran_gamma (NULL, p1, p2);
+#endif	// def RANDOM_SYSTEM
+	}
+
+
+	std::vector<std::vector<double> > gamma(double p1, double p2, ::size_t n1, ::size_t n2) {
+		// std::vector<std::vector<double> > *a = new std::vector<double>(n1, std::vector<double>(n2, 0.0));
+		std::vector<std::vector<double> > a(n1, std::vector<double>(n2));
 		for (::size_t i = 0; i < n1; i++) {
 			for (::size_t j = 0; j < n2; j++) {
-				a[i][j] = gsl_ran_gamma (NULL, p1, p2);
+				a[i][j] = gamma(p1, p2);
 			}
 		}
-#endif	// def RANDOM_SYSTEM
 		return a;
 	}
 
@@ -378,24 +424,24 @@ gsl_ran_gaussian_ziggurat (const gsl_rng * r, const double sigma)
 
 
 public:
-	std::vector<double> randn(::size_t K) {
-		auto r = std::vector<double>(K);
+	double randn() {
 #ifdef RANDOM_SYSTEM
 #if __GNUC_MINOR__ >= 5
-		for (::size_t i = 0; i < K; i++) {
-			r[i] = normalDistribution(generator);
-		}
-
-		return r;
+		return normalDistribution(generator);
 
 #else	// if __GNUC_MINOR__ >= 5
 		throw UnimplementedException("random::randn");
 #endif
 #else
-		for (::size_t i = 0; i < K; i++) {
-			r[i] = gsl_ran_gaussian_ziggurat(NULL, 1.0);
-		}
+		return gsl_ran_gaussian_ziggurat(NULL, 1.0);
 #endif
+	}
+
+	std::vector<double> randn(::size_t K) {
+		auto r = std::vector<double>(K);
+		for (::size_t i = 0; i < K; i++) {
+			r[i] = randn();
+		}
 
 		return r;
 	}
@@ -548,6 +594,7 @@ public:
 
 
 protected:
+	bool preserve_range_order;
 #ifndef RANDOM_SYSTEM
 	uint64_t xorshift_state[2];
 #else

@@ -72,9 +72,9 @@ public:
     MCMCSamplerStochastic(const Options &args)
 			: Learner(args),
 #ifdef RANDOM_FOLLOWS_CPP_WENZHE
-			kernelRandom(Random::random)
+			kernelRandom(Random::random, false)
 #else
-			kernelRandom(new Random::Random(42))
+			kernelRandom(new Random::Random(42, false))
 #endif
 	{
 #ifdef RANDOM_FOLLOWS_CPP

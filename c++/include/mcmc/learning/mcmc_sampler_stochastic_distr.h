@@ -632,10 +632,10 @@ public:
 
 		// Make kernelRandom init depend on mpi_rank
 		delete kernelRandom;
-		kernelRandom = new Random::Random((mpi_rank + 1) * 42);
+		kernelRandom = new Random::Random((mpi_rank + 1) * 42, false);
 		threadRandom.resize(omp_get_max_threads());
 		for (::size_t i = 0; i < threadRandom.size(); i++) {
-			threadRandom[i] = new Random::Random(i, (mpi_rank + 1) * 42);
+			threadRandom[i] = new Random::Random(i, (mpi_rank + 1) * 42, false);
 		}
 
 		t_populate_pi.start();
