@@ -33,27 +33,6 @@ static double GB(::size_t n, ::size_t k) {
     (1 << 30);
 }
 
-namespace DKV_TYPE {
-enum TYPE {
-    FILE,
-#ifdef ENABLE_RAMCLOUD
-    RAMCLOUD,
-#endif
-#ifdef ENABLE_RDMA
-    RDMA,
-#endif
-};
-}   // namespace DKV_TYPE
-
-
-#ifdef ENABLE_RDMA
-namespace DKV {
-namespace DKVRDMA {
-extern struct ibv_device **global_dev_list;
-}
-}
-#endif
-
 template <typename T>
 std::vector<const T*>& constify(std::vector<T*>& v) {
   // Compiler doesn't know how to automatically convert
@@ -137,6 +116,10 @@ class DKVWrapper {
     ::size_t n = options_.num_node_sample;          // #neighbors for each minibatch node
     ::size_t iterations = options_.max_iteration;
 
+	if (m == 0 || n == 0) {
+		throw mcmc::MCMCException("minibatch size and neighborset size must be > 0");
+	}
+
     ::size_t my_m = (m + n_hosts - 1) / n_hosts;
 
     d_kv_store_.Init(K, N, my_m * n, my_m, remains);
@@ -165,6 +148,7 @@ class DKVWrapper {
         std::vector<int32_t> k(1, static_cast<int32_t>(i));
         std::vector<const double *> v(1, pi.data());
         d_kv_store_.WriteKVRecords(k, v);
+        d_kv_store_.PurgeKVRecords();
       }
       duration dur = std::chrono::duration_cast<duration>(hires::now() - t);
       std::cout << "Populate " << N << "x" << K << " takes " <<
@@ -254,22 +238,13 @@ protected:
 };
 
 int main(int argc, char *argv[]) {
-#ifdef ENABLE_RDMA
-  int num_devices;
-  DKV::DKVRDMA::global_dev_list = ibv_get_device_list(&num_devices);
-  std::cerr << "IB devices: " << num_devices << std::endl;
-  for (int i = 0; i < num_devices; i++) {
-    std::cerr << "  IB device[" << i << "] device_name " << (void *)DKV::DKVRDMA::global_dev_list[0] << " " << DKV::DKVRDMA::global_dev_list[i]->dev_name << std::endl;
-  }
-#endif
-
     mcmc::Options options(argc, argv);
 
-    std::string dkv_type_string;
+	DKV::TYPE::TYPE dkv_type;
     po::options_description desc("D-KV store test program");
     desc.add_options()
-      ("dkv:type",
-       po::value<std::string>(&dkv_type_string)->default_value("file"),
+      ("dkv.type",
+       po::value<DKV::TYPE::TYPE>(&dkv_type)->multitoken()->default_value(DKV::TYPE::FILE),
        "D-KV store type (file/ramcloud/rdma)")
       ;
 
@@ -286,25 +261,6 @@ int main(int argc, char *argv[]) {
         return 0;
     }
 
-    DKV_TYPE::TYPE dkv_type = DKV_TYPE::FILE;
-    if (vm.count("dkv:type") > 0) {
-        if (false) {
-        } else if (dkv_type_string == "file") {
-            dkv_type = DKV_TYPE::FILE;
-#ifdef ENABLE_RAMCLOUD
-        } else if (dkv_type_string == "ramcloud") {
-            dkv_type = DKV_TYPE::RAMCLOUD;
-#endif
-#ifdef ENABLE_RDMA
-        } else if (dkv_type_string == "rdma") {
-            dkv_type = DKV_TYPE::RDMA;
-#endif
-        } else {
-            desc.print(std::cerr);
-            throw mcmc::InvalidArgumentException("Unsupported value '" + dkv_type_string + "' for dkv:type");
-        }
-    }
-
     std::vector<std::string> remains = po::collect_unrecognized(parsed.options, po::include_positional);
     std::cerr << "main has unparsed options: \"";
     for (auto r : remains) {
@@ -313,7 +269,7 @@ int main(int argc, char *argv[]) {
     std::cerr << "\"" << std::endl;
 
     switch (dkv_type) {
-    case DKV_TYPE::FILE: {
+	case DKV::TYPE::FILE: {
 #if 0
         DKVWrapper<DKV::DKVFile::DKVStoreFile> dkv_store(options, remains);
         dkv_store.run();
@@ -321,7 +277,7 @@ int main(int argc, char *argv[]) {
         break;
     }
 #ifdef ENABLE_RAMCLOUD
-    case DKV_TYPE::RAMCLOUD: {
+	case DKV::TYPE::RAMCLOUD: {
 #if 0
         DKVWrapper<DKV::DKVRamCloud::DKVStoreRamCloud> dkv_store(options, remains);
         dkv_store.run();
@@ -330,7 +286,7 @@ int main(int argc, char *argv[]) {
     }
 #endif
 #ifdef ENABLE_RDMA
-    case DKV_TYPE::RDMA: {
+	case DKV::TYPE::RDMA: {
         DKVWrapper<DKV::DKVRDMA::DKVStoreRDMA> dkv_store(options, remains);
         dkv_store.run();
         break;

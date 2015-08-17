@@ -18,16 +18,6 @@ namespace learning {
 class Learner {
 public:
 	Learner(const Options &args) : args_(args) {
-		preprocess::DataFactory df(args);
-		data_ = df.get_data();
-		double held_out_ratio = args.held_out_ratio;
-		if (args.held_out_ratio == 0.0) {
-			held_out_ratio = 0.01;
-			std::cerr << "Set held_out_ratio to default " << held_out_ratio << std::endl;
-		}
-		// FIXME: make Network the owner of data
-		network.Init(data_, held_out_ratio);
-
 		// model priors
 		alpha = args_.alpha;
 		eta.resize(2);
@@ -39,33 +29,13 @@ public:
 		K = args_.K;
 		epsilon = args_.epsilon;
 
-		// parameters related to network
-		N = network.get_num_nodes();
-
-		// model parameters to learn
-		beta = std::vector<double>(K, 0.0);
-		pi   = std::vector<std::vector<double> >(N, std::vector<double>(K, 0.0));
-
-		// parameters related to sampling
-		mini_batch_size = args_.mini_batch_size;
-		if (mini_batch_size < 1) {
-			mini_batch_size = N / 2;	// default option.
-		}
-
-		// ration between link edges and non-link edges
-		link_ratio = network.get_num_linked_edges() / ((N * (N - 1)) / 2.0);
 		// check the number of iterations.
 		step_count = 1;
-		// store perplexity for all the iterations
-		// ppxs_held_out = [];
-		// ppxs_test = [];
 
 		max_iteration = args_.max_iteration;
 		CONVERGENCE_THRESHOLD = 0.000000000001;
 
 		stepsize_switch = false;
-
-		ppx_for_heldout = std::vector<double>(network.get_held_out_size(), 0.0);
 
 		if (args_.strategy == "unspecified") {
 			strategy = strategy::STRATIFIED_RANDOM_NODE;
@@ -82,9 +52,42 @@ public:
 		}
 	}
 
+
+	void LoadNetwork() {
+		double held_out_ratio = args_.held_out_ratio;
+		if (args_.held_out_ratio == 0.0) {
+			held_out_ratio = 0.01;
+			std::cerr << "Set held_out_ratio to default " << held_out_ratio << std::endl;
+		}
+		network.Init(args_, held_out_ratio);
+
+		// parameters related to network
+		N = network.get_num_nodes();
+
+		// model parameters to learn
+		beta = std::vector<double>(K, 0.0);
+		pi   = std::vector<std::vector<double> >(N, std::vector<double>(K, 0.0));
+
+		// parameters related to sampling
+		mini_batch_size = args_.mini_batch_size;
+		if (mini_batch_size < 1) {
+			mini_batch_size = N / 2;	// default option.
+		}
+
+		// ration between link edges and non-link edges
+		std::cerr << "FIXME: link_ratio depends on (un)directed graph" << std::endl;
+		link_ratio = network.get_num_linked_edges() / ((N * (N - 1)) / 2.0);
+		// store perplexity for all the iterations
+		// ppxs_held_out = [];
+		// ppxs_test = [];
+
+		ppx_for_heldout = std::vector<double>(network.get_held_out_size(), 0.0);
+
+		info(std::cerr);
+	}
+
+
 	virtual ~Learner() {
-		// FIXME: make Network the owner of data
-		delete const_cast<Data *>(data_);
 	}
 
 	/**
@@ -103,7 +106,7 @@ public:
 protected:
 	void info(std::ostream &s) {
 		s << "N " << N;
-		s << " E " << network.get_num_total_edges();
+		s << " E " << network.get_num_linked_edges();
 	   	s << " K " << K;
 		s << " iterations " << max_iteration;
 		s << " minibatch size " << mini_batch_size;
@@ -177,9 +180,8 @@ protected:
 
 			//cout<<"AVERAGE COUNT: " <<average_count;
 			ppx_for_heldout[i] = (ppx_for_heldout[i] * (average_count-1) + edge_likelihood)/(average_count);
-			// std::cerr << std::fixed << std::setprecision(12) << e << " in? " << (e.in(network.get_linked_edges()) ? "True" : "False") << " -> " << edge_likelihood << " av. " << average_count << " ppx[" << i << "] " << ppx_for_heldout[i] << std::endl;
-			// FIXME FIXME should not test again if we already know
-			// assert(edge->second == e.in(network.get_linked_edges()));
+			// std::cerr << std::fixed << std::setprecision(12) << e << " in? " << e.in(network.get_linked_edges()) ? "True" : "False") << " -> " << edge_likelihood << " av. " << average_count << " ppx[" << i << "] " << ppx_for_heldout[i] << std::endl;
+			// FIXME FIXME should not test again if we already kno assert(edge->second == e.in(network.get_linked_edges()));
 			if (edge->second) {
 				link_count++;
 				link_likelihood += std::log(ppx_for_heldout[i]);
@@ -330,7 +332,6 @@ protected:
 
 protected:
 	const Options args_;
-	const Data *data_;
 	Network network;
 
 	double alpha;

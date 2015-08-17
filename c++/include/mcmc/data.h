@@ -22,18 +22,20 @@
 #include <iostream>
 #include <iomanip>
 
-#define USE_GOOGLE_SPARSE_HASH
-
-#ifdef USE_GOOGLE_SPARSE_HASH
 // If <cinttypes> is not included before <google/sparse_hash_set>, compile errors
 // because of missing defines of SCNd64 and friends
 #include <cinttypes>
 #include <google/sparse_hash_set>
 #include <google/sparse_hash_map>
-#endif
 
 #include "mcmc/exception.h"
 #include "mcmc/np.h"
+
+
+#define EDGESET_IS_ADJACENCY_LIST
+
+#define USE_GOOGLE_SPARSE_HASH
+
 
 namespace mcmc {
 
@@ -73,8 +75,6 @@ static void print_mem_usage(std::ostream &s) {
 }
 
 
-#define EDGESET_IS_ADJACENCY_LIST
-
 #ifdef USE_GOOGLE_SPARSE_HASH
 class GoogleHashSet : public google::sparse_hash_set<Vertex> {
 public:
@@ -103,14 +103,16 @@ public:
 		(void)get(s);
 	}
 
+
 	template <typename SET>
 	bool in(const SET &s) const {
 		return s.find(*this) != s.end();
 	}
 
-	bool in(const AdjacencyList &s) const {
+	template <typename SET>
+	bool in(const std::vector<SET> &s) const {
 		if (static_cast<::size_t>(first) >= s.size() ||
-				static_cast<::size_t>(second) >= s.size()) {
+			static_cast<::size_t>(second) >= s.size()) {
 			return false;
 		}
 
@@ -375,6 +377,21 @@ public:
 		// std::cout << "Edge set size " << N << std::endl;
 		std::cout << header_;
 		(void)dump_edgeset(std::cout, N, *E);
+	}
+
+	void save(const std::string &filename, bool compressed = false) const {
+#if defined EDGESET_IS_ADJACENCY_LIST && defined USE_GOOGLE_SPARSE_HASH
+		FileHandle f(filename, compressed, "w");
+		int32_t num_nodes = N;
+		f.write_fully(&num_nodes, sizeof num_nodes);
+		for (auto r : *E) {
+			GoogleHashSet &rc = const_cast<GoogleHashSet &>(r);
+			rc.write_metadata(f.handle());
+			rc.write_nopointer_data(f.handle());
+		}
+#else
+		throw MCMCException(std::string(__func__) + "() not implemented for this graph representation");
+#endif
 	}
 
 public:

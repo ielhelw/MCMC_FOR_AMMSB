@@ -30,7 +30,7 @@
 #include <mcmc/timer.h>
 #include <mr/timer.h>
 
-#if 0 && defined ENABLE_DISTRIBUTED
+#if 1 && defined ENABLE_DISTRIBUTED
 #  define USE_MPI
 #endif
 
@@ -362,9 +362,8 @@ class DKVStoreRDMA : public DKVStoreInterface {
   rdma_area<ValueType> cache_;
   rdma_area<ValueType> write_;
 
-#ifdef USE_MPI
   bool mpi_initialized = false;
-#else
+#ifndef USE_MPI
   std::string oob_impl_;
   std::string oob_interface_;
   mr::net::Network *network_;
