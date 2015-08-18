@@ -8,7 +8,7 @@ namespace mcmc {
   int base = 10;
 
   if (strncmp(arg, "0x", strlen("0x")) == 0 ||
-      strncmp(arg, "0X", strlen("0X") == 0)) {
+      strncmp(arg, "0X", strlen("0X")) == 0) {
     base = 16;
     arg += 2;
   } else if (arg[0] == '0') {
