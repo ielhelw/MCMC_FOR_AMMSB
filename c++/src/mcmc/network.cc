@@ -39,12 +39,6 @@ Network::~Network() {
 EdgeSample Network::sample_mini_batch(::size_t mini_batch_size,
                                       strategy::strategy strategy) const {
   switch (strategy) {
-    case strategy::RANDOM_PAIR:
-      return random_pair_sampling(mini_batch_size);
-    case strategy::RANDOM_NODE:
-      return random_node_sampling();
-    case strategy::STRATIFIED_RANDOM_PAIR:
-      return stratified_random_pair_sampling(mini_batch_size);
     case strategy::STRATIFIED_RANDOM_NODE: {
       ::size_t num_pieces = (N + mini_batch_size - 1) / mini_batch_size;
       // std::cerr << "Set stratified random node sampling divisor to " <<
@@ -59,12 +53,6 @@ EdgeSample Network::sample_mini_batch(::size_t mini_batch_size,
 ::size_t Network::minibatch_nodes_for_strategy(
     ::size_t mini_batch_size, strategy::strategy strategy) const {
   switch (strategy) {
-    case strategy::RANDOM_PAIR:
-      return 2 * minibatch_edges_for_strategy(mini_batch_size, strategy);
-    case strategy::RANDOM_NODE:
-      return minibatch_edges_for_strategy(mini_batch_size, strategy) + 1;
-    case strategy::STRATIFIED_RANDOM_PAIR:
-      return minibatch_edges_for_strategy(mini_batch_size, strategy) + 1;
     case strategy::STRATIFIED_RANDOM_NODE:
       return minibatch_edges_for_strategy(mini_batch_size, strategy) + 1;
     default:
@@ -75,12 +63,6 @@ EdgeSample Network::sample_mini_batch(::size_t mini_batch_size,
 ::size_t Network::minibatch_edges_for_strategy(
     ::size_t mini_batch_size, strategy::strategy strategy) const {
   switch (strategy) {
-    case strategy::RANDOM_PAIR:
-      return mini_batch_size + 1;
-    case strategy::RANDOM_NODE:
-      return N - held_out_map.size() - test_map.size();
-    case strategy::STRATIFIED_RANDOM_PAIR:
-      return mini_batch_size + 1;
     case strategy::STRATIFIED_RANDOM_NODE:
       return std::max(mini_batch_size + 1, get_max_fan_out(1));
     // return fan_out_cumul_distro[mini_batch_size];
@@ -111,132 +93,6 @@ const EdgeMap &Network::get_test_set() const { return test_map; }
 
 void Network::set_num_pieces(::size_t num_pieces) {
   this->num_pieces = num_pieces;
-}
-
-EdgeSample Network::random_pair_sampling(::size_t mini_batch_size) const {
-  MinibatchSet *mini_batch_set = new MinibatchSet();
-
-  // iterate until we get $p$ valid edges.
-  for (::size_t p = mini_batch_size; p > 0; p--) {
-    int firstIdx = Random::random->randint(0, N - 1);
-    int secondIdx = Random::random->randint(0, N - 1);
-    if (firstIdx == secondIdx) {
-      continue;
-    }
-
-    // make sure the first index is smaller than the second one, since
-    // we are dealing with undirected graph.
-    Edge edge(std::min(firstIdx, secondIdx), std::max(firstIdx, secondIdx));
-
-    // the edge should not be in  1)hold_out set, 2)test_set  3)
-    // mini_batch_set (avoid duplicate)
-    if (edge.in(held_out_map) || edge.in(test_map) ||
-        edge.in(*mini_batch_set)) {
-      continue;
-    }
-
-    // great, we put it into the mini_batch list.
-    edge.insertMe(mini_batch_set);
-  }
-
-  double scale = ((N * (N - 1)) / 2) / mini_batch_size;
-
-  return EdgeSample(mini_batch_set, scale);
-}
-
-EdgeSample Network::random_node_sampling() const {
-  MinibatchSet *mini_batch_set = new MinibatchSet();
-
-  // randomly select the node ID
-  int nodeId = Random::random->randint(0, N - 1);
-  for (int i = 0; i < N; i++) {
-    // make sure the first index is smaller than the second one, since
-    // we are dealing with undirected graph.
-    Edge edge(std::min(nodeId, i), std::max(nodeId, i));
-    if (edge.in(held_out_map) || edge.in(test_map) ||
-        edge.in(*mini_batch_set)) {
-      continue;
-    }
-
-    edge.insertMe(mini_batch_set);
-  }
-
-  return EdgeSample(mini_batch_set, N);
-}
-
-EdgeSample Network::stratified_random_pair_sampling(
-    ::size_t mini_batch_size) const {
-#ifdef EDGESET_IS_ADJACENCY_LIST
-  throw UnimplementedException(
-      "Port stratified random pair sampling to AdjacencyList implementation");
-#else
-  int p = (int)mini_batch_size;
-
-  MinibatchSet *mini_batch_set = new MinibatchSet();
-
-  int flag = Random::random->randint(0, 1);
-
-  if (flag == 0) {
-// sample mini-batch from linked edges
-#ifdef RANDOM_FOLLOWS_PYTHON
-    std::cerr << __func__
-              << ": FIXME: replace EdgeList w/ (unordered) EdgeSet again"
-              << std::endl;
-    auto sampled_linked_edges =
-        Random::random->sampleList(linked_edges, mini_batch_size * 2);
-#else
-    auto sampled_linked_edges =
-        Random::random->sample(linked_edges, mini_batch_size * 2);
-#endif
-    for (auto edge : *sampled_linked_edges) {
-      if (p < 0) {
-        std::cerr << __func__ << ": Are you sure p < 0 is a good idea?"
-                  << std::endl;
-        break;
-      }
-
-      if (edge.in(held_out_map) || edge.in(test_map) ||
-          edge.in(*mini_batch_set)) {
-        continue;
-      }
-
-      edge.insertMe(mini_batch_set);
-      p--;
-    }
-
-    delete sampled_linked_edges;
-
-    return EdgeSample(mini_batch_set,
-                      get_num_linked_edges() / (double)mini_batch_size);
-
-  } else {
-    // sample mini-batch from non-linked edges
-    while (p > 0) {
-      int firstIdx = Random::random->randint(0, N - 1);
-      int secondIdx = Random::random->randint(0, N - 1);
-
-      if (firstIdx == secondIdx) {
-        continue;
-      }
-
-      // ensure the first index is smaller than the second one.
-      Edge edge(std::min(firstIdx, secondIdx), std::max(firstIdx, secondIdx));
-
-      // check conditions:
-      if (edge.in(*linked_edges) || edge.in(held_out_map) ||
-          edge.in(test_map) || edge.in(*mini_batch_set)) {
-        continue;
-      }
-
-      edge.insertMe(mini_batch_set);
-      p--;
-    }
-
-    return EdgeSample(
-        mini_batch_set,
-        (N * (N - 1)) / 2 - get_num_linked_edges() / (double)mini_batch_size);
-  }
-#endif
 }
 
 EdgeSample Network::stratified_random_node_sampling(::size_t num_pieces) const {

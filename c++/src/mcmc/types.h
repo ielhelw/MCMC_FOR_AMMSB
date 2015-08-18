@@ -5,9 +5,6 @@ namespace mcmc {
 namespace strategy {
 
 enum strategy {
-	RANDOM_PAIR,
-	RANDOM_NODE,
-	STRATIFIED_RANDOM_PAIR,
 	STRATIFIED_RANDOM_NODE,
 };
 

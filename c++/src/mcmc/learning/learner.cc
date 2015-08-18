@@ -54,19 +54,7 @@ Learner::Learner(const Options &args) : args_(args) {
 
   ppx_for_heldout = std::vector<double>(network.get_held_out_size(), 0.0);
 
-  if (args_.strategy == "unspecified") {
-    strategy = strategy::STRATIFIED_RANDOM_NODE;
-  } else if (args_.strategy == "random-pair") {
-    strategy = strategy::RANDOM_PAIR;
-  } else if (args_.strategy == "random-node") {
-    strategy = strategy::RANDOM_NODE;
-  } else if (args_.strategy == "stratified-random-pair") {
-    strategy = strategy::STRATIFIED_RANDOM_PAIR;
-  } else if (args_.strategy == "stratified-random-node") {
-    strategy = strategy::STRATIFIED_RANDOM_NODE;
-  } else {
-    throw MCMCException("Unknown strategy type: " + args_.strategy);
-  }
+  strategy = strategy::STRATIFIED_RANDOM_NODE;
 }
 
 Learner::~Learner() {

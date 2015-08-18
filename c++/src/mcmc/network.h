@@ -114,34 +114,6 @@ class Network {
   void set_num_pieces(::size_t num_pieces);
 
   /**
-   * sample list of edges from the whole training network uniformly, regardless
-   * of links or non-links edges.The sampling approach is pretty simple:
-   *randomly generate
-   * one edge and then check if that edge passes the conditions. The iteration
-   * stops until we get enough (mini_batch_size) edges.
-   *
-   * @return the caller must delete the result
-   */
-  EdgeSample random_pair_sampling(::size_t mini_batch_size) const;
-
-  /**
-   * A set consists of all the pairs that involve one of the N nodes: we first
-   * sample one of
-   * the node from N nodes, and sample all the edges for that node. h(x) = 1/N
-   */
-  EdgeSample random_node_sampling() const;
-
-  /**
-   * We divide the edges into linked and non-linked edges, and each time either
-   * sample
-   * mini-batch from linked-edges or non-linked edges.  g(x) = 1/N_0 for
-   * non-link and
-   * 1/N_1 for link, where N_0-> number of non-linked edges, N_1-> # of linked
-   * edges.
-   */
-  EdgeSample stratified_random_pair_sampling(::size_t mini_batch_size) const;
-
-  /**
    * stratified sampling approach gives more attention to link edges (the edge
    * is connected by two
    * nodes). The sampling process works like this:
