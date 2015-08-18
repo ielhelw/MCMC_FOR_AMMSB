@@ -3,7 +3,7 @@ import sys
 from com.uva.learning.learner import Learner
 from sets import Set
 import math
-from com.uva.wrapper_random import WrapperRandom as random
+from com.uva.source_aware_random import SourceAwareRandom as random
 import numpy as np
 import copy
 # from com.uva.sample_latent_vars import sample_z_ab_from_edge
@@ -90,7 +90,7 @@ class MCMCSamplerStochastic(Learner):
             
         if True and self._step_count % 1 == 0:
             ppx_score = self._cal_perplexity_held_out()
-            print "perplexity for hold out set is: "  + str(ppx_score)
+            sys.stdout.write("step count: %d perplexity for hold out set is: %.12f\n" % (self._step_count, ppx_score))
             self._ppxs_held_out.append(ppx_score)
 
         while self._step_count < self._max_iteration and not self._is_converged():
@@ -117,7 +117,7 @@ class MCMCSamplerStochastic(Learner):
 
             if self._step_count % 1 == 0:
                 ppx_score = self._cal_perplexity_held_out()
-                print "perplexity for hold out set is: "  + str(ppx_score)
+                sys.stdout.write("step count: %d perplexity for hold out set is: %.12f\n" % (self._step_count, ppx_score))
                 self._ppxs_held_out.append(ppx_score)
                             
             self._step_count += 1

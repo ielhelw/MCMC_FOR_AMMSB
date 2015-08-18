@@ -1,4 +1,4 @@
-from com.uva.wrapper_random import WrapperRandom as random
+from com.uva.source_aware_random import SourceAwareRandom as random
 import argparse
 from com.uva.network import Network
 from com.uva.preprocess.data_factory import DataFactory

@@ -172,7 +172,7 @@ class Learner(object):
                   str(non_link_likelihood/non_link_count) + " " +str(non_link_count)+" " + str(avg_likelihood1)
 
         self._average_count = self._average_count + 1
-        print "average_count is: " + str(self._average_count) + " "
+        sys.stdout.write("average_count is: %d " % self._average_count)
 
         return (-avg_likelihood)            
     

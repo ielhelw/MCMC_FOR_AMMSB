@@ -1,7 +1,7 @@
 from random import Random as SystemRandom
 from com.uva.custom_random.custom_random import CustomRandom
 
-class WrapperRandom:
+class SourceAwareRandom:
 
     def __init__(self):
         self.random_sources = (
@@ -40,5 +40,5 @@ class WrapperRandom:
         else:
            return self.rng.sample(list(xrange(N, count)))
 
-WrapperRandom = WrapperRandom()
+SourceAwareRandom = SourceAwareRandom()
 # _inst.init(42, True)
