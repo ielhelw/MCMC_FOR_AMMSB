@@ -93,6 +93,7 @@ public:
 		  groupSize(args.openclGroupSize), numGroups(args.openclNumGroups),
 		  globalThreads(args.openclGroupSize * args.openclNumGroups),
 		  kRoundedThreads(round_up_to_multiples(K, groupSize)), totalAllocedClBufers(0) {
+		LoadNetwork();
 
 #ifdef RANDOM_FOLLOWS_CPP
 		std::cout << "RANDOM_FOLLOWS_CPP enabled" << std::endl;

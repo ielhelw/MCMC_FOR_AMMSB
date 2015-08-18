@@ -12,19 +12,17 @@
 #  include <omp.h>
 #else
 
-static int omp_get_max_threads() {
+inline int omp_get_max_threads() {
 	    return 1;
 }
 
-static int omp_get_thread_num() {
+inline int omp_get_thread_num() {
 	    return 0;
 }
 
-#ifdef ACTUALLY_USED
-static int omp_get_num_threads() {
+inline int omp_get_num_threads() {
 	    return 1;
 }
-#endif
 
 #endif
 
