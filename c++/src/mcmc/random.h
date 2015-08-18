@@ -53,9 +53,6 @@ class Random {
   template <class List>
   List *sample(const List &population, ::size_t count);
 
-  template <class List>
-  List *sample(const List *population, ::size_t count);
-
   template <class Element>
   std::vector<Element> *sample(const std::vector<Element> &population,
                                ::size_t count);
@@ -65,10 +62,6 @@ class Random {
   template <class Container>
   std::list<typename Container::value_type> *sampleList(
       const Container &population, ::size_t count);
-
-  template <class Container>
-  std::list<typename Container::value_type> *sampleList(
-      const Container *population, ::size_t count);
 
   std::vector<std::vector<double> > gamma(double p1, double p2, ::size_t n1,
                                           ::size_t n2);
@@ -140,11 +133,6 @@ List *Random::sample(const List &population, ::size_t count) {
   return result;
 }
 
-template <class List>
-List *Random::sample(const List *population, ::size_t count) {
-  return sample(*population, count);
-}
-
 template <class Element>
 std::vector<Element> *Random::sample(const std::vector<Element> &population,
                                      ::size_t count) {
@@ -180,12 +168,6 @@ std::list<typename Container::value_type> *Random::sampleList(
 #endif
 
   return result;
-}
-
-template <class Container>
-std::list<typename Container::value_type> *Random::sampleList(
-    const Container *population, ::size_t count) {
-  return sampleList(*population, count);
 }
 
 }  // namespace Random
