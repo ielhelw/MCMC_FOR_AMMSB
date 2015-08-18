@@ -108,11 +108,11 @@ class Learner {
         sum += pi_a[k] * pi_b[k];
 #else
         double f = pi_a[k] * pi_b[k];
+        assert(!std::isnan(f));
         s += f * (1.0 - beta[k]);
         sum += f;
-#endif
-        assert(!std::isnan(f));
         assert(!std::isnan(s));
+#endif
         assert(!std::isnan(sum));
       }
       s += (1.0 - sum) * (1.0 - epsilon);
