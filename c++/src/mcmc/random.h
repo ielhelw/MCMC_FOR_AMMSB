@@ -23,9 +23,6 @@ namespace Random {
 #define RANDOM_SYSTEM
 #endif
 
-// #define RANDOM_SYSTEM
-// #define USE_TAUS2_RANDOM
-
 class Random {
  protected:
   Random();
@@ -44,7 +41,7 @@ class Random {
 
   inline uint64_t rand();
 #else
-  const uint64_t seed(int x);
+  uint64_t seed(int x) const;
 #endif
 
   int64_t randint(int64_t from, int64_t upto);
@@ -90,7 +87,6 @@ class Random {
               Inserter inserter);
 
 #ifndef RANDOM_SYSTEM
- protected:
   double gsl_ran_gaussian_ziggurat(const double sigma);
 
   double gsl_rng_uniform_pos();
@@ -105,12 +101,8 @@ class Random {
   ::size_t ktab_exceed_randn = 0;
 
 #else
-#if __GNUC_MINOR__ >= 5
   std::default_random_engine generator;
   std::normal_distribution<double> normalDistribution;
-#else  // if __GNUC_MINOR__ >= 5
-  throw UnimplementedException("random::gamma");
-#endif
 #endif  // ndef RANDOM_SYSTEM
 };
 
