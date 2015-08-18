@@ -34,7 +34,8 @@ int main(int argc, char *argv[]) {
 	  getline(std::cin, dummy);
   }
 
-  Network network(data, 0.1);
+  Network network;
+  network.Init(data, 0.1);
 
   std::cerr << "Network: N " << network.get_num_nodes() <<
 	  " E " << network.get_num_total_edges() <<

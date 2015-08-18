@@ -50,7 +50,7 @@ class Network {
    *     vlaidation_ratio:  the percentage of data used for validation and
    *testing.
    */
-  Network(const Data *data, double held_out_ratio);
+  void Init(const Data *data, double held_out_ratio);
 
   virtual ~Network();
 

@@ -172,11 +172,13 @@ const Data *Relativity::process() {
     std::cerr << duration_cast<milliseconds>((system_clock::now() - start))
                      .count() << "ms create NetworkGraph" << std::endl;
     print_mem_usage(std::cerr);
+#ifdef EDGESET_IS_ADJACENCY_LIST
     for (::size_t i = 0; i < E->size(); i++) {
       if ((*E)[i].size() == 0) {
         std::cerr << "Find no edges to/from " << i << std::endl;
       }
     }
+#endif
   }
 
   infile.close();

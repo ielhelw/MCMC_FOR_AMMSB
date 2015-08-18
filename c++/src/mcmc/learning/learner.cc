@@ -13,7 +13,8 @@ Learner::Learner(const Options &args) : args_(args) {
               << std::endl;
   }
   // FIXME: make Network the owner of data
-  network = Network(data_, held_out_ratio);
+  network = Network();
+  network.Init(data_, held_out_ratio);
 
   // model priors
   alpha = args_.alpha;

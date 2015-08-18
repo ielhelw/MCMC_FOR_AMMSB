@@ -4,7 +4,7 @@ namespace mcmc {
 
 Network::Network() {}
 
-Network::Network(const Data *data, double held_out_ratio) {
+void Network::Init(const Data *data, double held_out_ratio) {
   progress = 1 << 20;  // FIXME: make this a parameter
 
   N = data->N;             // number of nodes in the graph
