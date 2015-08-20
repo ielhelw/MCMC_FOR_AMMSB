@@ -21,6 +21,7 @@
 #include <unordered_map>
 #include <string>
 #include <exception>
+#include <iostream>     // Warning/error report
 
 #include <boost/program_options.hpp>
 
@@ -190,7 +191,11 @@ class DKVStoreInterface {
   }
 
   virtual void barrier() {
-    throw DKVException("Unimplemented " + std::string(__func__));
+    static bool first = true;
+    if (first) {
+      std::cerr << "Unimplemented " << __func__ << std::endl;
+      first = false;
+    }
   }
 
   /**
