@@ -216,8 +216,6 @@ public:
 		Vertex ix = 0;
 		for (auto edge : data_) {
 			const Edge &e = edge.edge;
-			Vertex i = e.first;
-			Vertex j = e.second;
 			nodes_[ix] = e.first;
 			ix++;
 			nodes_[ix] = e.second;
