@@ -18,6 +18,7 @@ class Learner(object):
         self._eta = np.zeros(2)
         self._eta[0] = args.eta0
         self._eta[1] = args.eta1
+        self._average_count = 1
         
         # parameters related to control model 
         self._K = args.K
@@ -47,7 +48,13 @@ class Learner(object):
         self.CONVERGENCE_THRESHOLD = 0.000000000001
         
         self.stepsize_switch = False
-        
+
+        self._ppx_for_heldout = np.zeros(network.get_held_out_size())
+
+        sys.stdout.write("K %d N %d\n" % (self._K, self._N))
+        sys.stdout.write("alpha %.12f eta %.12f,%.12f epsilon %.12f\n" % (self._alpha, self._eta[0], self._eta[1], self._epsilon))
+        sys.stdout.write("mini_batch size %d\n" % self._mini_batch_size)
+
         
     @abc.abstractmethod
     def run(self):
@@ -63,11 +70,13 @@ class Learner(object):
             4. Stochastic variational inference
         """
     
+    """
     def get_ppxs_held_out(self):
         return self._ppxs_held_out
     
     def get_ppxs_test(self):
         return self._ppxs_test
+    """
     
     def set_max_iteration(self, max_iteration):
         self._max_iteration = max_iteration
@@ -123,36 +132,48 @@ class Learner(object):
         which is not true representation of actual data set, which is extremely sparse. 
         """
         
-        link_likelihood = 0
-        non_link_likelihood = 0
-        edge_likelihood = 0 
+        link_likelihood = 0.0
+        non_link_likelihood = 0.0
+        edge_likelihood = 0.0 
         link_count = 0
         non_link_count = 0
         
         key_list = list(data.keys())    # for compatibility w/ C++
         key_list.sort()
+        idx = 0
         for edge in key_list:
             edge_likelihood = self.__cal_edge_likelihood(self._pi[edge[0]], self._pi[edge[1]], \
                                                        data[edge], self._beta)
             # sys.stdout.write("%s in? %s -> %.12f\n" % (str(edge), str(edge in self._network.get_linked_edges()), edge_likelihood))
+            self._ppx_for_heldout[idx] = (self._ppx_for_heldout[idx] * (self._average_count - 1) + edge_likelihood) / self._average_count
             if edge in self._network.get_linked_edges():
                 link_count += 1
-                link_likelihood += edge_likelihood
+                link_likelihood += math.log(self._ppx_for_heldout[idx])
+                # link_likelihood += edge_likelihood
             else:
                 non_link_count += 1
-                non_link_likelihood += edge_likelihood
+                # non_link_likelihood += edge_likelihood
+                non_link_likelihood += math.log(self._ppx_for_heldout[idx])
+            idx += 1
         # print "ratio " + str(self._link_ratio) + " count: link " + str(link_count) + " " + str(link_likelihood) + " non-link " + str(non_link_count) + " " + str(non_link_likelihood)
         
         # weight each part proportionally. 
-        avg_likelihood1 = self._link_ratio*(link_likelihood/link_count) + \
-                           (1-self._link_ratio)*(non_link_likelihood/non_link_count) 
+        # avg_likelihood1 = self._link_ratio*(link_likelihood/link_count) + \
+        #                    (1-self._link_ratio)*(non_link_likelihood/non_link_count) 
         
         # direct calculation. 
-        avg_likelihood = (link_likelihood + non_link_likelihood)/(link_count+non_link_count)
-        print str(avg_likelihood) + " " + str(link_likelihood/link_count) + " " + str(link_count) + " " + \
+        avg_likelihood = 0.0
+        if link_count + non_link_count != 0:
+            avg_likelihood = (link_likelihood + non_link_likelihood)/(link_count+non_link_count)
+        if True:
+            avg_likelihood1 = self._link_ratio*(link_likelihood/link_count) + \
+                               (1-self._link_ratio)*(non_link_likelihood/non_link_count) 
+            print str(avg_likelihood) + " " + str(link_likelihood/link_count) + " " + str(link_count) + " " + \
                   str(non_link_likelihood/non_link_count) + " " +str(non_link_count)+" " + str(avg_likelihood1)
-        #print "perplexity score is: " + str(math.exp(-avg_likelihood))    
-        #print "link: " + str(link_likelihood) + "  non-link:" + str(non_link_likelihood)
+
+        self._average_count = self._average_count + 1
+        print "average_count is: " + str(self._average_count) + " "
+
         return (-avg_likelihood)            
     
     
@@ -182,7 +203,7 @@ class Learner(object):
         
         if s < 1e-30:
             s = 1e-30
-        return math.log(s)
+        return s
         
         """
         prob = 0

@@ -51,6 +51,8 @@ public:
 	}
 
 #ifndef RANDOM_SYSTEM
+
+protected:
 	inline uint64_t xorshift_128plus() {
 		uint64_t s1 = xorshift_state[0];
 		uint64_t s0 = xorshift_state[1];
@@ -59,6 +61,7 @@ public:
 		return (xorshift_state[1] = (s1 ^ s0 ^ (s1 >> 17) ^ (s0 >> 26))) + s0;
 	}
 
+public:
     uint64_t seed(int x) const {
       return xorshift_state[x];
     }
@@ -68,14 +71,26 @@ public:
 		// std::cerr << "0: rand/X() " << r << std::endl;
 		return r;
 	}
-#else
+
+	double randn() {
+		return gsl_ran_gaussian_ziggurat(NULL, 1.0);
+	}
+
+#else	// ndef RANDOM_SYSTEM
 
     uint64_t seed(int x) const {
       return 0;
     }
 
-	// use system ::rand()
+	double randn() {
+#if __GNUC_MINOR__ >= 5
+		return normalDistribution(generator);
+#else	// if __GNUC_MINOR__ >= 5
+		throw UnimplementedException("random::randn");
 #endif
+	}
+
+#endif	// ndef RANDOM_SYSTEM
 
 	int64_t randint(int64_t from, int64_t upto) {
 		return (rand() % (upto + 1 - from)) + from;
@@ -85,6 +100,13 @@ public:
 		return (1.0 * rand() / std::numeric_limits<uint64_t>::max());
 	}
 
+	std::vector<double> randn(::size_t K) {
+		auto r = std::vector<double>(K);
+		for (::size_t i = 0; i < K; i++) {
+			r[i] = randn();
+		}
+		return r;
+	}
 
 	std::vector<std::vector<double> > randn(::size_t K, ::size_t N) {
 		std::vector<std::vector<double> > r(K);
@@ -418,27 +440,6 @@ gsl_ran_gaussian_ziggurat (const gsl_rng * r, const double sigma)
 
 
 public:
-	double randn() {
-#ifdef RANDOM_SYSTEM
-#if __GNUC_MINOR__ >= 5
-		return normalDistribution(generator);
-
-#else	// if __GNUC_MINOR__ >= 5
-		throw UnimplementedException("random::randn");
-#endif
-#else
-		return gsl_ran_gaussian_ziggurat(NULL, 1.0);
-#endif
-	}
-
-	std::vector<double> randn(::size_t K) {
-		auto r = std::vector<double>(K);
-		for (::size_t i = 0; i < K; i++) {
-			r[i] = randn();
-		}
-
-		return r;
-	}
 
 	void report() {
 #ifndef RANDOM_SYSTEM

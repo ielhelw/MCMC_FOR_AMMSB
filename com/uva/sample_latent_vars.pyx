@@ -3,7 +3,7 @@ cimport numpy as np
 import numpy as np
 import random
 from libc.stdlib cimport rand
-from com.uva.file_random import file_random as random
+from com.uva.wrapper_random import WrapperRandom as random
 
 def sample_z_ab_from_edge(int y, np.ndarray[double, ndim=1] pi_a, 
                                np.ndarray[double, ndim=1] pi_b,
