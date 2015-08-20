@@ -4,14 +4,6 @@
 namespace mcmc {
 namespace Random {
 
-#ifdef RANDOM_FOLLOWS_PYTHON
-FileReaderRandom *random = new FileReaderRandom(0);
-#elif defined RANDOM_SYSTEM
-Random *random = new Random(0);
-#else
-Random *random = new Random(42);
-#endif
-
 #ifndef RANDOM_SYSTEM
 /* tabulated values for the heigt of the Ziggurat levels */
 const double Random::ytab[128] = {

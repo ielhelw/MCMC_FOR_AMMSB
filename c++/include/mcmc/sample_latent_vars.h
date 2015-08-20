@@ -1,3 +1,5 @@
+#ifdef DEPRECATED
+
 #ifndef MCMC_SAMPLE_LATENT_VARS_H__
 #define MCMC_SAMPLE_LATENT_VARS_H__
 
@@ -78,3 +80,5 @@ int sample_z_ab_from_edge(int y, const std::vector<double> &pi_a,
 }	// namespace mcmc
 
 #endif	// ndef MCMC_SAMPLE_LATENT_VARS_H__
+
+#endif

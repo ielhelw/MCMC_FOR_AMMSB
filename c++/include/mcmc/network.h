@@ -11,6 +11,7 @@
 #include "mcmc/types.h"
 #include "mcmc/data.h"
 #include "mcmc/random.h"
+#include "mcmc/source-aware-random.h"
 #include "mcmc/preprocess/dataset.h"
 
 namespace mcmc {
@@ -86,7 +87,9 @@ public:
 	 *     create_held_out: create held-out set and test set; otherwise, caller must
 	 *     					read them from file
 	 */
-	void Init(const Options& args, double held_out_ratio) {
+	void Init(const Options& args, double held_out_ratio, SourceAwareRandom *rng) {
+		rng_ = rng;
+
 		held_out_ratio_ = held_out_ratio;
 		if (held_out_ratio_ == 0) {
 			held_out_ratio_ = 0.1;
@@ -123,7 +126,7 @@ public:
 
 		} else {
 #ifdef EDGESET_IS_ADJACENCY_LIST
-			adjacency_list_init();
+			adjacency_list_init(args.random_seed);
 			num_total_edges = cumulative_edges[N - 1] / 2; // number of undirected edges.
 #else
 			num_total_edges = linked_edges->size();		// number of total edges.
@@ -268,16 +271,18 @@ public:
 	 */
 	EdgeSample sample_mini_batch(::size_t mini_batch_size, strategy::strategy strategy) const {
 		switch (strategy) {
+#ifdef DEPRECATED
 		case strategy::RANDOM_PAIR:
 			return random_pair_sampling(mini_batch_size);
 		case strategy::RANDOM_NODE:
 			return random_node_sampling();
 		case strategy::STRATIFIED_RANDOM_PAIR:
 			return stratified_random_pair_sampling(mini_batch_size);
+#endif
 		case strategy::STRATIFIED_RANDOM_NODE:
 			{
 				::size_t num_pieces = (N + mini_batch_size - 1) / mini_batch_size;
-				// std::cerr << "Set stratified random node sampling divisor to " << num_pieces << std::endl;
+				// std::cerr << "Set stratified random node sampling divisor to " << num_pieces << " mini_batch_size " << mini_batch_size << std::endl;
 				return stratified_random_node_sampling(num_pieces);
 			}
 		default:
@@ -287,12 +292,14 @@ public:
 
 	::size_t minibatch_nodes_for_strategy(::size_t mini_batch_size, strategy::strategy strategy) const {
 		switch (strategy) {
+#ifdef DEPRECATED
 		case strategy::RANDOM_PAIR:
 			return 2 * minibatch_edges_for_strategy(mini_batch_size, strategy);
 		case strategy::RANDOM_NODE:
 			return minibatch_edges_for_strategy(mini_batch_size, strategy) + 1;
 		case strategy::STRATIFIED_RANDOM_PAIR:
 			return minibatch_edges_for_strategy(mini_batch_size, strategy) + 1;
+#endif
 		case strategy::STRATIFIED_RANDOM_NODE:
 			return minibatch_edges_for_strategy(mini_batch_size, strategy) + 1;
 		default:
@@ -302,12 +309,14 @@ public:
 
 	::size_t minibatch_edges_for_strategy(::size_t mini_batch_size, strategy::strategy strategy) const {
 		switch (strategy) {
+#ifdef DEPRECATED
 		case strategy::RANDOM_PAIR:
 			return mini_batch_size + 1;
 		case strategy::RANDOM_NODE:
 			return N - held_out_map.size() - test_map.size();
 		case strategy::STRATIFIED_RANDOM_PAIR:
 			return mini_batch_size + 1;
+#endif
 		case strategy::STRATIFIED_RANDOM_NODE:
 			return std::max(mini_batch_size + 1, get_max_fan_out(1));
 			// return fan_out_cumul_distro[mini_batch_size];
@@ -346,6 +355,7 @@ public:
 	}
 #endif
 
+#ifdef DEPRECATED
 	/**
 	 * sample list of edges from the whole training network uniformly, regardless
 	 * of links or non-links edges.The sampling approach is pretty simple: randomly generate
@@ -426,7 +436,7 @@ public:
 
 		if (flag == 0) {
 			// sample mini-batch from linked edges
-#ifdef RANDOM_FOLLOWS_PYTHON
+#if defined RANDOM_FOLLOWS_PYTHON || defined RANDOM_FOLLOWS_CPP_WENZHE
 			std::cerr << __func__ << ": FIXME: replace EdgeList w/ (unordered) EdgeSet again" << std::endl;
 			auto sampled_linked_edges = Random::random->sampleList(linked_edges, mini_batch_size * 2);
 #else
@@ -478,6 +488,7 @@ public:
 		}
 #endif
 	}
+#endif
 
 
 	/**
@@ -492,11 +503,12 @@ public:
 	 *         we sample equals to  number of all non-link edges / num_pieces
 	 */
 	EdgeSample stratified_random_node_sampling(::size_t num_pieces) const {
+		Random::Random *rng = rng_->random(SourceAwareRandom::MINIBATCH_SAMPLER);
 		while (true) {
 			// randomly select the node ID
-			int nodeId = Random::random->randint(0, N - 1);
+			int nodeId = rng->randint(0, N - 1);
 			// decide to sample links or non-links
-			int flag = Random::random->randint(0, 1);	// flag=0: non-link edges  flag=1: link edges
+			int flag = rng->randint(0, 1);	// flag=0: non-link edges  flag=1: link edges
 			// std::cerr << "num_pieces " << num_pieces << " flag " << flag << std::endl;
 
 			MinibatchSet *mini_batch_set = new MinibatchSet();
@@ -513,9 +525,9 @@ public:
 					// because of the sparsity, when we sample $mini_batch_size*2$ nodes, the list likely
 					// contains at least mini_batch_size valid nodes.
 #ifdef EFFICIENCY_FOLLOWS_PYTHON
-					auto nodeList = Random::random->sample(np::xrange(0, N), mini_batch_size * 2);
+					auto nodeList = rng->sample(np::xrange(0, N), mini_batch_size * 2);
 #else
-					auto nodeList = Random::random->sampleRange(N, mini_batch_size * 2);
+					auto nodeList = rng->sampleRange(N, mini_batch_size * 2);
 #endif
 					for (std::vector<int>::iterator neighborId = nodeList->begin();
 							neighborId != nodeList->end();
@@ -650,7 +662,7 @@ protected:
 	}
 
 
-	void adjacency_list_init() {
+	void adjacency_list_init(int random_seed) {
 		cumulative_edges.resize(N);
 
 		if (linked_edges->size() != static_cast<::size_t>(N)) {
@@ -664,10 +676,12 @@ protected:
 		prefix_sum(&cumulative_edges);
 		std::cerr << "Found prefix sum for edges in AdjacencyList graph: top bucket edge " << cumulative_edges[cumulative_edges.size() - 1] << " max edge " << (cumulative_edges[cumulative_edges.size() - 1] + (*linked_edges)[cumulative_edges.size() - 1].size()) << std::endl;
  
-		// std::cerr << "Initializing the held-out set on multiple machines will create randomness bugs" << std::endl;
+		std::cerr << "***** FIXME: Initializing the held-out set on multiple machines will create randomness bugs: need to parametrize with mpi_size!" << std::endl;
 		thread_random.resize(omp_get_max_threads());
 		for (::size_t i = 0; i < thread_random.size(); ++i) {
-			thread_random[i] = new Random::Random(i, 47, false);
+			int seed = random_seed + SourceAwareRandom::NEIGHBOR_SAMPLER;
+			thread_random[i] = new Random::Random(seed + 1 + i // + mpi_rank * thread_random.size()
+												  , seed, false);
 		}
 	}
 
@@ -751,12 +765,12 @@ protected:
 		while (count < p) {
 #if defined RANDOM_FOLLOWS_CPP_WENZHE || defined RANDOM_FOLLOWS_PYTHON
 			std::cerr << __func__ << ": FIXME: replace EdgeList w/ (unordered) EdgeSet again" << std::endl;
-			auto sampled_linked_edges = Random::random->sampleList(linked_edges, p);
+			auto sampled_linked_edges = rng_->random(SourceAwareRandom::GRAPH_INIT)->sampleList(linked_edges, p);
 #elif defined EDGESET_IS_ADJACENCY_LIST
 			std::vector<Edge> *sampled_linked_edges = new std::vector<Edge>();
 			sample_random_edges(linked_edges, p, sampled_linked_edges);
 #else
-			auto sampled_linked_edges = Random::random->sample(linked_edges, p);
+			auto sampled_linked_edges = rng_->random(SourceAwareRandom::GRAPH_INIT)->sample(linked_edges, p);
 #endif
 			for (auto edge : *sampled_linked_edges) {
 				// EdgeMap is an undirected graph, unfit for partitioning
@@ -776,8 +790,6 @@ protected:
 			if (false) {
 				std::cout << "sampled_linked_edges:" << std::endl;
 				dump(*sampled_linked_edges);
-				std::cout << "held_out_set:" << std::endl;
-				dump(held_out_map);
 			}
 
 			delete sampled_linked_edges;
@@ -800,6 +812,11 @@ protected:
 			std::cerr << "Edges in held-out set " << count << std::endl;
 			print_mem_usage(std::cerr);
 		}
+
+		if (false) {
+			std::cout << "held_out_set:" << std::endl;
+			dump(held_out_map);
+		}
 	}
 
 
@@ -818,13 +835,13 @@ protected:
 #if defined RANDOM_FOLLOWS_CPP_WENZHE || defined RANDOM_FOLLOWS_PYTHON
 			std::cerr << __func__ << ": FIXME: replace EdgeList w/ (unordered) EdgeSet again" << std::endl;
 			// FIXME make sampled_linked_edges an out param
-			auto sampled_linked_edges = Random::random->sampleList(linked_edges, 2 * p);
+			auto sampled_linked_edges = rng_->random(SourceAwareRandom::GRAPH_INIT)->sampleList(linked_edges, 2 * p);
 #elif defined EDGESET_IS_ADJACENCY_LIST
 			std::vector<Edge> *sampled_linked_edges = new std::vector<Edge>();
 			sample_random_edges(linked_edges, 2 * p, sampled_linked_edges);
 #else
 			// FIXME make sampled_linked_edges an out param
-			auto sampled_linked_edges = Random::random->sample(linked_edges, 2 * p);
+			auto sampled_linked_edges = rng_->random(SourceAwareRandom::GRAPH_INIT)->sample(linked_edges, 2 * p);
 #endif
 			for (auto edge : *sampled_linked_edges) {
 				if (p < 0) {
@@ -975,8 +992,8 @@ protected:
 	 */
 	Edge sample_non_link_edge_for_held_out() {
 		while (true) {
-			int firstIdx = Random::random->randint(0, N - 1);
-			int secondIdx = Random::random->randint(0, N - 1);
+			int firstIdx = rng_->random(SourceAwareRandom::GRAPH_INIT)->randint(0, N - 1);
+			int secondIdx = rng_->random(SourceAwareRandom::GRAPH_INIT)->randint(0, N - 1);
 
 			if (firstIdx == secondIdx) {
 				continue;
@@ -1002,8 +1019,8 @@ protected:
 	 */
 	Edge sample_non_link_edge_for_test() {
 		while (true) {
-			int firstIdx = Random::random->randint(0, N - 1);
-			int secondIdx = Random::random->randint(0, N - 1);
+			int firstIdx = rng_->random(SourceAwareRandom::GRAPH_INIT)->randint(0, N - 1);
+			int secondIdx = rng_->random(SourceAwareRandom::GRAPH_INIT)->randint(0, N - 1);
 
 			if (firstIdx == secondIdx) {
 				continue;
@@ -1053,6 +1070,8 @@ protected:
 
 	std::vector< ::size_t> fan_out_cumul_distro;
 	::size_t progress = 0;
+
+	SourceAwareRandom *rng_;
 };
 
 }; // namespace mcmc

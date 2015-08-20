@@ -6,6 +6,7 @@
 #include "mcmc/types.h"
 #include "mcmc/options.h"
 #include "mcmc/network.h"
+#include "mcmc/source-aware-random.h"
 #include "mcmc/preprocess/data_factory.h"
 
 namespace mcmc {
@@ -37,6 +38,8 @@ public:
 
 		stepsize_switch = false;
 
+		rng_.Init(args_.random_seed);
+
 		if (args_.strategy == "unspecified") {
 			strategy = strategy::STRATIFIED_RANDOM_NODE;
 		} else if (args_.strategy == "random-pair") {
@@ -59,7 +62,7 @@ public:
 			held_out_ratio = 0.01;
 			std::cerr << "Set held_out_ratio to default " << held_out_ratio << std::endl;
 		}
-		network.Init(args_, held_out_ratio);
+		network.Init(args_, held_out_ratio, &rng_);
 
 		// parameters related to network
 		N = network.get_num_nodes();
@@ -361,6 +364,14 @@ protected:
 	::size_t average_count;
 
 	strategy::strategy strategy;
+
+	SourceAwareRandom rng_;
+
+#ifdef RANDOM_FOLLOWS_CPP_WENZHE
+	const bool RANDOM_PRESERVE_RANGE_ORDER = true;
+#else
+	const bool RANDOM_PRESERVE_RANGE_ORDER = false;
+#endif
 };
 
 
