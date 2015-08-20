@@ -530,7 +530,6 @@ public:
 		po::notify(vm);
 
 		std::vector<std::string> dkv_args = po::collect_unrecognized(parsed.options, po::include_positional);
-		dkv_args.push_back("--rdma.mpi-initialized");
 
 		// d_kv_store = new DKV::DKVRamCloud::DKVStoreRamCloud();
 		std::cerr << "Use D-KV store type " << dkv_type << std::endl;
