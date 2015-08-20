@@ -30,9 +30,17 @@ enum MPI_ERRORS {
 enum MPI_Datatype {
 	MPI_INT                    = 0x4c000405,
 	MPI_LONG                   = 0x4c000407,
+	MPI_UNSIGNED_LONG          = 0x4c000408,
 	MPI_DOUBLE                 = 0x4c00080b,
 	MPI_BYTE                   = 0x4c00010d,
 };
+
+enum MPI_Op {
+	MPI_SUM,
+};
+
+void *MPI_IN_PLACE = (void *)0x88888888;
+
 
 int MPI_Init(int *argc, char ***argv) {
 	return MPI_SUCCESS;
@@ -71,6 +79,8 @@ int MPI_Comm_rank(MPI_Comm comm, int *mpi_rank) {
 		return sizeof(int32_t);
 	case MPI_LONG:
 		return sizeof(int64_t);
+	case MPI_UNSIGNED_LONG:
+		return sizeof(uint64_t);
 	case MPI_DOUBLE:
 		return sizeof(double);
 	case MPI_BYTE:
@@ -95,6 +105,14 @@ int MPI_Scatterv(void *sendbuf, int *sendcounts, int *displs, MPI_Datatype sendt
 					   sendcounts[0], sendtype,
 					   recvbuf, recvcount, recvtype,
 					   root, comm);
+}
+
+int MPI_Allreduce(void *sendbuf, void *recvbuf, int count, MPI_Datatype datatype,
+				  MPI_Op op, MPI_Comm comm) {
+	if (sendbuf != MPI_IN_PLACE) {
+		memcpy(recvbuf, sendbuf, count * mpi_datatype_size(datatype));
+	}
+	return MPI_SUCCESS;
 }
 
 #endif
@@ -200,8 +218,6 @@ public:
 		Vertex ix = 0;
 		for (auto edge : data_) {
 			const Edge &e = edge.edge;
-			Vertex i = e.first;
-			Vertex j = e.second;
 			nodes_[ix] = e.first;
 			ix++;
 			nodes_[ix] = e.second;

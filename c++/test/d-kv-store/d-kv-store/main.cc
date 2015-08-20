@@ -124,8 +124,6 @@ class DKVWrapper {
 
     d_kv_store_.Init(K, N, my_m * n, my_m, remains);
 
-    d_kv_store_.barrier();
-
     mcmc::Random::Random random(seed + rank);
 
     std::cout << "N " << N << " K " << K <<
@@ -197,7 +195,6 @@ class DKVWrapper {
       }
 
       std::cout << "*********" << iter << ":  Sync... " << std::endl;
-      d_kv_store_.barrier();
 
       {
         std::cout << "*********" << iter << ":  Start writing KVs... " <<
@@ -222,7 +219,6 @@ class DKVWrapper {
       delete neighbor;
 
       std::cout << "*********" << iter << ":  Sync... " << std::endl;
-      d_kv_store_.barrier();
 
       delete minibatch;
     }

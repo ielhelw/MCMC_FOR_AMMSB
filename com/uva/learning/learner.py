@@ -8,10 +8,12 @@ class Learner(object):
     This is base class for all concrete learners, including MCMC sampler, variational
     inference,etc. 
     """
-    def __init__(self, args, network):
+    def __init__(self, args, network, compatibility_mode):
         """
         initialize base learner parameters.
         """    
+        self._compatibility_mode = compatibility_mode
+
         self._network = network
         # model priors
         self._alpha = args.alpha
@@ -54,6 +56,7 @@ class Learner(object):
         sys.stdout.write("K %d N %d\n" % (self._K, self._N))
         sys.stdout.write("alpha %.12f eta %.12f,%.12f epsilon %.12f\n" % (self._alpha, self._eta[0], self._eta[1], self._epsilon))
         sys.stdout.write("mini_batch size %d\n" % self._mini_batch_size)
+        sys.stdout.write("compatibility mode %s\n" % str(self._compatibility_mode))
 
         
     @abc.abstractmethod
@@ -138,8 +141,9 @@ class Learner(object):
         link_count = 0
         non_link_count = 0
         
-        key_list = list(data.keys())    # for compatibility w/ C++
-        key_list.sort()
+        key_list = list(data.keys())
+        if self._compatibility_mode: # for compatibility w/ C++
+            key_list.sort()
         idx = 0
         for edge in key_list:
             edge_likelihood = self.__cal_edge_likelihood(self._pi[edge[0]], self._pi[edge[1]], \
@@ -172,7 +176,7 @@ class Learner(object):
                   str(non_link_likelihood/non_link_count) + " " +str(non_link_count)+" " + str(avg_likelihood1)
 
         self._average_count = self._average_count + 1
-        print "average_count is: " + str(self._average_count) + " "
+        sys.stdout.write("average_count is: %d " % self._average_count)
 
         return (-avg_likelihood)            
     

@@ -1,4 +1,4 @@
-from com.uva.wrapper_random import WrapperRandom as random
+from com.uva.source_aware_random import SourceAwareRandom as random
 import argparse
 from com.uva.network import Network
 from com.uva.preprocess.data_factory import DataFactory
@@ -38,7 +38,9 @@ def main():
     parser.add_argument('--output_dir', type=str,default='.', required=False)
     args = parser.parse_args()
 
-    random.seed(42, True)
+    compatibility_mode = True
+
+    random.seed(42, compatibility_mode)
 
     # data = DataFactory.get_data("netscience")
     data = DataFactory.get_data("relativity")
@@ -47,7 +49,7 @@ def main():
         
     print "start MCMC stochastic"
     ppx_mcmc = []
-    sampler = MCMCSamplerStochastic(args, network)
+    sampler = MCMCSamplerStochastic(args, network, compatibility_mode)
     sampler.set_num_node_sample(10)     # from WenZhe's C++ implementation
     #work_mcmc(sampler, ppx_mcmc)
     sampler.run()

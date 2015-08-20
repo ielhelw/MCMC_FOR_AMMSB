@@ -10,32 +10,31 @@
 
 #include <cassert>
 
+#include <iostream>
+#include <fstream>
+
 #ifndef __INTEL_COMPILER
 #pragma GCC diagnostic ignored "-Wunused-local-typedefs"
 #pragma GCC diagnostic push
 #endif
 #include <boost/program_options.hpp>
+#include <boost/filesystem.hpp>
 #ifndef __INTEL_COMPILER
 #pragma GCC diagnostic pop
 #endif
-
-#include <mr/fileio.h>
-
-namespace po = boost::program_options;
 
 namespace DKV {
 namespace DKVFile {
 
 DKVStoreFile::~DKVStoreFile() {
-  if (inputFileSystem_ != NULL) {
-    inputFileSystem_->close();
-  }
 }
 
 void DKVStoreFile::Init(::size_t value_size, ::size_t total_values,
                         ::size_t max_cache_capacity,
                         ::size_t max_write_capacity,
                         const std::vector<std::string> &args) {
+	namespace po = boost::program_options;
+
   ::DKV::DKVStoreInterface::Init(value_size, total_values,
                                  max_cache_capacity, max_write_capacity,
                                  args);
@@ -57,8 +56,6 @@ void DKVStoreFile::Init(::size_t value_size, ::size_t total_values,
   clp.options(desc);
   po::store(clp.run(), vm);
   po::notify(vm);
-
-  inputFileSystem_ = mr::FileSystem::openFileSystem(mr::FILESYSTEM::REGULAR);
 }
 
 void DKVStoreFile::ReadKVRecords(std::vector<ValueType *> &cache,
@@ -68,11 +65,12 @@ void DKVStoreFile::ReadKVRecords(std::vector<ValueType *> &cache,
   for (::size_t i = 0; i < key.size(); i++) {
     ValueType *cache_pointer = cache_buffer_.get(value_size_);
 
-    mr::FileReader *reader = inputFileSystem_->createReader(PiFileName(key[i]));
-    reader->readFully(cache_pointer, value_size_ * sizeof(ValueType));
+    std::string pi_file = PiFileName(key[i]);
+    std::ifstream reader(pi_file.c_str());
+    reader.read(reinterpret_cast<char *>(cache_pointer),
+                value_size_ * sizeof(ValueType));
     cache[i] = cache_pointer;
     value_of_[key[i]] = cache_pointer;
-    delete reader;
   }
 }
 
@@ -107,9 +105,12 @@ void DKVStoreFile::PurgeKVRecords() {
 
 void DKVStoreFile::WriteKVRecord(const KeyType key,
                                  const ValueType *cached) {
-  mr::FileWriter *writer = inputFileSystem_->createWriter(PiFileName(key), O_TRUNC);
-  writer->write(cached, value_size_ * sizeof(ValueType));
-  delete writer;
+  std::string pi_file = PiFileName(key);
+  CreateDirNameOf(pi_file);
+  std::ofstream writer(pi_file.c_str(),
+                       std::ios_base::out | std::ios_base::trunc);
+  writer.write(reinterpret_cast<const char *>(cached),
+               value_size_ * sizeof(ValueType));
 }
 
 const std::string DKVStoreFile::PiFileName(KeyType node) const {
@@ -126,6 +127,14 @@ const std::string DKVStoreFile::PiFileName(KeyType node) const {
   s << std::dec << node;
 
   return s.str();
+}
+
+void DKVStoreFile::CreateDirNameOf(const std::string &filename) const {
+	boost::filesystem::path path(filename);
+	boost::filesystem::path dirname = path.parent_path();
+	if (! boost::filesystem::exists(dirname)) {
+		boost::filesystem::create_directories(dirname);
+	}
 }
 
 } // namespace DKVFile

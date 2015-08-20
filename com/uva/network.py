@@ -1,7 +1,7 @@
 import sys
 
 # import com.uva.file_random
-from com.uva.wrapper_random import WrapperRandom as random
+from com.uva.source_aware_random import SourceAwareRandom as random
 from sets import Set
 
 class Network(object):
