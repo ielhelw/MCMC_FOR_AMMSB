@@ -1,5 +1,16 @@
 from random import Random as SystemRandom
 from com.uva.custom_random.custom_random import CustomRandom
+import numpy as np
+
+class NumPyEnabledRandom(SystemRandom):
+    def __init__(self, seed):
+        SystemRandom.__init__(self, seed)
+
+    def gamma(self, a, b, dims):
+        return np.random.gamma(a, b, dims)
+
+    def randn(self, k, k2 = 1):
+        return np.random.randn(k, k2)
 
 class SourceAwareRandom:
 
@@ -26,7 +37,7 @@ class SourceAwareRandom:
                 self.custom_rng[s] = CustomRandom(seed + i)
                 i += 1
         else:
-            self.rng = SystemRandom(seed)
+            self.rng = NumPyEnabledRandom(seed)
 
     def get(self, source):
         if self.USE_MCMC_RANDOM:
@@ -38,7 +49,7 @@ class SourceAwareRandom:
         if self.USE_MCMC_RANDOM:
             return self.custom_rng[source].sample_range(N, count)
         else:
-           return self.rng.sample(list(xrange(N, count)))
+           return self.rng.sample(list(xrange(N)), count)
 
 SourceAwareRandom = SourceAwareRandom()
 # _inst.init(42, True)
