@@ -39,9 +39,9 @@ class MCMCSamplerStochastic(Learner):
     parameters for each iteration, here we only use mini-batch (subset) of the examples.
     This method is great marriage between MCMC and stochastic methods.  
     '''
-    def __init__(self, args, graph):
+    def __init__(self, args, graph, compatibility_mode):
         # call base class initialization
-        Learner.__init__(self, args, graph)
+        Learner.__init__(self, args, graph, compatibility_mode)
         
         # step size parameters. 
         self.__a = args.a
@@ -100,19 +100,22 @@ class MCMCSamplerStochastic(Learner):
             # size = {}
             
             nodes_in_mini_batch = list(self.__nodes_in_batch(mini_batch))
-            nodes_in_mini_batch = sorted(nodes_in_mini_batch)  # to be able to replay from C++
+            if self._compatibility_mode:  # to be able to replay from C++
+                nodes_in_mini_batch = sorted(nodes_in_mini_batch)
             # print "minibatch(" + str(len(mini_batch)) + " " + str(sorted(mini_batch))
 
             # iterate through each node in the mini batch. 
             for node in nodes_in_mini_batch:
                 # sample a mini-batch of neighbors
                 neighbors = self.__sample_neighbor_nodes(self.__num_node_sample, node)
-                neighbors = sorted(neighbors)  # to be able to replay from C++
+                if self._compatibility_mode:  # to be able to replay from C++
+                    neighbors = sorted(neighbors)
                 self.__update_phi(node, neighbors)
 
             self.update_pi_from_phi()
             # update beta
-            mini_batch = sorted(mini_batch)   # to be able to replay from C++
+            if self._compatibility_mode:  # to be able to replay from C++
+                mini_batch = sorted(mini_batch)
             self.__update_beta(mini_batch, scale)
 
             if self._step_count % 1 == 0:
