@@ -302,9 +302,6 @@ class DKVStoreRDMA : public DKVStoreInterface {
                     enum ibv_wr_opcode opcode,
                     BatchTimer &timer);
 
-  ::size_t num_servers_;
-  ::size_t my_rank_;
-  
   DEVICE res_;
   std::vector<rdma_peer> peer_;
 

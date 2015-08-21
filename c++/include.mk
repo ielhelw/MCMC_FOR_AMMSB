@@ -53,6 +53,7 @@ CXXFLAGS += -Wextra
 # CXXFLAGS += -pedantic
 # CXXFLAGS += -fmessage-length=0
 CXXFLAGS += -Wno-unused-parameter
+CXXFLAGS += -Wno-unused-local-typedefs
 
 CXXFLAGS += -I$(PROJECT_HOME)/include
 CXXFLAGS += -I$(PROJECT_HOME)/3rdparty/tinyxml2/include
