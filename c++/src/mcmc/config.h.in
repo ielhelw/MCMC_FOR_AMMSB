@@ -1,0 +1,21 @@
+#ifndef __MCMC_CONFIG_H__
+#define __MCMC_CONFIG_H__
+
+namespace mcmc {
+
+#cmakedefine MCMC_RANDOM_SYSTEM
+#cmakedefine MCMC_USE_GOOGLE_SPARSE_HASH
+#cmakedefine MCMC_EDGESET_IS_ADJACENCY_LIST
+
+#cmakedefine RANDOM_FOLLOWS_PYTHON
+#cmakedefine EFFICIENCY_FOLLOWS_PYTHON
+#cmakedefine RANDOM_FOLLOWS_CPP
+#cmakedefine RANDOM_FOLLOWS_SCALABLE_GRAPH
+#cmakedefine RANDOM_FOLLOWS_CPP_WENZHE
+#cmakedefine EFFICIENCY_FOLLOWS_CPP_WENZHE
+#cmakedefine RANDOM_FOLLOWS_GLASSWING
+
+
+}  // namespace mcmc
+
+#endif  // __MCMC_CONFIG_H__

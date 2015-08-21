@@ -22,9 +22,9 @@
 #include <iostream>
 #include <iomanip>
 
-#define USE_GOOGLE_SPARSE_HASH
+#include "mcmc/config.h"
 
-#ifdef USE_GOOGLE_SPARSE_HASH
+#ifdef MCMC_USE_GOOGLE_SPARSE_HASH
 // If <cinttypes> is not included before <google/sparse_hash_set>, compile
 // errors because of missing defines of SCNd64 and friends
 #include <cinttypes>
@@ -35,13 +35,11 @@
 #include "mcmc/exception.h"
 #include "mcmc/np.h"
 
-#define EDGESET_IS_ADJACENCY_LIST
-
 namespace mcmc {
 
 typedef int32_t Vertex;
 class Edge;
-#ifdef USE_GOOGLE_SPARSE_HASH
+#ifdef MCMC_USE_GOOGLE_SPARSE_HASH
 class GoogleHashMap;
 class GoogleHashSet;
 typedef GoogleHashMap EdgeMap;
@@ -74,7 +72,7 @@ typedef std::set<Vertext> OrderedVertexSet;
 typedef VertexSet OrderedVertexSet;
 #endif
 
-#ifdef EDGESET_IS_ADJACENCY_LIST
+#ifdef MCMC_EDGESET_IS_ADJACENCY_LIST
 typedef AdjacencyList NetworkGraph;
 #else
 typedef std::unordered_set<Edge> NetworkGraph;
@@ -202,7 +200,7 @@ struct hash<mcmc::Edge> {
 
 namespace mcmc {
 
-#ifdef USE_GOOGLE_SPARSE_HASH
+#ifdef MCMC_USE_GOOGLE_SPARSE_HASH
 class GoogleHashSet : public google::sparse_hash_set<Vertex> {
  public:
   GoogleHashSet() {

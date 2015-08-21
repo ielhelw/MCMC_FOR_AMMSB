@@ -16,7 +16,7 @@ Network::Network(const NetworkInfo& info)
 }
 
 Network::~Network() {
-#ifdef EDGESET_IS_ADJACENCY_LIST
+#ifdef MCMC_EDGESET_IS_ADJACENCY_LIST
   adjacency_list_end();
 #endif
   delete const_cast<Data*>(data_);
@@ -41,7 +41,7 @@ void Network::Init(const Options& args, double held_out_ratio) {
 
   if (args.dataset_class == "preprocessed") {
     ReadAuxData(args.filename + "/aux.gz", true);
-#ifdef EDGESET_IS_ADJACENCY_LIST
+#ifdef MCMC_EDGESET_IS_ADJACENCY_LIST
     num_total_edges =
         cumulative_edges[N - 1] / 2;  // number of undirected edges.
 #else
@@ -60,7 +60,7 @@ void Network::Init(const Options& args, double held_out_ratio) {
     }
 
   } else {
-#ifdef EDGESET_IS_ADJACENCY_LIST
+#ifdef MCMC_EDGESET_IS_ADJACENCY_LIST
     adjacency_list_init();
     num_total_edges =
         cumulative_edges[N - 1] / 2;  // number of undirected edges.
@@ -85,7 +85,7 @@ void Network::Init(const Options& args, double held_out_ratio) {
 const Data* Network::get_data() const { return data_; }
 
 void Network::ReadSet(FileHandle& f, EdgeMap* set) {
-#ifdef USE_GOOGLE_SPARSE_HASH
+#ifdef MCMC_USE_GOOGLE_SPARSE_HASH
   // Read held_out set
   set->read_metadata(f.handle());
   set->read_nopointer_data(f.handle());
@@ -111,7 +111,7 @@ void Network::ReadAuxData(const std::string& filename, bool compressed) {
   fan_out_cumul_distro.resize(N);
   f.read_fully(fan_out_cumul_distro.data(),
                fan_out_cumul_distro.size() * sizeof fan_out_cumul_distro[0]);
-#ifdef EDGESET_IS_ADJACENCY_LIST
+#ifdef MCMC_EDGESET_IS_ADJACENCY_LIST
   cumulative_edges.resize(N);
   f.read_fully(cumulative_edges.data(),
                cumulative_edges.size() * sizeof cumulative_edges[0]);
@@ -134,7 +134,7 @@ void Network::WriteAuxData(const std::string& filename, bool compressed) {
   FileHandle f(filename, compressed, "w");
   f.write_fully(fan_out_cumul_distro.data(),
                 fan_out_cumul_distro.size() * sizeof fan_out_cumul_distro[0]);
-#ifdef EDGESET_IS_ADJACENCY_LIST
+#ifdef MCMC_EDGESET_IS_ADJACENCY_LIST
   f.write_fully(cumulative_edges.data(),
                 cumulative_edges.size() * sizeof cumulative_edges[0]);
 #endif
@@ -275,7 +275,7 @@ EdgeSample Network::stratified_random_node_sampling(::size_t num_pieces) const {
     } else {
 /* sample linked edges */
 // return all linked edges
-#ifdef EDGESET_IS_ADJACENCY_LIST
+#ifdef MCMC_EDGESET_IS_ADJACENCY_LIST
       for (auto neighborId : (*linked_edges)[nodeId]) {
         Edge e(std::min(nodeId, neighborId), std::max(nodeId, neighborId));
         if (!e.in(test_map) && !e.in(held_out_map)) {
@@ -306,7 +306,7 @@ EdgeSample Network::stratified_random_node_sampling(::size_t num_pieces) const {
 }
 
 void Network::init_train_link_map() {
-#ifdef EDGESET_IS_ADJACENCY_LIST
+#ifdef MCMC_EDGESET_IS_ADJACENCY_LIST
   std::cerr << "train_link_map is gone; calculate membership for each edge as "
                "linked_edges - held_out_map - test_map" << std::endl;
 #else
@@ -318,7 +318,7 @@ void Network::init_train_link_map() {
 #endif
 }
 
-#ifdef EDGESET_IS_ADJACENCY_LIST
+#ifdef MCMC_EDGESET_IS_ADJACENCY_LIST
 void Network::adjacency_list_init() {
   cumulative_edges.resize(N);
 
@@ -405,7 +405,7 @@ void Network::sample_random_edges(const NetworkGraph* linked_edges, ::size_t p,
   edges->assign(collector.begin(), collector.end());
 }
 
-#endif  // def EDGESET_IS_ADJACENCY_LIST
+#endif  // def MCMC_EDGESET_IS_ADJACENCY_LIST
 
 void Network::init_held_out_set() {
   ::size_t p = held_out_size / 2;
@@ -426,7 +426,7 @@ void Network::init_held_out_set() {
               << ": FIXME: replace EdgeList w/ (unordered) EdgeSet again"
               << std::endl;
     auto sampled_linked_edges = Random::random->sampleList(linked_edges, p);
-#elif defined EDGESET_IS_ADJACENCY_LIST
+#elif defined MCMC_EDGESET_IS_ADJACENCY_LIST
     std::vector<Edge>* sampled_linked_edges = new std::vector<Edge>();
     sample_random_edges(linked_edges, p, sampled_linked_edges);
 #else
@@ -436,7 +436,7 @@ void Network::init_held_out_set() {
       // EdgeMap is an undirected graph, unfit for partitioning
       assert(edge.first < edge.second);
       held_out_map[edge] = true;
-#ifndef EDGESET_IS_ADJACENCY_LIST
+#ifndef MCMC_EDGESET_IS_ADJACENCY_LIST
       train_link_map[edge.first].erase(edge.second);
       train_link_map[edge.second].erase(edge.first);
 #endif
@@ -490,7 +490,7 @@ void Network::init_test_set() {
               << std::endl;
     // FIXME make sampled_linked_edges an out param
     auto sampled_linked_edges = Random::random->sampleList(linked_edges, 2 * p);
-#elif defined EDGESET_IS_ADJACENCY_LIST
+#elif defined MCMC_EDGESET_IS_ADJACENCY_LIST
     std::vector<Edge>* sampled_linked_edges = new std::vector<Edge>();
     sample_random_edges(linked_edges, 2 * p, sampled_linked_edges);
 #else
@@ -510,7 +510,7 @@ void Network::init_test_set() {
       }
 
       test_map[edge] = true;
-#ifndef EDGESET_IS_ADJACENCY_LIST
+#ifndef MCMC_EDGESET_IS_ADJACENCY_LIST
       train_link_map[edge.first].erase(edge.second);
       train_link_map[edge.second].erase(edge.first);
 #endif
@@ -547,7 +547,7 @@ void Network::init_test_set() {
 }
 
 void Network::calc_max_fan_out() {
-#ifdef EDGESET_IS_ADJACENCY_LIST
+#ifdef MCMC_EDGESET_IS_ADJACENCY_LIST
   // The AdjacencyList is a directed link representation; an edge
   // <me, other> in adj_list[me] is matched by an edge <other, me> in
   // adj_list[other]
@@ -576,7 +576,7 @@ void Network::calc_max_fan_out() {
     fan_out_cumul_distro[i] = fan_out[i];
   }
 
-#else  // ifdef EDGESET_IS_ADJACENCY_LIST
+#else  // ifdef MCMC_EDGESET_IS_ADJACENCY_LIST
   std::unordered_map<int, ::size_t> fan_out;
 
   ::size_t i = 0;
@@ -609,7 +609,7 @@ void Network::calc_max_fan_out() {
 }
 
 ::size_t Network::get_fan_out(Vertex i) {
-#ifdef EDGESET_IS_ADJACENCY_LIST
+#ifdef MCMC_EDGESET_IS_ADJACENCY_LIST
   return (*linked_edges)[i].size();
 #else
   throw MCMCException(std::string(__func__) +
@@ -618,7 +618,7 @@ void Network::calc_max_fan_out() {
 }
 
 ::size_t Network::marshall_edges_from(Vertex node, Vertex* marshall_area) {
-#ifdef EDGESET_IS_ADJACENCY_LIST
+#ifdef MCMC_EDGESET_IS_ADJACENCY_LIST
   ::size_t i = 0;
   for (auto n : (*linked_edges)[node]) {
     marshall_area[i] = n;

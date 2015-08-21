@@ -45,7 +45,7 @@ class SparseHashGraph : public DataSet {
    * the node ID first.
    */
   virtual const Data *process() {
-#ifdef EDGESET_IS_ADJACENCY_LIST
+#ifdef MCMC_EDGESET_IS_ADJACENCY_LIST
     FileHandle f(filename_, compressed_, "r");
 
     // Read linked_edges

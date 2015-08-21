@@ -4,6 +4,8 @@
 #include <vector>
 #include <cstring>  // for size_t
 
+#include "mcmc/config.h"
+
 int sample_z_ab_from_edge(bool y, const std::vector<double> &pi_a,
                           const std::vector<double> &pi_b,
                           const std::vector<double> &beta, double epsilon,

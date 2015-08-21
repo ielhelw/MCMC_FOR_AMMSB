@@ -5,6 +5,8 @@
 #include <iomanip>
 #include <chrono>
 
+#include "mcmc/config.h"
+
 namespace mcmc {
 namespace timer {
 

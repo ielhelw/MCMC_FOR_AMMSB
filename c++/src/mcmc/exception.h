@@ -8,6 +8,8 @@
 #include <string>
 #include <sstream>
 
+#include "mcmc/config.h"
+
 namespace mcmc {
 
 class MCMCException : public std::exception {
