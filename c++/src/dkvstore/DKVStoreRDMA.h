@@ -29,17 +29,11 @@
 
 #include "mcmc/timer.h"
 
-#if 0 && defined ENABLE_DISTRIBUTED
-#  define USE_MPI
-#endif
-
-#ifdef USE_MPI
-#  include <mpi.h>
-#endif
-
-#include "dkvstore/DKVStore.h"
+#include <d-kv-store/DKVStore.h>
 
 #include "dkvstore/qperf-rdma.h"
+
+#include <d-kv-store/rdma/OOBNetwork.h>
 
 
 namespace DKV {
@@ -88,16 +82,6 @@ class QPerfException : public RDMAException {
   }
 
   virtual ~QPerfException() throw() {
-  }
-};
-
-
-class NetworkException : public RDMAException {
- public:
-  NetworkException(const std::string &reason) throw() : RDMAException(reason) {
-  }
-
-  virtual ~NetworkException() throw() {
   }
 };
 
@@ -302,6 +286,8 @@ class DKVStoreRDMA : public DKVStoreInterface {
    */
   VIRTUAL void PurgeKVRecords();
 
+  VIRTUAL void barrier();
+
  private:
   int32_t HostOf(DKVStoreRDMA::KeyType key);
 
@@ -315,28 +301,6 @@ class DKVStoreRDMA : public DKVStoreInterface {
                     enum ibv_wr_opcode opcode,
                     BatchTimer &timer);
 
-  void init_networking();
-#ifdef USE_MPI
-  static void mpi_error_test(int r, const std::string &message);
-#else
-  void alltoall_leaf(const char *sendbuf, ::size_t send_item_size,
-                     char *recvbuf, ::size_t recv_item_size,
-                     ::size_t me, ::size_t size,
-                     ::size_t start, ::size_t size_2pow);
-  void alltoall_DC(const char *sendbuf, ::size_t send_item_size,
-                   char *recvbuf, ::size_t recv_item_size,
-                   ::size_t me, ::size_t size,
-                   ::size_t start, ::size_t size_2pow);
-#endif
- public:
-  void alltoall(const void *sendbuf, ::size_t send_item_size,
-                void *recvbuf, ::size_t recv_item_size);
-  VIRTUAL void barrier();
-
- private:
-  ::size_t num_servers_;
-  ::size_t my_rank_;
-  
   DEVICE res_;
   std::vector<rdma_peer> peer_;
 
@@ -357,12 +321,11 @@ class DKVStoreRDMA : public DKVStoreInterface {
   rdma_area<ValueType> cache_;
   rdma_area<ValueType> write_;
 
-#ifdef USE_MPI
-  bool mpi_initialized = false;
-#else
-  std::string oob_impl_;
-  std::string oob_interface_;
-#endif
+  struct {
+    ::size_t my_rank;
+    ::size_t num_servers;
+  } oob_;
+  OOBNetwork<cm_con_data_t> oob_network_;
 
   Timer t_poll_cq_;
   BatchTimer t_read_;

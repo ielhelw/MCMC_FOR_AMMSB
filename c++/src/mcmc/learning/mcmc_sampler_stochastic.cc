@@ -33,6 +33,19 @@ MCMCSamplerStochastic::MCMCSamplerStochastic(const Options &args)
   this->c = args_.c;
 
   // control parameters for learning
+  if (args_.interval == 0) {
+    interval = 50;
+  } else {
+    interval = args_.interval;
+  }
+
+  std::cerr << "Done " << __func__ << "()" << std::endl;
+}
+
+void MCMCSamplerStochastic::init() {
+  LoadNetwork();
+
+  // control parameters for learning
   // num_node_sample = static_cast<
   // ::size_t>(std::sqrt(network.get_num_nodes()));
   if (args_.num_node_sample == 0) {
@@ -40,11 +53,6 @@ MCMCSamplerStochastic::MCMCSamplerStochastic(const Options &args)
     num_node_sample = N / 50;
   } else {
     num_node_sample = args_.num_node_sample;
-  }
-  if (args_.interval == 0) {
-    interval = 50;
-  } else {
-    interval = args_.interval;
   }
   if (args_.mini_batch_size == 0) {
     mini_batch_size =
@@ -54,23 +62,20 @@ MCMCSamplerStochastic::MCMCSamplerStochastic(const Options &args)
             << " c " << c << " alpha " << alpha << " eta (" << eta[0] << ","
             << eta[1] << ")" << std::endl;
 
-  info(std::cout);
-}
-
-void MCMCSamplerStochastic::init() {
   // model parameters and re-parameterization
   // since the model parameter - \pi and \beta should stay in the simplex,
   // we need to restrict the sum of probability equals to 1.  The way we
   // restrict this is using re-reparameterization techniques, where we
   // introduce another set of variables, and update them first followed by
   // updating \pi and \beta.
-  theta =
-      kernelRandom->gamma(eta[0], eta[1], K, 2);  // parameterization for \beta
+  theta = kernelRandom->gamma(eta[0], eta[1], K,
+                              2);  // parameterization for \beta
   // std::cerr << "Ignore eta[] in random.gamma: use 100.0 and 0.01" <<
   // std::endl;
   // theta = kernelRandom->gamma(100.0, 0.01, K, 2);		//
   // parameterization
-  // for \beta
+  // for
+  // \beta
 
   // FIXME RFHH -- code sharing with variational_inf*::update_pi_beta()
   // temp = self.__theta/np.sum(self.__theta,1)[:,np.newaxis]
@@ -94,9 +99,56 @@ void MCMCSamplerStochastic::init() {
   pi.resize(phi.size(), std::vector<double>(phi[0].size()));
   np::row_normalize(&pi, phi);
 
+  if (true) {
+    std::cout << std::fixed << std::setprecision(12) << "beta[0] " << beta[0]
+              << std::endl;
+  } else {
+    std::cerr << "beta ";
+    for (::size_t k = 0; k < K; k++) {
+      std::cerr << std::fixed << std::setprecision(12) << beta[k] << " ";
+    }
+    std::cerr << std::endl;
+  }
+
+  if (false) {
+    std::cout << "theta[*][0]: ";
+    for (::size_t k = 0; k < K; k++) {
+      std::cout << std::fixed << std::setprecision(12) << theta[k][0] << " ";
+    }
+    std::cout << std::endl;
+    std::cout << "theta[*][1]: ";
+    for (::size_t k = 0; k < K; k++) {
+      std::cout << std::fixed << std::setprecision(12) << theta[k][1] << " ";
+    }
+    std::cout << std::endl;
+  }
+  std::cout << "phi[0][0] " << phi[0][0] << std::endl;
+  if (false) {
+    std::cout << "pi[0] ";
+    for (::size_t k = 0; k < K; k++) {
+      std::cout << pi[0][k] << " ";
+    }
+    std::cout << std::endl;
+  }
+
+  if (true) {
+    for (::size_t i = 0; i < 10; i++) {
+      std::cerr << "phi[" << i << "]: ";
+      for (::size_t k = 0; k < 10; k++) {
+        std::cerr << std::fixed << std::setprecision(12) << phi[i][k] << " ";
+      }
+      std::cerr << std::endl;
+      std::cerr << "pi[" << i << "]: ";
+      for (::size_t k = 0; k < 10; k++) {
+        std::cerr << std::fixed << std::setprecision(12) << pi[i][k] << " ";
+      }
+      std::cerr << std::endl;
+    }
+  }
+
   std::cerr << "Random seed " << std::hex << "0x" << kernelRandom->seed(0)
             << ",0x" << kernelRandom->seed(1) << std::endl << std::dec;
-  std::cerr << "Done constructor" << std::endl;
+  std::cerr << "Done " << __func__ << "()" << std::endl;
 }
 
 MCMCSamplerStochastic::~MCMCSamplerStochastic() {
@@ -124,6 +176,7 @@ void MCMCSamplerStochastic::run() {
   t1 = clock();
   while (step_count < max_iteration && !is_converged()) {
     t_outer.start();
+    auto l1 = std::chrono::system_clock::now();
     // if (step_count > 200000){
     // interval = 2;
     //}
@@ -141,7 +194,38 @@ void MCMCSamplerStochastic::run() {
       double seconds = diff / CLOCKS_PER_SEC;
       timings.push_back(seconds);
       iterations.push_back(step_count);
+#if 0
+				if (ppx_score < 5.0) {
+					stepsize_switch = true;
+					//print "switching to smaller step size mode!"
+				}
+#endif
     }
+
+    // write into file
+    if (step_count % 2000 == 1) {
+      if (false) {
+        std::ofstream myfile;
+        std::string file_name = "mcmc_stochastic_" + to_string(K) +
+                                "_num_nodes_" + to_string(num_node_sample) +
+                                "_us_air.txt";
+        myfile.open(file_name);
+        int size = ppxs_held_out.size();
+        for (int i = 0; i < size; i++) {
+          // int iteration = i * 100 + 1;
+          myfile << iterations[i] << "    " << timings[i] << "    "
+                 << ppxs_held_out[i] << "\n";
+        }
+
+        myfile.close();
+      }
+    }
+
+    // print "step: " + str(self._step_count)
+    /**
+    pr = cProfile.Profile()
+    pr.enable()
+     */
 
     // (mini_batch, scale) =
     // self._network.sample_mini_batch(self._mini_batch_size,
@@ -151,6 +235,13 @@ void MCMCSamplerStochastic::run() {
     EdgeSample edgeSample = network.sample_mini_batch(
         mini_batch_size, strategy::STRATIFIED_RANDOM_NODE);
     t_mini_batch.stop();
+    if (false) {
+      std::cerr << "Minibatch: ";
+      for (auto e : *edgeSample.first) {
+        std::cerr << e << " ";
+      }
+      std::cerr << std::endl;
+    }
     // std::cerr << "Done sample_mini_batch" << std::endl;
     const MinibatchSet &mini_batch = *edgeSample.first;
     double scale = edgeSample.second;
@@ -183,8 +274,8 @@ void MCMCSamplerStochastic::run() {
       t_sample_neighbor_nodes.stop();
 
       // std::cerr << "Random seed " << std::hex << "0x" <<
-      // kernelRandom->seed(0) << ",0x" << kernelRandom->seed(1) << std::endl <<
-      // std::dec;
+      // kernelRandom->seed(0) << ",0x" << kernelRandom->seed(1) << std::endl
+      // << std::dec;
       t_update_phi.start();
       update_phi(node, neighbors
 #ifndef EFFICIENCY_FOLLOWS_CPP_WENZHE
@@ -216,6 +307,10 @@ void MCMCSamplerStochastic::run() {
 
     step_count++;
     t_outer.stop();
+    auto l2 = std::chrono::system_clock::now();
+    if (false) {
+      std::cout << "LOOP  = " << (l2 - l1).count() << std::endl;
+    }
   }
 
   timer::Timer::printHeader(std::cout);
@@ -317,6 +412,21 @@ void MCMCSamplerStochastic::update_beta(const MinibatchSet &mini_batch,
   np::row_normalize(&temp, theta);
   std::transform(temp.begin(), temp.end(), beta.begin(),
                  np::SelectColumn<double>(1));
+
+  if (false) {
+    for (auto n : noise) {
+      std::cerr << "noise ";
+      for (auto b : n) {
+        std::cerr << std::fixed << std::setprecision(12) << b << " ";
+      }
+      std::cerr << std::endl;
+    }
+    std::cerr << "beta ";
+    for (auto b : beta) {
+      std::cerr << std::fixed << std::setprecision(12) << b << " ";
+    }
+    std::cerr << std::endl;
+  }
 }
 
 void MCMCSamplerStochastic::update_phi(Vertex i, const NeighborSet &neighbors
@@ -329,6 +439,26 @@ void MCMCSamplerStochastic::update_phi(Vertex i, const NeighborSet &neighbors
   double eps_t = a * std::pow(1 + step_count / b, -c);  // step size
 // double eps_t = std::pow(1024+step_count, -0.5);
 #endif
+
+  if (false) {
+    std::cerr << "update_phi pre phi[" << i << "] ";
+    for (::size_t k = 0; k < K; k++) {
+      std::cerr << std::fixed << std::setprecision(12) << phi[i][k] << " ";
+    }
+    std::cerr << std::endl;
+    std::cerr << "pi[" << i << "] ";
+    for (::size_t k = 0; k < K; k++) {
+      std::cerr << std::fixed << std::setprecision(12) << pi[i][k] << " ";
+    }
+    std::cerr << std::endl;
+    for (auto n : neighbors) {
+      std::cerr << "pi[" << n << "] ";
+      for (::size_t k = 0; k < K; k++) {
+        std::cerr << std::fixed << std::setprecision(12) << pi[n][k] << " ";
+      }
+      std::cerr << std::endl;
+    }
+  }
 
   double phi_i_sum = np::sum(phi[i]);
   std::vector<double> grads(K, 0.0);  // gradient for K classes
@@ -369,6 +499,12 @@ void MCMCSamplerStochastic::update_phi(Vertex i, const NeighborSet &neighbors
   }
 
   std::vector<double> noise = kernelRandom->randn(K);  // random gaussian noise.
+  if (false) {
+    for (::size_t k = 0; k < K; ++k) {
+      std::cerr << "randn " << std::fixed << std::setprecision(12) << noise[k]
+                << std::endl;
+    }
+  }
 #ifndef EFFICIENCY_FOLLOWS_CPP_WENZHE
   double Nn = (1.0 * N) / num_node_sample;
 #endif
@@ -387,6 +523,33 @@ void MCMCSamplerStochastic::update_phi(Vertex i, const NeighborSet &neighbors
                  sqrt(eps_t * phi[i][k]) * noise[k]);
 #endif
   }
+
+  if (false) {
+    std::cerr << std::fixed << std::setprecision(12) << "update_phi post Nn "
+              << Nn << " phi[" << i << "] ";
+    for (::size_t k = 0; k < K; k++) {
+      std::cerr << std::fixed << std::setprecision(12) << phi[i][k] << " ";
+    }
+    std::cerr << std::endl;
+    std::cerr << "pi[" << i << "] ";
+    for (::size_t k = 0; k < K; k++) {
+      std::cerr << std::fixed << std::setprecision(12) << pi[i][k] << " ";
+    }
+    std::cerr << std::endl;
+    std::cerr << "grads ";
+    for (::size_t k = 0; k < K; k++) {
+      std::cerr << std::fixed << std::setprecision(12) << grads[k] << " ";
+    }
+    std::cerr << std::endl;
+    std::cerr << "noise ";
+    for (::size_t k = 0; k < K; k++) {
+      std::cerr << std::fixed << std::setprecision(12) << noise[k] << " ";
+    }
+    std::cerr << std::endl;
+  }
+
+  // assign back to phi.
+  // phi[i] = phi_star;
 }
 
 // TODO FIXME make VertexSet an out parameter
@@ -414,8 +577,8 @@ NeighborSet MCMCSamplerStochastic::sample_neighbor_nodes(::size_t sample_size,
          neighborId != nodeList->end(); neighborId++) {
       if (p < 0) {
         if (p != 0) {
-          // std::cerr << __func__ << ": Are you sure p < 0 is a good idea?" <<
-          // std::endl;
+          // std::cerr << __func__ << ": Are you sure p < 0 is a good idea?"
+          // << std::endl;
         }
         break;
       }
@@ -474,6 +637,14 @@ NeighborSet MCMCSamplerStochastic::sample_neighbor_nodes(::size_t sample_size,
 #endif
   }
 #endif
+  if (false) {
+    std::cerr << "Node " << nodeId << ": neighbors ";
+    for (auto n : neighbor_nodes) {
+      std::cerr << n << " ";
+    }
+    std::cerr << std::endl;
+  }
+
   return neighbor_nodes;
 }
 
@@ -492,4 +663,4 @@ OrderedVertexSet MCMCSamplerStochastic::nodes_in_batch(
 }
 
 }  // namespace learning
-}  // namespace mcmc
+}  // namesapce mcmc

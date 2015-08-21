@@ -12,4 +12,6 @@ clean:
 	rm -f com/uva/sample_latent_vars.so
 	rm -f com/uva/estimate_phi.c
 	rm -f com/uva/estimate_phi.so
+	rm -f com/uva/custom_random/custom_random.so
+	rm -f com/uva/custom_random/custom_random.cpp
 

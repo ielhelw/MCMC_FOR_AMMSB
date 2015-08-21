@@ -1,4 +1,5 @@
 #include "mcmc/data.h"
+#include "mcmc/fileio.h"
 
 #include <fstream>
 
@@ -55,19 +56,6 @@ Edge::Edge() {}
 Edge::Edge(Vertex a, Vertex b) : first(a), second(b) {}
 
 Edge::Edge(std::istream &s) { (void)get(s); }
-
-bool Edge::in(const AdjacencyList &s) const {
-  if (static_cast<::size_t>(first) >= s.size() ||
-      static_cast<::size_t>(second) >= s.size()) {
-    return false;
-  }
-
-  if (s[first].size() > s[second].size()) {
-    return s[second].find(first) != s[second].end();
-  } else {
-    return s[first].find(second) != s[first].end();
-  }
-}
 
 void Edge::insertMe(AdjacencyList *s) const {
   Vertex max = std::max(first, second);
@@ -194,4 +182,20 @@ void Data::dump_data() const {
   (void)dump_edgeset(std::cout, N, *E);
 }
 
-}  // namespace mcmc
+void Data::save(const std::string &filename, bool compressed) const {
+#if defined EDGESET_IS_ADJACENCY_LIST && defined USE_GOOGLE_SPARSE_HASH
+  FileHandle f(filename, compressed, "w");
+  int32_t num_nodes = N;
+  f.write_fully(&num_nodes, sizeof num_nodes);
+  for (auto r : *E) {
+    GoogleHashSet &rc = const_cast<GoogleHashSet &>(r);
+    rc.write_metadata(f.handle());
+    rc.write_nopointer_data(f.handle());
+  }
+#else
+  throw MCMCException(std::string(__func__) +
+                      "() not implemented for this graph representation");
+#endif
+}
+
+} // namespace mcmc

@@ -5,6 +5,8 @@ __pycache__/
 # C extensions
 com/uva/*.so
 com/uva/*.c
+com/uva/custom_random/*.so
+com/uva/custom_random/*.cpp
 
 # Distribution / packaging
 .Python

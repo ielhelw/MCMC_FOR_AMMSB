@@ -35,20 +35,19 @@
 #include "mcmc/exception.h"
 #include "mcmc/np.h"
 
-#define EDGESET_IS_ADJACENCY_LIST  // FIXME: replace with build flag
+#define EDGESET_IS_ADJACENCY_LIST
 
 namespace mcmc {
 
 typedef int32_t Vertex;
 class Edge;
 #ifdef USE_GOOGLE_SPARSE_HASH
-// forwared declare classes to get around cyclic deps
-class GoogleHashSet;
 class GoogleHashMap;
-typedef std::vector<GoogleHashSet> AdjacencyList;
+class GoogleHashSet;
 typedef GoogleHashMap EdgeMap;
+typedef std::vector<GoogleHashSet> AdjacencyList;
 #else
-typedef std::vector<std::unordered_set<Vertex> > AdjacencyList;
+typedef std::vector<std::unordered_set<Vertex>> AdjacencyList;
 typedef std::unordered_map<Edge, bool> EdgeMap;
 #endif
 
@@ -56,7 +55,7 @@ typedef std::unordered_map<Edge, bool> EdgeMap;
 
 #ifdef RANDOM_FOLLOWS_CPP
 #error "RANDOM_FOLLOWS_CPP is incompatible with RANDOM_FOLLOWS_PYTHON"
-#endif  // def RANDOM_FOLLOWS_CPP
+#endif
 
 typedef std::unordered_set<Vertex> VertexSet;
 typedef std::set<Vertex> OrderedVertexSet;
@@ -68,20 +67,18 @@ typedef std::list<Edge> EdgeList;
 typedef std::map<Edge, bool> EdgeMap;
 
 #else  // def RANDOM_FOLLOWS_PYTHON
-
 typedef std::unordered_set<Vertex> VertexSet;
-
 #ifdef RANDOM_FOLLOWS_CPP
-typedef std::set<Vertex> OrderedVertexSet;
-#else   // def RANDOM_FOLLOWS_CPP
+typedef std::set<Vertext> OrderedVertexSet;
+#else
 typedef VertexSet OrderedVertexSet;
-#endif  // def RANDOM_FOLLOWS_CPP
+#endif
 
 #ifdef EDGESET_IS_ADJACENCY_LIST
 typedef AdjacencyList NetworkGraph;
-#else  // def EDGESET_IS_ADJACENCY_LIST
+#else
 typedef std::unordered_set<Edge> NetworkGraph;
-#endif  // def EDGESET_IS_ADJACENCY_LIST
+#endif
 typedef std::unordered_set<Edge> MinibatchSet;
 typedef std::list<Edge> EdgeList;
 
@@ -101,7 +98,19 @@ class Edge {
     return s.find(*this) != s.end();
   }
 
-  bool in(const AdjacencyList &s) const;
+  template <typename SET>
+  bool in(const std::vector<SET> &s) const {
+    if (static_cast<::size_t>(first) >= s.size() ||
+        static_cast<::size_t>(second) >= s.size()) {
+      return false;
+    }
+
+    if (s[first].size() > s[second].size()) {
+      return s[second].find(first) != s[second].end();
+    } else {
+      return s[first].find(second) != s[first].end();
+    }
+  }
 
   template <typename SET>
   void insertMe(SET *s) const {
@@ -168,6 +177,8 @@ class Data {
 
   void dump_data() const;
 
+  void save(const std::string &filename, bool compressed = false) const;
+
  public:
   const void *V;          // mapping between vertices and attributes.
   const NetworkGraph *E;  // all pair of "linked" edges.
@@ -177,9 +188,7 @@ class Data {
 
 }  // namespace mcmc
 
-#ifdef USE_GOOGLE_SPARSE_HASH
 namespace std {
-
 template <>
 struct hash<mcmc::Edge> {
  public:
@@ -189,18 +198,21 @@ struct hash<mcmc::Edge> {
   ::size_t operator()(const mcmc::Edge &x) const;
 #endif
 };
-
-}  // namespace std
+}
 
 namespace mcmc {
 
-struct EdgeEquals {
-  bool operator()(const Edge &e1, const Edge &e2) const;
-};
-
+#ifdef USE_GOOGLE_SPARSE_HASH
 class GoogleHashSet : public google::sparse_hash_set<Vertex> {
  public:
-  GoogleHashSet() { this->set_deleted_key(-2); }
+  GoogleHashSet() {
+    // this->set_empty_key(-1);
+    this->set_deleted_key(-2);
+  }
+};
+
+struct EdgeEquals {
+  bool operator()(const Edge &e1, const Edge &e2) const;
 };
 
 class GoogleHashMap
@@ -208,8 +220,8 @@ class GoogleHashMap
  public:
   GoogleHashMap() { this->set_deleted_key(Edge(-2, -2)); }
 };
+#endif
 
 }  // namespace mcmc
-#endif
 
 #endif  // ndef MCMC_DATA_H__

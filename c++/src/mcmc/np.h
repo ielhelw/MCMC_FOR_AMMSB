@@ -12,9 +12,7 @@
 #else
 int omp_get_max_threads();
 int omp_get_thread_num();
-#ifdef ACTUALLY_USED
 int omp_get_num_threads();
-#endif
 #endif
 
 namespace mcmc {
@@ -157,45 +155,6 @@ static ::ssize_t find_le(const std::vector<T> &p, T location,
   assert(location <= p[res]);
   assert(res == 0 || location > p[res - 1]);
   return res;
-}
-
-template <typename T>
-static void prefix_sum(std::vector<T> *a) {
-#ifndef NDEBUG
-  std::vector<T> orig(a->size());
-#pragma omp parallel for schedule(static, 1)
-  for (::size_t i = 0; i < a->size(); ++i) {
-    orig[i] = (*a)[i];
-  }
-#endif
-  ::size_t chunk =
-      (a->size() + omp_get_max_threads() - 1) / omp_get_max_threads();
-  std::vector<::size_t> chunk_sum(omp_get_max_threads());
-#pragma omp parallel for
-  for (::size_t t = 0; t < static_cast<::size_t>(omp_get_max_threads()); ++t) {
-    for (::size_t i = chunk * t + 1; i < std::min(a->size(), chunk * (t + 1));
-         ++i) {
-      (*a)[i] += (*a)[i - 1];
-    }
-  }
-  chunk_sum[0] = 0;
-  for (::size_t t = 1; t < static_cast<::size_t>(omp_get_max_threads()); ++t) {
-    chunk_sum[t] = chunk_sum[t - 1] + (*a)[t * chunk - 1];
-  }
-#pragma omp parallel for
-  for (::size_t t = 0; t < static_cast<::size_t>(omp_get_max_threads()); ++t) {
-    for (::size_t i = chunk * t; i < std::min(a->size(), chunk * (t + 1));
-         ++i) {
-      (*a)[i] += chunk_sum[t];
-    }
-  }
-#ifndef NDEBUG
-  assert((*a)[0] == orig[0]);
-#pragma omp parallel for schedule(static, 1)
-  for (::size_t i = 1; i < a->size(); ++i) {
-    assert((*a)[i] == (*a)[i - 1] + orig[i]);
-  }
-#endif
 }
 
 }  // namespace np

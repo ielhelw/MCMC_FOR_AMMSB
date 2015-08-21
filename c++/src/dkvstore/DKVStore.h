@@ -23,7 +23,78 @@
 #include <exception>
 #include <iostream>     // Warning/error report
 
+#ifndef __INTEL_COMPILER
+#pragma GCC diagnostic ignored "-Wunused-local-typedefs"
+#pragma GCC diagnostic push     
+#endif
+#include <boost/program_options.hpp>
+#ifndef __INTEL_COMPILER
+#pragma GCC diagnostic pop
+#endif
+
+
 namespace DKV {
+
+namespace TYPE {
+enum TYPE {
+    FILE,
+#ifdef ENABLE_RAMCLOUD
+    RAMCLOUD,
+#endif
+#ifdef ENABLE_RDMA
+    RDMA,
+#endif
+};
+
+
+inline std::istream& operator>> (std::istream& in, TYPE& dkv_type) {
+	namespace po = boost::program_options;
+
+	std::string token;
+	in >> token;
+
+	if (false) {
+	} else if (token == "file") {
+		dkv_type = DKV::TYPE::FILE;
+#ifdef ENABLE_RAMCLOUD
+	} else if (token == "ramcloud") {
+		dkv_type = DKV::TYPE::RAMCLOUD;
+#endif
+#ifdef ENABLE_RDMA
+	} else if (token == "rdma") {
+		dkv_type = DKV::TYPE::RDMA;
+#endif
+	} else {
+		throw po::validation_error(po::validation_error::invalid_option_value,
+								   "Unknown D-KV type");
+	}
+
+	return in;
+}
+
+
+inline std::ostream& operator<< (std::ostream& s, TYPE& dkv_type) {
+	switch (dkv_type) {
+	case DKV::TYPE::FILE:
+		s << "file";
+		break;
+#ifdef ENABLE_RAMCLOUD
+	case DKV::TYPE::RAMCLOUD:
+		s << "ramcloud";
+		break;
+#endif
+#ifdef ENABLE_RDMA
+	case DKV::TYPE::RDMA:
+		s << "rdma";
+		break;
+#endif
+	}
+
+	return s;
+}
+
+}   // namespace TYPE
+
 
 namespace RW_MODE {
   enum RWMode {

@@ -4,18 +4,6 @@ namespace mcmc {
 namespace learning {
 
 Learner::Learner(const Options &args) : args_(args) {
-  preprocess::DataFactory df(args);
-  data_ = df.get_data();
-  double held_out_ratio = args.held_out_ratio;
-  if (args.held_out_ratio == 0.0) {
-    held_out_ratio = 0.01;
-    std::cerr << "Set held_out_ratio to default " << held_out_ratio
-              << std::endl;
-  }
-  // FIXME: make Network the owner of data
-  network = Network();
-  network.Init(data_, held_out_ratio);
-
   // model priors
   alpha = args_.alpha;
   eta.resize(2);
@@ -26,6 +14,32 @@ Learner::Learner(const Options &args) : args_(args) {
   // parameters related to control model
   K = args_.K;
   epsilon = args_.epsilon;
+
+  // check the number of iterations.
+  step_count = 1;
+
+  max_iteration = args_.max_iteration;
+  CONVERGENCE_THRESHOLD = 0.000000000001;
+
+  stepsize_switch = false;
+
+  if (args_.strategy == "unspecified") {
+    strategy = strategy::STRATIFIED_RANDOM_NODE;
+  } else if (args_.strategy == "stratified-random-node") {
+    strategy = strategy::STRATIFIED_RANDOM_NODE;
+  } else {
+    throw MCMCException("Unknown strategy type: " + args_.strategy);
+  }
+}
+
+void Learner::LoadNetwork() {
+  double held_out_ratio = args_.held_out_ratio;
+  if (args_.held_out_ratio == 0.0) {
+    held_out_ratio = 0.01;
+    std::cerr << "Set held_out_ratio to default " << held_out_ratio
+              << std::endl;
+  }
+  network.Init(args_, held_out_ratio);
 
   // parameters related to network
   N = network.get_num_nodes();
@@ -42,30 +56,20 @@ Learner::Learner(const Options &args) : args_(args) {
 
   // ration between link edges and non-link edges
   link_ratio = network.get_num_linked_edges() / ((N * (N - 1)) / 2.0);
-  // check the number of iterations.
-  step_count = 1;
   // store perplexity for all the iterations
   // ppxs_held_out = [];
   // ppxs_test = [];
 
-  max_iteration = args_.max_iteration;
-  CONVERGENCE_THRESHOLD = 0.000000000001;
-
-  stepsize_switch = false;
-
   ppx_for_heldout = std::vector<double>(network.get_held_out_size(), 0.0);
 
-  strategy = strategy::STRATIFIED_RANDOM_NODE;
+  info(std::cerr);
 }
 
-Learner::~Learner() {
-  // FIXME: make Network the owner of data
-  delete const_cast<Data *>(data_);
-}
+Learner::~Learner() {}
 
 void Learner::info(std::ostream &s) {
   s << "N " << N;
-  s << " E " << network.get_num_total_edges();
+  s << " E " << network.get_num_linked_edges();
   s << " K " << K;
   s << " iterations " << max_iteration;
   s << " minibatch size " << mini_batch_size;

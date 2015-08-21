@@ -6,15 +6,18 @@
 #include <unordered_set>
 
 #include <boost/bind.hpp>
+#include <boost/filesystem.hpp>
 
 #include "mcmc/types.h"
 #include "mcmc/data.h"
 #include "mcmc/random.h"
 #include "mcmc/preprocess/dataset.h"
+#include "mcmc/options.h"
+#include "mcmc/fileio.h"
 
 namespace mcmc {
 
-typedef std::pair<MinibatchSet *, double> EdgeSample;
+typedef std::pair<MinibatchSet*, double> EdgeSample;
 
 /**
  * Network class represents the whole graph that we read from the
@@ -32,9 +35,27 @@ typedef std::pair<MinibatchSet *, double> EdgeSample;
  * the function within this class, each learner can get different types of
  * data.
  */
+
+struct NetworkInfo {
+  int32_t N;
+  int64_t E;
+  int32_t max_fan_out;
+  double held_out_ratio;
+  int64_t held_out_size;
+};
+
+struct EdgeMapItem {
+  Edge edge;
+  bool is_edge;
+};
+
 class Network {
  public:
   Network();
+
+  // Stub for the distributed implementation that does not replicate the graph
+  Network(const NetworkInfo& info);
+  virtual ~Network();
 
   /**
    * In this initialization step, we separate the whole data set
@@ -47,12 +68,47 @@ class Network {
    *
    * Arguments:
    *     data:   representation of the while graph.
-   *     vlaidation_ratio:  the percentage of data used for validation and
+   *     held_out_ratio:  the percentage of data used for validation and
    *testing.
+   *     create_held_out: create held-out set and test set; otherwise, caller
+   *must
+   *     					read them from file
    */
-  void Init(const Data *data, double held_out_ratio);
+  void Init(const Options& args, double held_out_ratio);
 
-  virtual ~Network();
+  const Data* get_data() const;
+
+  void ReadSet(FileHandle& f, EdgeMap* set);
+
+  void ReadHeldOutSet(const std::string& filename, bool compressed);
+
+  void ReadTestSet(const std::string& filename, bool compressed);
+
+  void ReadAuxData(const std::string& filename, bool compressed);
+
+  template <typename T>
+  void WriteSet(FileHandle& f, const T* set) {
+#ifdef USE_GOOGLE_SPARSE_HASH
+    T* mset = const_cast<T*>(set);
+    // Read held_out set
+    mset->write_metadata(f.handle());
+    mset->write_nopointer_data(f.handle());
+#else
+    throw MCMCException("Cannot write set for this representation");
+#endif
+  }
+
+  void WriteHeldOutSet(const std::string& filename, bool compressed);
+
+  void WriteTestSet(const std::string& filename, bool compressed);
+
+  void WriteAuxData(const std::string& filename, bool compressed);
+
+  void save(const std::string& dirname);
+
+  // Stub info for the distributed implementation that does not replicate the
+  // graph
+  void FillInfo(NetworkInfo* info);
 
   /**
    * Sample a mini-batch of edges from the training data.
@@ -99,19 +155,19 @@ class Network {
 
   ::size_t get_num_linked_edges() const;
 
-  ::size_t get_num_total_edges() const;
-
   ::size_t get_held_out_size() const;
 
   int get_num_nodes() const;
 
-  const NetworkGraph &get_linked_edges() const;
+  const NetworkGraph& get_linked_edges() const;
 
-  const EdgeMap &get_held_out_set() const;
+  const EdgeMap& get_held_out_set() const;
 
-  const EdgeMap &get_test_set() const;
+  const EdgeMap& get_test_set() const;
 
+#ifdef UNUSED
   void set_num_pieces(::size_t num_pieces);
+#endif
 
   /**
    * stratified sampling approach gives more attention to link edges (the edge
@@ -129,10 +185,6 @@ class Network {
    */
   EdgeSample stratified_random_node_sampling(::size_t num_pieces) const;
 
-  ::size_t get_max_fan_out() const;
-
-  ::size_t get_max_fan_out(::size_t batch_size) const;
-
  protected:
   /**
    * create a set for each node, which contains list of
@@ -144,12 +196,56 @@ class Network {
 
 #ifdef EDGESET_IS_ADJACENCY_LIST
 
+  // FIXME: move into np/
+  template <typename T>
+  static void prefix_sum(std::vector<T>* a) {
+#ifndef NDEBUG
+    std::vector<T> orig(a->size());
+#pragma omp parallel for schedule(static, 1)
+    for (::size_t i = 0; i < a->size(); ++i) {
+      orig[i] = (*a)[i];
+    }
+#endif
+    std::cerr << "omp max threads " << omp_get_max_threads() << std::endl;
+    ::size_t chunk =
+        (a->size() + omp_get_max_threads() - 1) / omp_get_max_threads();
+    std::vector<::size_t> chunk_sum(omp_get_max_threads());
+#pragma omp parallel for
+    for (::size_t t = 0; t < static_cast<::size_t>(omp_get_max_threads());
+         ++t) {
+      for (::size_t i = chunk * t + 1; i < std::min(a->size(), chunk * (t + 1));
+           ++i) {
+        (*a)[i] += (*a)[i - 1];
+      }
+    }
+    chunk_sum[0] = 0;
+    for (::size_t t = 1; t < static_cast<::size_t>(omp_get_max_threads());
+         ++t) {
+      chunk_sum[t] = chunk_sum[t - 1] + (*a)[t * chunk - 1];
+    }
+#pragma omp parallel for
+    for (::size_t t = 0; t < static_cast<::size_t>(omp_get_max_threads());
+         ++t) {
+      for (::size_t i = chunk * t; i < std::min(a->size(), chunk * (t + 1));
+           ++i) {
+        (*a)[i] += chunk_sum[t];
+      }
+    }
+#ifndef NDEBUG
+    assert((*a)[0] == orig[0]);
+#pragma omp parallel for schedule(static, 1)
+    for (::size_t i = 1; i < a->size(); ++i) {
+      assert((*a)[i] == (*a)[i - 1] + orig[i]);
+    }
+#endif
+  }
+
   void adjacency_list_init();
 
   void adjacency_list_end();
 
-  void sample_random_edges(const NetworkGraph *linked_edges, ::size_t p,
-                           std::vector<Edge> *edges);
+  void sample_random_edges(const NetworkGraph* linked_edges, ::size_t p,
+                           std::vector<Edge>* edges);
 
 #endif  // def EDGESET_IS_ADJACENCY_LIST
 
@@ -165,8 +261,23 @@ class Network {
    */
   void init_test_set();
 
+  template <class T>
+  static bool descending(T i, T j) {
+    return (i > j);
+  }
+
   void calc_max_fan_out();
 
+ public:
+  ::size_t get_max_fan_out() const;
+
+  ::size_t get_max_fan_out(::size_t batch_size) const;
+
+  ::size_t get_fan_out(Vertex i);
+
+  ::size_t marshall_edges_from(Vertex node, Vertex* marshall_area);
+
+ protected:
   /**
    * sample one non-link edge for held out set from the network. We should make
    * sure the edge is not
@@ -185,15 +296,17 @@ class Network {
    */
   Edge sample_non_link_edge_for_test();
 
+ protected:
+  const Data* data_ = NULL;
   int32_t N;                         // number of nodes in the graph
-  const NetworkGraph *linked_edges;  // all pair of linked edges.
+  const NetworkGraph* linked_edges;  // all pair of linked edges.
   ::size_t num_total_edges;          // number of total edges.
-  double held_out_ratio;             // percentage of held-out data size
+  double held_out_ratio_;            // percentage of held-out data size
   ::size_t held_out_size;
 
 #ifdef EDGESET_IS_ADJACENCY_LIST
   std::vector<::size_t> cumulative_edges;
-  std::vector<Random::Random *> thread_random;
+  std::vector<Random::Random*> thread_random;
 #endif
 
 // The map stores all the neighboring nodes for each node, within the training
@@ -211,8 +324,6 @@ class Network {
 #endif
   EdgeMap held_out_map;  // store all held out edges
   EdgeMap test_map;      // store all test edges
-
-  ::size_t num_pieces;
 
   std::vector<::size_t> fan_out_cumul_distro;
   ::size_t progress = 0;

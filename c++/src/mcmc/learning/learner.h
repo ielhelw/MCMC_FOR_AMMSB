@@ -20,6 +20,8 @@ class Learner {
  public:
   Learner(const Options &args);
 
+  void LoadNetwork();
+
   virtual ~Learner();
 
   /**
@@ -140,7 +142,6 @@ class Learner {
   }
 
   const Options args_;
-  const Data *data_;
   Network network;
 
   double alpha;

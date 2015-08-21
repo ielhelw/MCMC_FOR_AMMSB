@@ -5,10 +5,7 @@
 #else
 int omp_get_max_threads() { return 1; }
 int omp_get_thread_num() { return 0; }
-#ifdef ACTUALLY_USED
 int omp_get_num_threads() { return 1; }
-#endif
-
 #endif
 
 namespace mcmc {

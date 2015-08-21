@@ -1,7 +1,7 @@
 import sys
 
 # import com.uva.file_random
-from com.uva.file_random import file_random as random
+from com.uva.source_aware_random import SourceAwareRandom as random
 from sets import Set
 
 class Network(object):
@@ -43,9 +43,13 @@ class Network(object):
         # Based on the a-MMSB paper, it samples equal number of 
         # linked edges and non-linked edges. 
         self.__held_out_size = int(held_out_ratio * len(self.__linked_edges))  
-        
+
         # it is used for stratified random node sampling. By default 10 
-        self.__num_pieces = 10    
+        # self.__num_pieces = 10    
+        self.__num_pieces = 50    
+
+        sys.stdout.write("held_out_ratio %.12f held_out_size %d num_pieces %d\n" % (self.__held_out_ratio, self.__held_out_size, self.__num_pieces))
+        
         
         # The map stores all the neighboring nodes for each node, within the training
         # set. The purpose of keeping this object is to make the stratified sampling
@@ -61,6 +65,7 @@ class Network(object):
         self.__held_out_map = {}                            # store all held out edges
         self.__test_map = {}                                # store all test edges
         
+        # print sorted(self.__linked_edges)
         
         # initialize train_link_map 
         self.__init_train_link_map()
@@ -94,12 +99,8 @@ class Network(object):
             scale equals to 1/h(x), insuring the sampling gives the unbiased gradients.   
         
         """
-        if strategy == "random-pair":
-            return self.__random_pair_sampling(mini_batch_size)
-        elif strategy == "random-node":
-            return self.__random_node_sampling()
-        elif strategy == "stratified-random-pair":
-            return self.__stratified_random_pair_sampling(mini_batch_size)
+        if False:
+            pass
         elif strategy == "stratified-random-node":
             return self.__stratified_random_node_sampling(10)
         else:
@@ -123,112 +124,16 @@ class Network(object):
     def get_held_out_set(self):
         return self.__held_out_map
     
+    def get_held_out_size(self):
+        return self.__held_out_size
+    
     def get_test_set(self):
         return self.__test_map
     
     def set_num_pieces(self, num_pieces):
         self.__num_pieces = num_pieces
+        print "**************** set num_pieces to " + str(num_pieces)
     
-    
-    def __random_pair_sampling(self, mini_batch_size):
-        """
-        sample list of edges from the whole training network uniformly, regardless
-        of links or non-links edges.The sampling approach is pretty simple: randomly generate 
-        one edge and then check if that edge passes the conditions. The iteration
-        stops until we get enough (mini_batch_size) edges. 
-        """
-        p = mini_batch_size
-        mini_batch_set = Set()     # list of samples in the mini-batch 
-        
-        # iterate until we get $p$ valid edges. 
-        while p > 0:
-            firstIdx = random.randint(0,self.__N-1)
-            secondIdx = random.randint(0, self.__N-1)
-            if firstIdx == secondIdx:
-                continue
-            # make sure the first index is smaller than the second one, since
-            # we are dealing with undirected graph. 
-            edge = (min(firstIdx, secondIdx), max(firstIdx, secondIdx))
-            
-            # the edge should not be in  1)hold_out set, 2)test_set  3) mini_batch_set (avoid duplicate)
-            if edge in self.__held_out_map or edge in self.__test_map or edge in mini_batch_set:
-                continue
-            
-            # great, we put it into the mini_batch list. 
-            mini_batch_set.add(edge)
-            p -= 1
-        
-        scale = (self.__N*(self.__N-1)/2)/mini_batch_size
-         
-        return (mini_batch_set, scale)
-    
-    
-    def __random_node_sampling(self):
-        """
-        A set consists of all the pairs that involve one of the N nodes: we first sample one of 
-        the node from N nodes, and sample all the edges for that node. h(x) = 1/N
-        """
-        mini_batch_set = Set()
-        # randomly select the node ID
-        nodeId = random.randint(0, self.__N-1)
-        for i in range(0, self.__N):
-            
-            # make sure the first index is smaller than the second one, since
-            # we are dealing with undirected graph.
-            edge = (min(nodeId, i), max(nodeId, i))          
-            if edge in self.__held_out_map or edge in self.__test_map \
-                        or edge in mini_batch_set:
-                continue
-            mini_batch_set.add(edge)
-        
-        return (mini_batch_set, self.__N)
-    
-        
-    def __stratified_random_pair_sampling(self, mini_batch_size):
-        """
-        We divide the edges into linked and non-linked edges, and each time either sample
-        mini-batch from linked-edges or non-linked edges.  g(x) = 1/N_0 for non-link and
-        1/N_1 for link, where N_0-> number of non-linked edges, N_1-> # of linked edges.
-        """
-        p = mini_batch_size
-        mini_batch_set = Set()
-        flag = random.randint(0,1)
-        if flag == 0:
-            """ sample mini-batch from linked edges """
-            while p > 0:
-                sampled_linked_edges = random.sample(self.__linked_edges, mini_batch_size * 2)
-                for edge in sampled_linked_edges:
-                    if p < 0:
-                        print sys._getframe().f_code.co_name + ": Are you sure p < 0 is a good idea?"
-                        break
-                    
-                    if edge in self.__held_out_map or edge in self.__test_map or edge in mini_batch_set:
-                        continue
-                    mini_batch_set.add(edge)
-                    p -= 1
-            
-            return (mini_batch_set, len(self.__linked_edges)/mini_batch_size)
-        
-        else:
-            """ sample mini-batch from non-linked edges """
-            while p > 0:
-                firstIdx = random.randint(0,self.__N-1)
-                secondIdx = random.randint(0, self.__N-1)
-                
-                if (firstIdx == secondIdx):
-                    continue
-                # ensure the first index is smaller than the second one.  
-                edge = (min(firstIdx, secondIdx), max(firstIdx, secondIdx))
-        
-                # check conditions: 
-                if edge in self.__linked_edges or edge in self.__held_out_map \
-                        or edge in self.__test_map or edge in mini_batch_set:
-                    continue
-                mini_batch_set.add(edge)
-                p -= 1
-                
-            return (mini_batch_set, ((self.__N*(self.__N-1))/2 - len(self.__linked_edges)/mini_batch_size))
-        
     
     def __stratified_random_node_sampling(self, num_pieces):
         """
@@ -243,12 +148,12 @@ class Network(object):
                 we sample equals to  number of all non-link edges / num_pieces
         """
         # randomly select the node ID
-        nodeId = random.randint(0, self.__N-1)
+        nodeId = random.get("minibatch sampler").randint(0, self.__N-1)
         # decide to sample links or non-links
-        flag = random.randint(0,1)      # flag=0: non-link edges  flag=1: link edges
+        flag = random.get("minibatch sampler").randint(0,1)      # flag=0: non-link edges  flag=1: link edges
         
         mini_batch_set = Set()
-        
+
         if flag == 0:
             """ sample non-link edges """
             # this is approximation, since the size of self.train_link_map[nodeId]
@@ -258,10 +163,11 @@ class Network(object):
             while p > 0:
                 # because of the sparsity, when we sample $mini_batch_size*2$ nodes, the list likely
                 # contains at least mini_batch_size valid nodes. 
-                nodeList = random.sample(list(xrange(self.__N)), mini_batch_size * 2)
+                nodeList = random.sample_range("minibatch sampler", self.__N, mini_batch_size * 2)
                 for neighborId in nodeList:
                     if p < 0:
-                        print sys._getframe().f_code.co_name + ": Are you sure p < 0 is a good idea?"
+                        if False:
+                            print sys._getframe().f_code.co_name + ": Are you sure p < 0 is a good idea?"
                         break
                     if neighborId == nodeId:
                         continue
@@ -269,6 +175,7 @@ class Network(object):
                     edge = (min(nodeId, neighborId), max(nodeId, neighborId))
                     if edge in self.__linked_edges or edge in self.__held_out_map or \
                             edge in self.__test_map or edge in mini_batch_set:
+                        print "Discard edge " + str(edge)
                         continue
                     
                     # add it into mini_batch_set
@@ -320,18 +227,30 @@ class Network(object):
             print "There are not enough linked edges that can sample from. \
                     please use smaller held out ratio."
             
-        sampled_linked_edges = random.sample(self.__linked_edges, p)
+        sampled_linked_edges = random.get("graph init").sample(self.__linked_edges, p)
         for edge in sampled_linked_edges: 
             self.__held_out_map[edge] = True
             self.__train_link_map[edge[0]].remove(edge[1])
             self.__train_link_map[edge[1]].remove(edge[0])
         # print sampled_linked_edges
+
+        sys.stdout.write("Sampled part of held out set:\n")
+        for m in sorted(sampled_linked_edges):
+            a, b = m
+            sys.stdout.write("(%d,%d) " % (a, b))
+        sys.stdout.write("\n")
         
         # sample p non-linked edges from the network 
         while p > 0:
             edge = self.__sample_non_link_edge_for_held_out()
             self.__held_out_map[edge] = False
             p -= 1
+
+        sys.stdout.write("Held out set:\n")
+        for m in sorted(self.__held_out_map):
+            a, b = m
+            sys.stdout.write("(%d,%d) " % (a, b))
+        sys.stdout.write("\n")
     
     
     def __init_test_set(self):
@@ -345,7 +264,7 @@ class Network(object):
             # Because we already used some of the linked edges for held_out sets,
             # here we sample twice as much as links, and select among them, which
             # is likely to contain valid p linked edges.  
-            sampled_linked_edges = random.sample(self.__linked_edges, 2*p)
+            sampled_linked_edges = random.get("graph init").sample(self.__linked_edges, 2*p)
             for edge in sampled_linked_edges:  
                 if p < 0:
                     print sys._getframe().f_code.co_name + ": Are you sure p < 0 is a good idea?"
@@ -376,8 +295,8 @@ class Network(object):
         TODO: add condition for checking the infinit-loop
         '''
         while True:
-            firstIdx = random.randint(0,self.__N-1)
-            secondIdx = random.randint(0, self.__N-1)
+            firstIdx = random.get("graph init").randint(0,self.__N-1)
+            secondIdx = random.get("graph init").randint(0, self.__N-1)
         
             if (firstIdx == secondIdx):
                 continue
@@ -399,8 +318,8 @@ class Network(object):
         TODO prevent the infinit loop
         """ 
         while True:
-            firstIdx = random.randint(0,self.__N-1)
-            secondIdx = random.randint(0, self.__N-1)
+            firstIdx = random.get("graph init").randint(0,self.__N-1)
+            secondIdx = random.get("graph init").randint(0, self.__N-1)
         
             if (firstIdx == secondIdx):
                 continue
