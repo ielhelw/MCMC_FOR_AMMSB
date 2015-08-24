@@ -33,17 +33,21 @@ int main(int argc, char *argv[]) {
 		}
 
 		if (args.run.mcmc_stochastical) {
+			// Parameter set for Python comparison:
+			// -s -f ../../../../datasets/netscience.txt -c relativity -K 15 -m 147 -n 10 --mcmc.alpha 0.01 --mcmc.epsilon 0.0000001 --mcmc.held-out-ratio 0.009999999776 -i 1
 			std::cout << "start MCMC stochastical" << std::endl;
 			MCMCSamplerStochastic mcmcSampler(args);
 			mcmcSampler.init();
 			mcmcSampler.run();
 		}
 
+#ifdef DEPRECATED
 		if (args.run.mcmc_batch) {
 			std::cout << "start MCMC batch" << std::endl;
 			MCMCSamplerBatch mcmcSampler(args);
 			mcmcSampler.run();
 		}
+#endif
 
 #ifdef ENABLE_OPENCL
 		if (args.run.mcmc_stochastical_cl) {
@@ -60,13 +64,18 @@ int main(int argc, char *argv[]) {
 #endif
 #endif
 
+#ifdef ENABLE_DISTRIBUTED
 		if (args.run.mcmc_stochastical_distr) {
+			// Parameter set for Python comparison:
+			// -d -f ../../../../datasets/netscience.txt -c relativity -K 15 -m 147 -n 10 --mcmc.alpha 0.01 --mcmc.epsilon 0.0000001 --mcmc.held-out-ratio 0.009999999776
 			std::cout << "start MCMC stochastical distributed " << std::endl;
 			MCMCSamplerStochasticDistributed mcmcSampler(args);
 			mcmcSampler.init();
 			mcmcSampler.run();
 		}
+#endif
 
+#ifdef DEPRECATED
 		if (false) {
 			std::cout << "start variational inference batch" << std::endl;
 			SV svSampler(args);
@@ -78,6 +87,7 @@ int main(int argc, char *argv[]) {
 			SVI sviSampler(args);
 			sviSampler.run();
 		}
+#endif
 
 		return 0;
 #ifdef ENABLE_OPENCL

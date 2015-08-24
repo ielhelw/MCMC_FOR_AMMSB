@@ -1,3 +1,5 @@
+#ifdef DEPRECATED
+
 #ifndef MCMC_VARIATIONAL_INFERENCE_STOCHASTIC_H__
 #define MCMC_VARIATIONAL_INFERENCE_STOCHASTIC_H__
 
@@ -498,3 +500,5 @@ protected:
 }	// namespace mcmc
 
 #endif	// ndef MCMC_VARIATIONAL_INFERENCE_STOCHASTIC_H__
+
+#endif

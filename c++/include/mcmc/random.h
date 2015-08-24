@@ -6,6 +6,7 @@
 
 #include <fstream>
 #include <string>
+#include <set>
 #include <unordered_set>
 #include <vector>
 #include <list>
@@ -19,12 +20,6 @@
 namespace mcmc {
 namespace Random {
 
-#ifdef RANDOM_FOLLOWS_CPP_WENZHE
-#  define RANDOM_SYSTEM
-#endif
-
-// #define RANDOM_SYSTEM
-// #define USE_TAUS2_RANDOM
 
 class Random {
 protected:
@@ -32,7 +27,7 @@ protected:
 	}
 
 public:
-	Random(unsigned int seed) {
+	Random(unsigned int seed, bool preserve_range_order = false) : preserve_range_order(preserve_range_order) {
 #ifndef RANDOM_SYSTEM
 		if (seed == 0) throw NumberFormatException("Random seed value 0 not allowed"); // zero value not allowed
 		xorshift_state[0] = seed;
@@ -42,7 +37,7 @@ public:
 		srand(seed);
 	}
 
-	Random(unsigned int seed_hi, unsigned int seed_lo) {
+	Random(unsigned int seed_hi, unsigned int seed_lo, bool preserve_range_order = false) : preserve_range_order(preserve_range_order) {
 #ifndef RANDOM_SYSTEM
 		if (seed_lo == 0) throw NumberFormatException("Random seed value 0 not allowed"); // zero value not allowed
 		xorshift_state[0] = seed_lo;
@@ -104,7 +99,6 @@ public:
 	double random() {
 		return (1.0 * rand() / std::numeric_limits<uint64_t>::max());
 	}
-
 
 	std::vector<double> randn(::size_t K) {
 		auto r = std::vector<double>(K);
@@ -201,8 +195,52 @@ public:
 
 
 	std::vector<int> *sampleRange(int N, ::size_t count) {
-		auto accu = sample(0, N, count);
-		return new std::vector<int>(accu.begin(), accu.end());
+		if (preserve_range_order) {
+			assert((int)count <= N);
+
+			std::unordered_set<int> accu;
+			auto *result = new std::vector<int>();
+			for (::size_t i = 0; i < count; i++) {
+				int r = randint(0, N - 1);
+				if (accu.find(r) == accu.end()) {
+					accu.insert(r);
+					result->push_back(r);
+				} else {
+					i--;
+				}
+			}
+			return result;
+
+		} else {
+			auto accu = sample(0, N, count);
+			return new std::vector<int>(accu.begin(), accu.end());
+		}
+	}
+
+
+	template <class Element>
+	std::list<Element> *sampleList(const std::set<Element> &population, ::size_t count) {
+		std::list<Element> *result = new std::list<Element>();
+		struct Inserter {
+			void operator() (std::list<Element> &list, Element &item) {
+				list.push_back(item);
+			}
+		};
+		sample(result, population, count, Inserter());
+
+#ifndef NDEBUG
+		for (auto i : *result) {
+			assert(population.find(i) != population.end());
+		}
+#endif
+
+		return result;
+	}
+
+
+	template <class Element>
+	std::list<Element> *sampleList(const std::set<Element> *population, ::size_t count) {
+		return sampleList(*population, count);
 	}
 
 
@@ -233,7 +271,6 @@ public:
 
 
 	double gamma(double p1, double p2) {
-		// std::vector<std::vector<double> > *a = new std::vector<double>(n1, std::vector<double>(n2, 0.0));
 #ifdef RANDOM_SYSTEM
 #if __GNUC_MINOR__ >= 5
 		std::gamma_distribution<double> gammaDistribution(p1, p2);
@@ -256,7 +293,6 @@ public:
 				a[i][j] = gamma(p1, p2);
 			}
 		}
-
 		return a;
 	}
 
@@ -553,6 +589,7 @@ public:
 
 
 protected:
+	bool preserve_range_order;
 #ifndef RANDOM_SYSTEM
 	uint64_t xorshift_state[2];
 #else
@@ -776,12 +813,6 @@ public:
 	std::ifstream noiseReader;
 };
 
-
-#ifdef RANDOM_FOLLOWS_PYTHON
-extern FileReaderRandom *random;
-#else
-extern Random *random;
-#endif
 
 }	// namespace Random
 }	// namespace mcmc

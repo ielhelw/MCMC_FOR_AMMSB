@@ -1,6 +1,8 @@
 #ifndef MCMC_LEARNING_MCMC_SAMPLER_STOCHASTIC_DISTR_H__
 #define MCMC_LEARNING_MCMC_SAMPLER_STOCHASTIC_DISTR_H__
 
+#ifdef ENABLE_DISTRIBUTED
+
 #include <cinttypes>
 #include <cmath>
 
@@ -293,9 +295,6 @@ public:
     */
     MCMCSamplerStochasticDistributed(const Options &args)
 			: MCMCSamplerStochastic(args), mpi_master(0) {
-#ifdef RANDOM_FOLLOWS_CPP_WENZHE
-		throw MCMCException("No support for Wenzhe Random compatibility");
-#endif
 #ifdef RANDOM_FOLLOWS_SCALABLE_GRAPH
 		throw MCMCException("No support for Scalable-Graph Random compatibility");
 #endif
@@ -345,7 +344,11 @@ public:
 			delete[] p;
 		}
 
-		for (auto r : threadRandom) {
+		delete phi_init_rng_;
+		for (auto r : neighbor_sample_rng_) {
+			delete r;
+		}
+		for (auto r : phi_update_rng_) {
 			delete r;
 		}
 
@@ -645,14 +648,27 @@ public:
 			init_beta();
 		}
 
-		// Make kernelRandom init depend on mpi_rank
-		delete kernelRandom;
-		kernelRandom = new Random::Random((mpi_rank + 1) * 42);
-		threadRandom.resize(omp_get_max_threads());
-		for (::size_t i = 0; i < threadRandom.size(); i++) {
-			threadRandom[i] = new Random::Random(i, (mpi_rank + 1) * 42);
+		// Make phi_update_rng_ depend on mpi_rank and thread Id
+		phi_update_rng_.resize(omp_get_max_threads());
+		for (::size_t i = 0; i < phi_update_rng_.size(); i++) {
+			int seed = args_.random_seed + SourceAwareRandom::PHI_UPDATE;
+			phi_update_rng_[i] = new Random::Random(seed + 1 + i + mpi_rank * phi_update_rng_.size(),
+													seed,
+													RANDOM_PRESERVE_RANGE_ORDER);
 		}
 
+		// Make neighbor_sample_rng_ depend on mpi_rank and thread Id
+		neighbor_sample_rng_.resize(omp_get_max_threads());
+		for (::size_t i = 0; i < phi_update_rng_.size(); i++) {
+			int seed = args_.random_seed + SourceAwareRandom::NEIGHBOR_SAMPLER;
+			neighbor_sample_rng_[i] = new Random::Random(seed + 1 + i + mpi_rank * phi_update_rng_.size(),
+														 seed,
+														 RANDOM_PRESERVE_RANGE_ORDER);
+		}
+
+		// Make phi_init_rng_ depend on mpi_rank
+		int seed = args_.random_seed + SourceAwareRandom::PHI_INIT;
+		phi_init_rng_ = new Random::Random(seed + 1 + mpi_rank, seed, RANDOM_PRESERVE_RANGE_ORDER);
 		t_populate_pi.start();
 		init_pi();
 		t_populate_pi.stop();
@@ -691,7 +707,7 @@ public:
 			g = std::vector<std::vector<double> >(K, std::vector<double>(2));    // gradients K*2 dimension
 		}
 
-        std::cerr << "Random seed " << std::hex << "0x" << kernelRandom->seed(0) << ",0x" << kernelRandom->seed(1) << std::endl << std::dec;
+		std::cerr << "Random seed " << std::hex << "0x" << rng_.random(SourceAwareRandom::GRAPH_INIT)->seed(0) << ",0x" << rng_.random(SourceAwareRandom::GRAPH_INIT)->seed(1) << std::endl << std::dec;
 		std::cerr << "Done constructor" << std::endl;
 	}
 
@@ -835,7 +851,7 @@ protected:
 		// restrict this is using re-reparameterization techniques, where we
 		// introduce another set of variables, and update them first followed by
 		// updating \pi and \beta.
-		theta = kernelRandom->gamma(eta[0], eta[1], K, 2);		// parameterization for \beta
+		theta = rng_.random(SourceAwareRandom::THETA_INIT)->gamma(eta[0], eta[1], K, 2);		// parameterization for \beta
 		// std::cerr << "Ignore eta[] in random.gamma: use 100.0 and 0.01" << std::endl;
 		// theta = kernelRandom->gamma(100.0, 0.01, K, 2);		// parameterization for \beta
 
@@ -886,7 +902,7 @@ protected:
 		double pi[K + 1];
 		std::cerr << "*************** FIXME: load pi only on pi-hoster nodes" << std::endl;
 		for (int32_t i = mpi_rank; i < static_cast<int32_t>(N); i += mpi_size) {
-			std::vector<double> phi_pi = kernelRandom->gamma(1, 1, 1, K)[0];
+			std::vector<double> phi_pi = phi_init_rng_->gamma(1, 1, 1, K)[0];
 			if (true) {
 				if (i < 10) {
 					std::cerr << "phi[" << i << "]: ";
@@ -1243,7 +1259,7 @@ protected:
 				Vertex node = chunk_nodes[i];
 				// sample a mini-batch of neighbors
 				NeighborSet neighbors = sample_neighbor_nodes(num_node_sample, node,
-															  threadRandom[omp_get_thread_num()]);
+															  neighbor_sample_rng_[omp_get_thread_num()]);
 				assert(neighbors.size() == real_num_node_sample());
 				// Cannot use flat_neighbors.insert() because it may (concurrently)
 				// attempt to resize flat_neighbors.
@@ -1270,7 +1286,7 @@ protected:
 				update_phi_node(chunk_start + i, node, pi_node[i],
 								flat_neighbors.begin() + i * real_num_node_sample(),
 								pi_neighbor.begin() + i * real_num_node_sample(),
-								eps_t, threadRandom[omp_get_thread_num()],
+								eps_t, phi_update_rng_[omp_get_thread_num()],
 								&(*phi_node)[chunk_start + i]);
 			}
 			t_update_phi.stop();
@@ -1491,7 +1507,7 @@ std::cerr << __func__ << "(): omp num threads" << omp_get_num_threads() << std::
 
 		t_beta_update_theta.start();
 		// update theta
-		std::vector<std::vector<double> > noise = kernelRandom->randn(K, 2);	// random noise.
+		std::vector<std::vector<double> > noise = rng_.random(SourceAwareRandom::BETA_UPDATE)->randn(K, 2);	// random noise.
 		// std::vector<std::vector<double> > theta_star(theta);
 #pragma omp parallel for
 		for (::size_t k = 0; k < K; k++) {
@@ -1703,7 +1719,9 @@ protected:
 
 	DKV::DKVStoreInterface *d_kv_store;
 
-	std::vector<Random::Random *> threadRandom;
+	Random::Random *phi_init_rng_;
+	std::vector<Random::Random *> neighbor_sample_rng_;
+	std::vector<Random::Random *> phi_update_rng_;
 
 	bool REPLICATED_NETWORK = false;
 	LocalNetwork local_network_;
@@ -1748,3 +1766,5 @@ protected:
 
 
 #endif	// ndef MCMC_LEARNING_MCMC_SAMPLER_STOCHASTIC_DISTR_H__
+
+#endif	// def ENABLE_DISTRIBUTED

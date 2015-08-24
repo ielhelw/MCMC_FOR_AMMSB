@@ -32,9 +32,13 @@
 #include "mcmc/np.h"
 
 
-#define EDGESET_IS_ADJACENCY_LIST
+#if !defined RANDOM_FOLLOWS_PYTHON && ! defined RANDOM_FOLLOWS_CPP_WENZHE
+#  define EDGESET_IS_ADJACENCY_LIST
+#endif
 
-#define USE_GOOGLE_SPARSE_HASH
+#ifdef EDGESET_IS_ADJACENCY_LIST
+#  define USE_GOOGLE_SPARSE_HASH
+#endif
 
 
 namespace mcmc {
@@ -248,7 +252,7 @@ public:
 
 namespace mcmc {
 
-#ifdef RANDOM_FOLLOWS_PYTHON
+#if defined RANDOM_FOLLOWS_PYTHON || defined RANDOM_FOLLOWS_CPP_WENZHE
 
 #ifdef RANDOM_FOLLOWS_CPP
 #error "RANDOM_FOLLOWS_CPP is incompatible with RANDOM_FOLLOWS_PYTHON"
@@ -257,7 +261,7 @@ namespace mcmc {
 typedef std::unordered_set<Vertex>		VertexSet;
 typedef std::set<Vertex>				OrderedVertexSet;
 
-typedef std::unordered_set<Edge>		NetworkGraph;
+typedef std::set<Edge>					NetworkGraph;
 typedef std::set<Edge>					MinibatchSet;
 typedef std::list<Edge>					EdgeList;
 
@@ -296,8 +300,9 @@ typedef std::list<Edge>					EdgeList;
 #endif	// def RANDOM_FOLLOWS_PYTHON
 
 
+template <typename EdgeContainer>
 std::ostream &dump_edgeset(std::ostream &out, ::size_t N,
-						   const std::unordered_set<Edge> &E) {
+						   const EdgeContainer &E) {
 	// out << "Edge set size " << N << std::endl;
 	for (auto edge : E) {
 		out << edge.first << "\t" << edge.second << std::endl;
@@ -320,7 +325,8 @@ std::ostream &dump_edgeset(std::ostream &out, ::size_t N, const AdjacencyList &E
 	return out;
 }
 
-bool present(const std::unordered_set<Edge> &s, const Edge &edge) {
+template <typename EdgeContainer>
+bool present(const EdgeContainer &s, const Edge &edge) {
 	for (auto e : s) {
 		if (e == edge) {
 			return true;

@@ -245,6 +245,8 @@ public:
 
 			("output.dir,o", po::value<std::string>(&output_dir)->default_value("."), "output_dir")
 
+			("seed", po::value<int>(&random_seed)->default_value(42), "random seed")
+
 			("input.file,f", po::value<std::string>(&filename)->default_value(""), "input file")
 			("input.class,c", po::value<std::string>(&dataset_class)->default_value("netscience"), "input class")
 			("input.contiguous,C", po::bool_switch(&contiguous)->default_value(false), "contiguous input data")
@@ -320,6 +322,8 @@ public:
 	std::string dataset_class;
 	bool		contiguous;
 	bool		compressed;
+
+	int			random_seed;
 
 #ifdef ENABLE_OPENCL
 	std::string	openClPlatform;

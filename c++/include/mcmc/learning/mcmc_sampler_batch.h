@@ -1,3 +1,5 @@
+#ifdef DEPRECATED
+
 #ifndef MCMC_LEARNING_MCMC_SAMPLER_BATCH_H__
 #define MCMC_LEARNING_MCMC_SAMPLER_BATCH_H__
 
@@ -571,3 +573,5 @@ protected:
 }	// namespace mcmc
 
 #endif	// ndef MCMC_LEARNING_MCMC_SAMPLER_BATCH_H__
+
+#endif

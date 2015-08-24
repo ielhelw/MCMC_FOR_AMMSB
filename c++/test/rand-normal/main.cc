@@ -27,12 +27,14 @@ int main(int argc, char *argv[]) {
 		N = vm["iterations"].as<uint64_t>();
 	}
 
+	auto rgen = mcmc::Random::Random(42);
+
 	std::cout << "N " << N << " K " << K << std::endl;
 
 	if (true) {
 		auto start = std::chrono::system_clock::now();
 		for (::size_t i = 0; i < N; i++) {
-			(void)mcmc::Random::random->randint(0, N);
+			rgen.randint(0, N);
 		}
 		auto stop = std::chrono::system_clock::now();
 		std::cout << N << " randint() takes total " << (stop - start).count() << " per call " << (1.0 * (stop - start).count() / N) << std::endl;
@@ -41,7 +43,7 @@ int main(int argc, char *argv[]) {
 	if (true) {
 		auto start = std::chrono::system_clock::now();
 		for (::size_t i = 0; i < N; i++) {
-			(void)mcmc::Random::random->random();
+			rgen.random();
 		}
 		auto stop = std::chrono::system_clock::now();
 		std::cout << N << " random() takes total " << (stop - start).count() << " per call " << (1.0 * (stop - start).count() / N) << std::endl;
@@ -51,20 +53,20 @@ int main(int argc, char *argv[]) {
 		std::vector<double> a(K);
 		auto start = std::chrono::system_clock::now();
 		for (::size_t i = 0; i < N / K; i++) {
-			a = mcmc::Random::random->randn(K);
+			rgen.randn(K);
 		}
 		auto stop = std::chrono::system_clock::now();
 		std::cout << (N / K) << " randn(" << K << ") takes total " << (stop - start).count() << " per call " << (1.0 * (stop - start).count() / ((N / K) * K)) << std::endl;
-		mcmc::Random::random->report();
+		rgen.report();
 	}
 
 	if (true) {
 		std::vector<std::vector<double> > a(N/K, std::vector<double>(K));
 		auto start = std::chrono::system_clock::now();
-		a = mcmc::Random::random->gamma(1.0, 0.1, N / K, K);
+		rgen.gamma(1.0, 0.1, N / K, K);
 		auto stop = std::chrono::system_clock::now();
 		std::cout << "gamma(" << (N / K) << "," << K << ") takes total " << (stop - start).count() << " per call " << (1.0 * (stop - start).count() / ((N / K) * K)) << std::endl;
-		mcmc::Random::random->report();
+		rgen.report();
 	}
 
 	return 0;

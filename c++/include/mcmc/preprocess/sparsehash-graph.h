@@ -30,6 +30,7 @@ public:
 	virtual ~SparseHashGraph() {
 	}
 
+// FIXME: this comment is dead:
 	/**
 	 * The data is stored in .txt file. The format of data is as follows, the first column
 	 * is line number. Within each line, it is tab separated.
@@ -47,6 +48,7 @@ public:
 	 * the node ID first.
 	 */
 	virtual const Data *process() {
+// FIXME: must be USE_GOOGLE_SPARSE_HASH
 #ifdef EDGESET_IS_ADJACENCY_LIST
 		FileHandle f(filename_, compressed_, "r");
 
