@@ -1,0 +1,19 @@
+# follows SPARSEHASH_ROOT
+
+#defines:
+#- SPARSEHASH_INCLUDE_DIRS
+#- SPARSEHASH_LIBRARIES
+
+FIND_PACKAGE(PackageHandleStandardArgs)
+
+if (DEFINED ENV{SPARSEHASH_ROOT})
+	set(SPARSEHASH_ROOT "$ENV{SPARSEHASH_ROOT}")
+endif()
+
+find_path(SPARSEHASH_INCLUDE_DIRS google/sparse_hash_map
+  PATHS "${SPARSEHASH_ROOT}"
+  PATH_SUFFIXES include
+)
+
+find_package_handle_standard_args(SPARSEHASH DEFAULT_MSG
+    SPARSEHASH_INCLUDE_DIRS)
