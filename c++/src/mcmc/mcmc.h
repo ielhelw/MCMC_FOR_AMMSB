@@ -1,6 +1,7 @@
 #ifndef MCMC_MCMC_H__
 #define MCMC_MCMC_H__
 
+#include "mcmc/config.h"
 #include "mcmc/options.h"
 
 #include "mcmc/preprocess/data_factory.h"

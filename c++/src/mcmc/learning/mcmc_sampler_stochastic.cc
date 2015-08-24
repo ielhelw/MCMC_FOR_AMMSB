@@ -23,8 +23,8 @@ MCMCSamplerStochastic::MCMCSamplerStochastic(const Options &args)
 #ifdef RANDOM_FOLLOWS_CPP_WENZHE
   std::cerr << "RANDOM_FOLLOWS_CPP_WENZHE enabled" << std::endl;
 #endif
-#ifdef RANDOM_SYSTEM
-  std::cerr << "RANDOM_SYSTEM enabled" << std::endl;
+#ifdef MCMC_RANDOM_SYSTEM
+  std::cerr << "MCMC_RANDOM_SYSTEM enabled" << std::endl;
 #endif
 
   // step size parameters.

@@ -3,13 +3,13 @@
 namespace mcmc {
 namespace Random {
 
-#if defined RANDOM_SYSTEM
+#if defined MCMC_RANDOM_SYSTEM
 Random *random = new Random(0);
 #else
 Random *random = new Random(42);
 #endif
 
-#ifndef RANDOM_SYSTEM
+#ifndef MCMC_RANDOM_SYSTEM
 /* tabulated values for the heigt of the Ziggurat levels */
 static const double ytab[128] = {
     1,               0.963598623011,   0.936280813353,   0.913041104253,
@@ -107,7 +107,7 @@ static const double wtab[128] = {
 Random::Random() {}
 
 Random::Random(unsigned int seed) {
-#ifndef RANDOM_SYSTEM
+#ifndef MCMC_RANDOM_SYSTEM
   if (seed == 0)
     throw NumberFormatException(
         "Random seed value 0 not allowed");  // zero value not allowed
@@ -120,7 +120,7 @@ Random::Random(unsigned int seed) {
 }
 
 Random::Random(unsigned int seed_hi, unsigned int seed_lo) {
-#ifndef RANDOM_SYSTEM
+#ifndef MCMC_RANDOM_SYSTEM
   if (seed_lo == 0)
     throw NumberFormatException(
         "Random seed value 0 not allowed");  // zero value not allowed
@@ -134,7 +134,7 @@ Random::Random(unsigned int seed_hi, unsigned int seed_lo) {
 
 Random::~Random() {}
 
-#ifndef RANDOM_SYSTEM
+#ifndef MCMC_RANDOM_SYSTEM
 uint64_t Random::xorshift_128plus() {
   uint64_t s1 = xorshift_state[0];
   uint64_t s0 = xorshift_state[1];
@@ -198,7 +198,7 @@ std::vector<std::vector<double> > Random::gamma(double p1, double p2,
   // std::vector<std::vector<double> > *a = new std::vector<double>(n1,
   // std::vector<double>(n2, 0.0));
   std::vector<std::vector<double> > a(n1, std::vector<double>(n2));
-#ifdef RANDOM_SYSTEM
+#ifdef MCMC_RANDOM_SYSTEM
 #if __GNUC_MINOR__ >= 5
   std::gamma_distribution<double> gammaDistribution(p1, p2);
 
@@ -216,11 +216,11 @@ std::vector<std::vector<double> > Random::gamma(double p1, double p2,
       a[i][j] = gsl_ran_gamma(p1, p2);
     }
   }
-#endif  // def RANDOM_SYSTEM
+#endif  // def MCMC_RANDOM_SYSTEM
   return a;
 }
 
-#ifndef RANDOM_SYSTEM
+#ifndef MCMC_RANDOM_SYSTEM
 /* gauss.c - gaussian random numbers, using the Ziggurat method
  *
  * Copyright (C) 2005  Jochen Voss.
@@ -328,11 +328,11 @@ double Random::gsl_ran_gaussian_ziggurat(const double sigma) {
 
   return sign * sigma * x;
 }
-#endif  // def RANDOM_SYSTEM
+#endif  // def MCMC_RANDOM_SYSTEM
 
 std::vector<double> Random::randn(::size_t K) {
   auto r = std::vector<double>(K);
-#ifdef RANDOM_SYSTEM
+#ifdef MCMC_RANDOM_SYSTEM
 #if __GNUC_MINOR__ >= 5
   for (::size_t i = 0; i < K; i++) {
     r[i] = normalDistribution(generator);
@@ -353,7 +353,7 @@ std::vector<double> Random::randn(::size_t K) {
 }
 
 void Random::report() {
-#ifndef RANDOM_SYSTEM
+#ifndef MCMC_RANDOM_SYSTEM
   if (n_randn > 0) {
     std::cerr << "randn calls " << n_randn << " iters "
               << (1.0 * iters_randn / n_randn) << " ktab miss "
@@ -363,7 +363,7 @@ void Random::report() {
 #endif
 }
 
-#ifndef RANDOM_SYSTEM
+#ifndef MCMC_RANDOM_SYSTEM
 /* rng/gsl_rng.h
  *
  * Copyright (C) 1996, 1997, 1998, 1999, 2000, 2004, 2007 James Theiler, Brian
@@ -461,10 +461,10 @@ double Random::gsl_ran_gamma(double a, double b) {
     return f * b * d * v;
   }
 }
-#endif  // def RANDOM_SYSTEM
+#endif  // def MCMC_RANDOM_SYSTEM
 
 std::string Random::state() {
-#ifndef RANDOM_SYSTEM
+#ifndef MCMC_RANDOM_SYSTEM
   std::ostringstream s;
   s << "(" << xorshift_state[0] << "," << xorshift_state[1] << ")";
   return s.str();

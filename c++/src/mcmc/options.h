@@ -4,6 +4,7 @@
 #include <iostream>
 #include <fstream>
 
+#include "mcmc/config.h"
 #include "mcmc/exception.h"
 
 #ifndef __INTEL_COMPILER

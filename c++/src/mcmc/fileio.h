@@ -5,6 +5,7 @@
 #include <unistd.h>
 #include <string>
 
+#include "mcmc/config.h"
 #include "mcmc/exception.h"
 
 namespace mcmc {

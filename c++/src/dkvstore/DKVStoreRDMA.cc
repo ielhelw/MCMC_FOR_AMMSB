@@ -1,13 +1,16 @@
 /*
  * Copyright notice
  */
-#ifdef ENABLE_RDMA
+
+#include "mcmc/config.h"
+
+#ifdef MCMC_ENABLE_RDMA
 #include "DKVStoreRDMA.h"
 #endif
 
 #include <unistd.h>
 
-#ifdef ENABLE_RDMA
+#ifdef MCMC_ENABLE_RDMA
 #include <infiniband/verbs.h>
 #endif
 

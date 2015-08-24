@@ -109,7 +109,7 @@ std::ostream &operator<<(std::ostream &s, const Edge &e) { return e.put(s); }
 
 std::istream &operator>>(std::istream &s, Edge &e) { return e.get(s); }
 
-#ifdef USE_GOOGLE_SPARSE_HASH
+#ifdef MCMC_USE_GOOGLE_SPARSE_HASH
 bool EdgeEquals::operator()(const Edge &e1, const Edge &e2) const {
   return e1 == e2;
 }
@@ -183,7 +183,7 @@ void Data::dump_data() const {
 }
 
 void Data::save(const std::string &filename, bool compressed) const {
-#if defined EDGESET_IS_ADJACENCY_LIST && defined USE_GOOGLE_SPARSE_HASH
+#if defined EDGESET_IS_ADJACENCY_LIST && defined MCMC_USE_GOOGLE_SPARSE_HASH
   FileHandle f(filename, compressed, "w");
   int32_t num_nodes = N;
   f.write_fully(&num_nodes, sizeof num_nodes);

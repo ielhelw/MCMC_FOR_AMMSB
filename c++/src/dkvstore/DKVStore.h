@@ -38,10 +38,10 @@ namespace DKV {
 namespace TYPE {
 enum TYPE {
     FILE,
-#ifdef ENABLE_RAMCLOUD
+#ifdef MCMC_ENABLE_RAMCLOUD
     RAMCLOUD,
 #endif
-#ifdef ENABLE_RDMA
+#ifdef MCMC_ENABLE_RDMA
     RDMA,
 #endif
 };
@@ -56,11 +56,11 @@ inline std::istream& operator>> (std::istream& in, TYPE& dkv_type) {
 	if (false) {
 	} else if (token == "file") {
 		dkv_type = DKV::TYPE::FILE;
-#ifdef ENABLE_RAMCLOUD
+#ifdef MCMC_ENABLE_RAMCLOUD
 	} else if (token == "ramcloud") {
 		dkv_type = DKV::TYPE::RAMCLOUD;
 #endif
-#ifdef ENABLE_RDMA
+#ifdef MCMC_ENABLE_RDMA
 	} else if (token == "rdma") {
 		dkv_type = DKV::TYPE::RDMA;
 #endif
@@ -78,12 +78,12 @@ inline std::ostream& operator<< (std::ostream& s, TYPE& dkv_type) {
 	case DKV::TYPE::FILE:
 		s << "file";
 		break;
-#ifdef ENABLE_RAMCLOUD
+#ifdef MCMC_ENABLE_RAMCLOUD
 	case DKV::TYPE::RAMCLOUD:
 		s << "ramcloud";
 		break;
 #endif
-#ifdef ENABLE_RDMA
+#ifdef MCMC_ENABLE_RDMA
 	case DKV::TYPE::RDMA:
 		s << "rdma";
 		break;

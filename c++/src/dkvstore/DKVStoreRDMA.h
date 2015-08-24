@@ -23,10 +23,7 @@
 
 #include <chrono>
 
-#ifdef ENABLE_RDMA
-#include <infiniband/verbs.h>
-#endif
-
+#include "mcmc/config.h"
 #include "mcmc/timer.h"
 
 #include "DKVStore.h"

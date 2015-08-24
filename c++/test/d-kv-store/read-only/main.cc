@@ -17,10 +17,10 @@
 #include <mcmc/options.h>
 
 #include <dkvstore/DKVStoreFile.h>
-#ifdef ENABLE_RAMCLOUD
+#ifdef MCMC_ENABLE_RAMCLOUD
 #include <dkvstore/DKVStoreRamCloud.h>
 #endif
-#ifdef ENABLE_RDMA
+#ifdef MCMC_ENABLE_RDMA
 #include <infiniband/verbs.h>
 #include <dkvstore/DKVStoreRDMA.h>
 #endif
@@ -394,14 +394,14 @@ int main(int argc, char *argv[]) {
         dkv_store.run();
         break;
     }
-#ifdef ENABLE_RAMCLOUD
+#ifdef MCMC_ENABLE_RAMCLOUD
 	case DKV::TYPE::RAMCLOUD: {
         DKVWrapper<DKV::DKVRamCloud::DKVStoreRamCloud> dkv_store(options, remains);
         dkv_store.run();
         break;
     }
 #endif
-#ifdef ENABLE_RDMA
+#ifdef MCMC_ENABLE_RDMA
 	case DKV::TYPE::RDMA: {
         DKVWrapper<DKV::DKVRDMA::DKVStoreRDMA> dkv_store(options, remains);
         dkv_store.run();

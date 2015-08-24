@@ -14,14 +14,11 @@
 #include <iostream>
 #include <iomanip>
 
+#include "mcmc/config.h"
 #include "mcmc/exception.h"
 
 namespace mcmc {
 namespace Random {
-
-#ifdef RANDOM_FOLLOWS_CPP_WENZHE
-#define RANDOM_SYSTEM
-#endif
 
 class Random {
  protected:
@@ -34,7 +31,7 @@ class Random {
 
   ~Random();
 
-#ifndef RANDOM_SYSTEM
+#ifndef MCMC_RANDOM_SYSTEM
   inline uint64_t xorshift_128plus();
 
   uint64_t seed(int x) const;
@@ -79,7 +76,7 @@ class Random {
   void sample(Result *result, const Input &input, ::size_t count,
               Inserter inserter);
 
-#ifndef RANDOM_SYSTEM
+#ifndef MCMC_RANDOM_SYSTEM
   double gsl_ran_gaussian_ziggurat(const double sigma);
 
   double gsl_rng_uniform_pos();
@@ -96,7 +93,7 @@ class Random {
 #else
   std::default_random_engine generator;
   std::normal_distribution<double> normalDistribution;
-#endif  // ndef RANDOM_SYSTEM
+#endif  // ndef MCMC_RANDOM_SYSTEM
 };
 
 extern Random *random;

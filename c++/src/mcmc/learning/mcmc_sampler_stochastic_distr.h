@@ -117,10 +117,10 @@ int MPI_Allreduce(void *sendbuf, void *recvbuf, int count, MPI_Datatype datatype
 
 #include "dkvstore/DKVStore.h"
 #include "dkvstore/DKVStoreFile.h"
-#ifdef ENABLE_RAMCLOUD
+#ifdef MCMC_ENABLE_RAMCLOUD
 #include "dkvstore/DKVStoreRamCloud.h"
 #endif
-#ifdef ENABLE_RDMA
+#ifdef MCMC_ENABLE_RDMA
 #include "dkvstore/DKVStoreRDMA.h"
 #endif
 
@@ -534,12 +534,12 @@ public:
 		case DKV::TYPE::FILE:
 			d_kv_store = new DKV::DKVFile::DKVStoreFile();
 			break;
-#ifdef ENABLE_RAMCLOUD
+#ifdef MCMC_ENABLE_RAMCLOUD
 		case DKV::TYPE::RAMCLOUD:
 			d_kv_store = new DKV::DKVRamCloud::DKVStoreRamCloud();
 			break;
 #endif
-#ifdef ENABLE_RDMA
+#ifdef MCMC_ENABLE_RDMA
 		case DKV::TYPE::RDMA:
 			d_kv_store = new DKV::DKVRDMA::DKVStoreRDMA();
 			break;

@@ -3,6 +3,7 @@
 
 #include <vector>
 
+#include "mcmc/config.h"
 #include "mcmc/data.h"
 
 namespace mcmc {

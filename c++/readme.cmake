@@ -14,3 +14,4 @@ cmake -DGTEST_ROOT=$THIRDPARTY/gtest-1.7.0 ..
 cmake -DTINYXML2_ROOT=$THIRDPARTY/tinyxml2 ..
 cmake -DRAMCLOUD_ROOT=$THIRDPARTY/ramcloud ..
 cmake -DSPARSEHASH_ROOT=$THIRDPARTY/google-sparsehash ..
+cmake -DMCMC_ENABLE_RDMA=ON ..

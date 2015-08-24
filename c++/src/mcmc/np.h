@@ -7,6 +7,8 @@
 #include <algorithm>
 #include <limits>
 
+#include "mcmc/config.h"
+
 #ifdef ENABLE_OPENMP
 #include <omp.h>
 #else
