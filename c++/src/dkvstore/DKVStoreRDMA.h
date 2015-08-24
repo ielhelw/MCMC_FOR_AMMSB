@@ -29,11 +29,11 @@
 
 #include "mcmc/timer.h"
 
-#include <d-kv-store/DKVStore.h>
+#include "DKVStore.h"
 
-#include "dkvstore/qperf-rdma.h"
+#include "qperf-rdma.h"
 
-#include <d-kv-store/rdma/OOBNetwork.h>
+#include "OOBNetwork.h"
 
 
 namespace DKV {

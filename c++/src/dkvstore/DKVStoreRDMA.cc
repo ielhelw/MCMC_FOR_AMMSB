@@ -2,7 +2,7 @@
  * Copyright notice
  */
 #ifdef ENABLE_RDMA
-#include "dkvstore/DKVStoreRDMA.h"
+#include "DKVStoreRDMA.h"
 #endif
 
 #include <unistd.h>

@@ -705,7 +705,7 @@ public:
         while (step_count < max_iteration && ! is_converged()) {
 
 			t_outer.start();
-			auto l1 = std::chrono::system_clock::now();
+			// auto l1 = std::chrono::system_clock::now();
 			//if (step_count > 200000){
 				//interval = 2;
 			//}
@@ -762,7 +762,7 @@ public:
 
             step_count++;
 			t_outer.stop();
-			auto l2 = std::chrono::system_clock::now();
+			// auto l2 = std::chrono::system_clock::now();
 		}
 
 		check_perplexity();

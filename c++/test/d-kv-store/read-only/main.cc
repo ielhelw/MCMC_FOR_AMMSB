@@ -16,13 +16,13 @@
 #include <mcmc/random.h>
 #include <mcmc/options.h>
 
-#include <d-kv-store/file/DKVStoreFile.h>
+#include <dkvstore/DKVStoreFile.h>
 #ifdef ENABLE_RAMCLOUD
-#include <d-kv-store/ramcloud/DKVStoreRamCloud.h>
+#include <dkvstore/DKVStoreRamCloud.h>
 #endif
 #ifdef ENABLE_RDMA
 #include <infiniband/verbs.h>
-#include <d-kv-store/rdma/DKVStoreRDMA.h>
+#include <dkvstore/DKVStoreRDMA.h>
 #endif
 
 #include <mcmc/timer.h>

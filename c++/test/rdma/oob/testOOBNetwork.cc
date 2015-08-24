@@ -1,4 +1,4 @@
-#include <d-kv-store/rdma/OOBNetwork.h>
+#include <dkvstore/OOBNetwork.h>
 
 int main(int argc, char *argv[]) {
   DKV::DKVRDMA::OOBNetwork<int32_t> oob_network;
