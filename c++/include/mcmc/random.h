@@ -37,9 +37,9 @@ public:
 		if (seed == 0) throw NumberFormatException("Random seed value 0 not allowed"); // zero value not allowed
 		xorshift_state[0] = seed;
 		xorshift_state[1] = seed + 1;
+		std::cerr << "Random seed [" << xorshift_state[0] << "," << xorshift_state[1] << "]" << std::endl;
 #endif
 		srand(seed);
-		std::cerr << "Random seed [" << xorshift_state[0] << "," << xorshift_state[1] << "]" << std::endl;
 	}
 
 	Random(unsigned int seed_hi, unsigned int seed_lo) {
@@ -47,9 +47,9 @@ public:
 		if (seed_lo == 0) throw NumberFormatException("Random seed value 0 not allowed"); // zero value not allowed
 		xorshift_state[0] = seed_lo;
 		xorshift_state[1] = seed_hi;
+		std::cerr << "Random seed [" << xorshift_state[0] << "," << xorshift_state[1] << "]" << std::endl;
 #endif
 		srand(seed_lo ^ seed_hi);
-		std::cerr << "Random seed [" << xorshift_state[0] << "," << xorshift_state[1] << "]" << std::endl;
 	}
 
 	virtual ~Random() {
@@ -83,7 +83,7 @@ public:
 
 #else	// ndef RANDOM_SYSTEM
 
-    const uint64_t seed(int x) const {
+    uint64_t seed(int x) const {
       return 0;
     }
 
