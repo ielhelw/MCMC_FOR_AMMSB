@@ -1,5 +1,8 @@
 #include "mcmc/preprocess/relativity.h"
 
+#include <unordered_set>
+#include <unordered_map>
+
 namespace mcmc {
 namespace preprocess {
 
@@ -91,7 +94,7 @@ const Data *Relativity::process() {
     }
 
   } else {
-#if defined RANDOM_FOLLOWS_PYTHON || defined RANDOM_FOLLOWS_CPP_WENZHE
+#if defined MCMC_RANDOM_COMPATIBILITY_MODE
     std::set<Vertex> vertex;
 #else
     std::unordered_set<Vertex> vertex;

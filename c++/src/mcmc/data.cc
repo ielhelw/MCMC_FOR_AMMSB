@@ -4,7 +4,7 @@
 #include <fstream>
 
 namespace std {
-#ifdef RANDOM_FOLLOWS_CPP_WENZHE
+#if defined MCMC_RANDOM_COMPATIBILITY_MODE
 int32_t hash<mcmc::Edge>::operator()(const mcmc::Edge &x) const {
   int32_t h = std::hash<int32_t>()(x.first) ^ std::hash<int32_t>()(x.second);
   return h;
@@ -57,6 +57,7 @@ Edge::Edge(Vertex a, Vertex b) : first(a), second(b) {}
 
 Edge::Edge(std::istream &s) { (void)get(s); }
 
+#ifdef MCMC_EDGESET_IS_ADJACENCY_LIST
 void Edge::insertMe(AdjacencyList *s) const {
   Vertex max = std::max(first, second);
   if (static_cast<::size_t>(max) >= s->size()) {
@@ -65,6 +66,7 @@ void Edge::insertMe(AdjacencyList *s) const {
   (*s)[first].insert(second);
   (*s)[second].insert(first);
 }
+#endif
 
 bool Edge::operator==(const Edge &a) const {
   return a.first == first && a.second == second;
@@ -115,6 +117,7 @@ bool EdgeEquals::operator()(const Edge &e1, const Edge &e2) const {
 }
 #endif
 
+#ifdef MCMC_EDGESET_IS_ADJACENCY_LIST
 std::ostream &dump_edgeset(std::ostream &out, ::size_t N,
                            const AdjacencyList &E) {
   // out << "Edge set size " << N << std::endl;
@@ -138,6 +141,7 @@ bool present(const AdjacencyList &s, const Edge &edge) {
 
   return false;
 }
+#endif
 
 void dump(const EdgeMap &s) {
   for (auto e = s.begin(); e != s.end(); e++) {

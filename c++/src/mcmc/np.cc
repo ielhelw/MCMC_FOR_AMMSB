@@ -3,7 +3,7 @@
 namespace mcmc {
 namespace np {
 
-#ifdef EFFICIENCY_FOLLOWS_PYTHON
+#ifdef MCMC_EFFICIENCY_COMPATIBILITY_MODE
 std::vector<int> xrange(int from, int upto) {
   std::vector<int> r(upto - from);
   for (int i = 0; i < upto - from; i++) {

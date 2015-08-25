@@ -6,6 +6,16 @@ namespace mcmc {
 namespace learning {
 
 Learner::Learner(const Options &args) : args_(args) {
+#ifdef MCMC_EFFICIENCY_COMPATIBILITY_MODE
+  std::cerr << "MCMC_EFFICIENCY_COMPATIBILITY_MODE enabled" << std::endl;
+#endif
+#ifdef MCMC_RANDOM_COMPATIBILITY_MODE
+  std::cerr << "MCMC_RANDOM_COMPATIBILITY_MODE enabled" << std::endl;
+#endif
+#ifdef MCMC_RANDOM_SYSTEM
+  std::cerr << "MCMC_RANDOM_SYSTEM enabled" << std::endl;
+#endif
+
   // model priors
   alpha = args_.alpha;
   eta.resize(2);

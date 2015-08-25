@@ -12,17 +12,21 @@
 #ifndef MCMC_DATA_H__
 #define MCMC_DATA_H__
 
+#include "mcmc/config.h"
+
 #include <unistd.h>
 
 #include <utility>
 #include <map>
-#include <unordered_map>
+#ifdef MCMC_RANDOM_COMPATIBILITY_MODE
+#  include <set>
+#  include <map>
+#endif
+// #include <unordered_map>
 #include <unordered_set>
 #include <list>
 #include <iostream>
 #include <iomanip>
-
-#include "mcmc/config.h"
 
 #ifdef MCMC_USE_GOOGLE_SPARSE_HASH
 // If <cinttypes> is not included before <google/sparse_hash_set>, compile
@@ -30,6 +34,7 @@
 #include <cinttypes>
 #include <google/sparse_hash_set>
 #include <google/sparse_hash_map>
+#define MCMC_EDGESET_IS_ADJACENCY_LIST
 #endif
 
 #include "mcmc/exception.h"
@@ -39,17 +44,19 @@ namespace mcmc {
 
 typedef int32_t Vertex;
 class Edge;
+#ifdef MCMC_EDGESET_IS_ADJACENCY_LIST
 #ifdef MCMC_USE_GOOGLE_SPARSE_HASH
 class GoogleHashMap;
 class GoogleHashSet;
 typedef GoogleHashMap EdgeMap;
 typedef std::vector<GoogleHashSet> AdjacencyList;
 #else
+DEPRECATE...
 typedef std::vector<std::unordered_set<Vertex>> AdjacencyList;
-typedef std::unordered_map<Edge, bool> EdgeMap;
+#endif
 #endif
 
-#ifdef RANDOM_FOLLOWS_PYTHON
+#ifdef MCMC_RANDOM_COMPATIBILITY_MODE
 
 typedef std::unordered_set<Vertex> VertexSet;
 typedef std::set<Vertex> OrderedVertexSet;
@@ -60,7 +67,7 @@ typedef std::list<Edge> EdgeList;
 
 typedef std::map<Edge, bool> EdgeMap;
 
-#else  // def RANDOM_FOLLOWS_PYTHON
+#else  // def MCMC_RANDOM_COMPATIBILITY_MODE
 typedef std::unordered_set<Vertex> VertexSet;
 typedef VertexSet OrderedVertexSet;
 
@@ -72,7 +79,7 @@ typedef std::unordered_set<Edge> NetworkGraph;
 typedef std::unordered_set<Edge> MinibatchSet;
 typedef std::list<Edge> EdgeList;
 
-#endif  // def RANDOM_FOLLOWS_PYTHON
+#endif  // def MCMC_RANDOM_COMPATIBILITY_MODE
 
 class Edge {
  public:
@@ -107,7 +114,9 @@ class Edge {
     s->insert(*this);
   }
 
+#ifdef MCMC_EDGESET_IS_ADJACENCY_LIST
   void insertMe(AdjacencyList *s) const;
+#endif
 
   bool operator==(const Edge &a) const;
 
@@ -141,8 +150,12 @@ std::ostream &dump_edgeset(std::ostream &out, ::size_t N,
   return out;
 }
 
+#ifdef MCMC_EDGESET_IS_ADJACENCY_LIST
 std::ostream &dump_edgeset(std::ostream &out, ::size_t N,
                            const AdjacencyList &E);
+
+bool present(const AdjacencyList &s, const Edge &edge);
+#endif
 
 template <typename EdgeContainer>
 bool present(const EdgeContainer &s, const Edge &edge) {
@@ -155,8 +168,6 @@ bool present(const EdgeContainer &s, const Edge &edge) {
 
   return false;
 }
-
-bool present(const AdjacencyList &s, const Edge &edge);
 
 void dump(const EdgeMap &s);
 
@@ -201,7 +212,7 @@ namespace std {
 template <>
 struct hash<mcmc::Edge> {
  public:
-#ifdef RANDOM_FOLLOWS_CPP_WENZHE
+#if defined MCMC_RANDOM_COMPATIBILITY_MODE
   int32_t operator()(const mcmc::Edge &x) const;
 #else
   ::size_t operator()(const mcmc::Edge &x) const;

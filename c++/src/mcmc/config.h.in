@@ -14,10 +14,18 @@ namespace mcmc {
 #cmakedefine MCMC_USE_GOOGLE_SPARSE_HASH
 #cmakedefine MCMC_EDGESET_IS_ADJACENCY_LIST
 
-#cmakedefine RANDOM_FOLLOWS_PYTHON
-#cmakedefine EFFICIENCY_FOLLOWS_PYTHON
-#cmakedefine RANDOM_FOLLOWS_CPP_WENZHE
+#cmakedefine MCMC_RANDOM_COMPATIBILITY_MODE
+#cmakedefine MCMC_EFFICIENCY_COMPATIBILITY_MODE
 #cmakedefine EFFICIENCY_FOLLOWS_CPP_WENZHE
+
+#ifdef MCMC_EFFICIENCY_COMPATIBILITY_MODE
+#  ifndef MCMC_RANDOM_COMPATIBILITY_MODE
+#    define MCMC_RANDOM_COMPATIBILITY_MODE
+#  endif
+#endif
+#if defined MCMC_RANDOM_COMPATIBILITY_MODE && defined MCMC_USE_GOOGLE_SPARSE_HASH
+#  error "Cannot have Python compatibility and sparsehash at the same time"
+#endif
 
 
 }  // namespace mcmc

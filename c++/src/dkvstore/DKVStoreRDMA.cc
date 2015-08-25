@@ -4,9 +4,7 @@
 
 #include "mcmc/config.h"
 
-#ifdef MCMC_ENABLE_RDMA
 #include "DKVStoreRDMA.h"
-#endif
 
 #include <unistd.h>
 

@@ -5,19 +5,6 @@ namespace learning {
 
 MCMCSamplerStochastic::MCMCSamplerStochastic(const Options &args)
     : Learner(args) {
-#ifdef EFFICIENCY_FOLLOWS_CPP_WENZHE
-  std::cerr << "EFFICIENCY_FOLLOWS_CPP_WENZHE enabled" << std::endl;
-#ifndef RANDOM_FOLLOWS_CPP_WENZHE
-#define RANDOM_FOLLOWS_CPP_WENZHE
-#endif
-#endif
-#ifdef RANDOM_FOLLOWS_CPP_WENZHE
-  std::cerr << "RANDOM_FOLLOWS_CPP_WENZHE enabled" << std::endl;
-#endif
-#ifdef MCMC_RANDOM_SYSTEM
-  std::cerr << "MCMC_RANDOM_SYSTEM enabled" << std::endl;
-#endif
-
   // step size parameters.
   this->a = args_.a;
   this->b = args_.b;
@@ -245,7 +232,7 @@ void MCMCSamplerStochastic::run() {
 // std::cerr << "mini_batch size " << mini_batch.size() << " num_node_sample "
 // << num_node_sample << std::endl;
 
-#ifndef EFFICIENCY_FOLLOWS_CPP_WENZHE
+#ifndef MCMC_EFFICIENCY_COMPATIBILITY_MODE
     double eps_t = a * std::pow(1 + step_count / b, -c);  // step size
 // double eps_t = std::pow(1024+step_count, -0.5);
 #endif
@@ -266,7 +253,7 @@ void MCMCSamplerStochastic::run() {
 
       t_update_phi.start();
       update_phi(node, neighbors
-#ifndef EFFICIENCY_FOLLOWS_CPP_WENZHE
+#ifndef MCMC_EFFICIENCY_COMPATIBILITY_MODE
                  ,
                  eps_t
 #endif
@@ -276,7 +263,7 @@ void MCMCSamplerStochastic::run() {
 
     // ************ do in parallel at each host
     t_update_pi.start();
-#if defined EFFICIENCY_FOLLOWS_CPP_WENZHE
+#if defined MCMC_EFFICIENCY_COMPATIBILITY_MODE
     // std::cerr << __func__ << ":" << __LINE__ << ":  FIXME" << std::endl;
     np::row_normalize(&pi, phi);  // update pi from phi.
 #else
@@ -336,7 +323,7 @@ void MCMCSamplerStochastic::update_beta(const MinibatchSet &mini_batch,
     double pi_sum = 0.0;
     for (::size_t k = 0; k < K; k++) {
       pi_sum += pi[i][k] * pi[j][k];
-#ifdef EFFICIENCY_FOLLOWS_CPP_WENZHE
+#ifdef MCMC_EFFICIENCY_COMPATIBILITY_MODE
       probs[k] = std::pow(beta[k], y) * std::pow(1 - beta[k], 1 - y) *
                  pi[i][k] * pi[j][k];
 #else
@@ -349,7 +336,7 @@ void MCMCSamplerStochastic::update_beta(const MinibatchSet &mini_batch,
 #endif
     }
 
-#if defined EFFICIENCY_FOLLOWS_CPP_WENZHE
+#if defined MCMC_EFFICIENCY_COMPATIBILITY_MODE
     double prob_0 =
         std::pow(epsilon, y) * std::pow(1 - epsilon, 1 - y) * (1 - pi_sum);
     double prob_sum = np::sum(probs) + prob_0;
@@ -379,7 +366,7 @@ void MCMCSamplerStochastic::update_beta(const MinibatchSet &mini_batch,
   // std::vector<std::vector<double> > theta_star(theta);
   for (::size_t k = 0; k < K; k++) {
     for (::size_t i = 0; i < 2; i++) {
-#ifdef EFFICIENCY_FOLLOWS_PYTHON
+#ifdef MCMC_EFFICIENCY_COMPATIBILITY_MODE
       // FIXME rewrite a**0.5 * b**0.5 as sqrt(a * b)
       theta[k][i] = std::abs(
           theta[k][i] +
@@ -420,12 +407,12 @@ void MCMCSamplerStochastic::update_beta(const MinibatchSet &mini_batch,
 }
 
 void MCMCSamplerStochastic::update_phi(Vertex i, const NeighborSet &neighbors
-#ifndef EFFICIENCY_FOLLOWS_CPP_WENZHE
+#ifndef MCMC_EFFICIENCY_COMPATIBILITY_MODE
                                        ,
                                        double eps_t
 #endif
                                        ) {
-#ifdef EFFICIENCY_FOLLOWS_CPP_WENZHE
+#ifdef MCMC_EFFICIENCY_COMPATIBILITY_MODE
   double eps_t = a * std::pow(1 + step_count / b, -c);  // step size
 // double eps_t = std::pow(1024+step_count, -0.5);
 #endif
@@ -467,11 +454,11 @@ void MCMCSamplerStochastic::update_phi(Vertex i, const NeighborSet &neighbors
     }
 
     std::vector<double> probs(K);
-#if !defined EFFICIENCY_FOLLOWS_CPP_WENZHE
+#if !defined MCMC_EFFICIENCY_COMPATIBILITY_MODE
     double e = (y_ab == 1) ? epsilon : 1.0 - epsilon;
 #endif
     for (::size_t k = 0; k < K; k++) {
-#if defined EFFICIENCY_FOLLOWS_CPP_WENZHE
+#if defined MCMC_EFFICIENCY_COMPATIBILITY_MODE
       probs[k] = std::pow(beta[k], y_ab) * std::pow(1 - beta[k], 1 - y_ab) *
                  pi[i][k] * pi[neighbor][k];
       probs[k] += std::pow(epsilon, y_ab) * std::pow(1 - epsilon, 1 - y_ab) *
@@ -497,12 +484,12 @@ void MCMCSamplerStochastic::update_phi(Vertex i, const NeighborSet &neighbors
                 << std::endl;
     }
   }
-#ifndef EFFICIENCY_FOLLOWS_CPP_WENZHE
+#ifndef MCMC_EFFICIENCY_COMPATIBILITY_MODE
   double Nn = (1.0 * N) / num_node_sample;
 #endif
   // update phi for node i
   for (::size_t k = 0; k < K; k++) {
-#ifdef EFFICIENCY_FOLLOWS_CPP_WENZHE
+#ifdef MCMC_EFFICIENCY_COMPATIBILITY_MODE
     // FIXME replace a**0.5 * b**0.5 with sqrt(a * b)
     phi[i][k] =
         std::abs(phi[i][k] +
@@ -556,9 +543,9 @@ NeighborSet MCMCSamplerStochastic::sample_neighbor_nodes(::size_t sample_size,
   const EdgeMap &held_out_set = network.get_held_out_set();
   const EdgeMap &test_set = network.get_test_set();
 
-#if defined RANDOM_FOLLOWS_CPP_WENZHE || defined EFFICIENCY_FOLLOWS_PYTHON
+#if defined MCMC_RANDOM_COMPATIBILITY_MODE
   while (p > 0) {
-#ifdef EFFICIENCY_FOLLOWS_PYTHON
+#ifdef MCMC_EFFICIENCY_COMPATIBILITY_MODE
     std::cerr << "FIXME: horribly inefficient xrange thingy" << std::endl;
     auto nodeList = rnd->sample(np::xrange(0, N), sample_size * 2);
 #else
@@ -592,8 +579,9 @@ NeighborSet MCMCSamplerStochastic::sample_neighbor_nodes(::size_t sample_size,
 
     delete nodeList;
   }
-#else  // if defined RANDOM_FOLLOWS_CPP_WENZHE || defined
-  // EFFICIENCY_FOLLOWS_PYTHON
+
+#else  // if defined MCMC_RANDOM_COMPATIBILITY_MODE
+
   for (int i = 0; i <= p; ++i) {
     Vertex neighborId;
     Edge edge(0, 0);
@@ -605,7 +593,9 @@ NeighborSet MCMCSamplerStochastic::sample_neighbor_nodes(::size_t sample_size,
              );
     neighbor_nodes.insert(neighborId);
   }
+
 #endif
+
   if (false) {
     std::cerr << "Node " << nodeId << ": neighbors ";
     for (auto n : neighbor_nodes) {

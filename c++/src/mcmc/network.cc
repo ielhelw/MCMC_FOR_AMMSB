@@ -236,7 +236,7 @@ EdgeSample Network::stratified_random_node_sampling(::size_t num_pieces) const {
 // because of the sparsity, when we sample $mini_batch_size*2$ nodes, the list
 // likely
 // contains at least mini_batch_size valid nodes.
-#ifdef EFFICIENCY_FOLLOWS_PYTHON
+#ifdef MCMC_EFFICIENCY_COMPATIBILITY_MODE
         auto nodeList = rng->sample(np::xrange(0, N), mini_batch_size * 2);
 #else
         auto nodeList = rng->sampleRange(N, mini_batch_size * 2);
@@ -425,12 +425,12 @@ void Network::init_held_out_set() {
   // FIXME make sampled_linked_edges an out param
   print_mem_usage(std::cerr);
   while (count < p) {
-#if defined RANDOM_FOLLOWS_CPP_WENZHE || defined RANDOM_FOLLOWS_PYTHON
+#if defined MCMC_RANDOM_COMPATIBILITY_MODE
     std::cerr << __func__
               << ": FIXME: replace EdgeList w/ (unordered) EdgeSet again"
               << std::endl;
     auto sampled_linked_edges =
-      rng_->random(SourceAwareRandom::GRAPH_INIT)->sampleList(linked_edges, p);
+      rng_->random(SourceAwareRandom::GRAPH_INIT)->sampleList(*linked_edges, p);
 #elif defined MCMC_EDGESET_IS_ADJACENCY_LIST
     std::vector<Edge>* sampled_linked_edges = new std::vector<Edge>();
     sample_random_edges(linked_edges, p, sampled_linked_edges);
@@ -493,12 +493,12 @@ void Network::init_test_set() {
 // Because we already used some of the linked edges for held_out sets,
 // here we sample twice as much as links, and select among them, which
 // is likely to contain valid p linked edges.
-#if defined RANDOM_FOLLOWS_CPP_WENZHE || defined RANDOM_FOLLOWS_PYTHON
+#if defined MCMC_RANDOM_COMPATIBILITY_MODE
     std::cerr << __func__
               << ": FIXME: replace EdgeList w/ (unordered) EdgeSet again"
               << std::endl;
     // FIXME make sampled_linked_edges an out param
-    auto sampled_linked_edges = rng_->random(SourceAwareRandom::GRAPH_INIT)->sampleList(linked_edges, 2 * p);
+    auto sampled_linked_edges = rng_->random(SourceAwareRandom::GRAPH_INIT)->sampleList(*linked_edges, 2 * p);
 #elif defined MCMC_EDGESET_IS_ADJACENCY_LIST
     std::vector<Edge>* sampled_linked_edges = new std::vector<Edge>();
     sample_random_edges(linked_edges, 2 * p, sampled_linked_edges);

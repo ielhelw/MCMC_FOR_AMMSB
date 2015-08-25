@@ -3,11 +3,14 @@
 
 #include <cmath>
 
+#include "mcmc/config.h"
+
 #include "mcmc/types.h"
 #include "mcmc/options.h"
 #include "mcmc/network.h"
 #include "mcmc/source-aware-random.h"
 #include "mcmc/preprocess/data_factory.h"
+
 
 namespace mcmc {
 namespace learning {
@@ -105,7 +108,7 @@ class Learner {
     } else {
       double sum = 0.0;
       for (::size_t k = 0; k < K; k++) {
-#ifdef EFFICIENCY_FOLLOWS_CPP_WENZHE
+#ifdef MCMC_EFFICIENCY_COMPATIBILITY_MODE
         // FIXME share common subexpressions
         s += pi_a[k] * pi_b[k] * (1.0 - beta[k]);
         sum += pi_a[k] * pi_b[k];
@@ -175,7 +178,7 @@ class Learner {
 
   SourceAwareRandom rng_;
 
-#ifdef RANDOM_FOLLOWS_CPP_WENZHE
+#if defined MCMC_RANDOM_COMPATIBILITY_MODE
   const bool RANDOM_PRESERVE_RANGE_ORDER = true;
 #else
   const bool RANDOM_PRESERVE_RANGE_ORDER = false;

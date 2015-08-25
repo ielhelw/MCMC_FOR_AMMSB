@@ -85,7 +85,7 @@ Type sum_abs(const std::vector<Type> &a, const std::vector<Type> &b) {
   return diff;
 }
 
-#ifdef EFFICIENCY_FOLLOWS_PYTHON
+#ifdef MCMC_EFFICIENCY_COMPATIBILITY_MODE
 std::vector<int> xrange(int from, int upto);
 #endif
 
@@ -114,7 +114,7 @@ template <typename T>
 static ::ssize_t find_le(const std::vector<T> &p, T location,
                          ::size_t up = std::numeric_limits<::size_t>::max(),
                          ::size_t lo = 0) {
-#ifdef EFFICIENCY_FOLLOWS_PYTHON
+#ifdef MCMC_EFFICIENCY_COMPATIBILITY_MODE
   static const ::size_t LINEAR_LIMIT = std::numeric_limits<::size_t>::max();
 #else
   static const ::size_t LINEAR_LIMIT = 30;

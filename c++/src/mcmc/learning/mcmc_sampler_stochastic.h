@@ -82,7 +82,7 @@ class MCMCSamplerStochastic : public Learner {
   void update_beta(const MinibatchSet &mini_batch, double scale);
 
   void update_phi(Vertex i, const NeighborSet &neighbors
-#ifndef EFFICIENCY_FOLLOWS_CPP_WENZHE
+#ifndef MCMC_EFFICIENCY_COMPATIBILITY_MODE
                   ,
                   double eps_t
 #endif

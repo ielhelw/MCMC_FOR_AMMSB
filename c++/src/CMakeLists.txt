@@ -56,7 +56,6 @@ add_library(mcmc SHARED
   mcmc/options.cc
   mcmc/exception.cc
   mcmc/random.cc
-  mcmc/estimate_phi.cc
   mcmc/data.cc
   mcmc/network.cc
   mcmc/timer.cc
