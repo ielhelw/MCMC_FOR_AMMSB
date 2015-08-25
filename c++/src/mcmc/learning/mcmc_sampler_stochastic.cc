@@ -53,8 +53,6 @@ void MCMCSamplerStochastic::init() {
   // std::endl;
   // theta = rng_.random(SourceAwareRandom::THETA_INIT)->gamma(100.0, 0.01, K, 2);		//
 
-  // temp = self.__theta/np.sum(self.__theta,1)[:,np.newaxis]
-  // self._beta = temp[:,1]
   std::vector<std::vector<double> > temp(theta.size(),
                                          std::vector<double>(theta[0].size()));
   np::row_normalize(&temp, theta);
@@ -71,7 +69,6 @@ void MCMCSamplerStochastic::init() {
     }
   }
 #endif
-  // self._pi = self.__phi/np.sum(self.__phi,1)[:,np.newaxis]
   pi.resize(phi.size(), std::vector<double>(phi[0].size()));
   np::row_normalize(&pi, phi);
 
@@ -378,8 +375,6 @@ void MCMCSamplerStochastic::update_beta(const MinibatchSet &mini_batch,
     }
   }
 
-  // temp = self.__theta/np.sum(self.__theta,1)[:,np.newaxis]
-  // self._beta = temp[:,1]
   std::vector<std::vector<double> > temp(theta.size(),
                                          std::vector<double>(theta[0].size()));
   np::row_normalize(&temp, theta);

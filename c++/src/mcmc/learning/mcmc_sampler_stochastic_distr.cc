@@ -151,7 +151,7 @@ void LocalNetwork::unmarshall_local_graph(::size_t index, const Vertex* linked,
     linked_edges_.resize(index + 1);
   }
   linked_edges_[index] = EndpointSet();
-  for (::size_t i = 0; i < size; i++) {
+  for (::size_t i = 0; i < size; ++i) {
     linked_edges_[index].insert(linked[i]);
   }
 }
@@ -186,9 +186,9 @@ void PerpData::Init(::size_t max_perplexity_chunk) {
   for (auto edge : data_) {
     const Edge &e = edge.edge;
     nodes_[ix] = e.first;
-    ix++;
+    ++ix;
     nodes_[ix] = e.second;
-    ix++;
+    ++ix;
   }
 
   pi_.resize(2 * max_perplexity_chunk);
@@ -203,8 +203,8 @@ void PerpData::Init(::size_t max_perplexity_chunk) {
 // class MCMCSamplerStochasticDistributed
 //
 // **************************************************************************
-MCMCSamplerStochasticDistributed::MCMCSamplerStochasticDistributed(const Options &args)
-    : MCMCSamplerStochastic(args), mpi_master_(0) {
+MCMCSamplerStochasticDistributed::MCMCSamplerStochasticDistributed(
+    const Options &args) : MCMCSamplerStochastic(args), mpi_master_(0) {
   t_populate_pi_           = Timer("  populate pi");
   t_outer_                 = Timer("  iteration");
   t_deploy_minibatch_      = Timer("    deploy minibatch");
@@ -333,7 +333,7 @@ void MCMCSamplerStochasticDistributed::BroadcastHeldOut() {
     for (auto e : network.get_held_out_set()) {
       p->edge = e.first;
       p->is_edge = e.second;
-      p++;
+      ++p;
     }
 
     std::vector<int32_t> bytes(mpi_size_);
@@ -341,7 +341,7 @@ void MCMCSamplerStochasticDistributed::BroadcastHeldOut() {
       bytes[i] = count[i] * sizeof(EdgeMapItem);
     }
     displ[0] = 0;
-    for (int i = 1; i < mpi_size_; i++) {
+    for (int i = 1; i < mpi_size_; ++i) {
       displ[i] = displ[i - 1] + bytes[i];
     }
     // Scatter the marshalled subgraphs
@@ -422,14 +422,17 @@ void MCMCSamplerStochasticDistributed::init() {
     ;
 
   po::variables_map vm;
-  po::parsed_options parsed = po::basic_command_line_parser<char>(args_.getRemains()).options(desc).allow_unregistered().run();
+  po::parsed_options parsed =
+    po::basic_command_line_parser<char>(
+      args_.getRemains()).options(desc).allow_unregistered().run();
   po::store(parsed, vm);
   // po::basic_command_line_parser<char> clp(options.getRemains());
   // clp.options(desc).allow_unregistered.run();
   // po::store(clp.run(), vm);
   po::notify(vm);
 
-  std::vector<std::string> dkv_args = po::collect_unrecognized(parsed.options, po::include_positional);
+  std::vector<std::string> dkv_args =
+    po::collect_unrecognized(parsed.options, po::include_positional);
 
   std::cerr << "Use D-KV store type " << dkv_type << std::endl;
   switch (dkv_type) {
@@ -465,7 +468,8 @@ void MCMCSamplerStochasticDistributed::init() {
     num_node_sample = args_.num_node_sample;
   }
   if (args_.mini_batch_size == 0) {
-    mini_batch_size = N / 10;   // old default for STRATIFIED_RANDOM_NODE_SAMPLING
+    // old default for STRATIFIED_RANDOM_NODE_SAMPLING
+    mini_batch_size = N / 10;
   }
   std::cerr << "num_node_sample " << num_node_sample <<
     " a " << a << " b " << b << " c " << c << " alpha " << alpha <<
@@ -526,7 +530,7 @@ void MCMCSamplerStochasticDistributed::init() {
                                        max_minibatch_nodes_);
     if (max_minibatch_neighbors > max_pi_cache_entries_) {
       throw MCMCException("pi cache cannot contain pi[minibatch] for beta, "
-                         "refactor so update_beta is chunked");
+                          "refactor so update_beta is chunked");
     }
   }
 
@@ -563,7 +567,7 @@ void MCMCSamplerStochasticDistributed::init() {
   phi_update_rng_.resize(omp_get_max_threads());
   int seed;
   seed = args_.random_seed + SourceAwareRandom::PHI_UPDATE;
-  for (::size_t i = 0; i < phi_update_rng_.size(); i++) {
+  for (::size_t i = 0; i < phi_update_rng_.size(); ++i) {
     int my_seed = seed + 1 + i + mpi_rank_ * phi_update_rng_.size();
     phi_update_rng_[i] = new Random::Random(my_seed, seed,
                                             RANDOM_PRESERVE_RANGE_ORDER);
@@ -572,7 +576,7 @@ void MCMCSamplerStochasticDistributed::init() {
   // Make neighbor_sample_rng_ depend on mpi_rank_ and thread Id
   neighbor_sample_rng_.resize(omp_get_max_threads());
   seed = args_.random_seed + SourceAwareRandom::NEIGHBOR_SAMPLER;
-  for (::size_t i = 0; i < phi_update_rng_.size(); i++) {
+  for (::size_t i = 0; i < phi_update_rng_.size(); ++i) {
     int my_seed = seed + 1 + i + mpi_rank_ * phi_update_rng_.size();
     neighbor_sample_rng_[i] = new Random::Random(my_seed, seed,
                                                  RANDOM_PRESERVE_RANGE_ORDER);
@@ -590,14 +594,14 @@ void MCMCSamplerStochasticDistributed::init() {
   std::cout << "phi[0][0] " << phi[0][0] << std::endl;
 
   if (true) {
-    for (::size_t i = 0; i < 10; i++) {
+    for (::size_t i = 0; i < 10; ++i) {
       std::cerr << "phi[" << i << "]: ";
-      for (::size_t k = 0; k < 10; k++) {
+      for (::size_t k = 0; k < 10; ++k) {
         std::cerr << std::fixed << std::setprecision(12) << phi[i][k] << " ";
       }
       std::cerr << std::endl;
       std::cerr << "pi[" << i << "]: ";
-      for (::size_t k = 0; k < 10; k++) {
+      for (::size_t k = 0; k < 10; ++k) {
         std::cerr << std::fixed << std::setprecision(12) << pi[i][k] << " ";
       }
       std::cerr << std::endl;
@@ -673,7 +677,7 @@ void MCMCSamplerStochasticDistributed::run() {
     // TODO calculate and store updated values for pi/phi_sum
     t_update_pi_.start();
 #pragma omp parallel for // num_threads (12)
-    for (::size_t i = 0; i < nodes_.size(); i++) {
+    for (::size_t i = 0; i < nodes_.size(); ++i) {
       pi_from_phi(pi_update_[i], phi_node[i]);
     }
     t_update_pi_.stop();
@@ -699,7 +703,7 @@ void MCMCSamplerStochasticDistributed::run() {
       delete edgeSample.first;
     }
 
-    step_count++;
+    ++step_count;
     t_outer_.stop();
     // auto l2 = std::chrono::system_clock::now();
   }
@@ -753,22 +757,24 @@ void MCMCSamplerStochasticDistributed::init_beta() {
   // introduce another set of variables, and update them first followed by
   // updating \pi and \beta.
   // parameterization for \beta
-  theta = rng_.random(SourceAwareRandom::THETA_INIT)->gamma(eta[0], eta[1], K, 2);
+  theta = rng_.random(SourceAwareRandom::THETA_INIT)->gamma(eta[0], eta[1],
+                                                            K, 2);
   // std::cerr << "Ignore eta[] in random.gamma: use 100.0 and 0.01" << std::endl;
   // parameterization for \beta
   // theta = rng_.random(SourceAwareRandom::THETA_INIT)->->gamma(100.0, 0.01, K, 2);
 
-  // temp = self.__theta/np.sum(self.__theta,1)[:,np.newaxis]
-  // self._beta = temp[:,1]
-  std::vector<std::vector<double> > temp(theta.size(), std::vector<double>(theta[0].size()));
+  std::vector<std::vector<double> > temp(theta.size(),
+                                         std::vector<double>(theta[0].size()));
   np::row_normalize(&temp, theta);
-  std::transform(temp.begin(), temp.end(), beta.begin(), np::SelectColumn<double>(1));
+  std::transform(temp.begin(), temp.end(), beta.begin(),
+                 np::SelectColumn<double>(1));
 
   if (true) {
-    std::cout << std::fixed << std::setprecision(12) << "beta[0] " << beta[0] << std::endl;
+    std::cout << std::fixed << std::setprecision(12) << "beta[0] " << beta[0] <<
+      std::endl;
   } else {
     std::cerr << "beta ";
-    for (::size_t k = 0; k < K; k++) {
+    for (::size_t k = 0; k < K; ++k) {
       std::cerr << std::fixed << std::setprecision(12) << beta[k] << " ";
     }
     std::cerr << std::endl;
@@ -798,7 +804,7 @@ void MCMCSamplerStochasticDistributed::init_pi() {
     if (true) {
       if (i < 10) {
         std::cerr << "phi[" << i << "]: ";
-        for (::size_t k = 0; k < std::min(K, 10UL); k++) {
+        for (::size_t k = 0; k < std::min(K, 10UL); ++k) {
           std::cerr << std::fixed << std::setprecision(12) << phi_pi[k] << " ";
         }
         std::cerr << std::endl;
@@ -814,7 +820,7 @@ void MCMCSamplerStochasticDistributed::init_pi() {
     if (true) {
       if (i < 10) {
         std::cerr << "pi[" << i << "]: ";
-        for (::size_t k = 0; k < std::min(K, 10UL); k++) {
+        for (::size_t k = 0; k < std::min(K, 10UL); ++k) {
           std::cerr << std::fixed << std::setprecision(12) << pi[k] << " ";
         }
         std::cerr << std::endl;
@@ -865,7 +871,7 @@ void MCMCSamplerStochasticDistributed::check_perplexity() {
         "_num_nodes_" + to_string(num_node_sample) + "_us_air.txt";
       myfile.open (file_name);
       int size = ppxs_held_out.size();
-      for (int i = 0; i < size; i++){
+      for (int i = 0; i < size; ++i){
 
         //int iteration = i * 100 + 1;
         myfile << iterations[i] << "    " << timings_[i] << "    " <<
@@ -878,7 +884,8 @@ void MCMCSamplerStochasticDistributed::check_perplexity() {
 }
 
 
-void MCMCSamplerStochasticDistributed::ScatterSubGraph(const std::vector<std::vector<int32_t>> &subminibatch) {
+void MCMCSamplerStochasticDistributed::ScatterSubGraph(
+    const std::vector<std::vector<int32_t>> &subminibatch) {
   std::vector<int32_t> set_size(nodes_.size());
   std::vector<Vertex> flat_subgraph;
   int r;
@@ -905,7 +912,7 @@ void MCMCSamplerStochasticDistributed::ScatterSubGraph(const std::vector<std::ve
 
     size_displ[0] = 0;
     subgraph_displ[0] = 0;
-    for (int i = 1; i < mpi_size_; i++) {
+    for (int i = 1; i < mpi_size_; ++i) {
       size_displ[i] = size_displ[i - 1] + size_count[i - 1];
       subgraph_displ[i] = subgraph_displ[i - 1] + subgraph_count[i - 1];
     }
@@ -983,7 +990,7 @@ void MCMCSamplerStochasticDistributed::ScatterSubGraph(const std::vector<std::ve
   }
 
   ::size_t offset = 0;
-  for (::size_t i = 0; i < set_size.size(); i++) {
+  for (::size_t i = 0; i < set_size.size(); ++i) {
     Vertex* marshall = &flat_subgraph[offset];
     local_network_.unmarshall_local_graph(i, marshall, set_size[i]);
     offset += set_size[i];
@@ -1009,7 +1016,6 @@ EdgeSample MCMCSamplerStochasticDistributed::deploy_mini_batch() {
 
   if (mpi_rank_ == mpi_master_) {
     // std::cerr << "Invoke sample_mini_batch" << std::endl;
-    // TODO FIXME allocate edgeSample.first statically, and pass as parameter
     t_mini_batch_.start();
     edgeSample = network.sample_mini_batch(mini_batch_size,
                                            strategy::STRATIFIED_RANDOM_NODE);
@@ -1057,7 +1063,7 @@ EdgeSample MCMCSamplerStochasticDistributed::deploy_mini_batch() {
     ::size_t i = master_is_worker_ ? 0 : 1;
     for (auto n: unassigned) {
       while (subminibatch[i].size() == upper_bound) {
-        i++;
+        ++i;
         assert(i < static_cast< ::size_t>(mpi_size_));
       }
       subminibatch[i].push_back(n);
@@ -1065,7 +1071,7 @@ EdgeSample MCMCSamplerStochasticDistributed::deploy_mini_batch() {
 
     scatter_minibatch.clear();
     int32_t running_sum = 0;
-    for (int i = 0; i < mpi_size_; i++) {
+    for (int i = 0; i < mpi_size_; ++i) {
       minibatch_chunk[i] = subminibatch[i].size();
       scatter_displs[i] = running_sum;
       running_sum += subminibatch[i].size();
@@ -1120,7 +1126,8 @@ EdgeSample MCMCSamplerStochasticDistributed::deploy_mini_batch() {
 }
 
 
-void MCMCSamplerStochasticDistributed::update_phi(std::vector<std::vector<double>>* phi_node) {
+void MCMCSamplerStochasticDistributed::update_phi(
+    std::vector<std::vector<double>>* phi_node) {
   std::vector<double*> pi_node;
   std::vector<double*> pi_neighbor;
   std::vector<int32_t> flat_neighbors;
@@ -1161,7 +1168,7 @@ void MCMCSamplerStochasticDistributed::update_phi(std::vector<std::vector<double
       ::size_t j = i * real_num_node_sample();
       for (auto n : neighbors) {
         memcpy(flat_neighbors.data() + j, &n, sizeof n);
-        j++;
+        ++j;
       }
     }
     t_sample_neighbor_nodes_.stop();
@@ -1196,36 +1203,36 @@ void MCMCSamplerStochasticDistributed::update_phi_node(
     std::vector<double>* phi_node	// out parameter
     ) {
   if (omp_get_thread_num() == 0) {
-    std::cerr << __func__ << "(): omp num threads" <<
+    std::cerr << __func__ << "(): omp num threads " <<
       omp_get_num_threads() << std::endl;
   }
   if (false) {
     std::cerr << "update_phi pre ";
     std::cerr << "phi[" << i << "] ";
-    for (::size_t k = 0; k < K; k++) {
+    for (::size_t k = 0; k < K; ++k) {
       std::cerr << std::fixed << std::setprecision(12) << (pi_node[k] * pi_node[K]) << " ";
     }
     std::cerr << std::endl;
     std::cerr << "pi[" << i << "] ";
-    for (::size_t k = 0; k < K; k++) {
+    for (::size_t k = 0; k < K; ++k) {
       std::cerr << std::fixed << std::setprecision(12) << pi_node[k] << " ";
     }
     std::cerr << std::endl;
-    for (::size_t ix = 0; ix < real_num_node_sample(); ix++) {
+    for (::size_t ix = 0; ix < real_num_node_sample(); ++ix) {
       int32_t neighbor = neighbors[ix];
       std::cerr << "pi[" << neighbor << "] ";
-      for (::size_t k = 0; k < K; k++) {
+      for (::size_t k = 0; k < K; ++k) {
         std::cerr << std::fixed << std::setprecision(12) << pi[ix][k] << " ";
       }
       std::cerr << std::endl;
-      ix++;
+      ++ix;
     }
   }
 
   double phi_i_sum = pi_node[K];
   std::vector<double> grads(K, 0.0);	// gradient for K classes
 
-  for (::size_t ix = 0; ix < real_num_node_sample(); ix++) {
+  for (::size_t ix = 0; ix < real_num_node_sample(); ++ix) {
     int32_t neighbor = neighbors[ix];
     if (i != neighbor) {
       int y_ab = 0;		// observation
@@ -1249,7 +1256,7 @@ void MCMCSamplerStochasticDistributed::update_phi_node(
 
       std::vector<double> probs(K);
       double e = (y_ab == 1) ? epsilon : 1.0 - epsilon;
-      for (::size_t k = 0; k < K; k++) {
+      for (::size_t k = 0; k < K; ++k) {
         double f = (y_ab == 1) ? (beta[k] - epsilon) : (epsilon - beta[k]);
         probs[k] = pi_node[k] * (pi[ix][k] * f + e);
       }
@@ -1259,7 +1266,7 @@ void MCMCSamplerStochasticDistributed::update_phi_node(
       //    " neighb " << neighbor << " prob_sum " << prob_sum <<
       //    " phi_i_sum " << phi_i_sum <<
       //    " #sample " << real_num_node_sample() << std::endl;
-      for (::size_t k = 0; k < K; k++) {
+      for (::size_t k = 0; k < K; ++k) {
         grads[k] += ((probs[k] / prob_sum) / pi_node[k] - 1.0) / phi_i_sum;
       }
     } else {
@@ -1270,20 +1277,17 @@ void MCMCSamplerStochasticDistributed::update_phi_node(
   std::vector<double> noise = rnd->randn(K);	// random gaussian noise.
   double Nn = (1.0 * N) / num_node_sample;
   // update phi for node i
-  for (::size_t k = 0; k < K; k++) {
+  for (::size_t k = 0; k < K; ++k) {
     double phi_node_k = pi_node[k] * phi_i_sum;
     (*phi_node)[k] = std::abs(phi_node_k + eps_t / 2 * (alpha - phi_node_k +
                                                         Nn * grads[k]) +
                               sqrt(eps_t * phi_node_k) * noise[k]);
   }
-
-
-  // assign back to phi.
-  //phi[i] = phi_star;
 }
 
 
-void MCMCSamplerStochasticDistributed::update_beta(const MinibatchSet &mini_batch, double scale) {
+void MCMCSamplerStochasticDistributed::update_beta(
+    const MinibatchSet &mini_batch, double scale) {
 
   t_beta_zero_.start();
 #pragma omp parallel for
@@ -1331,7 +1335,7 @@ void MCMCSamplerStochasticDistributed::update_beta(const MinibatchSet &mini_batc
   t_beta_calc_grads_.start();
   std::vector<Edge> v_mini_batch(mini_batch.begin(), mini_batch.end());
 #pragma omp parallel for // num_threads (12)
-  for (::size_t e = 0; e < v_mini_batch.size(); e++) {
+  for (::size_t e = 0; e < v_mini_batch.size(); ++e) {
     const auto *edge = &v_mini_batch[e];
     std::vector<double> probs(K);
 
@@ -1343,7 +1347,7 @@ void MCMCSamplerStochasticDistributed::update_beta(const MinibatchSet &mini_batc
     Vertex j = node_rank[edge->second];
 
     double pi_sum = 0.0;
-    for (::size_t k = 0; k < K; k++) {
+    for (::size_t k = 0; k < K; ++k) {
       // Note: this is the KV-store cached pi, not the Learner item
       pi_sum += pi[i][k] * pi[j][k];
       double f = pi[i][k] * pi[j][k];
@@ -1356,7 +1360,7 @@ void MCMCSamplerStochasticDistributed::update_beta(const MinibatchSet &mini_batc
 
     double prob_0 = ((y == 1) ? epsilon : (1.0 - epsilon)) * (1.0 - pi_sum);
     double prob_sum = np::sum(probs) + prob_0;
-    for (::size_t k = 0; k < K; k++) {
+    for (::size_t k = 0; k < K; ++k) {
       double f = probs[k] / prob_sum;
       double one_over_theta_sum = 1.0 / theta_sum[k];
       grads_beta_[omp_get_thread_num()][k][0] += f * ((1 - y) / theta[k][0] -
@@ -1369,8 +1373,8 @@ void MCMCSamplerStochasticDistributed::update_beta(const MinibatchSet &mini_batc
 
   t_beta_sum_grads_.start();
 #pragma omp parallel for
-  for (::size_t k = 0; k < K; k++) {
-    for (int i = 1; i < omp_get_max_threads(); i++) {
+  for (::size_t k = 0; k < K; ++k) {
+    for (int i = 1; i < omp_get_max_threads(); ++i) {
       grads_beta_[0][k][0] += grads_beta_[i][k][0];
       grads_beta_[0][k][1] += grads_beta_[i][k][1];
     }
@@ -1383,10 +1387,9 @@ void MCMCSamplerStochasticDistributed::update_beta(const MinibatchSet &mini_batc
   // random noise.
   std::vector<std::vector<double> > noise =
     rng_.random(SourceAwareRandom::BETA_UPDATE)->randn(K, 2);
-  // std::vector<std::vector<double> > theta_star(theta);
 #pragma omp parallel for
-  for (::size_t k = 0; k < K; k++) {
-    for (::size_t i = 0; i < 2; i++) {
+  for (::size_t k = 0; k < K; ++k) {
+    for (::size_t i = 0; i < 2; ++i) {
       double f = std::sqrt(eps_t * theta[k][i]);
       theta[k][i] = std::abs(theta[k][i] +
                              eps_t / 2.0 * (eta[i] - theta[k][i] +
@@ -1395,8 +1398,6 @@ void MCMCSamplerStochasticDistributed::update_beta(const MinibatchSet &mini_batc
     }
   }
 
-  // temp = self.__theta/np.sum(self.__theta,1)[:,np.newaxis]
-  // self._beta = temp[:,1]
   std::vector<std::vector<double> > temp(theta.size(),
                                          std::vector<double>(theta[0].size()));
   np::row_normalize(&temp, theta);
