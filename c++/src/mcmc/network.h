@@ -91,7 +91,7 @@ class Network {
 
   template <typename T>
   void WriteSet(FileHandle& f, const T* set) {
-#ifdef MCMC_USE_GOOGLE_SPARSE_HASH
+#ifdef MCMC_EDGESET_IS_ADJACENCY_LIST
     T* mset = const_cast<T*>(set);
     // Read held_out set
     mset->write_metadata(f.handle());

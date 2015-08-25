@@ -152,7 +152,7 @@ double Learner::cal_perplexity(const EdgeMap &data) {
         std::cerr << "link_likelihood is NaN; potential bug" << std::endl;
       }
     } else {
-      assert(!present(network.get_linked_edges(), e));
+      assert(! e.in(network.get_linked_edges()));
       non_link_count++;
       non_link_likelihood += std::log(ppx_for_heldout[i]);
       if (std::isnan(non_link_likelihood)) {

@@ -88,7 +88,7 @@ void Network::Init(const Options& args, double held_out_ratio,
 const Data* Network::get_data() const { return data_; }
 
 void Network::ReadSet(FileHandle& f, EdgeMap* set) {
-#ifdef MCMC_USE_GOOGLE_SPARSE_HASH
+#ifdef MCMC_EDGESET_IS_ADJACENCY_LIST
   // Read held_out set
   set->read_metadata(f.handle());
   set->read_nopointer_data(f.handle());
@@ -261,7 +261,7 @@ EdgeSample Network::stratified_random_node_sampling(::size_t num_pieces) const {
             continue;
           }
 
-          edge.insertMe(mini_batch_set);
+          mini_batch_set->insert(edge);
           p--;
         }
 
@@ -279,10 +279,10 @@ EdgeSample Network::stratified_random_node_sampling(::size_t num_pieces) const {
 /* sample linked edges */
 // return all linked edges
 #ifdef MCMC_EDGESET_IS_ADJACENCY_LIST
-      for (auto neighborId : (*linked_edges)[nodeId]) {
+      for (auto neighborId : linked_edges->edges_at(nodeId)) {
         Edge e(std::min(nodeId, neighborId), std::max(nodeId, neighborId));
         if (!e.in(test_map) && !e.in(held_out_map)) {
-          e.insertMe(mini_batch_set);
+          mini_batch_set->insert(e);
         }
       }
 #else
@@ -294,7 +294,7 @@ EdgeSample Network::stratified_random_node_sampling(::size_t num_pieces) const {
                train_link_map[nodeId].begin();
            neighborId != train_link_map[nodeId].end(); neighborId++) {
         Edge edge(std::min(nodeId, *neighborId), std::max(nodeId, *neighborId));
-        edge.insertMe(mini_batch_set);
+        mini_batch_set->insert(edge);
       }
 #endif
 
@@ -325,20 +325,20 @@ void Network::init_train_link_map() {
 void Network::adjacency_list_init(int random_seed, int world_rank) {
   cumulative_edges.resize(N);
 
-  if (linked_edges->size() != static_cast<::size_t>(N)) {
+  if (linked_edges->edges_at_size() != static_cast<::size_t>(N)) {
     throw MCMCException("AdjList size and/or cumul size corrupt");
   }
 
 #pragma omp parallel for
   for (int32_t i = 0; i < N; ++i) {
-    cumulative_edges[i] = (*linked_edges)[i].size();
+    cumulative_edges[i] = linked_edges->edges_at(i).size();
   }
   prefix_sum(&cumulative_edges);
   std::cerr
       << "Found prefix sum for edges in AdjacencyList graph: top bucket edge "
       << cumulative_edges[cumulative_edges.size() - 1] << " max edge "
       << (cumulative_edges[cumulative_edges.size() - 1] +
-          (*linked_edges)[cumulative_edges.size() - 1].size()) << std::endl;
+          linked_edges->edges_at(cumulative_edges.size() - 1).size()) << std::endl;
 
   thread_random.resize(omp_get_max_threads());
   for (::size_t i = 0; i < thread_random.size(); ++i) {
@@ -357,13 +357,13 @@ void Network::adjacency_list_end() {
 
 void Network::sample_random_edges(const NetworkGraph* linked_edges, ::size_t p,
                                   std::vector<Edge>* edges) {
-  std::unordered_set<Edge> collector;
+  std::unordered_set<Edge, EdgeHash> collector;
 
   // The graph has a hit for (a,b) as well as (b,a). Therefore it contains
   // duplicates. Trust on unordered_set to filter out the duplicates. We need to
   // iterate until the requested number of edges has been inserted though.
   while (collector.size() < p) {
-    std::vector<std::unordered_set<Edge>> thread_edges(omp_get_max_threads());
+    std::vector<std::unordered_set<Edge, EdgeHash>> thread_edges(omp_get_max_threads());
 
 #pragma omp parallel for
     for (::size_t i = 0; i < p - collector.size(); ++i) {
@@ -383,13 +383,13 @@ void Network::sample_random_edges(const NetworkGraph* linked_edges, ::size_t p,
       }
       int v2 = -1;
       // draw edge_index'th neighbor within this edge list
-      if ((::size_t)v1 >= linked_edges->size()) {
+      if ((::size_t)v1 >= linked_edges->edges_at_size()) {
         std::cerr << "OOOOOOOPPPPPPPPPPPPPSSSSSSSS outside vector" << std::endl;
       }
-      if ((*linked_edges)[v1].size() <= 0) {
+      if (linked_edges->edges_at(v1).size() <= 0) {
         std::cerr << "OOOOPPPPPPPPPPSSSSSSSSSSSS empty elt" << std::endl;
       }
-      for (auto n : (*linked_edges)[v1]) {
+      for (auto n : linked_edges->edges_at(v1)) {
         if (edge_index == 0) {
           v2 = n;
           break;
@@ -455,7 +455,7 @@ void Network::init_held_out_set() {
 
     if (false) {
       std::cout << "sampled_linked_edges:" << std::endl;
-      dump(*sampled_linked_edges);
+      dump(std::cout, *sampled_linked_edges);
     }
 
     delete sampled_linked_edges;
@@ -481,7 +481,7 @@ void Network::init_held_out_set() {
 
   if (false) {
     std::cout << "held_out_set:" << std::endl;
-    dump(held_out_map);
+    dump(std::cout, held_out_map);
   }
 }
 
@@ -567,8 +567,8 @@ void Network::calc_max_fan_out() {
             << std::endl;
   // abort();
 
-  for (::size_t i = 0; i < linked_edges->size(); ++i) {
-    for (auto n : (*linked_edges)[i]) {
+  for (::size_t i = 0; i < linked_edges->edges_at_size(); ++i) {
+    for (auto n : linked_edges->edges_at(i)) {
       if (n >= static_cast<int>(i)) {  // don't count (a,b) as well as (b,a)
         Edge e(i, n);
         if (!e.in(held_out_map) && !e.in(test_map)) {
@@ -619,7 +619,7 @@ void Network::calc_max_fan_out() {
 
 ::size_t Network::get_fan_out(Vertex i) {
 #ifdef MCMC_EDGESET_IS_ADJACENCY_LIST
-  return (*linked_edges)[i].size();
+  return linked_edges->edges_at(i).size();
 #else
   throw MCMCException(std::string(__func__) +
                       "() not implemented for this graph representation");
@@ -629,7 +629,7 @@ void Network::calc_max_fan_out() {
 ::size_t Network::marshall_edges_from(Vertex node, Vertex* marshall_area) {
 #ifdef MCMC_EDGESET_IS_ADJACENCY_LIST
   ::size_t i = 0;
-  for (auto n : (*linked_edges)[node]) {
+  for (auto n : linked_edges->edges_at(node)) {
     marshall_area[i] = n;
     i++;
   }

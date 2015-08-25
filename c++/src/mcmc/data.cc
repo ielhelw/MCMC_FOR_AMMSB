@@ -3,23 +3,9 @@
 
 #include <fstream>
 
-namespace std {
-#if defined MCMC_RANDOM_COMPATIBILITY_MODE
-int32_t hash<mcmc::Edge>::operator()(const mcmc::Edge &x) const {
-  int32_t h = std::hash<int32_t>()(x.first) ^ std::hash<int32_t>()(x.second);
-  return h;
-}
-#else
-::size_t hash<mcmc::Edge>::operator()(const mcmc::Edge &x) const {
-  ::size_t h = ((size_t)x.first * (size_t)x.second) ^
-               ((size_t)x.first + (size_t)x.second);
-  return h;
-}
-#endif
-}
-
 namespace mcmc {
 
+// FIXME: does not belong here, but in ? np? misc? stats?
 void print_mem_usage(std::ostream &s) {
   static const int64_t MEGA = 1 << 20;
   static int64_t pagesize = 0;
@@ -53,28 +39,7 @@ void print_mem_usage(std::ostream &s) {
 
 Edge::Edge() {}
 
-Edge::Edge(Vertex a, Vertex b) : first(a), second(b) {}
-
 Edge::Edge(std::istream &s) { (void)get(s); }
-
-#ifdef MCMC_EDGESET_IS_ADJACENCY_LIST
-void Edge::insertMe(AdjacencyList *s) const {
-  Vertex max = std::max(first, second);
-  if (static_cast<::size_t>(max) >= s->size()) {
-    s->resize(max + 1);
-  }
-  (*s)[first].insert(second);
-  (*s)[second].insert(first);
-}
-#endif
-
-bool Edge::operator==(const Edge &a) const {
-  return a.first == first && a.second == second;
-}
-
-bool Edge::operator<(const Edge &a) const {
-  return first < a.first || (first == a.first && second < a.second);
-}
 
 std::ostream &Edge::put(std::ostream &s) const {
   s << std::setw(1) << "(" << first << ", " << second << ")";
@@ -111,18 +76,11 @@ std::ostream &operator<<(std::ostream &s, const Edge &e) { return e.put(s); }
 
 std::istream &operator>>(std::istream &s, Edge &e) { return e.get(s); }
 
-#ifdef MCMC_USE_GOOGLE_SPARSE_HASH
-bool EdgeEquals::operator()(const Edge &e1, const Edge &e2) const {
-  return e1 == e2;
-}
-#endif
-
 #ifdef MCMC_EDGESET_IS_ADJACENCY_LIST
-std::ostream &dump_edgeset(std::ostream &out, ::size_t N,
-                           const AdjacencyList &E) {
+std::ostream& dump(std::ostream& out, const NetworkGraph& graph) {
   // out << "Edge set size " << N << std::endl;
-  for (::size_t n = 0; n < E.size(); n++) {
-    for (auto e : E[n]) {
+  for (::size_t n = 0; n < graph.edges_at_size(); n++) {
+    for (auto e : graph.edges_at(n)) {
       if (e > static_cast<Vertex>(n)) {
         out << n << "\t" << e << std::endl;
       }
@@ -131,22 +89,22 @@ std::ostream &dump_edgeset(std::ostream &out, ::size_t N,
 
   return out;
 }
-
-bool present(const AdjacencyList &s, const Edge &edge) {
-  for (auto e : s[edge.first]) {
-    if (e == edge.second) {
-      return true;
-    }
+#else
+std::ostream& dump(std::ostream& out, const NetworkGraph& graph) {
+  for (auto e : graph) {
+    out << e.first << "\t" << e.second << std::endl;
   }
 
-  return false;
+  return out;
 }
 #endif
 
-void dump(const EdgeMap &s) {
+std::ostream& dump(std::ostream& out, const EdgeMap &s) {
   for (auto e = s.begin(); e != s.end(); e++) {
-    std::cout << e->first << ": " << e->second << std::endl;
+    out << e->first << ": " << e->second << std::endl;
   }
+
+  return out;
 }
 
 Data::Data(const void *V, const NetworkGraph *E, Vertex N,
@@ -162,15 +120,15 @@ Data::~Data() {
 void Data::dump_data() const {
   // std::cout << "Edge set size " << N << std::endl;
   std::cout << header_;
-  (void)dump_edgeset(std::cout, N, *E);
+  dump(std::cout, *E);
 }
 
 void Data::save(const std::string &filename, bool compressed) const {
-#if defined EDGESET_IS_ADJACENCY_LIST && defined MCMC_USE_GOOGLE_SPARSE_HASH
+#if defined EDGESET_IS_ADJACENCY_LIST
   FileHandle f(filename, compressed, "w");
   int32_t num_nodes = N;
   f.write_fully(&num_nodes, sizeof num_nodes);
-  for (auto r : *E) {
+  for (auto r : E->edges_at_) {
     GoogleHashSet &rc = const_cast<GoogleHashSet &>(r);
     rc.write_metadata(f.handle());
     rc.write_nopointer_data(f.handle());

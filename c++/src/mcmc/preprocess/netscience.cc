@@ -120,7 +120,7 @@ const mcmc::Data *NetScience::process() {
       throw XMLException("Cannot get int attribute 'target'");
     }
     Edge e(b, a);
-    e.insertMe(E);
+    E->insert(e);
   }
 
   return new mcmc::Data((void *)V, E, N);

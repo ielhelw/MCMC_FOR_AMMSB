@@ -11,7 +11,6 @@ namespace mcmc {
 
 #cmakedefine MCMC_RANDOM_SYSTEM
 #cmakedefine MCMC_SOURCE_AWARE_RANDOM
-#cmakedefine MCMC_USE_GOOGLE_SPARSE_HASH
 #cmakedefine MCMC_EDGESET_IS_ADJACENCY_LIST
 
 #cmakedefine MCMC_RANDOM_COMPATIBILITY_MODE

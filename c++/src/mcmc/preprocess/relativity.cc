@@ -69,7 +69,7 @@ const Data *Relativity::process() {
       max = std::max(a, max);
       max = std::max(b, max);
       Edge e(std::min(a, b), std::max(a, b));
-      e.insertMe(E);
+      E->insert(e);
       if (progress_ > 0) {
         count++;
         if (count % progress_ == 0) {
@@ -163,7 +163,7 @@ const Data *Relativity::process() {
         // std::cerr << "Duplicate link " << eIdent << ": ignore" << std::endl;
         duplicates++;
       } else {
-        e.insertMe(E);
+        E->insert(e);
       }
       if (progress_ > 0) {
         count++;
@@ -180,8 +180,8 @@ const Data *Relativity::process() {
                      .count() << "ms create NetworkGraph" << std::endl;
     print_mem_usage(std::cerr);
 #ifdef MCMC_EDGESET_IS_ADJACENCY_LIST
-    for (::size_t i = 0; i < E->size(); i++) {
-      if ((*E)[i].size() == 0) {
+    for (::size_t i = 0; i < E->edges_at_size(); i++) {
+      if (E->edges_at(i).size() == 0) {
         std::cerr << "Find no edges to/from " << i << std::endl;
       }
     }
