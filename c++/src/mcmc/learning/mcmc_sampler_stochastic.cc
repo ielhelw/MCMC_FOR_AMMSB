@@ -5,9 +5,6 @@ namespace learning {
 
 MCMCSamplerStochastic::MCMCSamplerStochastic(const Options &args)
     : Learner(args) {
-#ifdef RANDOM_FOLLOWS_CPP
-  std::cerr << "RANDOM_FOLLOWS_CPP enabled" << std::endl;
-#endif
 #ifdef EFFICIENCY_FOLLOWS_CPP_WENZHE
   std::cerr << "EFFICIENCY_FOLLOWS_CPP_WENZHE enabled" << std::endl;
 #ifndef RANDOM_FOLLOWS_CPP_WENZHE
@@ -583,21 +580,12 @@ NeighborSet MCMCSamplerStochastic::sample_neighbor_nodes(::size_t sample_size,
       // check condition, and insert into mini_batch_set if it is valid.
       Edge edge(std::min(nodeId, *neighborId), std::max(nodeId, *neighborId));
       if (edge.in(held_out_set) || edge.in(test_set) ||
-#ifdef RANDOM_FOLLOWS_SCALABLE_GRAPH
-          find(neighbor_nodes.begin(), neighbor_nodes.end(), neighborId) !=
-              neighbor_nodes.end()
-#else
           neighbor_nodes.find(*neighborId) != neighbor_nodes.end()
-#endif
           ) {
         continue;
       } else {
 // add it into mini_batch_set
-#ifdef RANDOM_FOLLOWS_SCALABLE_GRAPH
-        neighbor_nodes.push_back(*neighborId);
-#else
         neighbor_nodes.insert(*neighborId);
-#endif
         p -= 1;
       }
     }
@@ -613,19 +601,9 @@ NeighborSet MCMCSamplerStochastic::sample_neighbor_nodes(::size_t sample_size,
       neighborId = rnd->randint(0, N - 1);
       edge = Edge(std::min(nodeId, neighborId), std::max(nodeId, neighborId));
     } while (neighborId == nodeId || edge.in(held_out_set) || edge.in(test_set)
-#ifdef RANDOM_FOLLOWS_SCALABLE_GRAPH
-             ||
-             find(neighbor_nodes.begin(), neighbor_nodes.end(), neighborId) !=
-                 neighbor_nodes.end()
-#else
              || neighbor_nodes.find(neighborId) != neighbor_nodes.end()
-#endif
              );
-#ifdef RANDOM_FOLLOWS_SCALABLE_GRAPH
-    neighbor_nodes.push_back(neighborId);
-#else
     neighbor_nodes.insert(neighborId);
-#endif
   }
 #endif
   if (false) {

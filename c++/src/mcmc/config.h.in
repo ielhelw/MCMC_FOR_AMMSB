@@ -16,11 +16,8 @@ namespace mcmc {
 
 #cmakedefine RANDOM_FOLLOWS_PYTHON
 #cmakedefine EFFICIENCY_FOLLOWS_PYTHON
-#cmakedefine RANDOM_FOLLOWS_CPP
-#cmakedefine RANDOM_FOLLOWS_SCALABLE_GRAPH
 #cmakedefine RANDOM_FOLLOWS_CPP_WENZHE
 #cmakedefine EFFICIENCY_FOLLOWS_CPP_WENZHE
-#cmakedefine RANDOM_FOLLOWS_GLASSWING
 
 
 }  // namespace mcmc

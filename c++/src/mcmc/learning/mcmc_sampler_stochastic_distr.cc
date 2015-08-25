@@ -134,12 +134,7 @@ do { \
   print_mem_usage(std::cerr); \
 } while (0)
 
-#ifdef RANDOM_FOLLOWS_SCALABLE_GRAPH
-#  define NEIGHBOR_SET_IS_VECTOR
-typedef std::vector<Vertex> NeighborSet;
-#else
 typedef OrderedVertexSet NeighborSet;
-#endif
 
 using ::mcmc::timer::Timer;
 
@@ -210,10 +205,6 @@ void PerpData::Init(::size_t max_perplexity_chunk) {
 // **************************************************************************
 MCMCSamplerStochasticDistributed::MCMCSamplerStochasticDistributed(const Options &args)
     : MCMCSamplerStochastic(args), mpi_master_(0) {
-#ifdef RANDOM_FOLLOWS_SCALABLE_GRAPH
-  throw MCMCException("No support for Scalable-Graph Random compatibility");
-#endif
-
   t_populate_pi_           = Timer("  populate pi");
   t_outer_                 = Timer("  iteration");
   t_deploy_minibatch_      = Timer("    deploy minibatch");

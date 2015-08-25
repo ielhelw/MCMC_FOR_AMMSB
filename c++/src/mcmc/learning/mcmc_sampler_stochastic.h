@@ -18,9 +18,6 @@ namespace mcmc {
 namespace learning {
 
 #ifdef UNUSED
-#ifdef RANDOM_FOLLOWS_CPP
-#define EDGEMAP_IS_VECTOR
-#endif
 
 // EDGEMAP_IS_VECTOR is a more efficient implementation anyway
 #ifdef EDGEMAP_IS_VECTOR
@@ -31,12 +28,7 @@ typedef std::unordered_map<Edge, int> EdgeMapZ;
 #endif
 #endif
 
-#ifdef RANDOM_FOLLOWS_SCALABLE_GRAPH
-#define NEIGHBOR_SET_IS_VECTOR
-typedef std::vector<Vertex> NeighborSet;
-#else
 typedef OrderedVertexSet NeighborSet;
-#endif
 
 class MCMCSamplerStochastic : public Learner {
  public:

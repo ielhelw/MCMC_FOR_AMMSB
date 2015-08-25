@@ -51,10 +51,6 @@ typedef std::unordered_map<Edge, bool> EdgeMap;
 
 #ifdef RANDOM_FOLLOWS_PYTHON
 
-#ifdef RANDOM_FOLLOWS_CPP
-#error "RANDOM_FOLLOWS_CPP is incompatible with RANDOM_FOLLOWS_PYTHON"
-#endif
-
 typedef std::unordered_set<Vertex> VertexSet;
 typedef std::set<Vertex> OrderedVertexSet;
 
@@ -66,11 +62,7 @@ typedef std::map<Edge, bool> EdgeMap;
 
 #else  // def RANDOM_FOLLOWS_PYTHON
 typedef std::unordered_set<Vertex> VertexSet;
-#ifdef RANDOM_FOLLOWS_CPP
-typedef std::set<Vertext> OrderedVertexSet;
-#else
 typedef VertexSet OrderedVertexSet;
-#endif
 
 #ifdef MCMC_EDGESET_IS_ADJACENCY_LIST
 typedef AdjacencyList NetworkGraph;
