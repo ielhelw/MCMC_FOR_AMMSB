@@ -164,14 +164,12 @@ class GoogleHashMap
 
 typedef GoogleHashMap EdgeMap;
 
-// Implements so much of the set/unordered set interface that it can
-// be used virtually without specialization
+// Implements so much (so little) of the set/unordered set interface that it
+// can be used virtually without specialization
 class NetworkGraph {
  public:
   typedef Edge key_type;
   typedef key_type value_type;
-  // typedef std::pair<Vertex, GoogleHashSet::iterator> iterator;
-  // typedef std::pair<Vertex, GoogleHashSet::const_iterator> const_iterator;
 
   template <typename SubListIterator>
   class Iterator {
@@ -235,8 +233,6 @@ class NetworkGraph {
   iterator end() noexcept {
     return iterator::end(*this);
   }
-
-  // FIXME: implement an iterator++ so the set can be traversed, e.g. for dump()
 
   const_iterator begin() const noexcept {
     if (edges_at_.size() == 0) {

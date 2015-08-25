@@ -758,7 +758,6 @@ void MCMCSamplerStochasticDistributed::init_beta() {
   // parameterization for \beta
   // theta = rng_.random(SourceAwareRandom::THETA_INIT)->->gamma(100.0, 0.01, K, 2);
 
-  // FIXME RFHH -- code sharing with variational_inf*::update_pi_beta()
   // temp = self.__theta/np.sum(self.__theta,1)[:,np.newaxis]
   // self._beta = temp[:,1]
   std::vector<std::vector<double> > temp(theta.size(), std::vector<double>(theta[0].size()));
@@ -887,8 +886,8 @@ void MCMCSamplerStochasticDistributed::ScatterSubGraph(const std::vector<std::ve
   local_network_.reset();
 
   if (mpi_rank_ == mpi_master_) {
-    std::vector<int32_t> size_count(mpi_size_);	// FIXME: lift to class
-    std::vector<int32_t> size_displ(mpi_size_);	// FIXME: lift to class
+    std::vector<int32_t> size_count(mpi_size_);	        // FIXME: lift to class
+    std::vector<int32_t> size_displ(mpi_size_);	        // FIXME: lift to class
     std::vector<int32_t> subgraph_count(mpi_size_);	// FIXME: lift to class
     std::vector<int32_t> subgraph_displ(mpi_size_);	// FIXME: lift to class
     std::vector<int32_t> workers_set_size;
@@ -1002,9 +1001,9 @@ void MCMCSamplerStochasticDistributed::ScatterSubGraph(const std::vector<std::ve
 
 EdgeSample MCMCSamplerStochasticDistributed::deploy_mini_batch() {
   std::vector<std::vector<int>> subminibatch;
-  std::vector<int32_t> minibatch_chunk(mpi_size_);     // FIXME: lift to class
-  std::vector<int32_t> scatter_minibatch;             // FIXME: lift to class
-  std::vector<int32_t> scatter_displs(mpi_size_);      // FIXME: lift to class
+  std::vector<int32_t> minibatch_chunk(mpi_size_);      // FIXME: lift to class
+  std::vector<int32_t> scatter_minibatch;               // FIXME: lift to class
+  std::vector<int32_t> scatter_displs(mpi_size_);       // FIXME: lift to class
   int		r;
   EdgeSample edgeSample;
 
@@ -1146,7 +1145,6 @@ void MCMCSamplerStochasticDistributed::update_phi(std::vector<std::vector<double
 
     // ************ sample neighbor nodes in parallel at each host ******
     // std::cerr << "Sample neighbor nodes" << std::endl;
-    // FIXME: nodes_in_batch should generate a vector, not an OrderedVertexSet
     t_sample_neighbor_nodes_.start();
     pi_neighbor.resize(chunk_nodes.size() * real_num_node_sample());
     flat_neighbors.resize(chunk_nodes.size() * real_num_node_sample());

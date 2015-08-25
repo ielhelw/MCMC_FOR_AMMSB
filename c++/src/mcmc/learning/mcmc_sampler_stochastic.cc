@@ -53,7 +53,6 @@ void MCMCSamplerStochastic::init() {
   // std::endl;
   // theta = rng_.random(SourceAwareRandom::THETA_INIT)->gamma(100.0, 0.01, K, 2);		//
 
-  // FIXME RFHH -- code sharing with variational_inf*::update_pi_beta()
   // temp = self.__theta/np.sum(self.__theta,1)[:,np.newaxis]
   // self._beta = temp[:,1]
   std::vector<std::vector<double> > temp(theta.size(),
@@ -239,7 +238,6 @@ void MCMCSamplerStochastic::run() {
 
     // ************ do in parallel at each host
     // std::cerr << "Sample neighbor nodes" << std::endl;
-    // FIXME: nodes_in_batch should generate a vector, not an OrderedVertexSet
     std::vector<Vertex> node_vector(nodes.begin(), nodes.end());
     for (::size_t n = 0; n < node_vector.size(); ++n) {
       Vertex node = node_vector[n];
@@ -264,7 +262,6 @@ void MCMCSamplerStochastic::run() {
     // ************ do in parallel at each host
     t_update_pi.start();
 #if defined MCMC_EFFICIENCY_COMPATIBILITY_MODE
-    // std::cerr << __func__ << ":" << __LINE__ << ":  FIXME" << std::endl;
     np::row_normalize(&pi, phi);  // update pi from phi.
 #else
     // No need to update pi where phi is unchanged
@@ -367,7 +364,6 @@ void MCMCSamplerStochastic::update_beta(const MinibatchSet &mini_batch,
   for (::size_t k = 0; k < K; k++) {
     for (::size_t i = 0; i < 2; i++) {
 #ifdef MCMC_EFFICIENCY_COMPATIBILITY_MODE
-      // FIXME rewrite a**0.5 * b**0.5 as sqrt(a * b)
       theta[k][i] = std::abs(
           theta[k][i] +
           eps_t / 2 * (eta[i] - theta[k][i] + scale * grads[k][i]) +
@@ -490,7 +486,6 @@ void MCMCSamplerStochastic::update_phi(Vertex i, const NeighborSet &neighbors
   // update phi for node i
   for (::size_t k = 0; k < K; k++) {
 #ifdef MCMC_EFFICIENCY_COMPATIBILITY_MODE
-    // FIXME replace a**0.5 * b**0.5 with sqrt(a * b)
     phi[i][k] =
         std::abs(phi[i][k] +
                  eps_t / 2 * (alpha - phi[i][k] +
@@ -531,7 +526,6 @@ void MCMCSamplerStochastic::update_phi(Vertex i, const NeighborSet &neighbors
   // phi[i] = phi_star;
 }
 
-// TODO FIXME make VertexSet an out parameter
 NeighborSet MCMCSamplerStochastic::sample_neighbor_nodes(::size_t sample_size,
                                                          Vertex nodeId,
                                                          Random::Random *rnd) {
@@ -546,7 +540,6 @@ NeighborSet MCMCSamplerStochastic::sample_neighbor_nodes(::size_t sample_size,
 #if defined MCMC_RANDOM_COMPATIBILITY_MODE
   while (p > 0) {
 #ifdef MCMC_EFFICIENCY_COMPATIBILITY_MODE
-    std::cerr << "FIXME: horribly inefficient xrange thingy" << std::endl;
     auto nodeList = rnd->sample(np::xrange(0, N), sample_size * 2);
 #else
     auto nodeList = rnd->sampleRange(N, sample_size * 2);

@@ -88,7 +88,6 @@ class MCMCSamplerStochastic : public Learner {
 #endif
                   );
 
-  // TODO FIXME make VertexSet an out parameter
   NeighborSet sample_neighbor_nodes(::size_t sample_size, Vertex nodeId,
                                     Random::Random *rnd);
 

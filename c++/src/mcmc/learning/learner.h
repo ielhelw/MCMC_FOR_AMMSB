@@ -109,7 +109,6 @@ class Learner {
       double sum = 0.0;
       for (::size_t k = 0; k < K; k++) {
 #ifdef MCMC_EFFICIENCY_COMPATIBILITY_MODE
-        // FIXME share common subexpressions
         s += pi_a[k] * pi_b[k] * (1.0 - beta[k]);
         sum += pi_a[k] * pi_b[k];
 #else

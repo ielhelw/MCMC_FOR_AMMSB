@@ -422,13 +422,9 @@ void Network::init_held_out_set() {
   }
 
   ::size_t count = 0;
-  // FIXME make sampled_linked_edges an out param
   print_mem_usage(std::cerr);
   while (count < p) {
 #if defined MCMC_RANDOM_COMPATIBILITY_MODE
-    std::cerr << __func__
-              << ": FIXME: replace EdgeList w/ (unordered) EdgeSet again"
-              << std::endl;
     auto sampled_linked_edges =
       rng_->random(SourceAwareRandom::GRAPH_INIT)->sampleList(*linked_edges, p);
 #elif defined MCMC_EDGESET_IS_ADJACENCY_LIST
@@ -494,16 +490,11 @@ void Network::init_test_set() {
 // here we sample twice as much as links, and select among them, which
 // is likely to contain valid p linked edges.
 #if defined MCMC_RANDOM_COMPATIBILITY_MODE
-    std::cerr << __func__
-              << ": FIXME: replace EdgeList w/ (unordered) EdgeSet again"
-              << std::endl;
-    // FIXME make sampled_linked_edges an out param
     auto sampled_linked_edges = rng_->random(SourceAwareRandom::GRAPH_INIT)->sampleList(*linked_edges, 2 * p);
 #elif defined MCMC_EDGESET_IS_ADJACENCY_LIST
     std::vector<Edge>* sampled_linked_edges = new std::vector<Edge>();
     sample_random_edges(linked_edges, 2 * p, sampled_linked_edges);
 #else
-    // FIXME make sampled_linked_edges an out param
     auto sampled_linked_edges = rng_->random(SourceAwareRandom::GRAPH_INIT)->sample(linked_edges, 2 * p);
 #endif
     for (auto edge : *sampled_linked_edges) {
