@@ -177,7 +177,7 @@ class Learner {
 
   SourceAwareRandom rng_;
 
-#if defined MCMC_RANDOM_COMPATIBILITY_MODE
+#ifdef MCMC_RANDOM_COMPATIBILITY_MODE
   const bool RANDOM_PRESERVE_RANGE_ORDER = true;
 #else
   const bool RANDOM_PRESERVE_RANGE_ORDER = false;

@@ -16,7 +16,7 @@
 
 /**
  * Offers 3 different implementations of the NetworkGraph class:
- * 1) -DMCMC_RANDOM_COMPATIBILITY_MODE
+ * 1) -DMCMC_GRAPH_COMPATIBILITY_MODE
  *    NetworkGraph is a std::set<Edge>
  *      compatibility mode
  *      no support for distributed
@@ -34,7 +34,7 @@
 
 #include <utility>
 #include <map>
-#ifdef MCMC_RANDOM_COMPATIBILITY_MODE
+#ifdef MCMC_GRAPH_COMPATIBILITY_MODE
 #  include <set>
 #  include <map>
 #elif ! defined MCMC_EDGESET_IS_ADJACENCY_LIST
@@ -101,7 +101,7 @@ class Edge {
 
 struct EdgeHash {
  public:
-#if defined MCMC_RANDOM_COMPATIBILITY_MODE
+#ifdef MCMC_GRAPH_COMPATIBILITY_MODE
   int32_t operator()(const mcmc::Edge &x) const {
     // inline for performance
     int32_t h = std::hash<int32_t>()(x.first) ^ std::hash<int32_t>()(x.second);
@@ -118,7 +118,7 @@ struct EdgeHash {
 };
 
 
-#ifdef MCMC_RANDOM_COMPATIBILITY_MODE
+#ifdef MCMC_GRAPH_COMPATIBILITY_MODE
 
 typedef std::unordered_set<Vertex> VertexSet;
 typedef std::set<Vertex> OrderedVertexSet;
@@ -127,7 +127,7 @@ typedef std::set<Edge> MinibatchSet;
 typedef std::map<Edge, bool> EdgeMap;
 typedef std::set<Edge> NetworkGraph;
 
-#else  // def MCMC_RANDOM_COMPATIBILITY_MODE
+#else  // def MCMC_GRAPH_COMPATIBILITY_MODE
 
 typedef std::unordered_set<Vertex> VertexSet;
 typedef VertexSet OrderedVertexSet;
@@ -314,7 +314,7 @@ class NetworkGraph {
 
 #endif  // ndef MCMC_EDGESET_IS_ADJACENCY_LIST
 
-#endif  // def MCMC_RANDOM_COMPATIBILITY_MODE
+#endif  // def MCMC_GRAPH_COMPATIBILITY_MODE
 
 typedef std::list<Edge> EdgeList;
 

@@ -1,5 +1,5 @@
 module load boost-1.54
-THIRDPARTY=/home/rutger/projects/greenclouds/3rdparty
+THIRDPARTY=`(cd ../../../../3rdparty; pwd)`
 
 mkdir build
 cd build
@@ -9,7 +9,43 @@ cmake \
 	-DBOOST_ROOT=`dirname $BOOST_INCLUDE` \
 	-DGTEST_ROOT=$THIRDPARTY/gtest-1.7.0 \
 	-DTINYXML2_ROOT=$THIRDPARTY/tinyxml2 \
+	-DSPARSEHASH_ROOT=$THIRDPARTY/google-sparsehash \
+	-DMCMC_ENABLE_RAMCLOUD=OFF \
+	-DMCMC_ENABLE_RDMA=OFF \
+	-DMCMC_EDGESET_IS_ADJACENCY_LIST=OFF \
+	..
+cd ..
+
+mkdir build-distr
+cd build-distr
+cmake \
+	-DCMAKE_C_COMPILER=`which mpicc` \
+	-DCMAKE_CXX_COMPILER=`which mpicxx` \
+	-DBOOST_ROOT=`dirname $BOOST_INCLUDE` \
+	-DGTEST_ROOT=$THIRDPARTY/gtest-1.7.0 \
+	-DTINYXML2_ROOT=$THIRDPARTY/tinyxml2 \
 	-DRAMCLOUD_ROOT=$THIRDPARTY/ramcloud \
 	-DSPARSEHASH_ROOT=$THIRDPARTY/google-sparsehash \
+	-DMCMC_ENABLE_DISTRIBUTED=ON \
+	-DMCMC_ENABLE_OPENMP=ON \
+	-DMCMC_ENABLE_RAMCLOUD=OFF \
 	-DMCMC_ENABLE_RDMA=ON \
+	-DMCMC_EDGESET_IS_ADJACENCY_LIST=ON \
 	..
+cd ..
+
+mkdir build-compat
+cd build-compat
+cmake \
+	-DCMAKE_C_COMPILER=`which gcc` \
+	-DCMAKE_CXX_COMPILER=`which g++` \
+	-DBOOST_ROOT=`dirname $BOOST_INCLUDE` \
+	-DGTEST_ROOT=$THIRDPARTY/gtest-1.7.0 \
+	-DTINYXML2_ROOT=$THIRDPARTY/tinyxml2 \
+	-DMCMC_SOURCE_AWARE_RANDOM=ON \
+	-DMCMC_RANDOM_COMPATIBILITY_MODE=ON \
+	-DMCMC_GRAPH_COMPATIBILITY_MODE=ON \
+	-DMCMC_ENABLE_RAMCLOUD=OFF \
+	-DMCMC_ENABLE_RDMA=OFF \
+	..
+cd ..

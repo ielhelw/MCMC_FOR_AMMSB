@@ -94,7 +94,7 @@ const Data *Relativity::process() {
     }
 
   } else {
-#if defined MCMC_RANDOM_COMPATIBILITY_MODE
+#ifdef MCMC_GRAPH_COMPATIBILITY_MODE
     std::set<Vertex> vertex;
 #else
     std::unordered_set<Vertex> vertex;

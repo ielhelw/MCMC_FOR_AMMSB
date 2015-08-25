@@ -258,7 +258,7 @@ void MCMCSamplerStochastic::run() {
 
     // ************ do in parallel at each host
     t_update_pi.start();
-#if defined MCMC_EFFICIENCY_COMPATIBILITY_MODE
+#ifdef MCMC_EFFICIENCY_COMPATIBILITY_MODE
     np::row_normalize(&pi, phi);  // update pi from phi.
 #else
     // No need to update pi where phi is unchanged
@@ -330,7 +330,7 @@ void MCMCSamplerStochastic::update_beta(const MinibatchSet &mini_batch,
 #endif
     }
 
-#if defined MCMC_EFFICIENCY_COMPATIBILITY_MODE
+#ifdef MCMC_EFFICIENCY_COMPATIBILITY_MODE
     double prob_0 =
         std::pow(epsilon, y) * std::pow(1 - epsilon, 1 - y) * (1 - pi_sum);
     double prob_sum = np::sum(probs) + prob_0;
@@ -430,8 +430,6 @@ void MCMCSamplerStochastic::update_phi(Vertex i, const NeighborSet &neighbors
 
   double phi_i_sum = np::sum(phi[i]);
   std::vector<double> grads(K, 0.0);  // gradient for K classes
-  // std::vector<double> phi_star(K);					// temp
-  // vars
 
   for (auto neighbor : neighbors) {
     if (i == neighbor) {
@@ -445,11 +443,11 @@ void MCMCSamplerStochastic::update_phi(Vertex i, const NeighborSet &neighbors
     }
 
     std::vector<double> probs(K);
-#if !defined MCMC_EFFICIENCY_COMPATIBILITY_MODE
+#ifndef MCMC_EFFICIENCY_COMPATIBILITY_MODE
     double e = (y_ab == 1) ? epsilon : 1.0 - epsilon;
 #endif
     for (::size_t k = 0; k < K; k++) {
-#if defined MCMC_EFFICIENCY_COMPATIBILITY_MODE
+#ifdef MCMC_EFFICIENCY_COMPATIBILITY_MODE
       probs[k] = std::pow(beta[k], y_ab) * std::pow(1 - beta[k], 1 - y_ab) *
                  pi[i][k] * pi[neighbor][k];
       probs[k] += std::pow(epsilon, y_ab) * std::pow(1 - epsilon, 1 - y_ab) *
@@ -516,9 +514,6 @@ void MCMCSamplerStochastic::update_phi(Vertex i, const NeighborSet &neighbors
     }
     std::cerr << std::endl;
   }
-
-  // assign back to phi.
-  // phi[i] = phi_star;
 }
 
 NeighborSet MCMCSamplerStochastic::sample_neighbor_nodes(::size_t sample_size,
@@ -532,11 +527,13 @@ NeighborSet MCMCSamplerStochastic::sample_neighbor_nodes(::size_t sample_size,
   const EdgeMap &held_out_set = network.get_held_out_set();
   const EdgeMap &test_set = network.get_test_set();
 
-#if defined MCMC_RANDOM_COMPATIBILITY_MODE
-  while (p > 0) {
 #ifdef MCMC_EFFICIENCY_COMPATIBILITY_MODE
+
+  while (p > 0) {
+#if 1
     auto nodeList = rnd->sample(np::xrange(0, N), sample_size * 2);
 #else
+    // this optimization is superseeded by re-implementation below
     auto nodeList = rnd->sampleRange(N, sample_size * 2);
 #endif
 
@@ -568,7 +565,7 @@ NeighborSet MCMCSamplerStochastic::sample_neighbor_nodes(::size_t sample_size,
     delete nodeList;
   }
 
-#else  // if defined MCMC_RANDOM_COMPATIBILITY_MODE
+#else   // def MCMC_EFFICIENCY_COMPATIBILITY_MODE
 
   for (int i = 0; i <= p; ++i) {
     Vertex neighborId;
@@ -582,7 +579,7 @@ NeighborSet MCMCSamplerStochastic::sample_neighbor_nodes(::size_t sample_size,
     neighbor_nodes.insert(neighborId);
   }
 
-#endif
+#endif  // def MCMC_EFFICIENCY_COMPATIBILITY_MODE
 
   if (false) {
     std::cerr << "Node " << nodeId << ": neighbors ";

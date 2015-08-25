@@ -15,6 +15,7 @@ namespace mcmc {
 
 #cmakedefine MCMC_RANDOM_COMPATIBILITY_MODE
 #cmakedefine MCMC_EFFICIENCY_COMPATIBILITY_MODE
+#cmakedefine MCMC_GRAPH_COMPATIBILITY_MODE
 
 #ifdef MCMC_EFFICIENCY_COMPATIBILITY_MODE
 #  ifndef MCMC_RANDOM_COMPATIBILITY_MODE
@@ -23,6 +24,15 @@ namespace mcmc {
 #endif
 #if defined MCMC_RANDOM_COMPATIBILITY_MODE && defined MCMC_USE_GOOGLE_SPARSE_HASH
 #  error "Cannot have Python compatibility and sparsehash at the same time"
+#endif
+#if defined MCMC_RANDOM_COMPATIBILITY_MODE && ! defined MCMC_SOURCE_AWARE_RANDOM
+#  error "Cannot have Python compatibility without source-aware random"
+#endif
+#if defined MCMC_ENABLE_RAMCLOUD && ! defined MCMC_ENABLE_DISTRIBUTED
+#  error "No point in RamCloud without distributed algorithm"
+#endif
+#if defined MCMC_ENABLE_RDMA && ! defined MCMC_ENABLE_DISTRIBUTED
+#  error "No point in RDMA without distributed algorithm"
 #endif
 
 

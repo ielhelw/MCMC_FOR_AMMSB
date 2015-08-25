@@ -6,11 +6,17 @@ namespace mcmc {
 namespace learning {
 
 Learner::Learner(const Options &args) : args_(args) {
+#ifdef MCMC_RANDOM_COMPATIBILITY_MODE
+  std::cerr << "MCMC_RANDOM_COMPATIBILITY_MODE enabled" << std::endl;
+#endif
 #ifdef MCMC_EFFICIENCY_COMPATIBILITY_MODE
   std::cerr << "MCMC_EFFICIENCY_COMPATIBILITY_MODE enabled" << std::endl;
 #endif
-#ifdef MCMC_RANDOM_COMPATIBILITY_MODE
-  std::cerr << "MCMC_RANDOM_COMPATIBILITY_MODE enabled" << std::endl;
+#ifdef MCMC_GRAPH_COMPATIBILITY_MODE
+  std::cerr << "MCMC_GRAPH_COMPATIBILITY_MODE enabled" << std::endl;
+#endif
+#ifdef MCMC_SOURCE_AWARE_RANDOM
+  std::cerr << "MCMC_SOURCE_AWARE_RANDOM enabled" << std::endl;
 #endif
 #ifdef MCMC_RANDOM_SYSTEM
   std::cerr << "MCMC_RANDOM_SYSTEM enabled" << std::endl;
