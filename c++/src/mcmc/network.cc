@@ -432,7 +432,7 @@ void Network::init_held_out_set() {
     sample_random_edges(linked_edges, p, sampled_linked_edges);
 #else
     auto sampled_linked_edges =
-      rng_->random(SourceAwareRandom::GRAPH_INIT)->sample(linked_edges, p);
+      rng_->random(SourceAwareRandom::GRAPH_INIT)->sample(*linked_edges, p);
 #endif
     for (auto edge : *sampled_linked_edges) {
       // EdgeMap is an undirected graph, unfit for partitioning
@@ -495,7 +495,7 @@ void Network::init_test_set() {
     std::vector<Edge>* sampled_linked_edges = new std::vector<Edge>();
     sample_random_edges(linked_edges, 2 * p, sampled_linked_edges);
 #else
-    auto sampled_linked_edges = rng_->random(SourceAwareRandom::GRAPH_INIT)->sample(linked_edges, 2 * p);
+    auto sampled_linked_edges = rng_->random(SourceAwareRandom::GRAPH_INIT)->sample(*linked_edges, 2 * p);
 #endif
     for (auto edge : *sampled_linked_edges) {
       if (p < 0) {

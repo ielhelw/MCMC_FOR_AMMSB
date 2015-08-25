@@ -135,8 +135,8 @@ typedef std::unordered_set<Edge, EdgeHash> MinibatchSet;
 
 #  ifndef MCMC_EDGESET_IS_ADJACENCY_LIST
 
-typedef std::unordered_map<Edge, bool> EdgeMap;
-typedef std::unordered_set<Edge> NetworkGraph;
+typedef std::unordered_map<Edge, bool, EdgeHash> EdgeMap;
+typedef std::unordered_set<Edge, EdgeHash> NetworkGraph;
 
 #  else // ndef MCMC_EDGESET_IS_ADJACENCY_LIST
 
