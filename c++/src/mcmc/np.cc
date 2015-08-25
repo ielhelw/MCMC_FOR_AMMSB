@@ -1,13 +1,5 @@
 #include "mcmc/np.h"
 
-#ifdef ENABLE_OPENMP
-#include <omp.h>
-#else
-int omp_get_max_threads() { return 1; }
-int omp_get_thread_num() { return 0; }
-int omp_get_num_threads() { return 1; }
-#endif
-
 namespace mcmc {
 namespace np {
 

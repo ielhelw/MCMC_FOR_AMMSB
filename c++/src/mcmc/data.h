@@ -137,13 +137,32 @@ std::ostream &operator<<(std::ostream &s, const Edge &e);
 
 std::istream &operator>>(std::istream &s, Edge &e);
 
+
+template <typename EdgeContainer>
 std::ostream &dump_edgeset(std::ostream &out, ::size_t N,
-                           const std::unordered_set<Edge> &E);
+                           const EdgeContainer &E) {
+  // out << "Edge set size " << N << std::endl;
+  for (auto edge : E) {
+    out << edge.first << "\t" << edge.second << std::endl;
+  }
+
+  return out;
+}
 
 std::ostream &dump_edgeset(std::ostream &out, ::size_t N,
                            const AdjacencyList &E);
 
-bool present(const std::unordered_set<Edge> &s, const Edge &edge);
+template <typename EdgeContainer>
+bool present(const EdgeContainer &s, const Edge &edge) {
+  for (auto e : s) {
+    if (e == edge) {
+      return true;
+    }
+    assert(e.first != edge.first || e.second != edge.second);
+  }
+
+  return false;
+}
 
 bool present(const AdjacencyList &s, const Edge &edge);
 

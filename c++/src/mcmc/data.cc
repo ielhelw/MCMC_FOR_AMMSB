@@ -116,16 +116,6 @@ bool EdgeEquals::operator()(const Edge &e1, const Edge &e2) const {
 #endif
 
 std::ostream &dump_edgeset(std::ostream &out, ::size_t N,
-                           const std::unordered_set<Edge> &E) {
-  // out << "Edge set size " << N << std::endl;
-  for (auto edge : E) {
-    out << edge.first << "\t" << edge.second << std::endl;
-  }
-
-  return out;
-}
-
-std::ostream &dump_edgeset(std::ostream &out, ::size_t N,
                            const AdjacencyList &E) {
   // out << "Edge set size " << N << std::endl;
   for (::size_t n = 0; n < E.size(); n++) {
@@ -137,17 +127,6 @@ std::ostream &dump_edgeset(std::ostream &out, ::size_t N,
   }
 
   return out;
-}
-
-bool present(const std::unordered_set<Edge> &s, const Edge &edge) {
-  for (auto e : s) {
-    if (e == edge) {
-      return true;
-    }
-    assert(e.first != edge.first || e.second != edge.second);
-  }
-
-  return false;
 }
 
 bool present(const AdjacencyList &s, const Edge &edge) {

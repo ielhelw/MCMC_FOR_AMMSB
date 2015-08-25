@@ -22,7 +22,10 @@ Network::~Network() {
   delete const_cast<Data*>(data_);
 }
 
-void Network::Init(const Options& args, double held_out_ratio) {
+void Network::Init(const Options& args, double held_out_ratio,
+                   SourceAwareRandom *rng, int world_rank) {
+  rng_ = rng;
+
   held_out_ratio_ = held_out_ratio;
   if (held_out_ratio_ == 0) {
     held_out_ratio_ = 0.1;
@@ -61,7 +64,7 @@ void Network::Init(const Options& args, double held_out_ratio) {
 
   } else {
 #ifdef MCMC_EDGESET_IS_ADJACENCY_LIST
-    adjacency_list_init();
+    adjacency_list_init(args.random_seed, world_rank);
     num_total_edges =
         cumulative_edges[N - 1] / 2;  // number of undirected edges.
 #else
@@ -166,7 +169,7 @@ EdgeSample Network::sample_mini_batch(::size_t mini_batch_size,
     case strategy::STRATIFIED_RANDOM_NODE: {
       ::size_t num_pieces = (N + mini_batch_size - 1) / mini_batch_size;
       // std::cerr << "Set stratified random node sampling divisor to " <<
-      // num_pieces << std::endl;
+      //   num_pieces << " mini_batch_size " << mini_batch_size << std::endl;
       return stratified_random_node_sampling(num_pieces);
     }
     default:
@@ -208,12 +211,13 @@ const EdgeMap& Network::get_held_out_set() const { return held_out_map; }
 const EdgeMap& Network::get_test_set() const { return test_map; }
 
 EdgeSample Network::stratified_random_node_sampling(::size_t num_pieces) const {
+  Random::Random *rng = rng_->random(SourceAwareRandom::MINIBATCH_SAMPLER);
   while (true) {
     // randomly select the node ID
-    int nodeId = Random::random->randint(0, N - 1);
+    int nodeId = rng->randint(0, N - 1);
     // decide to sample links or non-links
-    int flag = Random::random->randint(
-        0, 1);  // flag=0: non-link edges  flag=1: link edges
+    // flag=0: non-link edges  flag=1: link edges
+    int flag = rng->randint(0, 1);
     // std::cerr << "num_pieces " << num_pieces << " flag " << flag <<
     // std::endl;
 
@@ -233,10 +237,9 @@ EdgeSample Network::stratified_random_node_sampling(::size_t num_pieces) const {
 // likely
 // contains at least mini_batch_size valid nodes.
 #ifdef EFFICIENCY_FOLLOWS_PYTHON
-        auto nodeList =
-            Random::random->sample(np::xrange(0, N), mini_batch_size * 2);
+        auto nodeList = rng->sample(np::xrange(0, N), mini_batch_size * 2);
 #else
-        auto nodeList = Random::random->sampleRange(N, mini_batch_size * 2);
+        auto nodeList = rng->sampleRange(N, mini_batch_size * 2);
 #endif
         for (std::vector<int>::iterator neighborId = nodeList->begin();
              neighborId != nodeList->end(); neighborId++) {
@@ -319,7 +322,7 @@ void Network::init_train_link_map() {
 }
 
 #ifdef MCMC_EDGESET_IS_ADJACENCY_LIST
-void Network::adjacency_list_init() {
+void Network::adjacency_list_init(int random_seed, int world_rank) {
   cumulative_edges.resize(N);
 
   if (linked_edges->size() != static_cast<::size_t>(N)) {
@@ -337,11 +340,12 @@ void Network::adjacency_list_init() {
       << (cumulative_edges[cumulative_edges.size() - 1] +
           (*linked_edges)[cumulative_edges.size() - 1].size()) << std::endl;
 
-  // std::cerr << "Initializing the held-out set on multiple machines will
-  // create randomness bugs" << std::endl;
   thread_random.resize(omp_get_max_threads());
   for (::size_t i = 0; i < thread_random.size(); ++i) {
-    thread_random[i] = new Random::Random(i, 47);
+    int seed = random_seed + SourceAwareRandom::NEIGHBOR_SAMPLER;
+    thread_random[i] = new Random::Random(seed + 1 + i +
+                                           world_rank * thread_random.size(),
+                                          seed, false);
   }
 }
 
@@ -425,12 +429,14 @@ void Network::init_held_out_set() {
     std::cerr << __func__
               << ": FIXME: replace EdgeList w/ (unordered) EdgeSet again"
               << std::endl;
-    auto sampled_linked_edges = Random::random->sampleList(linked_edges, p);
+    auto sampled_linked_edges =
+      rng_->random(SourceAwareRandom::GRAPH_INIT)->sampleList(linked_edges, p);
 #elif defined MCMC_EDGESET_IS_ADJACENCY_LIST
     std::vector<Edge>* sampled_linked_edges = new std::vector<Edge>();
     sample_random_edges(linked_edges, p, sampled_linked_edges);
 #else
-    auto sampled_linked_edges = Random::random->sample(linked_edges, p);
+    auto sampled_linked_edges =
+      rng_->random(SourceAwareRandom::GRAPH_INIT)->sample(linked_edges, p);
 #endif
     for (auto edge : *sampled_linked_edges) {
       // EdgeMap is an undirected graph, unfit for partitioning
@@ -450,8 +456,6 @@ void Network::init_held_out_set() {
     if (false) {
       std::cout << "sampled_linked_edges:" << std::endl;
       dump(*sampled_linked_edges);
-      std::cout << "held_out_set:" << std::endl;
-      dump(held_out_map);
     }
 
     delete sampled_linked_edges;
@@ -474,6 +478,11 @@ void Network::init_held_out_set() {
     std::cerr << "Edges in held-out set " << count << std::endl;
     print_mem_usage(std::cerr);
   }
+
+  if (false) {
+    std::cout << "held_out_set:" << std::endl;
+    dump(held_out_map);
+  }
 }
 
 void Network::init_test_set() {
@@ -489,13 +498,13 @@ void Network::init_test_set() {
               << ": FIXME: replace EdgeList w/ (unordered) EdgeSet again"
               << std::endl;
     // FIXME make sampled_linked_edges an out param
-    auto sampled_linked_edges = Random::random->sampleList(linked_edges, 2 * p);
+    auto sampled_linked_edges = rng_->random(SourceAwareRandom::GRAPH_INIT)->sampleList(linked_edges, 2 * p);
 #elif defined MCMC_EDGESET_IS_ADJACENCY_LIST
     std::vector<Edge>* sampled_linked_edges = new std::vector<Edge>();
     sample_random_edges(linked_edges, 2 * p, sampled_linked_edges);
 #else
     // FIXME make sampled_linked_edges an out param
-    auto sampled_linked_edges = Random::random->sample(linked_edges, 2 * p);
+    auto sampled_linked_edges = rng_->random(SourceAwareRandom::GRAPH_INIT)->sample(linked_edges, 2 * p);
 #endif
     for (auto edge : *sampled_linked_edges) {
       if (p < 0) {
@@ -634,8 +643,8 @@ void Network::calc_max_fan_out() {
 
 Edge Network::sample_non_link_edge_for_held_out() {
   while (true) {
-    int firstIdx = Random::random->randint(0, N - 1);
-    int secondIdx = Random::random->randint(0, N - 1);
+    int firstIdx = rng_->random(SourceAwareRandom::GRAPH_INIT)->randint(0, N - 1);
+    int secondIdx = rng_->random(SourceAwareRandom::GRAPH_INIT)->randint(0, N - 1);
 
     if (firstIdx == secondIdx) {
       continue;
@@ -655,8 +664,8 @@ Edge Network::sample_non_link_edge_for_held_out() {
 
 Edge Network::sample_non_link_edge_for_test() {
   while (true) {
-    int firstIdx = Random::random->randint(0, N - 1);
-    int secondIdx = Random::random->randint(0, N - 1);
+    int firstIdx = rng_->random(SourceAwareRandom::GRAPH_INIT)->randint(0, N - 1);
+    int secondIdx = rng_->random(SourceAwareRandom::GRAPH_INIT)->randint(0, N - 1);
 
     if (firstIdx == secondIdx) {
       continue;

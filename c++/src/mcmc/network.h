@@ -12,6 +12,7 @@
 #include "mcmc/types.h"
 #include "mcmc/data.h"
 #include "mcmc/random.h"
+#include "mcmc/source-aware-random.h"
 #include "mcmc/preprocess/dataset.h"
 #include "mcmc/options.h"
 #include "mcmc/fileio.h"
@@ -75,7 +76,8 @@ class Network {
    *must
    *     					read them from file
    */
-  void Init(const Options& args, double held_out_ratio);
+  void Init(const Options& args, double held_out_ratio,
+            SourceAwareRandom *rng, int world_rank = 0);
 
   const Data* get_data() const;
 
@@ -207,7 +209,6 @@ class Network {
       orig[i] = (*a)[i];
     }
 #endif
-    std::cerr << "omp max threads " << omp_get_max_threads() << std::endl;
     ::size_t chunk =
         (a->size() + omp_get_max_threads() - 1) / omp_get_max_threads();
     std::vector<::size_t> chunk_sum(omp_get_max_threads());
@@ -241,7 +242,7 @@ class Network {
 #endif
   }
 
-  void adjacency_list_init();
+  void adjacency_list_init(int random_seed, int world_rank);
 
   void adjacency_list_end();
 
@@ -328,6 +329,8 @@ class Network {
 
   std::vector<::size_t> fan_out_cumul_distro;
   ::size_t progress = 0;
+
+  SourceAwareRandom *rng_;
 };
 
 };  // namespace mcmc

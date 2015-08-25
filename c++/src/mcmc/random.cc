@@ -3,12 +3,6 @@
 namespace mcmc {
 namespace Random {
 
-#if defined MCMC_RANDOM_SYSTEM
-Random *random = new Random(0);
-#else
-Random *random = new Random(42);
-#endif
-
 #ifndef MCMC_RANDOM_SYSTEM
 /* tabulated values for the heigt of the Ziggurat levels */
 static const double ytab[128] = {
@@ -106,7 +100,8 @@ static const double wtab[128] = {
 
 Random::Random() {}
 
-Random::Random(unsigned int seed) {
+Random::Random(unsigned int seed, bool preserve_range_order)
+    : preserve_range_order_(preserve_range_order) {
 #ifndef MCMC_RANDOM_SYSTEM
   if (seed == 0)
     throw NumberFormatException(
@@ -119,7 +114,9 @@ Random::Random(unsigned int seed) {
   srand(seed);
 }
 
-Random::Random(unsigned int seed_hi, unsigned int seed_lo) {
+Random::Random(unsigned int seed_hi, unsigned int seed_lo,
+               bool preserve_range_order)
+    : preserve_range_order_(preserve_range_order) {
 #ifndef MCMC_RANDOM_SYSTEM
   if (seed_lo == 0)
     throw NumberFormatException(
@@ -135,6 +132,7 @@ Random::Random(unsigned int seed_hi, unsigned int seed_lo) {
 Random::~Random() {}
 
 #ifndef MCMC_RANDOM_SYSTEM
+
 uint64_t Random::xorshift_128plus() {
   uint64_t s1 = xorshift_state[0];
   uint64_t s0 = xorshift_state[1];
@@ -150,10 +148,23 @@ uint64_t Random::rand() {
   // std::cerr << "0: rand/X() " << r << std::endl;
   return r;
 }
-#else
+
+double Random::randn() {
+  return gsl_ran_gaussian_ziggurat(1.0);
+}
+
+#else   // ndef MCMC_RANDOM_SYSTEM
 
 uint64_t Random::seed(int x) const { return 0; }
-#endif
+
+double Random::randn() {
+  std::default_random_engine generator;
+  std::normal_distribution<double> normalDistribution;
+
+  return normalDistribution(generator);
+}
+
+#endif   // ndef MCMC_RANDOM_SYSTEM
 
 int64_t Random::randint(int64_t from, int64_t upto) {
   return (rand() % (upto + 1 - from)) + from;
@@ -161,6 +172,16 @@ int64_t Random::randint(int64_t from, int64_t upto) {
 
 double Random::random() {
   return (1.0 * rand() / std::numeric_limits<uint64_t>::max());
+}
+
+
+std::vector<double> Random::randn(::size_t K) {
+  std::vector<double> r(K);
+  for (::size_t k = 0; k < K; k++) {
+    r[k] = randn();
+  }
+
+  return r;
 }
 
 std::vector<std::vector<double> > Random::randn(::size_t K, ::size_t N) {
@@ -189,34 +210,53 @@ std::unordered_set<int> Random::sample(int from, int upto, ::size_t count) {
 }
 
 std::vector<int> *Random::sampleRange(int N, ::size_t count) {
-  auto accu = sample(0, N, count);
-  return new std::vector<int>(accu.begin(), accu.end());
+  if (preserve_range_order_) {
+    assert((int)count <= N);
+
+    std::unordered_set<int> accu;
+    auto *result = new std::vector<int>();
+    for (::size_t i = 0; i < count; i++) {
+      int r = randint(0, N - 1);
+      if (accu.find(r) == accu.end()) {
+        accu.insert(r);
+        result->push_back(r);
+      } else {
+        i--;
+      }
+    }
+    return result;
+
+  } else {
+    auto accu = sample(0, N, count);
+    return new std::vector<int>(accu.begin(), accu.end());
+  }
 }
 
-std::vector<std::vector<double> > Random::gamma(double p1, double p2,
-                                                ::size_t n1, ::size_t n2) {
-  // std::vector<std::vector<double> > *a = new std::vector<double>(n1,
-  // std::vector<double>(n2, 0.0));
-  std::vector<std::vector<double> > a(n1, std::vector<double>(n2));
+
+double Random::gamma(double p1, double p2) {
 #ifdef MCMC_RANDOM_SYSTEM
 #if __GNUC_MINOR__ >= 5
   std::gamma_distribution<double> gammaDistribution(p1, p2);
 
-  for (::size_t i = 0; i < n1; i++) {
-    for (::size_t j = 0; j < n2; j++) {
-      a[i][j] = gammaDistribution(generator);
-    }
-  }
+  return gammaDistribution(generator);
 #else  // if __GNUC_MINOR__ >= 5
   throw UnimplementedException("random::gamma");
 #endif
 #else
+  return gsl_ran_gamma(p1, p2);
+#endif  // def MCMC_RANDOM_SYSTEM
+}
+
+std::vector<std::vector<double> > Random::gamma(double p1, double p2,
+                                                ::size_t n1, ::size_t n2) {
+  std::vector<std::vector<double> > a(n1, std::vector<double>(n2));
+
   for (::size_t i = 0; i < n1; i++) {
     for (::size_t j = 0; j < n2; j++) {
-      a[i][j] = gsl_ran_gamma(p1, p2);
+      a[i][j] = gamma(p1, p2);
     }
   }
-#endif  // def MCMC_RANDOM_SYSTEM
+
   return a;
 }
 
@@ -329,28 +369,6 @@ double Random::gsl_ran_gaussian_ziggurat(const double sigma) {
   return sign * sigma * x;
 }
 #endif  // def MCMC_RANDOM_SYSTEM
-
-std::vector<double> Random::randn(::size_t K) {
-  auto r = std::vector<double>(K);
-#ifdef MCMC_RANDOM_SYSTEM
-#if __GNUC_MINOR__ >= 5
-  for (::size_t i = 0; i < K; i++) {
-    r[i] = normalDistribution(generator);
-  }
-
-  return r;
-
-#else  // if __GNUC_MINOR__ >= 5
-  throw UnimplementedException("random::randn");
-#endif
-#else
-  for (::size_t i = 0; i < K; i++) {
-    r[i] = gsl_ran_gaussian_ziggurat(1.0);
-  }
-#endif
-
-  return r;
-}
 
 void Random::report() {
 #ifndef MCMC_RANDOM_SYSTEM

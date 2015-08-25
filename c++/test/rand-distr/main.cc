@@ -34,13 +34,15 @@ int main(int argc, char *argv[]) {
 
 	::size_t n = N * K;
 
+        auto rgen = mcmc::Random::Random(42);
+
 	if (true) {
 		double sum = 0.0;
 		double sq  = 0.0;
 
 		auto start = std::chrono::system_clock::now();
 		for (::size_t i = 0; i < N; i++) {
-			std::vector<std::vector<double> > r = mcmc::Random::random->gamma(eta[0], eta[1], 1, K);
+			std::vector<std::vector<double> > r = rgen.gamma(eta[0], eta[1], 1, K);
 			for (::size_t k = 0; k < K; k++) {
 				sum += r[0][k];
 				sq  += r[0][k] * r[0][k];
@@ -59,7 +61,7 @@ int main(int argc, char *argv[]) {
 
 		auto start = std::chrono::system_clock::now();
 		for (::size_t i = 0; i < N; i++) {
-			std::vector<double> r = mcmc::Random::random->randn(K);
+			std::vector<double> r = rgen.randn(K);
 			for (::size_t k = 0; k < K; k++) {
 				sum += r[k];
 				sq  += r[k] * r[k];

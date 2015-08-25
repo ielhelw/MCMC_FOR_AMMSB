@@ -91,8 +91,12 @@ const Data *Relativity::process() {
     }
 
   } else {
-    // std::set<Vertex> vertex;	// ordered set	WHY????????????????
+#if defined RANDOM_FOLLOWS_PYTHON || defined RANDOM_FOLLOWS_CPP_WENZHE
+    std::set<Vertex> vertex;
+#else
     std::unordered_set<Vertex> vertex;
+#endif
+
     std::vector<mcmc::Edge> edge;
     Vertex max = std::numeric_limits<Vertex>::min();
     Vertex min = std::numeric_limits<Vertex>::max();

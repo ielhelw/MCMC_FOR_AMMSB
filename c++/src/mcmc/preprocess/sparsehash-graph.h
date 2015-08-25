@@ -27,25 +27,8 @@ class SparseHashGraph : public DataSet {
 
   virtual ~SparseHashGraph() {}
 
-  /**
-   * The data is stored in .txt file. The format of data is as follows, the
-   *first column
-   * is line number. Within each line, it is tab separated.
-   *
-   * [1] some texts
-   * [2] some texts
-   * [3] some texts
-   * [4] some texts
-   * [5] 1    100
-   * [6] 1    103
-   * [7] 4    400
-   * [8] ............
-   *
-   * However, the node ID is not increasing by 1 every time. Thus, we re-format
-   * the node ID first.
-   */
   virtual const Data *process() {
-#ifdef MCMC_EDGESET_IS_ADJACENCY_LIST
+#ifdef USE_GOOGLE_SPARSE_HASH
     FileHandle f(filename_, compressed_, "r");
 
     // Read linked_edges

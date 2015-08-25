@@ -6,6 +6,7 @@
 
 #include <fstream>
 #include <string>
+#include <set>
 #include <unordered_set>
 #include <vector>
 #include <list>
@@ -25,26 +26,26 @@ class Random {
   Random();
 
  public:
-  Random(unsigned int seed);
+  Random(unsigned int seed, bool preserve_range_order = false);
 
-  Random(unsigned int seed_hi, unsigned int seed_lo);
+  Random(unsigned int seed_hi, unsigned int seed_lo, bool preserve_range_order = false);
 
   ~Random();
 
 #ifndef MCMC_RANDOM_SYSTEM
   inline uint64_t xorshift_128plus();
 
-  uint64_t seed(int x) const;
-
   inline uint64_t rand();
-#else
-  uint64_t seed(int x) const;
 #endif
+
+  uint64_t seed(int x) const;
 
   int64_t randint(int64_t from, int64_t upto);
 
   double random();
 
+  double randn();
+  std::vector<double> randn(::size_t K);
   std::vector<std::vector<double> > randn(::size_t K, ::size_t N);
 
   template <class List>
@@ -60,10 +61,9 @@ class Random {
   std::list<typename Container::value_type> *sampleList(
       const Container &population, ::size_t count);
 
+  double gamma(double p1, double p2);
   std::vector<std::vector<double> > gamma(double p1, double p2, ::size_t n1,
                                           ::size_t n2);
-
-  std::vector<double> randn(::size_t K);
 
   void report();
 
@@ -94,9 +94,10 @@ class Random {
   std::default_random_engine generator;
   std::normal_distribution<double> normalDistribution;
 #endif  // ndef MCMC_RANDOM_SYSTEM
-};
 
-extern Random *random;
+private:
+  bool preserve_range_order_;
+};
 
 // Random
 template <class Input, class Result, class Inserter>
@@ -112,6 +113,7 @@ void Random::sample(Result *result, const Input &input, ::size_t count,
     c++;
   }
 }
+
 template <class List>
 List *Random::sample(const List &population, ::size_t count) {
   List *result = new List();
@@ -145,6 +147,7 @@ std::vector<Element> *Random::sample(const std::vector<Element> &population,
 
   return result;
 }
+
 template <class Container>
 std::list<typename Container::value_type> *Random::sampleList(
     const Container &population, ::size_t count) {

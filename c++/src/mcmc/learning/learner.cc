@@ -1,5 +1,7 @@
 #include "mcmc/learning/learner.h"
 
+#include "mcmc/np.h"            // Only for omp_get_max_threads() report :-(
+
 namespace mcmc {
 namespace learning {
 
@@ -23,6 +25,8 @@ Learner::Learner(const Options &args) : args_(args) {
 
   stepsize_switch = false;
 
+  rng_.Init(args_.random_seed);
+
   if (args_.strategy == "unspecified") {
     strategy = strategy::STRATIFIED_RANDOM_NODE;
   } else if (args_.strategy == "stratified-random-node") {
@@ -32,14 +36,14 @@ Learner::Learner(const Options &args) : args_(args) {
   }
 }
 
-void Learner::LoadNetwork() {
+void Learner::LoadNetwork(int world_rank) {
   double held_out_ratio = args_.held_out_ratio;
   if (args_.held_out_ratio == 0.0) {
     held_out_ratio = 0.01;
     std::cerr << "Set held_out_ratio to default " << held_out_ratio
               << std::endl;
   }
-  network.Init(args_, held_out_ratio);
+  network.Init(args_, held_out_ratio, &rng_, world_rank);
 
   // parameters related to network
   N = network.get_num_nodes();
@@ -76,6 +80,7 @@ void Learner::info(std::ostream &s) {
   s << " link ratio " << link_ratio;
   s << " convergence " << CONVERGENCE_THRESHOLD;
   s << std::endl;
+  s << "omp max threads " << omp_get_max_threads() << std::endl;
 }
 
 const std::vector<double> &Learner::get_ppxs_held_out() const {

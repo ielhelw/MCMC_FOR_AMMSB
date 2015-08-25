@@ -184,6 +184,8 @@ class Options {
         ("output.dir,o",
          po::value<std::string>(&output_dir)->default_value("."), "output_dir")
 
+        ("seed", po::value<int>(&random_seed)->default_value(42), "random seed")
+
         ("input.file,f", po::value<std::string>(&filename)->default_value(""),
          "input file")(
             "input.class,c",
@@ -274,6 +276,8 @@ class Options {
   std::string dataset_class;
   bool contiguous;
   bool compressed;
+
+  int random_seed;
 
 #ifdef ENABLE_OPENCL
   std::string openClPlatform;

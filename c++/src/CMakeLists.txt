@@ -60,7 +60,6 @@ add_library(mcmc SHARED
   mcmc/data.cc
   mcmc/network.cc
   mcmc/timer.cc
-  mcmc/sample_latent_vars.cc
   mcmc/preprocess/dataset.cc
   mcmc/preprocess/netscience.cc
   mcmc/preprocess/relativity.cc
@@ -68,6 +67,7 @@ add_library(mcmc SHARED
   mcmc/learning/learner.cc
   mcmc/learning/mcmc_sampler_stochastic.cc
 )
+
 target_include_directories(mcmc PUBLIC
   ${CMAKE_CURRENT_SOURCE_DIR}
   ${CMAKE_CURRENT_BINARY_DIR}

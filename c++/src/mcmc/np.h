@@ -9,12 +9,12 @@
 
 #include "mcmc/config.h"
 
-#ifdef ENABLE_OPENMP
+#ifdef MCMC_ENABLE_OPENMP
 #include <omp.h>
 #else
-int omp_get_max_threads();
-int omp_get_thread_num();
-int omp_get_num_threads();
+inline int omp_get_max_threads() { return 1; }
+inline int omp_get_thread_num() { return 0; }
+inline int omp_get_num_threads() { return 1; }
 #endif
 
 namespace mcmc {

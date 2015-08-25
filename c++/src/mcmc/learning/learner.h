@@ -6,6 +6,7 @@
 #include "mcmc/types.h"
 #include "mcmc/options.h"
 #include "mcmc/network.h"
+#include "mcmc/source-aware-random.h"
 #include "mcmc/preprocess/data_factory.h"
 
 namespace mcmc {
@@ -20,7 +21,7 @@ class Learner {
  public:
   Learner(const Options &args);
 
-  void LoadNetwork();
+  void LoadNetwork(int world_rank = 0);
 
   virtual ~Learner();
 
@@ -171,6 +172,15 @@ class Learner {
   ::size_t average_count;
 
   strategy::strategy strategy;
+
+  SourceAwareRandom rng_;
+
+#ifdef RANDOM_FOLLOWS_CPP_WENZHE
+  const bool RANDOM_PRESERVE_RANGE_ORDER = true;
+#else
+  const bool RANDOM_PRESERVE_RANGE_ORDER = false;
+#endif
+
 };
 
 }  // namespace learning

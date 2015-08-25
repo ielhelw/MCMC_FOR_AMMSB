@@ -4,13 +4,7 @@ namespace mcmc {
 namespace learning {
 
 MCMCSamplerStochastic::MCMCSamplerStochastic(const Options &args)
-    : Learner(args),
-#ifdef RANDOM_FOLLOWS_CPP_WENZHE
-      kernelRandom(Random::random)
-#else
-      kernelRandom(new Random::Random(42))
-#endif
-{
+    : Learner(args) {
 #ifdef RANDOM_FOLLOWS_CPP
   std::cerr << "RANDOM_FOLLOWS_CPP enabled" << std::endl;
 #endif
@@ -68,14 +62,12 @@ void MCMCSamplerStochastic::init() {
   // restrict this is using re-reparameterization techniques, where we
   // introduce another set of variables, and update them first followed by
   // updating \pi and \beta.
-  theta = kernelRandom->gamma(eta[0], eta[1], K,
-                              2);  // parameterization for \beta
+  // parameterization for \beta
+  theta = rng_.random(SourceAwareRandom::THETA_INIT)->gamma(eta[0], eta[1], K,
+                                                            2);
   // std::cerr << "Ignore eta[] in random.gamma: use 100.0 and 0.01" <<
   // std::endl;
-  // theta = kernelRandom->gamma(100.0, 0.01, K, 2);		//
-  // parameterization
-  // for
-  // \beta
+  // theta = rng_.random(SourceAwareRandom::THETA_INIT)->gamma(100.0, 0.01, K, 2);		//
 
   // FIXME RFHH -- code sharing with variational_inf*::update_pi_beta()
   // temp = self.__theta/np.sum(self.__theta,1)[:,np.newaxis]
@@ -86,7 +78,8 @@ void MCMCSamplerStochastic::init() {
   std::transform(temp.begin(), temp.end(), beta.begin(),
                  np::SelectColumn<double>(1));
 
-  phi = kernelRandom->gamma(1, 1, N, K);  // parameterization for \pi
+  // parameterization for \pi
+  phi = rng_.random(SourceAwareRandom::PHI_INIT)->gamma(1, 1, N, K);
   std::cerr << "Done host random for phi" << std::endl;
 #ifndef NDEBUG
   for (auto pph : phi) {
@@ -146,15 +139,14 @@ void MCMCSamplerStochastic::init() {
     }
   }
 
-  std::cerr << "Random seed " << std::hex << "0x" << kernelRandom->seed(0)
-            << ",0x" << kernelRandom->seed(1) << std::endl << std::dec;
+  std::cerr << "Random seed " << std::hex << "0x" <<
+    rng_.random(SourceAwareRandom::GRAPH_INIT)->seed(0) << ",0x" <<
+    rng_.random(SourceAwareRandom::GRAPH_INIT)->seed(1) << std::endl;
+  std::cerr << std::dec;
   std::cerr << "Done " << __func__ << "()" << std::endl;
 }
 
 MCMCSamplerStochastic::~MCMCSamplerStochastic() {
-#ifndef RANDOM_FOLLOWS_CPP_WENZHE
-  delete kernelRandom;
-#endif
 }
 
 void MCMCSamplerStochastic::run() {
@@ -270,12 +262,11 @@ void MCMCSamplerStochastic::run() {
       t_sample_neighbor_nodes.start();
       // sample a mini-batch of neighbors
       NeighborSet neighbors =
-          sample_neighbor_nodes(num_node_sample, node, kernelRandom);
+        sample_neighbor_nodes(num_node_sample, node,
+                              rng_.random(
+                                SourceAwareRandom::NEIGHBOR_SAMPLER));
       t_sample_neighbor_nodes.stop();
 
-      // std::cerr << "Random seed " << std::hex << "0x" <<
-      // kernelRandom->seed(0) << ",0x" << kernelRandom->seed(1) << std::endl
-      // << std::dec;
       t_update_phi.start();
       update_phi(node, neighbors
 #ifndef EFFICIENCY_FOLLOWS_CPP_WENZHE
@@ -384,8 +375,10 @@ void MCMCSamplerStochastic::update_beta(const MinibatchSet &mini_batch,
   }
 
   // update theta
+
+  // random noise.
   std::vector<std::vector<double> > noise =
-      kernelRandom->randn(K, 2);  // random noise.
+      rng_.random(SourceAwareRandom::BETA_UPDATE)->randn(K, 2);
   // std::vector<std::vector<double> > theta_star(theta);
   for (::size_t k = 0; k < K; k++) {
     for (::size_t i = 0; i < 2; i++) {
@@ -498,7 +491,9 @@ void MCMCSamplerStochastic::update_phi(Vertex i, const NeighborSet &neighbors
     }
   }
 
-  std::vector<double> noise = kernelRandom->randn(K);  // random gaussian noise.
+  // random gaussian noise.
+  std::vector<double> noise =
+    rng_.random(SourceAwareRandom::PHI_UPDATE)->randn(K);
   if (false) {
     for (::size_t k = 0; k < K; ++k) {
       std::cerr << "randn " << std::fixed << std::setprecision(12) << noise[k]
@@ -568,9 +563,9 @@ NeighborSet MCMCSamplerStochastic::sample_neighbor_nodes(::size_t sample_size,
   while (p > 0) {
 #ifdef EFFICIENCY_FOLLOWS_PYTHON
     std::cerr << "FIXME: horribly inefficient xrange thingy" << std::endl;
-    auto nodeList = Random::random->sample(np::xrange(0, N), sample_size * 2);
+    auto nodeList = rnd->sample(np::xrange(0, N), sample_size * 2);
 #else
-    auto nodeList = Random::random->sampleRange(N, sample_size * 2);
+    auto nodeList = rnd->sampleRange(N, sample_size * 2);
 #endif
 
     for (std::vector<Vertex>::const_iterator neighborId = nodeList->begin();
@@ -617,10 +612,6 @@ NeighborSet MCMCSamplerStochastic::sample_neighbor_nodes(::size_t sample_size,
     do {
       neighborId = rnd->randint(0, N - 1);
       edge = Edge(std::min(nodeId, neighborId), std::max(nodeId, neighborId));
-      // std::cerr << std::fixed << std::setprecision(12) << "node " << nodeId
-      // << " neighbor " << neighborId << " peer " << ! (edge.in(held_out_set)
-      // || edge.in(test_set)) << " randint " << neighborId << " seed " <<
-      // kernelRandom->state() << std::endl;
     } while (neighborId == nodeId || edge.in(held_out_set) || edge.in(test_set)
 #ifdef RANDOM_FOLLOWS_SCALABLE_GRAPH
              ||

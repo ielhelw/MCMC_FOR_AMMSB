@@ -28,8 +28,11 @@ int main(int argc, char *argv[]) {
 
 	print_mem_usage(std::cerr);
 
+        SourceAwareRandom rng;
+        rng.Init(mcmc_options.random_seed);
+
 	Network network;
-	network.Init(mcmc_options, mcmc_options.held_out_ratio);
+	network.Init(mcmc_options, mcmc_options.held_out_ratio, &rng);
 
 	std::cerr << duration_cast<milliseconds>((system_clock::now() - start)).count() << "ms read Network" << std::endl;
 	print_mem_usage(std::cerr);
