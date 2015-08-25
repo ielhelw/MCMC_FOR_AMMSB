@@ -66,6 +66,7 @@ add_library(mcmc SHARED
   mcmc/preprocess/data_factory.cc
   mcmc/learning/learner.cc
   mcmc/learning/mcmc_sampler_stochastic.cc
+  mcmc/learning/mcmc_sampler_stochastic_distr.cc
 )
 
 target_include_directories(mcmc PUBLIC
