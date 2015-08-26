@@ -111,7 +111,7 @@ void Data::dump_data() const {
 }
 
 void Data::save(const std::string &filename, bool compressed) const {
-#ifdef EDGESET_IS_ADJACENCY_LIST
+#ifdef MCMC_EDGESET_IS_ADJACENCY_LIST
   FileHandle f(filename, compressed, "w");
   int32_t num_nodes = N;
   f.write_fully(&num_nodes, sizeof num_nodes);
