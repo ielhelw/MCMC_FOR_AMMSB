@@ -37,8 +37,8 @@ void print_mem_usage(std::ostream &s) {
     << "resident " << ((resident * pagesize) / MEGA) << "MB " << std::endl;
 }
 
-NetworkGraph::NetworkGraph(const std::string &filename, ::size_t progress) {
 #ifdef MCMC_EDGESET_IS_ADJACENCY_LIST
+NetworkGraph::NetworkGraph(const std::string &filename, ::size_t progress) {
   FileHandle f(filename, true, "r");
 
   // Read linked_edges
@@ -59,11 +59,8 @@ NetworkGraph::NetworkGraph(const std::string &filename, ::size_t progress) {
   if (progress != 0) {
     print_mem_usage(std::cerr);
   }
-#else
-  throw MCMCException(std::string(__func__) +
-                      "() not implemented for this graph representation");
-#endif
 }
+#endif
 
 Edge::Edge() {}
 
