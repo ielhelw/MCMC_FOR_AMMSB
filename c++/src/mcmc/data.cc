@@ -37,6 +37,34 @@ void print_mem_usage(std::ostream &s) {
     << "resident " << ((resident * pagesize) / MEGA) << "MB " << std::endl;
 }
 
+NetworkGraph::NetworkGraph(const std::string &filename, ::size_t progress) {
+#ifdef MCMC_EDGESET_IS_ADJACENCY_LIST
+  FileHandle f(filename, true, "r");
+
+  // Read linked_edges
+  int32_t N;
+  f.read_fully(&N, sizeof N);
+  ::size_t num_edges = 0;
+  edges_at_.resize(N);
+  for (int32_t i = 0; i < N; ++i) {
+    if (progress != 0 && i % progress == 0) { 
+      std::cerr << "Node + edgeset read " << i << std::endl;
+      print_mem_usage(std::cerr);
+    }
+    edges_at_[i].read_metadata(f.handle());
+    edges_at_[i].read_nopointer_data(f.handle());
+    num_edges += edges_at_[i].size();
+  }
+
+  if (progress != 0) {
+    print_mem_usage(std::cerr);
+  }
+#else
+  throw MCMCException(std::string(__func__) +
+                      "() not implemented for this graph representation");
+#endif
+}
+
 Edge::Edge() {}
 
 Edge::Edge(std::istream &s) { (void)get(s); }

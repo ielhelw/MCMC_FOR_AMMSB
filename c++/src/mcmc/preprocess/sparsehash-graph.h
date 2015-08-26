@@ -28,33 +28,15 @@ class SparseHashGraph : public DataSet {
   virtual ~SparseHashGraph() {}
 
   virtual const Data *process() {
-#ifdef USE_GOOGLE_SPARSE_HASH
-    FileHandle f(filename_, compressed_, "r");
-
-    // Read linked_edges
-    int32_t N;
-    f.read_fully(&N, sizeof N);
-    std::vector<GoogleHashSet> *E = new std::vector<GoogleHashSet>(N);
-    std::vector<GoogleHashSet> &data =
-        *const_cast<std::vector<GoogleHashSet> *>(E);
-    ::size_t num_edges = 0;
-    for (int32_t i = 0; i < N; ++i) {
-      if (progress_ != 0 && i % progress_ == 0) {
-        std::cerr << "Node + edgeset read " << i << std::endl;
-        print_mem_usage(std::cerr);
-      }
-      data[i].read_metadata(f.handle());
-      data[i].read_nopointer_data(f.handle());
-      num_edges += data[i].size();
-    }
-
-    print_mem_usage(std::cerr);
+#ifdef MCMC_EDGESET_IS_ADJACENCY_LIST
+    auto *E = new NetworkGraph(filename_, progress_);
+    ::size_t N = E->edges_at_size();
 
     std::string header;
     header += "# Undirected graph " + filename_ + "\n";
     header += "# Unspecified provenance\n";
     header += "# Nodes " + std::to_string(N) + " Edges: " +
-              std::to_string(num_edges) + "\n";
+      std::to_string(E->size()) + "\n"; 
     header += "# FromNodeId\tToNodeId\n";
 
     return new Data(NULL, E, N, header);
