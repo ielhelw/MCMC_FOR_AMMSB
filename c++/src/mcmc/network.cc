@@ -369,7 +369,8 @@ void Network::sample_random_edges(const NetworkGraph* linked_edges, ::size_t p,
     for (::size_t i = 0; i < p - collector.size(); ++i) {
       // Draw from 2 |Edges| since each edge is represented twice
       ::size_t edge_index =
-          thread_random[omp_get_thread_num()]->randint(0, 2 * num_total_edges);
+          thread_random[omp_get_thread_num()]->randint(0,
+                                                       2 * num_total_edges - 1);
       // locate the vertex where this edge lives
       // Actually search for find_ge, so do edge_index + 1
       int v1 = np::find_le(cumulative_edges, edge_index + 1);

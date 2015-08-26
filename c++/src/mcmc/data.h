@@ -171,6 +171,9 @@ class NetworkGraph {
   typedef Edge key_type;
   typedef key_type value_type;
 
+  NetworkGraph() { }
+  NetworkGraph(const std::string &filename, ::size_t progress = 0);
+
   template <typename SubListIterator>
   class Iterator {
    public:
@@ -198,6 +201,10 @@ class NetworkGraph {
         return false;
       }
       return edge_iterator_ != other.edge_iterator_;
+    }
+
+    Edge operator*() {
+      return Edge(v_, *edge_iterator_);
     }
 
     static Iterator end(const NetworkGraph& outer_) {

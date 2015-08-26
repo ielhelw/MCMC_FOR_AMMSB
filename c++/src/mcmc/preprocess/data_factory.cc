@@ -43,14 +43,14 @@ const mcmc::Data *DataFactory::get_data() const {
   } else if (dataset_class_ == "sparsehash") {
     dataObj = new SparseHashGraph(filename_);
 #if 0
-		} else if (dataset_class_ == "hep_ph") {
-			dataObj = new HepPH(filename_);
-		} else if (dataset_class_ == "astro_ph") {
-			dataObj = new AstroPH(filename_);
-		} else if (dataset_class_ == "condmat") {
-			dataObj = new CondMat(filename_);
-		} else if (dataset_class_ == "hep_th") {
-			dataObj = new HepTH(filename_);
+  } else if (dataset_class_ == "hep_ph") {
+    dataObj = new HepPH(filename_);
+  } else if (dataset_class_ == "astro_ph") {
+    dataObj = new AstroPH(filename_);
+  } else if (dataset_class_ == "condmat") {
+    dataObj = new CondMat(filename_);
+  } else if (dataset_class_ == "hep_th") {
+    dataObj = new HepTH(filename_);
 #endif
   } else {
     throw MCMCException("Unknown dataset name \"" + dataset_class_ + "\"");
