@@ -76,28 +76,15 @@ std::ostream &operator<<(std::ostream &s, const Edge &e) { return e.put(s); }
 
 std::istream &operator>>(std::istream &s, Edge &e) { return e.get(s); }
 
-#ifdef MCMC_EDGESET_IS_ADJACENCY_LIST
 std::ostream& dump(std::ostream& out, const NetworkGraph& graph) {
-  // out << "Edge set size " << N << std::endl;
-  for (::size_t n = 0; n < graph.edges_at_size(); n++) {
-    for (auto e : graph.edges_at(n)) {
-      if (e > static_cast<Vertex>(n)) {
-        out << n << "\t" << e << std::endl;
-      }
+  for (auto e : graph) {
+    if (e.first < e.second) {
+      out << e.first << "\t" << e.second << std::endl;
     }
   }
 
   return out;
 }
-#else
-std::ostream& dump(std::ostream& out, const NetworkGraph& graph) {
-  for (auto e : graph) {
-    out << e.first << "\t" << e.second << std::endl;
-  }
-
-  return out;
-}
-#endif
 
 std::ostream& dump(std::ostream& out, const EdgeMap &s) {
   for (auto e = s.begin(); e != s.end(); e++) {

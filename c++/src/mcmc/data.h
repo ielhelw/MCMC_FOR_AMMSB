@@ -200,6 +200,10 @@ class NetworkGraph {
       return edge_iterator_ != other.edge_iterator_;
     }
 
+    Edge operator*() {
+      return Edge(v_, *edge_iterator_);
+    }
+
     static Iterator end(const NetworkGraph& outer_) {
       ::size_t n = outer_.edges_at_.size();
       if (n == 0) {
