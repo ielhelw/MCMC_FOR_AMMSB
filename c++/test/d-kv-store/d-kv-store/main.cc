@@ -14,13 +14,13 @@
 #include <mcmc/options.h>
 #include <mcmc/timer.h>
 
-#include <d-kv-store/file/DKVStoreFile.h>
+#include <dkvstore/DKVStoreFile.h>
 #ifdef MCMC_ENABLE_RAMCLOUD
-#include <d-kv-store/ramcloud/DKVStoreRamCloud.h>
+#include <dkvstore/DKVStoreRamCloud.h>
 #endif
 #ifdef MCMC_ENABLE_RDMA
 #include <infiniband/verbs.h>
-#include <d-kv-store/rdma/DKVStoreRDMA.h>
+#include <dkvstore/DKVStoreRDMA.h>
 #endif
 
 typedef std::chrono::high_resolution_clock hires;

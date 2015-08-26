@@ -8,7 +8,7 @@
 #include "pan_timer.h"
 #include "mrg_GP_socket.h"
 
-#include <d-kv-store/rdma/qperf-rdma.h>
+#include <dkvstore/qperf-rdma.h>
 
 #ifndef HOST_NAME_MAX
 #  define HOST_NAME_MAX 256

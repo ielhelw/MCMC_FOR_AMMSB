@@ -13,24 +13,23 @@
 #include <mcmc/random.h>
 #include <mcmc/options.h>
 
-#include <d-kv-store/file/DKVStoreFile.h>
+#include <dkvstore/DKVStoreFile.h>
 #ifdef MCMC_ENABLE_RAMCLOUD
-#include <d-kv-store/ramcloud/DKVStoreRamCloud.h>
+#include <dkvstore/DKVStoreRamCloud.h>
 #endif
 #ifdef MCMC_ENABLE_RDMA
 #include <infiniband/verbs.h>
-#include <d-kv-store/rdma/DKVStoreRDMA.h>
+#include <dkvstore/DKVStoreRDMA.h>
 #endif
 
 #include <mcmc/timer.h>
-#include <mr/timer.h>
 
 typedef std::chrono::high_resolution_clock hires;
 typedef std::chrono::duration<double> duration;
 
 namespace po = boost::program_options;
 
-using mr::timer::Timer;
+using mcmc::timer::Timer;
 
 static double GB(::size_t n, ::size_t k) {
   return static_cast<double>(n * k * sizeof(double)) /
@@ -52,7 +51,6 @@ class DKVWrapper {
   DKVWrapper(const mcmc::Options &options,
              const std::vector<std::string> &remains)
       : options_(options), remains_(remains) {
-    d_kv_store_.Info();
   }
 
   void run() {
@@ -285,7 +283,7 @@ int main(int argc, char *argv[]) {
 
     mcmc::Options options(argc, argv);
 
-    DKV_TYPE::TYPE dkv_type = DKV_TYPE::FILE;
+    DKV::TYPE::TYPE dkv_type = DKV::TYPE::FILE;
     po::options_description desc("D-KV store test program");
     desc.add_options()
       ("dkv.type",
@@ -314,7 +312,7 @@ int main(int argc, char *argv[]) {
     std::cerr << "\"" << std::endl;
 
     switch (dkv_type) {
-    case DKV_TYPE::FILE: {
+    case DKV::TYPE::FILE: {
 #if 0
         DKVWrapper<DKV::DKVFile::DKVStoreFile> dkv_store(options, remains);
         dkv_store.run();
@@ -322,7 +320,7 @@ int main(int argc, char *argv[]) {
         break;
     }
 #ifdef MCMC_ENABLE_RAMCLOUD
-    case DKV_TYPE::RAMCLOUD: {
+    case DKV::TYPE::RAMCLOUD: {
 #if 0
         DKVWrapper<DKV::DKVRamCloud::DKVStoreRamCloud> dkv_store(options, remains);
         dkv_store.run();
@@ -331,7 +329,7 @@ int main(int argc, char *argv[]) {
     }
 #endif
 #ifdef MCMC_ENABLE_RDMA
-    case DKV_TYPE::RDMA: {
+    case DKV::TYPE::RDMA: {
         DKVWrapper<DKV::DKVRDMA::DKVStoreRDMA> dkv_store(options, remains);
         dkv_store.run();
         break;

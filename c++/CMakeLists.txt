@@ -26,3 +26,4 @@ endif(MCMC_ENABLE_OPENMP)
 
 add_subdirectory(src)
 add_subdirectory(apps)
+add_subdirectory(test)
