@@ -15,6 +15,10 @@
 #ifndef APPS_MCMC_D_KV_STORE_RAMCLOUD_DKV_STORE_H__
 #define APPS_MCMC_D_KV_STORE_RAMCLOUD_DKV_STORE_H__
 
+#ifndef MCMC_ENABLE_RAMCLOUD
+#error "This file should not be included if the project is not setup to support RamCloud"
+#endif
+
 #ifndef __INTEL_COMPILER
 #pragma GCC diagnostic ignored "-Wunused-local-typedefs"
 #pragma GCC diagnostic ignored "-Wunused-variable"
