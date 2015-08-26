@@ -115,7 +115,8 @@ void Data::save(const std::string &filename, bool compressed) const {
   FileHandle f(filename, compressed, "w");
   int32_t num_nodes = N;
   f.write_fully(&num_nodes, sizeof num_nodes);
-  for (auto r : E->edges_at_) {
+  for (::size_t v = 0; v < E->edges_at_size(); ++v) {
+    auto r = E->edges_at(v);
     GoogleHashSet &rc = const_cast<GoogleHashSet &>(r);
     rc.write_metadata(f.handle());
     rc.write_nopointer_data(f.handle());
