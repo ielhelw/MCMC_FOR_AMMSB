@@ -189,7 +189,7 @@ class Options {
         ("input.file,f", po::value<std::string>(&filename)->default_value(""),
          "input file")(
             "input.class,c",
-            po::value<std::string>(&dataset_class)->default_value("netscience"),
+            po::value<std::string>(&dataset_class)->default_value("relativity"),
             "input class")("input.contiguous,C",
                            po::bool_switch(&contiguous)->default_value(false),
                            "contiguous input data")(
