@@ -16,8 +16,6 @@ MCMCSamplerStochastic::MCMCSamplerStochastic(const Options &args)
   } else {
     interval = args_.interval;
   }
-
-  std::cerr << "Done " << __func__ << "()" << std::endl;
 }
 
 void MCMCSamplerStochastic::init() {

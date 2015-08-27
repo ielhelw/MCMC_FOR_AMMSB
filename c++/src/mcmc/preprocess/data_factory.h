@@ -13,27 +13,27 @@ namespace mcmc {
 namespace preprocess {
 
 class DataFactory {
-public:
-	DataFactory(const Options &options);
+ public:
+  DataFactory(const Options &options);
 
-	virtual ~DataFactory();
+  virtual ~DataFactory();
 
-	const mcmc::Data *get_data() const;
+  const mcmc::Data *get_data() const;
 
-	void setCompressed(bool on);
+  void setCompressed(bool on);
 
-	void setContiguous(bool on);
+  void setContiguous(bool on);
 
-	void setProgress(::size_t progress);
+  void setProgress(::size_t progress);
 
-	void deleteData(const mcmc::Data *data);
+  void deleteData(const mcmc::Data *data);
 
-protected:
-	std::string dataset_class_;
-	std::string filename_;
-	bool		compressed_ = false;
-	bool		contiguous_ = false;
-	::size_t	progress_ = 0;
+ protected:
+  std::string dataset_class_;
+  std::string filename_;
+  bool		compressed_ = false;
+  bool		contiguous_ = false;
+  ::size_t	progress_ = 0;
 };
 
 }	// namespace preprocess

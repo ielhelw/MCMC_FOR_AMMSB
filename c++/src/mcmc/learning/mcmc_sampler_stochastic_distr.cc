@@ -273,7 +273,8 @@ void MCMCSamplerStochasticDistributed::BroadcastNetworkInfo() {
     assert(N != 0);
 
     beta = std::vector<double>(K, 0.0);
-    pi   = std::vector<std::vector<double> >(N, std::vector<double>(K, 0.0));
+    // In the distributed version, do not allocate the global pi.
+    // pi   = std::vector<std::vector<double> >(N, std::vector<double>(K, 0.0));
 
     // parameters related to sampling
     mini_batch_size = args_.mini_batch_size;
@@ -372,10 +373,10 @@ void MCMCSamplerStochasticDistributed::BroadcastHeldOut() {
 
 void MCMCSamplerStochasticDistributed::MasterAwareLoadNetwork() {
   if (args_.REPLICATED_NETWORK) {
-    LoadNetwork(mpi_rank_);
+    LoadNetwork(mpi_rank_, false);
   } else {
     if (mpi_rank_ == mpi_master_) {
-      LoadNetwork(mpi_rank_);
+      LoadNetwork(mpi_rank_, false);
     }
     BroadcastNetworkInfo();
     // No need to broadcast the Network aux stuff, fan_out_cumul_distro and
@@ -530,6 +531,7 @@ void MCMCSamplerStochasticDistributed::init() {
   }
 
   // Make phi_update_rng_ depend on mpi_rank_ and thread Id
+  std::cerr << "Create per-thread PHI_UPDATE randoms" << std::endl;
   phi_update_rng_.resize(omp_get_max_threads());
   int seed;
   seed = args_.random_seed + SourceAwareRandom::PHI_UPDATE;
@@ -540,6 +542,7 @@ void MCMCSamplerStochasticDistributed::init() {
   }
 
   // Make neighbor_sample_rng_ depend on mpi_rank_ and thread Id
+  std::cerr << "Create per-thread NEIGHBOR_SAMPLER randoms" << std::endl;
   neighbor_sample_rng_.resize(omp_get_max_threads());
   seed = args_.random_seed + SourceAwareRandom::NEIGHBOR_SAMPLER;
   for (::size_t i = 0; i < phi_update_rng_.size(); ++i) {
@@ -556,24 +559,6 @@ void MCMCSamplerStochasticDistributed::init() {
   t_populate_pi_.start();
   init_pi();
   t_populate_pi_.stop();
-#ifdef DOESNT_WORK_FOR_DISTRIBUTED
-  std::cout << "phi[0][0] " << phi[0][0] << std::endl;
-
-  if (true) {
-    for (::size_t i = 0; i < 10; ++i) {
-      std::cerr << "phi[" << i << "]: ";
-      for (::size_t k = 0; k < 10; ++k) {
-        std::cerr << std::fixed << std::setprecision(12) << phi[i][k] << " ";
-      }
-      std::cerr << std::endl;
-      std::cerr << "pi[" << i << "]: ";
-      for (::size_t k = 0; k < 10; ++k) {
-        std::cerr << std::fixed << std::setprecision(12) << pi[i][k] << " ";
-      }
-      std::cerr << std::endl;
-    }
-  }
-#endif
 
   pi_update_.resize(max_minibatch_nodes_);
   for (auto &p : pi_update_) {
@@ -629,7 +614,7 @@ void MCMCSamplerStochasticDistributed::run() {
     // assigns nodes_
     EdgeSample edgeSample = deploy_mini_batch();
     t_deploy_minibatch_.stop();
-    std::cerr << "Minibatch nodes " << nodes_.size() << std::endl;
+    // std::cerr << "Minibatch nodes " << nodes_.size() << std::endl;
 
     update_phi(&phi_node);
 
@@ -911,8 +896,8 @@ void MCMCSamplerStochasticDistributed::ScatterSubGraph(
         marshalled += n;
       }
     }
-    std::cerr << "Total marshalled " << marshalled <<
-      " presumed " << total_edges << std::endl;
+    // std::cerr << "Total marshalled " << marshalled <<
+    //  " presumed " << total_edges << std::endl;
     assert(marshalled == total_edges);
 
     // Scatter the marshalled subgraphs
@@ -987,7 +972,7 @@ EdgeSample MCMCSamplerStochasticDistributed::deploy_mini_batch() {
                                            strategy::STRATIFIED_RANDOM_NODE);
     t_mini_batch_.stop();
     const MinibatchSet &mini_batch = *edgeSample.first;
-    if (true) {
+    if (false) {
       std::cerr << "Minibatch[" << mini_batch.size() << "]: ";
       for (auto e : mini_batch) {
         std::cerr << e << " ";
@@ -1016,15 +1001,17 @@ EdgeSample MCMCSamplerStochasticDistributed::deploy_mini_batch() {
         subminibatch[owner].push_back(n);
       }
     }
-    std::cerr << "#nodes " << nodes.size() <<
-      " #unassigned " << unassigned.size() <<
-      " upb " << upper_bound << std::endl;
+    if (false) {
+      std::cerr << "#nodes " << nodes.size() <<
+        " #unassigned " << unassigned.size() <<
+        " upb " << upper_bound << std::endl;
 
-    std::cerr << "subminibatch[" << subminibatch.size() << "] = [";
-    for (auto s : subminibatch) {
-      std::cerr << s.size() << " ";
+      std::cerr << "subminibatch[" << subminibatch.size() << "] = [";
+      for (auto s : subminibatch) {
+        std::cerr << s.size() << " ";
+      }
+      std::cerr << "]" << std::endl;
     }
-    std::cerr << "]" << std::endl;
 
     ::size_t i = master_is_worker_ ? 0 : 1;
     for (auto n: unassigned) {
@@ -1075,7 +1062,7 @@ EdgeSample MCMCSamplerStochasticDistributed::deploy_mini_batch() {
     mpi_error_test(r, "MPI_Scatterv of minibatch fails");
   }
 
-  if (true) {
+  if (false) {
     std::cerr << "Master gives me minibatch nodes[" << my_minibatch_size <<
       "] ";
     for (auto n : nodes_) {
@@ -1168,10 +1155,6 @@ void MCMCSamplerStochasticDistributed::update_phi_node(
     double eps_t, Random::Random* rnd,
     std::vector<double>* phi_node	// out parameter
     ) {
-  if (omp_get_thread_num() == 0) {
-    std::cerr << __func__ << "(): omp num threads " <<
-      omp_get_num_threads() << std::endl;
-  }
   if (false) {
     std::cerr << "update_phi pre ";
     std::cerr << "phi[" << i << "] ";

@@ -10,7 +10,7 @@ Network::Network(const NetworkInfo& info)
       linked_edges(NULL),
       num_total_edges(info.E),
       held_out_ratio_(info.held_out_ratio),
-      held_out_size(info.held_out_size) {
+      held_out_size_(info.held_out_size) {
   fan_out_cumul_distro = std::vector<::size_t>(1, info.max_fan_out);
   assert(N != 0);
 }
@@ -56,10 +56,10 @@ void Network::Init(const Options& args, double held_out_ratio,
     ReadHeldOutSet(args.input_filename_ + "/held-out.gz", true);
     ReadTestSet(args.input_filename_ + "/test.gz", true);
 
-    if (held_out_size != my_held_out_size) {
-      throw MCMCException("Expect held-out size " +
+    if (held_out_size_ != my_held_out_size) {
+      std::cerr << "WARNING: Expect held-out size " +
                           to_string(my_held_out_size) + ", get " +
-                          to_string(held_out_size));
+                          to_string(held_out_size_);
     }
 
   } else {
@@ -73,7 +73,7 @@ void Network::Init(const Options& args, double held_out_ratio,
 
     // Based on the a-MMSB paper, it samples equal number of
     // linked edges and non-linked edges.
-    held_out_size = held_out_ratio_ * get_num_linked_edges();
+    held_out_size_ = held_out_ratio_ * get_num_linked_edges();
 
     // initialize train_link_map
     init_train_link_map();
@@ -100,7 +100,7 @@ void Network::ReadSet(FileHandle& f, EdgeMap* set) {
 void Network::ReadHeldOutSet(const std::string& filename, bool compressed) {
   FileHandle f(filename, compressed, "r");
   f.read_fully(&held_out_ratio_, sizeof held_out_ratio_);
-  f.read_fully(&held_out_size, sizeof held_out_size);
+  f.read_fully(&held_out_size_, sizeof held_out_size_);
   ReadSet(f, &held_out_map);
 }
 
@@ -124,7 +124,7 @@ void Network::ReadAuxData(const std::string& filename, bool compressed) {
 void Network::WriteHeldOutSet(const std::string& filename, bool compressed) {
   FileHandle f(filename, compressed, "w");
   f.write_fully(&held_out_ratio_, sizeof held_out_ratio_);
-  f.write_fully(&held_out_size, sizeof held_out_size);
+  f.write_fully(&held_out_size_, sizeof held_out_size_);
   WriteSet(f, &held_out_map);
 }
 
@@ -159,7 +159,7 @@ void Network::FillInfo(NetworkInfo* info) {
   info->N = N;
   info->E = num_total_edges;
   info->held_out_ratio = held_out_ratio_;
-  info->held_out_size = held_out_size;
+  info->held_out_size = held_out_size_;
   info->max_fan_out = fan_out_cumul_distro[0];
 }
 
@@ -200,7 +200,7 @@ EdgeSample Network::sample_mini_batch(::size_t mini_batch_size,
 
 ::size_t Network::get_num_linked_edges() const { return num_total_edges; }
 
-::size_t Network::get_held_out_size() const { return held_out_size; }
+::size_t Network::get_held_out_size() const { return held_out_size_; }
 
 int Network::get_num_nodes() const { return N; }
 
@@ -340,9 +340,10 @@ void Network::adjacency_list_init(int random_seed, int world_rank) {
       << (cumulative_edges[cumulative_edges.size() - 1] +
           linked_edges->edges_at(cumulative_edges.size() - 1).size()) << std::endl;
 
+  std::cerr << "Create per-thread GRAPH_INIT randoms" << std::endl;
   thread_random.resize(omp_get_max_threads());
   for (::size_t i = 0; i < thread_random.size(); ++i) {
-    int seed = random_seed + SourceAwareRandom::NEIGHBOR_SAMPLER;
+    int seed = random_seed + SourceAwareRandom::GRAPH_INIT;
     thread_random[i] = new Random::Random(seed + 1 + i +
                                            world_rank * thread_random.size(),
                                           seed, false);
@@ -413,7 +414,7 @@ void Network::sample_random_edges(const NetworkGraph* linked_edges, ::size_t p,
 #endif  // def MCMC_EDGESET_IS_ADJACENCY_LIST
 
 void Network::init_held_out_set() {
-  ::size_t p = held_out_size / 2;
+  ::size_t p = held_out_size_ / 2;
 
   // Sample p linked-edges from the network.
   if (get_num_linked_edges() < p) {
@@ -484,7 +485,7 @@ void Network::init_held_out_set() {
 }
 
 void Network::init_test_set() {
-  int p = (int)(held_out_size / 2);
+  int p = (int)(held_out_size_ / 2);
   // sample p linked edges from the network
   ::size_t count = 0;
 #ifndef MCMC_EDGESET_IS_ADJACENCY_LIST
@@ -531,7 +532,7 @@ void Network::init_test_set() {
   }
 
   // sample p non-linked edges from the network
-  p = held_out_size / 2;
+  p = held_out_size_ / 2;
   while (p > 0) {
     Edge edge = sample_non_link_edge_for_test();
     assert(!edge.in(test_map));
