@@ -35,7 +35,14 @@ class DKVStoreFileOptions : public DKVStoreOptions {
   std::string file_base_;
   std::string dir_;
 	boost::program_options::options_description desc_;
+
+  friend std::ostream& operator<<(std::ostream& out, const DKVStoreFileOptions& opts);
 };
+
+inline std::ostream& operator<<(std::ostream& out, const DKVStoreFileOptions& opts) {
+  out << opts.desc_;
+  return out;
+}
 
 class DKVStoreFile : public DKVStoreInterface {
 

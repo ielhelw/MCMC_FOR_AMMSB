@@ -262,7 +262,14 @@ class DKVStoreRDMAOptions : public DKVStoreOptions {
   uint32_t oob_port_;
   ::size_t oob_num_servers_;
   boost::program_options::options_description desc_;
+
+  friend std::ostream& operator<<(std::ostream& out, const DKVStoreRDMAOptions& opts);
 };
+
+inline std::ostream& operator<<(std::ostream& out, const DKVStoreRDMAOptions& opts) {
+  out << opts.desc_;
+  return out;
+}
 
 /*
  * Class description

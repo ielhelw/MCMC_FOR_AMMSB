@@ -52,7 +52,14 @@ class DKVStoreRamCloudOptions : public DKVStoreOptions {
   std::string host_;
   std::string port_;
   po::options_description desc_;
+
+  friend std::ostream& operator<<(std::ostream& out, const DKVStoreRamCloudOptions& opts);
 };
+
+inline std::ostream& operator<<(std::ostream& out, const DKVStoreRamCloudsOptions& opts) {
+  out << opts.desc_;
+  return out;
+}
 
 class DKVStoreRamCloud : public DKVStoreInterface {
 

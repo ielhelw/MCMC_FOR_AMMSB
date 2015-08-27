@@ -140,7 +140,7 @@ namespace po = ::boost::program_options;
 
 class Options {
  public:
-  Options(int argc, char *argv[])
+  Options()
     : desc_all("Options"),
       desc_mcmc("MCMC Options"),
       desc_io("MCMC Input Options")
@@ -148,8 +148,6 @@ class Options {
       , desc_distr("MCMC Distributed Options")
 #endif
   {
-    std::string config_file;
-
     desc_all.add_options()
       ("config", po::value<std::string>(&config_file), "config file")
     ;
@@ -223,11 +221,11 @@ class Options {
     ;
     desc_all.add(desc_distr);
 #endif
+  }
 
-    std::cout << desc_all << std::endl;
-
+  void Parse(const std::vector<std::string>& argv) {
     po::variables_map vm;
-    po::parsed_options parsed = po::command_line_parser(argc, argv)
+    po::parsed_options parsed = po::command_line_parser(argv)
                                     .options(desc_all)
                                     .allow_unregistered()
                                     .run();
@@ -244,6 +242,8 @@ class Options {
   const std::vector<std::string> &getRemains() const { return remains; }
 
  public:
+    
+  std::string config_file;
 
   double alpha;
   double eta0;
@@ -284,7 +284,14 @@ class Options {
 #ifdef MCMC_ENABLE_DISTRIBUTED
     po::options_description desc_distr;
 #endif
+
+  friend std::ostream& operator<<(std::ostream& out, const Options& opts);
 };
+
+inline std::ostream& operator<<(std::ostream& out, const Options& opts) {
+  out << opts.desc_all;
+  return out;
+}
 
 };  // namespace mcmc
 
