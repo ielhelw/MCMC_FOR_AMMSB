@@ -26,6 +26,24 @@
 namespace DKV {
 namespace DKVFile {
 
+DKVStoreFileOptions::DKVStoreFileOptions()
+  : file_base_("pi"), desc_("D-KV File options") {
+	namespace po = boost::program_options;
+  desc_.add_options()
+    ("dkv.file.filebase,b", po::value<std::string>(&file_base_)->default_value("pi"), "File base")
+    ("dkv.file.dir,d", po::value<std::string>(&dir_)->default_value(""), "Directory")
+    ;
+}
+
+void DKVStoreFileOptions::Parse(const std::vector<std::string> &args) {
+	namespace po = boost::program_options;
+  po::variables_map vm;
+  po::basic_command_line_parser<char> clp(args);
+  clp.options(desc_);
+  po::store(clp.run(), vm);
+  po::notify(vm);
+}
+
 DKVStoreFile::~DKVStoreFile() {
 }
 
@@ -33,8 +51,6 @@ void DKVStoreFile::Init(::size_t value_size, ::size_t total_values,
                         ::size_t max_cache_capacity,
                         ::size_t max_write_capacity,
                         const std::vector<std::string> &args) {
-	namespace po = boost::program_options;
-
   ::DKV::DKVStoreInterface::Init(value_size, total_values,
                                  max_cache_capacity, max_write_capacity,
                                  args);
@@ -44,17 +60,7 @@ void DKVStoreFile::Init(::size_t value_size, ::size_t total_values,
     std::cerr << a << " ";
   }
   std::cerr << std::endl;
-
-  po::options_description desc("D-KV File options");
-  desc.add_options()
-    ("dkv.file.filebase,b", po::value<std::string>(&file_base_)->default_value("pi"), "File base")
-    ("dkv.file.dir,d", po::value<std::string>(&dir_)->default_value(""), "Directory")
-    ;
-  po::variables_map vm;
-  po::basic_command_line_parser<char> clp(args);
-  clp.options(desc);
-  po::store(clp.run(), vm);
-  po::notify(vm);
+  options_.Parse(args);
 }
 
 void DKVStoreFile::ReadKVRecords(std::vector<ValueType *> &cache,
@@ -115,10 +121,10 @@ void DKVStoreFile::WriteKVRecord(const KeyType key,
 const std::string DKVStoreFile::PiFileName(KeyType node) const {
   const int kMaxDigits = 4;
   std::ostringstream s;
-  if (dir_ != "") {
-    s << dir_ << "/";
+  if (options_.dir() != "") {
+    s << options_.dir() << "/";
   }
-  s << file_base_ << "/";
+  s << options_.file_base() << "/";
   for (int digit = kMaxDigits - 1; digit > 0; --digit) {
     int h_digit = (node >> (4 * digit)) & 0xF;
     s << std::hex << h_digit << "/";

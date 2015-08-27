@@ -4,10 +4,10 @@ namespace mcmc {
 namespace preprocess {
 
 DataFactory::DataFactory(const Options &options)
-    : dataset_class_(options.dataset_class),
-      filename_(options.filename),
-      compressed_(options.compressed),
-      contiguous_(options.contiguous) {
+    : dataset_class_(options.input_class_),
+      filename_(options.input_filename_),
+      compressed_(options.input_compressed_),
+      contiguous_(options.input_contiguous_) {
   if (false) {
   } else if (dataset_class_ == "rcz") {
     compressed_ = true;

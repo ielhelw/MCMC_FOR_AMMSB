@@ -176,6 +176,13 @@ class Buffer {
   bool managed_;
 };
 
+class DKVStoreOptions {
+ public:
+  virtual void Parse(const std::vector<std::string> &args) = 0;
+
+  virtual boost::program_options::options_description* GetMutable() = 0;
+};
+
 class DKVStoreInterface {
 
  public:

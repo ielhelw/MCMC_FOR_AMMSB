@@ -231,6 +231,39 @@ class PostDescriptor {
   const ValueType *remote_addr_;
 };
 
+class DKVStoreRDMAOptions : public DKVStoreOptions {
+ public:
+  DKVStoreRDMAOptions();
+
+  void Parse(const std::vector<std::string> &args) override;
+  boost::program_options::options_description* GetMutable() override { return &desc_; }
+  
+  inline const std::string& dev_name() const { return dev_name_; }
+  inline int ib_port() const { return ib_port_; }
+  inline int mtu() const { return mtu_; }
+  inline ::size_t post_send_chunk() const { return post_send_chunk_; }
+  inline ::size_t batch_size() const { return batch_size_; }
+  inline bool force_include_master() const { return force_include_master_; }
+  inline const std::string& oob_server() const { return oob_server_; }
+  inline uint32_t oob_port() const { return oob_port_; }
+  inline ::size_t oob_num_servers() const { return oob_num_servers_; }
+  
+  inline void set_batch_size(::size_t val) { batch_size_ = val; }
+  inline ::size_t* mutable_oob_num_servers() { return &oob_num_servers_; }
+
+ private:
+  std::string dev_name_;
+  int ib_port_;
+  int mtu_;
+  ::size_t post_send_chunk_;
+  ::size_t batch_size_;
+  bool force_include_master_;
+  std::string oob_server_;
+  uint32_t oob_port_;
+  ::size_t oob_num_servers_;
+  boost::program_options::options_description desc_;
+};
+
 /*
  * Class description
  */
@@ -302,6 +335,8 @@ class DKVStoreRDMA : public DKVStoreInterface {
                     enum ibv_wr_opcode opcode,
                     BatchTimer &timer);
 
+  DKVStoreRDMAOptions options_;
+
   DEVICE res_;
   std::vector<rdma_peer> peer_;
 
@@ -309,10 +344,6 @@ class DKVStoreRDMA : public DKVStoreInterface {
 
   std::vector<std::vector<PostDescriptor<ValueType>>> post_descriptor_;
   std::vector< ::size_t> posts_;
-  ::size_t batch_size_;
-
-  std::string dev_name_;
-  ::size_t post_send_chunk_ = 1024;
 
   bool include_master_;	// if unset, the KV area is distributed over all nodes
   						// except the master. Watch out for the case #hosts == 1
@@ -322,10 +353,7 @@ class DKVStoreRDMA : public DKVStoreInterface {
   rdma_area<ValueType> cache_;
   rdma_area<ValueType> write_;
 
-  struct {
-    ::size_t my_rank;
-    ::size_t num_servers;
-  } oob_;
+  ::size_t oob_rank_;
   OOBNetwork<cm_con_data_t> oob_network_;
 
   Timer t_poll_cq_;
@@ -339,6 +367,8 @@ class DKVStoreRDMA : public DKVStoreInterface {
   int64_t bytes_remote_read = 0;
   int64_t bytes_local_written = 0;
   int64_t bytes_remote_written = 0;
+
+
 };
 
 }   // namespace DKVRDMA

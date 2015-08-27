@@ -55,21 +55,26 @@ if (MCMC_ENABLE_RDMA)
   )
 endif(MCMC_ENABLE_RDMA)
 
+SET (mcmc_SRCS )
+LIST (APPEND mcmc_SRCS mcmc/np.cc)
+LIST (APPEND mcmc_SRCS mcmc/options.cc)
+LIST (APPEND mcmc_SRCS mcmc/exception.cc)
+LIST (APPEND mcmc_SRCS mcmc/random.cc)
+LIST (APPEND mcmc_SRCS mcmc/data.cc)
+LIST (APPEND mcmc_SRCS mcmc/network.cc)
+LIST (APPEND mcmc_SRCS mcmc/timer.cc)
+LIST (APPEND mcmc_SRCS mcmc/preprocess/dataset.cc)
+LIST (APPEND mcmc_SRCS mcmc/preprocess/netscience.cc)
+LIST (APPEND mcmc_SRCS mcmc/preprocess/relativity.cc)
+LIST (APPEND mcmc_SRCS mcmc/preprocess/data_factory.cc)
+LIST (APPEND mcmc_SRCS mcmc/learning/learner.cc)
+LIST (APPEND mcmc_SRCS mcmc/learning/mcmc_sampler_stochastic.cc)
+if (MCMC_ENABLE_DISTRIBUTED)
+  LIST (APPEND mcmc_SRCS mcmc/learning/mcmc_sampler_stochastic_distr.cc)
+endif(MCMC_ENABLE_DISTRIBUTED)
+
 add_library(mcmc SHARED
-  mcmc/np.cc
-  mcmc/options.cc
-  mcmc/exception.cc
-  mcmc/random.cc
-  mcmc/data.cc
-  mcmc/network.cc
-  mcmc/timer.cc
-  mcmc/preprocess/dataset.cc
-  mcmc/preprocess/netscience.cc
-  mcmc/preprocess/relativity.cc
-  mcmc/preprocess/data_factory.cc
-  mcmc/learning/learner.cc
-  mcmc/learning/mcmc_sampler_stochastic.cc
-  mcmc/learning/mcmc_sampler_stochastic_distr.cc
+  ${mcmc_SRCS}
 )
 
 target_include_directories(mcmc PUBLIC

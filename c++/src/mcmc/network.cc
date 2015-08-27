@@ -42,8 +42,8 @@ void Network::Init(const Options& args, double held_out_ratio,
   N = data_->N;             // number of nodes in the graph
   linked_edges = data_->E;  // all pair of linked edges.
 
-  if (args.dataset_class == "preprocessed") {
-    ReadAuxData(args.filename + "/aux.gz", true);
+  if (args.input_class_ == "preprocessed") {
+    ReadAuxData(args.input_filename_ + "/aux.gz", true);
 #ifdef MCMC_EDGESET_IS_ADJACENCY_LIST
     num_total_edges =
         cumulative_edges[N - 1] / 2;  // number of undirected edges.
@@ -52,9 +52,9 @@ void Network::Init(const Options& args, double held_out_ratio,
 #endif
 
     ::size_t my_held_out_size = held_out_ratio_ * get_num_linked_edges();
-    std::string held_out = args.filename + "/held-out.gz";
-    ReadHeldOutSet(args.filename + "/held-out.gz", true);
-    ReadTestSet(args.filename + "/test.gz", true);
+    std::string held_out = args.input_filename_ + "/held-out.gz";
+    ReadHeldOutSet(args.input_filename_ + "/held-out.gz", true);
+    ReadTestSet(args.input_filename_ + "/test.gz", true);
 
     if (held_out_size != my_held_out_size) {
       throw MCMCException("Expect held-out size " +

@@ -84,5 +84,5 @@ endif(MCMC_ENABLE_RAMCLOUD)
 
 add_subdirectory(src)
 add_subdirectory(apps)
-add_subdirectory(test)
+#add_subdirectory(test)
 

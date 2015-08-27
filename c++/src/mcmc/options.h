@@ -7,6 +7,14 @@
 #include "mcmc/config.h"
 #include "mcmc/exception.h"
 
+#include "dkvstore/DKVStoreFile.h"
+#ifdef MCMC_ENABLE_RDMA
+#include "dkvstore/DKVStoreRDMA.h"
+#endif
+#ifdef MCMC_ENABLE_RAMCLOUD
+#include "dkvstore/DKVStoreRamCloud.h"
+#endif
+
 #ifndef __INTEL_COMPILER
 #pragma GCC diagnostic ignored "-Wunused-local-typedefs"
 #pragma GCC diagnostic push
@@ -132,125 +140,110 @@ namespace po = ::boost::program_options;
 
 class Options {
  public:
-  Options(int argc, char *argv[],
-          const po::options_description *caller_options = NULL) {
+  Options(int argc, char *argv[])
+    : desc_all("Options"),
+      desc_mcmc("MCMC Options"),
+      desc_io("MCMC Input Options")
+#ifdef MCMC_ENABLE_DISTRIBUTED
+      , desc_distr("MCMC Distributed Options")
+#endif
+  {
     std::string config_file;
 
-    po::options_description desc("Options");
+    desc_all.add_options()
+      ("config", po::value<std::string>(&config_file), "config file")
+    ;
+    desc_mcmc.add_options()
+      // mcmc options
+      ("mcmc.alpha", po::value<double>(&alpha)->default_value(0.01), "alpha")
+      ("mcmc.eta0", po::value<double>(&eta0)->default_value(1.0), "eta0")
+      ("mcmc.eta1", po::value<double>(&eta1)->default_value(1.0), "eta1")
+      ("mcmc.epsilon",
+       po::value<double>(&epsilon)->default_value(0.0000001), "epsilon")
+      ("mcmc.a", po::value<double>(&a)->default_value(0.01), "a")
+      ("mcmc.b", po::value<double>(&b)->default_value(1024), "b")
+      ("mcmc.c", po::value<double>(&c)->default_value(0.55), "c")
+      ("mcmc.K", po::value<::size_t>(&K)->default_value(300), "K")
+      ("mcmc.mini-batch-size",
+       po::value<::size_t>(&mini_batch_size)->default_value(0),
+          "mini_batch_size")
+      ("mcmc.num-node-sample",
+       po::value<::size_t>(&num_node_sample)->default_value(0),
+       "neighbor sample size")
+      ("mcmc.strategy",
+       po::value<std::string>(&strategy)->default_value("unspecified"),
+       "sampling strategy")
+      ("mcmc.max-iteration",
+       po::value<::size_t>(&max_iteration)->default_value(10000000),
+       "max_iteration")
+      ("mcmc.interval",
+       po::value<::size_t>(&interval)->default_value(0),
+       "perplexity interval")
+      ("mcmc.num-updates",
+       po::value<::size_t>(&num_updates)->default_value(1000),
+       "num_updates")
+      ("mcmc.held-out-ratio",
+       po::value<double>(&held_out_ratio)->default_value(0.0),
+       "held_out_ratio")
+      ("mcmc.seed",
+       po::value<int>(&random_seed)->default_value(42), "random seed")
+    ;
+    desc_all.add(desc_mcmc);
 
-    desc.add_options()("help,?", "help")(
-        "config", po::value<std::string>(&config_file), "config file")
-
-        ("run.stochastical,s", "MCMC Stochastical C++")("run.batch,t",
-                                                        "MCMC Batch C++")
-#ifdef ENABLE_OPENCL
-        ("run.stochastical-opencl,S", "MCMC Stochastical OpenCL")(
-            "run.batch-opencl,T", "MCMC Batch OpenCL")
+      // input options 
+    desc_io.add_options()
+      ("mcmc.input.file",
+       po::value<std::string>(&input_filename_)->default_value(""),
+       "input file")
+      ("mcmc.input.class",
+       po::value<std::string>(&input_class_)->default_value("relativity"),
+       "input class")
+      ("mcmc.input.contiguous",
+       po::bool_switch(&input_contiguous_)->default_value(false),
+       "contiguous input data")
+      ("mcmc.input.compressed",
+       po::bool_switch(&input_compressed_)->default_value(false),
+       "compressed input data")
+    ;
+    desc_all.add(desc_io);
+#ifdef MCMC_ENABLE_DISTRIBUTED
+    desc_distr.add_options()
+      ("mcmc.dkv-type",
+       po::value<DKV::TYPE::TYPE>(&dkv_type)->multitoken()->default_value(DKV::TYPE::TYPE::FILE),
+       "D-KV store type (file/ramcloud/rdma)")
+      ("mcmc.max-pi-cache",
+       po::value<::size_t>(&max_pi_cache_entries_)->default_value(0),
+       "minibatch chunk size")
+      ("mcmc.master_is_worker",
+       po::bool_switch(&forced_master_is_worker)->default_value(false),
+       "master host also is a worker")
+      ("mcmc.replicated-graph",
+       po::bool_switch(&REPLICATED_NETWORK)->default_value(false),
+       "replicate Network graph")
+    ;
+    desc_all.add(desc_distr);
 #endif
-        ("run.stochastical-distributed,D", "MCMC Stochastical Distributed")
 
-        ("mcmc.alpha", po::value<double>(&alpha)->default_value(0.01), "alpha")(
-            "mcmc.eta0", po::value<double>(&eta0)->default_value(1.0), "eta0")(
-            "mcmc.eta1", po::value<double>(&eta1)->default_value(1.0), "eta1")(
-            "mcmc.epsilon,e",
-            po::value<double>(&epsilon)->default_value(0.0000001), "epsilon")(
-            "mcmc.a", po::value<double>(&a)->default_value(0.01), "a")(
-            "mcmc.b", po::value<double>(&b)->default_value(1024), "b")(
-            "mcmc.c", po::value<double>(&c)->default_value(0.55), "c")
-
-        ("mcmc.K,K", po::value<::size_t>(&K)->default_value(300), "K")(
-            "mcmc.mini-batch-size,m",
-            po::value<::size_t>(&mini_batch_size)->default_value(0),
-            "mini_batch_size")(
-            "mcmc.num-node-sample,n",
-            po::value<::size_t>(&num_node_sample)->default_value(0),
-            "neighbor sample size")(
-            "mcmc.strategy",
-            po::value<std::string>(&strategy)->default_value("unspecified"),
-            "sampling strategy")
-
-        ("mcmc.max-iteration,x",
-         po::value<::size_t>(&max_iteration)->default_value(10000000),
-         "max_iteration")("mcmc.interval,i",
-                          po::value<::size_t>(&interval)->default_value(0),
-                          "perplexity interval")
-
-        ("mcmc.num-updates,u",
-         po::value<::size_t>(&num_updates)->default_value(1000),
-         "num_updates")("mcmc.held-out-ratio,h",
-                        po::value<double>(&held_out_ratio)->default_value(0.0),
-                        "held_out_ratio")
-
-        ("output.dir,o",
-         po::value<std::string>(&output_dir)->default_value("."), "output_dir")
-
-        ("seed", po::value<int>(&random_seed)->default_value(42), "random seed")
-
-        ("input.file,f", po::value<std::string>(&filename)->default_value(""),
-         "input file")(
-            "input.class,c",
-            po::value<std::string>(&dataset_class)->default_value("relativity"),
-            "input class")("input.contiguous,C",
-                           po::bool_switch(&contiguous)->default_value(false),
-                           "contiguous input data")(
-            "input.compressed,z",
-            po::bool_switch(&compressed)->default_value(false),
-            "compressed input data")
-
-#ifdef ENABLE_OPENCL
-        ("cl.platform,p", po::value<std::string>(&openClPlatform),
-         "OpenCL platform")("cl.device,d",
-                            po::value<std::string>(&openClDevice),
-                            "OpenCL device")(
-            "cl.thread-group-size,G",
-            po::value<::size_t>(&openclGroupSize)->default_value(1),
-            "OpenCL thread group size")(
-            "cl.num-thread-groups,g",
-            po::value<::size_t>(&openclNumGroups)->default_value(1),
-            "num OpenCL thread groups")(
-            "cl.buffer-size,b",
-            po::value<::size_t>(&openclBufferSize)->default_value(0),
-            "OpenCL buffer size")
-#endif
-        ;
-
-    if (caller_options != NULL) {
-      desc.add(*caller_options);
-    }
+    std::cout << desc_all << std::endl;
 
     po::variables_map vm;
     po::parsed_options parsed = po::command_line_parser(argc, argv)
-                                    .options(desc)
+                                    .options(desc_all)
                                     .allow_unregistered()
                                     .run();
     po::store(parsed, vm);
     po::notify(vm);
     if (vm.count("config") > 0) {
       std::ifstream file(config_file);
-      po::store(po::parse_config_file(file, desc), vm);
+      po::store(po::parse_config_file(file, desc_all), vm);
       po::notify(vm);
     }
-
     remains = po::collect_unrecognized(parsed.options, po::include_positional);
-
-    help = vm.count("help") > 0;
-    if (help) {
-      std::cout << desc << std::endl;
-    }
-
-    run.mcmc_stochastical = vm.count("run.stochastical") > 0;
-    run.mcmc_batch = vm.count("run.batch") > 0;
-#ifdef ENABLE_OPENCL
-    run.mcmc_stochastical_cl = vm.count("run.stochastical-opencl") > 0;
-    run.mcmc_batch_cl = vm.count("run.batch-opencl") > 0;
-#endif
-    run.mcmc_stochastical_distr = vm.count("run.stochastical-distributed") > 0;
   }
 
   const std::vector<std::string> &getRemains() const { return remains; }
 
  public:
-  bool help;
 
   double alpha;
   double eta0;
@@ -270,34 +263,27 @@ class Options {
 
   ::size_t num_updates;
   double held_out_ratio;
-  std::string output_dir;
 
-  std::string filename;
-  std::string dataset_class;
-  bool contiguous;
-  bool compressed;
+  std::string input_filename_;
+  std::string input_class_;
+  bool input_contiguous_;
+  bool input_compressed_;
 
   int random_seed;
 
-#ifdef ENABLE_OPENCL
-  std::string openClPlatform;
-  std::string openClDevice;
-  ::size_t openclGroupSize;
-  ::size_t openclNumGroups;
-  ::size_t openclBufferSize;
-#endif
-
-  struct {
-    bool mcmc_stochastical;
-    bool mcmc_batch;
-#ifdef ENABLE_OPENCL
-    bool mcmc_stochastical_cl;
-    bool mcmc_batch_cl;
-#endif
-    bool mcmc_stochastical_distr;
-  } run;
-
   std::vector<std::string> remains;
+#ifdef MCMC_ENABLE_DISTRIBUTED
+  DKV::TYPE::TYPE dkv_type;
+  bool forced_master_is_worker;
+  mutable ::size_t	max_pi_cache_entries_;
+  bool REPLICATED_NETWORK;
+#endif
+    po::options_description desc_all;
+    po::options_description desc_mcmc;
+    po::options_description desc_io;
+#ifdef MCMC_ENABLE_DISTRIBUTED
+    po::options_description desc_distr;
+#endif
 };
 
 };  // namespace mcmc

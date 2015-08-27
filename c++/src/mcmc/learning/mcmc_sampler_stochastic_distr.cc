@@ -299,7 +299,7 @@ void MCMCSamplerStochasticDistributed::BroadcastHeldOut() {
     std::vector<int32_t> count(mpi_size_);	// FIXME: lift to class
     std::vector<int32_t> displ(mpi_size_);	// FIXME: lift to class
 
-    if (REPLICATED_NETWORK) {
+    if (args_.REPLICATED_NETWORK) {
       // Ensure perplexity is centrally calculated at the master's
       for (int i = 0; i < mpi_size_; ++i) {
         if (i == mpi_master_) {
@@ -371,7 +371,7 @@ void MCMCSamplerStochasticDistributed::BroadcastHeldOut() {
 
 
 void MCMCSamplerStochasticDistributed::MasterAwareLoadNetwork() {
-  if (REPLICATED_NETWORK) {
+  if (args_.REPLICATED_NETWORK) {
     LoadNetwork(mpi_rank_);
   } else {
     if (mpi_rank_ == mpi_master_) {
@@ -400,42 +400,8 @@ void MCMCSamplerStochasticDistributed::init() {
   r = MPI_Comm_rank(MPI_COMM_WORLD, &mpi_rank_);
   mpi_error_test(r, "MPI_Comm_rank() fails");
 
-  DKV::TYPE::TYPE dkv_type;
-  bool forced_master_is_worker;
-
-  po::options_description desc("MCMC Stochastic Distributed");
-
-  max_pi_cache_entries_ = 0;
-  desc.add_options()
-    ("dkv.type",
-     po::value<DKV::TYPE::TYPE>(&dkv_type)->multitoken()->default_value(DKV::TYPE::TYPE::FILE),
-     "D-KV store type (file/ramcloud/rdma)")
-    ("mcmc.max-pi-cache",
-     po::value<::size_t>(&max_pi_cache_entries_)->default_value(0),
-     "minibatch chunk size")
-    ("mcmc.master_is_worker",
-     po::bool_switch(&forced_master_is_worker)->default_value(false),
-     "master host also is a worker")
-    ("mcmc.replicated-graph",
-     po::bool_switch(&REPLICATED_NETWORK)->default_value(false),
-     "replicate Network graph")
-    ;
-
-  po::variables_map vm;
-  po::parsed_options parsed =
-    po::basic_command_line_parser<char>(
-      args_.getRemains()).options(desc).allow_unregistered().run();
-  po::store(parsed, vm);
-  // po::basic_command_line_parser<char> clp(options.getRemains());
-  // clp.options(desc).allow_unregistered.run();
-  // po::store(clp.run(), vm);
-  po::notify(vm);
-
-  std::vector<std::string> dkv_args =
-    po::collect_unrecognized(parsed.options, po::include_positional);
-
-  std::cerr << "Use D-KV store type " << dkv_type << std::endl;
-  switch (dkv_type) {
+  std::cerr << "Use D-KV store type " << args_.dkv_type << std::endl;
+  switch (args_.dkv_type) {
   case DKV::TYPE::FILE:
     d_kv_store_ = new DKV::DKVFile::DKVStoreFile();
     break;
@@ -451,7 +417,7 @@ void MCMCSamplerStochasticDistributed::init() {
 #endif
   }
 
-  if (forced_master_is_worker) {
+  if (args_.forced_master_is_worker) {
     master_is_worker_ = true;
   } else {
     master_is_worker_ = (mpi_size_ == 1);
@@ -475,7 +441,7 @@ void MCMCSamplerStochasticDistributed::init() {
     " a " << a << " b " << b << " c " << c << " alpha " << alpha <<
     " eta (" << eta[0] << "," << eta[1] << ")" << std::endl;
 
-  if (max_pi_cache_entries_ == 0) {
+  if (args_.max_pi_cache_entries_ == 0) {
     std::ifstream meminfo("/proc/meminfo");
     int64_t mem_total = -1;
     while (meminfo.good()) {
@@ -485,7 +451,7 @@ void MCMCSamplerStochasticDistributed::init() {
       meminfo.getline(buffer, sizeof buffer);
       if (strncmp("MemTotal", buffer, 8) == 0 &&
            (colon = strchr(buffer, ':')) != 0) {
-        if (sscanf(colon + 2, "%" SCNd64, &mem_total) != 1) {
+        if (sscanf(colon + 2, "%ld", &mem_total) != 1) {
           throw NumberFormatException("MemTotal must be a longlong");
         }
         break;
@@ -497,7 +463,7 @@ void MCMCSamplerStochasticDistributed::init() {
     }
     // /proc/meminfo reports KB
     ::size_t pi_total = (1024 * mem_total) / ((K + 1) * sizeof(double));
-    max_pi_cache_entries_ = pi_total / 32;
+    args_.max_pi_cache_entries_ = pi_total / 32;
   }
 
   max_minibatch_nodes_ = network.minibatch_nodes_for_strategy(
@@ -509,7 +475,7 @@ void MCMCSamplerStochasticDistributed::init() {
     workers = mpi_size_ - 1;
   }
   // pi cache hosts chunked subset of minibatch nodes + their neighbors
-  max_minibatch_chunk_ = max_pi_cache_entries_ / (1 + real_num_node_sample());
+  max_minibatch_chunk_ = args_.max_pi_cache_entries_ / (1 + real_num_node_sample());
   ::size_t max_my_minibatch_nodes = std::min(max_minibatch_chunk_,
                                              (max_minibatch_nodes_ +
                                                 workers - 1) /
@@ -518,7 +484,7 @@ void MCMCSamplerStochasticDistributed::init() {
                                       real_num_node_sample();
 
   // for perplexity, cache pi for both vertexes of each edge
-  max_perplexity_chunk_ = max_pi_cache_entries_ / 2;
+  max_perplexity_chunk_ = args_.max_pi_cache_entries_ / 2;
   ::size_t num_perp_nodes = (2 * network.get_held_out_size() +
                              workers - 1) / workers;
   ::size_t max_my_perp_nodes = std::min(max_perplexity_chunk_,
@@ -528,7 +494,7 @@ void MCMCSamplerStochasticDistributed::init() {
     // master must cache pi[minibatch] for update_beta
     max_minibatch_neighbors = std::max(max_minibatch_neighbors,
                                        max_minibatch_nodes_);
-    if (max_minibatch_neighbors > max_pi_cache_entries_) {
+    if (max_minibatch_neighbors > args_.max_pi_cache_entries_) {
       throw MCMCException("pi cache cannot contain pi[minibatch] for beta, "
                           "refactor so update_beta is chunked");
     }
@@ -548,7 +514,7 @@ void MCMCSamplerStochasticDistributed::init() {
     " mine " << max_my_perp_nodes <<
     " chunk " << max_perplexity_chunk_ << std::endl;
 
-  d_kv_store_->Init(K + 1, N, max_pi_cache, max_my_minibatch_nodes, dkv_args);
+  d_kv_store_->Init(K + 1, N, max_pi_cache, max_my_minibatch_nodes, args_.getRemains());
 
   master_hosts_pi_ = d_kv_store_->include_master();
 
@@ -1118,7 +1084,7 @@ EdgeSample MCMCSamplerStochasticDistributed::deploy_mini_batch() {
     std::cerr << std::endl;
   }
 
-  if (! REPLICATED_NETWORK) {
+  if (! args_.REPLICATED_NETWORK) {
     ScatterSubGraph(subminibatch);
   }
 
@@ -1239,7 +1205,7 @@ void MCMCSamplerStochasticDistributed::update_phi_node(
       if (omp_get_max_threads() == 1) {
         t_update_phi_in_.start();
       }
-      if (REPLICATED_NETWORK) {
+      if (args_.REPLICATED_NETWORK) {
         Edge edge(std::min(i, neighbor), std::max(i, neighbor));
         if (edge.in(network.get_linked_edges())) {
           y_ab = 1;
