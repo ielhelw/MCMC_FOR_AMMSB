@@ -52,7 +52,7 @@ Learner::Learner(const Options &args) : args_(args) {
   }
 }
 
-void Learner::LoadNetwork(int world_rank) {
+void Learner::LoadNetwork(int world_rank, bool allocate_pi) {
   double held_out_ratio = args_.held_out_ratio;
   if (args_.held_out_ratio == 0.0) {
     held_out_ratio = 0.01;
@@ -66,7 +66,9 @@ void Learner::LoadNetwork(int world_rank) {
 
   // model parameters to learn
   beta = std::vector<double>(K, 0.0);
-  pi = std::vector<std::vector<double> >(N, std::vector<double>(K, 0.0));
+  if (allocate_pi) {
+    pi = std::vector<std::vector<double> >(N, std::vector<double>(K, 0.0));
+  }
 
   // parameters related to sampling
   mini_batch_size = args_.mini_batch_size;

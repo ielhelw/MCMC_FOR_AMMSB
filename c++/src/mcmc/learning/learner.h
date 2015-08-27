@@ -24,7 +24,7 @@ class Learner {
  public:
   Learner(const Options &args);
 
-  void LoadNetwork(int world_rank = 0);
+  void LoadNetwork(int world_rank = 0, bool allocate_pi = true);
 
   virtual ~Learner();
 
