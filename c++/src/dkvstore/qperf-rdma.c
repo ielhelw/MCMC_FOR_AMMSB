@@ -759,7 +759,7 @@ ib_open(DEVICE *dev)
         if (!dev->channel)
             return error(SYS, "failed to create completion channel");
     } else {
-        fprintf(stderr, "skip the completion channel\n");
+        // fprintf(stderr, "skip the completion channel\n");
     }
 
     /* Allocate protection domain */
