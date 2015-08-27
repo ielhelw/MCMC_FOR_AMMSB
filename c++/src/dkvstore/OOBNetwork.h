@@ -1,6 +1,7 @@
 #ifndef MCMC_DKVSTORE_RDMA_OOB_NETWORK_H__
 #define MCMC_DKVSTORE_RDMA_OOB_NETWORK_H__
 
+#include <cstdio>
 #include <cstdlib>
 #include <unistd.h>
 
@@ -18,6 +19,8 @@
 #include <boost/algorithm/string/trim.hpp>
 #include <boost/thread.hpp>
 #include <boost/asio.hpp>
+#include <boost/iostreams/device/file_descriptor.hpp>
+#include <boost/iostreams/stream.hpp>
 #ifndef __INTEL_COMPILER
 #pragma GCC diagnostic pop
 #endif
@@ -62,19 +65,49 @@ class OOB {
     hostname_ = boost::asio::ip::host_name();
   }
 
-  static std::vector<std::string> get_prun_env() {
-      const char *prun_hosts_env = getenv("PRUN_PE_HOSTS");
-      if (prun_hosts_env == NULL) {
-		  prun_hosts_env = getenv("HOSTS");
-	  }
-	  if (prun_hosts_env == NULL) {
-        throw NetworkException("Need to set prun host names");
-      }
-      std::string hosts = boost::trim_copy(std::string(prun_hosts_env));
-      std::vector<std::string> hostnames;
-      boost::split(hostnames, hosts, boost::is_any_of(" "));
+  static std::string getenv_str(const std::string& name) {
+    std::string s;
+    const char *var = getenv(name.c_str());
+    if (var != NULL) {
+      s = std::string(var);
+    }
 
-      return hostnames;
+    return s;
+  }
+
+  static std::vector<std::string> get_prun_env() {
+    std::string hosts;
+    hosts = getenv_str("PRUN_PE_HOSTS");
+    if (hosts == "") {
+      namespace io = boost::iostreams;
+      hosts = getenv_str("SLURM_NODELIST");
+      if (hosts != "") {
+        std::string command("scontrol show hostnames " + hosts);
+        FILE *scontrol = popen(command.c_str(), "r");
+        if (scontrol == NULL) {
+          throw NetworkException("Cannot popen(scontrol ...)");
+        }
+        io::stream<io::file_descriptor_source> fpstream(fileno(scontrol),
+                                                        io::close_handle);
+        std::string line;
+        std::vector<std::string> hostnames;
+        while (std::getline(fpstream, line)) {
+          hostnames.push_back(line);
+        }
+        return hostnames;
+      }
+    }
+    if (hosts == "") {
+      hosts = getenv_str("HOSTS");
+    }
+    if (hosts == "") {
+      throw NetworkException("Need to set prun host names");
+    }
+    hosts = boost::trim_copy(hosts);
+    std::vector<std::string> hostnames;
+    boost::split(hostnames, hosts, boost::is_any_of(" "));
+
+    return hostnames;
   }
 
   bool i_am_master() const {
