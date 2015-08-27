@@ -304,7 +304,7 @@ class Network {
   const NetworkGraph* linked_edges;  // all pair of linked edges.
   ::size_t num_total_edges;          // number of total edges.
   double held_out_ratio_;            // percentage of held-out data size
-  ::size_t held_out_size;
+  ::size_t held_out_size_;
 
 #ifdef MCMC_EDGESET_IS_ADJACENCY_LIST
   std::vector<::size_t> cumulative_edges;
