@@ -223,6 +223,16 @@ class Options {
 #endif
   }
 
+  Options(int argc, char** argv) : Options() {
+    std::vector<std::string> args;
+    for (int i = 0; i < argc; ++i) args.push_back(argv[i]);
+    Parse(args);
+  }
+  
+  Options(const std::vector<std::string>& args) : Options() {
+    Parse(args);
+  }
+
   void Parse(const std::vector<std::string>& argv) {
     po::variables_map vm;
     po::parsed_options parsed = po::command_line_parser(argv)

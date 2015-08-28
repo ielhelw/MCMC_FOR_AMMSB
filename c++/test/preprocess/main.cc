@@ -21,8 +21,18 @@ int main(int argc, char *argv[]) {
 		 po::value<std::string>(&network_save),
 		 "save network in some native format")
 		;
+  po::variables_map vm;
+  po::parsed_options parsed =
+    po::basic_command_line_parser<char>(argc, argv).options(options)
+    .allow_unregistered().run();
+  po::store(parsed, vm);
+  po::notify(vm);
+  
+  std::vector<std::string> remains = po::collect_unrecognized(
+      parsed.options,
+      po::include_positional);
 
-	mcmc::Options mcmc_options(argc, argv, &options);
+	mcmc::Options mcmc_options(remains);
 
 	auto start = system_clock::now();
 

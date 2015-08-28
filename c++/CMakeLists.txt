@@ -82,5 +82,5 @@ endif(MCMC_XORSHIFT_ENABLE)
 
 add_subdirectory(src)
 add_subdirectory(apps)
-#add_subdirectory(test)
+add_subdirectory(test)
 
