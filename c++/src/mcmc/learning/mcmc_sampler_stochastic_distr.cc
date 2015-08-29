@@ -529,8 +529,8 @@ void MCMCSamplerStochasticDistributed::init() {
   // for perplexity, cache pi for both vertexes of each edge
   max_perplexity_chunk_ = max_pi_cache_entries_ / 2;
   ::size_t num_perp_nodes = (2 * network.get_held_out_size() +
-                             workers - 1) / workers;
-  ::size_t max_my_perp_nodes = std::min(max_perplexity_chunk_,
+                             mpi_size_ - 1) / mpi_size_;
+  ::size_t max_my_perp_nodes = std::min(2 * max_perplexity_chunk_,
                                         num_perp_nodes);
 
   if (mpi_rank_ == mpi_master_) {
@@ -1492,6 +1492,10 @@ double MCMCSamplerStochasticDistributed::cal_perplexity_held_out() {
         }
       }
     }
+
+    t_purge_pi_perp_.start();
+    d_kv_store_->PurgeKVRecords();
+    t_purge_pi_perp_.stop();
   }
 
   for (auto i = 1; i < omp_get_max_threads(); ++i) {
@@ -1502,10 +1506,6 @@ double MCMCSamplerStochasticDistributed::cal_perplexity_held_out() {
   }
 
   t_cal_edge_likelihood_.stop();
-
-  t_purge_pi_perp_.start();
-  d_kv_store_->PurgeKVRecords();
-  t_purge_pi_perp_.stop();
 
   // std::cout << std::setprecision(12) << "ratio " << link_ratio <<
   //   " count: link " << link_count << " " << link_likelihood <<
