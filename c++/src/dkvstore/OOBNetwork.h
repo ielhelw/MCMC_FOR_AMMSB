@@ -82,7 +82,7 @@ class OOB {
       hosts = getenv_str("SLURM_NODELIST");
       if (hosts != "") {
         std::string command("scontrol show hostnames " + hosts);
-        FILE *scontrol = popen(command.c_str(), "r");
+        ::FILE *scontrol = popen(command.c_str(), "r");
         if (scontrol == NULL) {
           throw NetworkException("Cannot popen(scontrol ...)");
         }
@@ -100,7 +100,10 @@ class OOB {
       hosts = getenv_str("HOSTS");
     }
     if (hosts == "") {
-      throw NetworkException("Need to set prun host names");
+      std::cerr << "Option rdma.oob-server not set, " <<
+        "no PRUN/SLURM environment. " <<
+        "Assume OOB server is localhost" << std::endl;
+      hosts = "localhost";
     }
     hosts = boost::trim_copy(hosts);
     std::vector<std::string> hostnames;
@@ -155,16 +158,17 @@ class OOBNetworkServer {
       if (error) {
         throw boost::system::system_error(error);
       }
-      char peer_hostname[size];
+      char peer_hostname[size+1];
       boost::asio::read(server_socket[i],
                         boost::asio::buffer(peer_hostname, size),
                         boost::asio::transfer_all(), error);
       if (error) {
         throw boost::system::system_error(error);
       }
+      peer_hostname[size] = '\0';
 
       int32_t rank;
-      if (std::string(peer_hostname) == oob_.hostname_) {
+      if (oob_.hostname_ == peer_hostname) {
         rank = 0;
       } else {
         rank = ranks;

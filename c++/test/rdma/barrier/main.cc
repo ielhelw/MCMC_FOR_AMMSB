@@ -284,12 +284,12 @@ int main(int argc, char *argv[]) {
 
     mcmc::Options options(argc, argv);
 
-    DKV::TYPE::TYPE dkv_type = DKV::TYPE::FILE;
+    DKV::TYPE dkv_type = DKV::TYPE::FILE;
     po::options_description desc("D-KV store test program");
     desc.add_options()
       ("help", "help")
       ("dkv.type",
-       po::value<DKV::TYPE::TYPE>(&dkv_type)->multitoken()->default_value(DKV::TYPE::FILE),
+       po::value<DKV::TYPE>(&dkv_type)->multitoken()->default_value(DKV::TYPE::FILE),
        "D-KV store type (file/ramcloud/rdma)")
       ;
 

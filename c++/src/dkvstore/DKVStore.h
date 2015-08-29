@@ -28,7 +28,6 @@
 
 namespace DKV {
 
-namespace TYPE {
 enum TYPE {
     FILE,
 #ifdef MCMC_ENABLE_RAMCLOUD
@@ -85,8 +84,6 @@ inline std::ostream& operator<< (std::ostream& s, TYPE& dkv_type) {
 
   return s;
 }
-
-}   // namespace TYPE
 
 
 namespace RW_MODE {

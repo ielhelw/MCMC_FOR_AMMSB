@@ -148,26 +148,26 @@ class Options {
       ("mcmc.a", po::value<double>(&a)->default_value(0.01), "a")
       ("mcmc.b", po::value<double>(&b)->default_value(1024), "b")
       ("mcmc.c", po::value<double>(&c)->default_value(0.55), "c")
-      ("mcmc.K", po::value<::size_t>(&K)->default_value(300), "K")
-      ("mcmc.mini-batch-size",
+      ("mcmc.K,K", po::value<::size_t>(&K)->default_value(300), "K")
+      ("mcmc.mini-batch-size,m",
        po::value<::size_t>(&mini_batch_size)->default_value(0),
           "mini_batch_size")
-      ("mcmc.num-node-sample",
+      ("mcmc.num-node-sample,n",
        po::value<::size_t>(&num_node_sample)->default_value(0),
        "neighbor sample size")
       ("mcmc.strategy",
        po::value<std::string>(&strategy)->default_value("unspecified"),
        "sampling strategy")
-      ("mcmc.max-iteration",
+      ("mcmc.max-iteration,x",
        po::value<::size_t>(&max_iteration)->default_value(10000000),
        "max_iteration")
-      ("mcmc.interval",
+      ("mcmc.interval,i",
        po::value<::size_t>(&interval)->default_value(0),
        "perplexity interval")
       ("mcmc.num-updates",
        po::value<::size_t>(&num_updates)->default_value(1000),
        "num_updates")
-      ("mcmc.held-out-ratio",
+      ("mcmc.held-out-ratio,h",
        po::value<double>(&held_out_ratio)->default_value(0.0),
        "held_out_ratio")
       ("mcmc.seed",
@@ -177,10 +177,10 @@ class Options {
 
       // input options 
     desc_io.add_options()
-      ("mcmc.input.file",
+      ("mcmc.input.file,f",
        po::value<std::string>(&input_filename_)->default_value(""),
        "input file")
-      ("mcmc.input.class",
+      ("mcmc.input.class,c",
        po::value<std::string>(&input_class_)->default_value("relativity"),
        "input class")
       ("mcmc.input.contiguous",
@@ -194,7 +194,15 @@ class Options {
 #ifdef MCMC_ENABLE_DISTRIBUTED
     desc_distr.add_options()
       ("mcmc.dkv-type",
-       po::value<DKV::TYPE::TYPE>(&dkv_type)->multitoken()->default_value(DKV::TYPE::TYPE::FILE),
+       po::value<DKV::TYPE>(&dkv_type)->multitoken()->default_value(
+#ifdef MCMC_ENABLE_RDMA
+         DKV::TYPE::RDMA
+#elif defined MCMC_ENABLE_RAMCLOUD
+         DKV::TYPE::RAMCLOUD
+#else
+         DKV::TYPE::FILE
+#endif
+         ),
        "D-KV store type (file/ramcloud/rdma)")
       ("mcmc.max-pi-cache",
        po::value<::size_t>(&max_pi_cache_entries_)->default_value(0),
@@ -270,7 +278,7 @@ class Options {
 
   std::vector<std::string> remains;
 #ifdef MCMC_ENABLE_DISTRIBUTED
-  DKV::TYPE::TYPE dkv_type;
+  DKV::TYPE dkv_type;
   bool forced_master_is_worker;
   mutable ::size_t	max_pi_cache_entries_;
   bool REPLICATED_NETWORK;
