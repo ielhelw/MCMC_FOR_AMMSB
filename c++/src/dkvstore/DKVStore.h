@@ -41,49 +41,49 @@ enum TYPE {
 
 
 inline std::istream& operator>> (std::istream& in, TYPE& dkv_type) {
-	namespace po = boost::program_options;
+  namespace po = boost::program_options;
 
-	std::string token;
-	in >> token;
+  std::string token;
+  in >> token;
 
-	if (false) {
-	} else if (token == "file") {
-		dkv_type = DKV::TYPE::FILE;
+  if (false) {
+  } else if (token == "file") {
+    dkv_type = DKV::TYPE::FILE;
 #ifdef MCMC_ENABLE_RAMCLOUD
-	} else if (token == "ramcloud") {
-		dkv_type = DKV::TYPE::RAMCLOUD;
+  } else if (token == "ramcloud") {
+    dkv_type = DKV::TYPE::RAMCLOUD;
 #endif
 #ifdef MCMC_ENABLE_RDMA
-	} else if (token == "rdma") {
-		dkv_type = DKV::TYPE::RDMA;
+  } else if (token == "rdma") {
+    dkv_type = DKV::TYPE::RDMA;
 #endif
-	} else {
-		throw po::validation_error(po::validation_error::invalid_option_value,
-								   "Unknown D-KV type");
-	}
+  } else {
+    throw po::validation_error(po::validation_error::invalid_option_value,
+                               "Unknown D-KV type");
+  }
 
-	return in;
+  return in;
 }
 
 
 inline std::ostream& operator<< (std::ostream& s, TYPE& dkv_type) {
-	switch (dkv_type) {
-	case DKV::TYPE::FILE:
-		s << "file";
-		break;
+  switch (dkv_type) {
+    case DKV::TYPE::FILE:
+      s << "file";
+      break;
 #ifdef MCMC_ENABLE_RAMCLOUD
-	case DKV::TYPE::RAMCLOUD:
-		s << "ramcloud";
-		break;
+    case DKV::TYPE::RAMCLOUD:
+      s << "ramcloud";
+      break;
 #endif
 #ifdef MCMC_ENABLE_RDMA
-	case DKV::TYPE::RDMA:
-		s << "rdma";
-		break;
+    case DKV::TYPE::RDMA:
+      s << "rdma";
+      break;
 #endif
-	}
+  }
 
-	return s;
+  return s;
 }
 
 }   // namespace TYPE
@@ -167,6 +167,13 @@ class Buffer {
   ::size_t next_free_;
   ValueType *buffer_;
   bool managed_;
+};
+
+class DKVStoreOptions {
+ public:
+  virtual void Parse(const std::vector<std::string> &args) = 0;
+
+  virtual boost::program_options::options_description* GetMutable() = 0;
 };
 
 class DKVStoreInterface {

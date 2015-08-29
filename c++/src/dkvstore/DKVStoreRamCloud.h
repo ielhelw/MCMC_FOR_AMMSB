@@ -33,6 +33,33 @@
 namespace DKV {
 namespace DKVRamCloud {
 
+class DKVStoreRamCloudOptions : public DKVStoreOptions {
+ public:
+  DKVStoreRamCloudOptions();
+
+  void Parse(const std::vector<std::string> &args) override;
+  boost::program_options::options_description* GetMutable() override { return &desc_; }
+  
+  inline const std::string& table() const { return table_; }
+  inline const std::string& proto() const { return proto_; }
+  inline const std::string& host() const { return host_; }
+  inline const std::string& port() const { return port_; }
+
+ private:
+  std::string table_;
+  std::string proto_;
+  std::string host_;
+  std::string port_;
+  po::options_description desc_;
+
+  friend std::ostream& operator<<(std::ostream& out, const DKVStoreRamCloudOptions& opts);
+};
+
+inline std::ostream& operator<<(std::ostream& out, const DKVStoreRamCloudsOptions& opts) {
+  out << opts.desc_;
+  return out;
+}
+
 class DKVStoreRamCloud : public DKVStoreInterface {
 
  public:
@@ -59,6 +86,7 @@ class DKVStoreRamCloud : public DKVStoreInterface {
   virtual void PurgeKVRecords();
 
  private:
+  DKVStoreRamCloudOptions options_;
   RAMCloud::RamCloud *client_ = NULL;
   uint64_t table_id_;
   std::string table_ = "table1";

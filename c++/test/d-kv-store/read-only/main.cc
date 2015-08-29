@@ -76,6 +76,7 @@ class DKVWrapper {
     std::string dkv_type_string;
     po::options_description desc("D-KV store test program");
     desc.add_options()
+      ("help", "help")
       ("network,N",
        po::value< ::size_t>(&N)->default_value(1 << 20),
        "nodes in the network")
@@ -115,7 +116,7 @@ class DKVWrapper {
       exit(33);
     }
 
-    if (options_.help) {
+    if (vm.count("help") > 0) {
       std::cout << desc << std::endl;
       return;
     }
@@ -361,6 +362,7 @@ int main(int argc, char *argv[]) {
 	DKV::TYPE::TYPE dkv_type;
     po::options_description desc("D-KV store test program");
     desc.add_options()
+      ("help", "help")
       ("dkv.type",
        po::value<DKV::TYPE::TYPE>(&dkv_type)->multitoken()->default_value(DKV::TYPE::FILE),
        "D-KV store type (file/ramcloud/rdma)")
@@ -374,7 +376,7 @@ int main(int argc, char *argv[]) {
     // po::store(clp.run(), vm);
     po::notify(vm);
 
-    if (options.help) {
+    if (vm.count("help") > 0) {
         std::cout << desc << std::endl;
         return 0;
     }

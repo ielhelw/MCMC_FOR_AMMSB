@@ -194,7 +194,6 @@ class MCMCSamplerStochasticDistributed : public MCMCSamplerStochastic {
 
  protected:
   ::size_t	max_minibatch_nodes_;
-  ::size_t	max_pi_cache_entries_;
   ::size_t	max_minibatch_chunk_;
   ::size_t	max_perplexity_chunk_;
 
@@ -217,7 +216,6 @@ class MCMCSamplerStochasticDistributed : public MCMCSamplerStochastic {
   std::vector<Random::Random*> neighbor_sample_rng_;
   std::vector<Random::Random*> phi_update_rng_;
 
-  bool REPLICATED_NETWORK = false;
   LocalNetwork  local_network_;
 
   PerpData      perp_;

@@ -14,6 +14,26 @@ namespace po = boost::program_options;
 namespace DKV {
 namespace DKVRamCloud {
 
+DKVStoreRamCloudOptions::DKVStoreRamCloudOptions()
+  : table_("0.0.0.0"), proto_("infrc"),
+    host_("0.0.0.0"), port_("1100"),
+    desc_("Ramcloud options") {
+  desc_.add_options()
+    ("ramcloud.table,t", po::value<std::string>(&table_)->default_value("0.0.0.0"), "Coordinator table")
+    ("ramcloud.coordinator,c", po::value<std::string>(&host_)->default_value("0.0.0.0"), "Coordinator host")
+    ("ramcloud.port,p", po::value<std::string>(&port_)->default_value("1100"), "Coordinator port")
+    ("ramcloud.protocol,P", po::value<std::string>(&proto_)->default_value("infrc"), "Coordinator protocol") 
+    ;
+}
+
+void DKVStoreRamCloudOptions::Parse(const std::vector<std::string> &args) {
+  po::variables_map vm;
+  po::basic_command_line_parser<char> clp(args);
+  clp.options(desc_);
+  po::store(clp.run(), vm);
+  po::notify(vm);
+}
+
 DKVStoreRamCloud::~DKVStoreRamCloud() {
   delete client_;
 }
@@ -25,40 +45,23 @@ void DKVStoreRamCloud::Init(::size_t value_size, ::size_t total_values,
   ::DKV::DKVStoreInterface::Init(value_size, total_values,
                                  max_cache_capacity, max_write_capacity,
                                  args);
-  std::string table;
-  std::string proto;
-  std::string host;
-  std::string port;
-
   std::cerr << "DKVStoreRamCloud::Init args ";
   for (auto a : args) {
     std::cerr << a << " ";
   }
   std::cerr << std::endl;
 
-  po::options_description desc("Ramcloud options");
-  desc.add_options()
-    ("ramcloud.table,t", po::value<std::string>(&table)->default_value("0.0.0.0"), "Coordinator table")
-    ("ramcloud.coordinator,c", po::value<std::string>(&host)->default_value("0.0.0.0"), "Coordinator host")
-    ("ramcloud.port,p", po::value<std::string>(&port)->default_value("1100"), "Coordinator port")
-    ("ramcloud.protocol,P", po::value<std::string>(&proto)->default_value("infrc"), "Coordinator protocol") 
-    ;
-
-  po::variables_map vm;
-  po::basic_command_line_parser<char> clp(args);
-  clp.options(desc);
-  po::store(clp.run(), vm);
-  po::notify(vm);
+  options_.Parse(args);
 
   std::ostringstream coordinator;
-  coordinator << proto << ":host=" << host << ",port=" << port;
+  coordinator << options_.proto() << ":host=" << options_.host() << ",port=" << options_.port();
   std::cerr << "coordinator description: " << coordinator.str() << std::endl;
 
   client_ = new RAMCloud::RamCloud(coordinator.str().c_str());
   try {
-    table_id_ = client_->getTableId(table.c_str());
+    table_id_ = client_->getTableId(options_.table().c_str());
   } catch (RAMCloud::TableDoesntExistException& e) {
-    table_id_ = client_->createTable(table.c_str(), 1);
+    table_id_ = client_->createTable(options_.table().c_str(), 1);
   }
 }
 

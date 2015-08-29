@@ -20,6 +20,30 @@
 namespace DKV {
 namespace DKVFile {
 
+class DKVStoreFileOptions : public DKVStoreOptions {
+ public:
+  DKVStoreFileOptions();
+
+  void Parse(const std::vector<std::string> &args) override;
+  
+  boost::program_options::options_description* GetMutable() override { return &desc_; }
+  
+  inline const std::string& file_base() const { return file_base_; }
+  inline const std::string& dir() const { return dir_; }
+
+ private:
+  std::string file_base_;
+  std::string dir_;
+	boost::program_options::options_description desc_;
+
+  friend std::ostream& operator<<(std::ostream& out, const DKVStoreFileOptions& opts);
+};
+
+inline std::ostream& operator<<(std::ostream& out, const DKVStoreFileOptions& opts) {
+  out << opts.desc_;
+  return out;
+}
+
 class DKVStoreFile : public DKVStoreInterface {
 
  public:
@@ -53,8 +77,7 @@ class DKVStoreFile : public DKVStoreInterface {
   void CreateDirNameOf(const std::string &filename) const;
   void WriteKVRecord(const KeyType key, const ValueType *cached);
 
-  std::string file_base_;
-  std::string dir_;
+  DKVStoreFileOptions options_;
 };
 
 } // namespace DKVFile
