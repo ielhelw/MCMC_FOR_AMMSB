@@ -12,17 +12,9 @@
 #include <infiniband/verbs.h>
 #endif
 
-#ifndef __INTEL_COMPILER
-#pragma GCC diagnostic ignored "-Wunused-local-typedefs"
-#pragma GCC diagnostic ignored "-Wunused-variable"
-#pragma GCC diagnostic push
-#endif
-#include <boost/asio.hpp>
-#include <boost/program_options.hpp>
 #include <boost/lexical_cast.hpp>
-#ifndef __INTEL_COMPILER
-#pragma GCC diagnostic pop
-#endif
+#include <boost/program_options.hpp>
+#include <boost/asio.hpp>
 
 #include "mcmc/random.h"
 #include "mcmc/options.h"

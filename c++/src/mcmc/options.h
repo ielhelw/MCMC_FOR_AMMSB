@@ -7,14 +7,7 @@
 #include "mcmc/config.h"
 #include "mcmc/exception.h"
 
-#ifndef __INTEL_COMPILER
-#pragma GCC diagnostic ignored "-Wunused-local-typedefs"
-#pragma GCC diagnostic push
-#endif
 #include <boost/program_options.hpp>
-#ifndef __INTEL_COMPILER
-#pragma GCC diagnostic pop
-#endif
 
 namespace mcmc {
 

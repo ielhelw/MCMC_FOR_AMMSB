@@ -20,7 +20,6 @@
 #endif
 
 #ifndef __INTEL_COMPILER
-#pragma GCC diagnostic ignored "-Wunused-local-typedefs"
 #pragma GCC diagnostic ignored "-Wunused-variable"
 #pragma GCC diagnostic push
 #endif

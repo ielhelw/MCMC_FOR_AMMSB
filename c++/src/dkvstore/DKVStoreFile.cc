@@ -13,15 +13,8 @@
 #include <iostream>
 #include <fstream>
 
-#ifndef __INTEL_COMPILER
-#pragma GCC diagnostic ignored "-Wunused-local-typedefs"
-#pragma GCC diagnostic push
-#endif
 #include <boost/program_options.hpp>
 #include <boost/filesystem.hpp>
-#ifndef __INTEL_COMPILER
-#pragma GCC diagnostic pop
-#endif
 
 namespace DKV {
 namespace DKVFile {
