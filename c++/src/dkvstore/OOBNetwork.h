@@ -9,10 +9,6 @@
 #include <string>
 #include <iostream>
 
-#ifndef __INTEL_COMPILER
-#pragma GCC diagnostic ignored "-Wunused-variable"
-#pragma GCC diagnostic push
-#endif
 #include <boost/algorithm/string/classification.hpp>
 #include <boost/algorithm/string/split.hpp>
 #include <boost/algorithm/string/trim.hpp>
@@ -20,9 +16,6 @@
 #include <boost/asio.hpp>
 #include <boost/iostreams/device/file_descriptor.hpp>
 #include <boost/iostreams/stream.hpp>
-#ifndef __INTEL_COMPILER
-#pragma GCC diagnostic pop
-#endif
 
 
 namespace DKV {

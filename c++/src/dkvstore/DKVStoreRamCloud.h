@@ -15,18 +15,13 @@
 #ifndef APPS_MCMC_D_KV_STORE_RAMCLOUD_DKV_STORE_H__
 #define APPS_MCMC_D_KV_STORE_RAMCLOUD_DKV_STORE_H__
 
+#include <mcmc/config.h>
+
 #ifndef MCMC_ENABLE_RAMCLOUD
 #error "This file should not be included if the project is not setup to support RamCloud"
 #endif
 
-#ifndef __INTEL_COMPILER
-#pragma GCC diagnostic ignored "-Wunused-variable"
-#pragma GCC diagnostic push
-#endif
 #include <RamCloud.h>
-#ifndef __INTEL_COMPILER
-#pragma GCC diagnostic pop
-#endif
 
 #include "dkvstore/DKVStore.h"
 
@@ -38,7 +33,9 @@ class DKVStoreRamCloudOptions : public DKVStoreOptions {
   DKVStoreRamCloudOptions();
 
   void Parse(const std::vector<std::string> &args) override;
-  boost::program_options::options_description* GetMutable() override { return &desc_; }
+  boost::program_options::options_description* GetMutable() override {
+    return &desc_;
+  }
   
   inline const std::string& table() const { return table_; }
   inline const std::string& proto() const { return proto_; }
@@ -50,12 +47,14 @@ class DKVStoreRamCloudOptions : public DKVStoreOptions {
   std::string proto_;
   std::string host_;
   std::string port_;
-  po::options_description desc_;
+  boost::program_options::options_description desc_;
 
-  friend std::ostream& operator<<(std::ostream& out, const DKVStoreRamCloudOptions& opts);
+  friend std::ostream& operator<<(std::ostream& out,
+                                  const DKVStoreRamCloudOptions& opts);
 };
 
-inline std::ostream& operator<<(std::ostream& out, const DKVStoreRamCloudsOptions& opts) {
+inline std::ostream& operator<<(std::ostream& out,
+                                const DKVStoreRamCloudOptions& opts) {
   out << opts.desc_;
   return out;
 }
@@ -73,7 +72,7 @@ class DKVStoreRamCloud : public DKVStoreInterface {
                     const std::vector<std::string> &args);
 
   virtual void ReadKVRecords(std::vector<ValueType *> &cache,
-							 const std::vector<KeyType> &key,
+                             const std::vector<KeyType> &key,
                              RW_MODE::RWMode rw_mode);
 
   virtual void WriteKVRecords(const std::vector<KeyType> &key,

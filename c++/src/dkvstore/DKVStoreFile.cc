@@ -21,7 +21,7 @@ namespace DKVFile {
 
 DKVStoreFileOptions::DKVStoreFileOptions()
   : file_base_("pi"), desc_("D-KV File options") {
-	namespace po = boost::program_options;
+  namespace po = boost::program_options;
   desc_.add_options()
     ("dkv.file.filebase,b", po::value<std::string>(&file_base_)->default_value("pi"), "File base")
     ("dkv.file.dir,d", po::value<std::string>(&dir_)->default_value(""), "Directory")
@@ -29,7 +29,7 @@ DKVStoreFileOptions::DKVStoreFileOptions()
 }
 
 void DKVStoreFileOptions::Parse(const std::vector<std::string> &args) {
-	namespace po = boost::program_options;
+  namespace po = boost::program_options;
   po::variables_map vm;
   po::basic_command_line_parser<char> clp(args);
   clp.options(desc_);
