@@ -221,7 +221,7 @@ void MCMCSamplerStochastic::run() {
 
     // iterate through each node in the mini batch.
     t_nodes_in_mini_batch.start();
-    OrderedVertexSet nodes = nodes_in_batch(mini_batch);
+    MinibatchNodeSet nodes = nodes_in_batch(mini_batch);
     t_nodes_in_mini_batch.stop();
 // std::cerr << "mini_batch size " << mini_batch.size() << " num_node_sample "
 // << num_node_sample << std::endl;
@@ -590,12 +590,12 @@ NeighborSet MCMCSamplerStochastic::sample_neighbor_nodes(::size_t sample_size,
   return neighbor_nodes;
 }
 
-OrderedVertexSet MCMCSamplerStochastic::nodes_in_batch(
+MinibatchNodeSet MCMCSamplerStochastic::nodes_in_batch(
     const MinibatchSet &mini_batch) const {
   /**
   Get all the unique nodes in the mini_batch.
    */
-  OrderedVertexSet node_set;
+  MinibatchNodeSet node_set;
   for (auto edge = mini_batch.begin(); edge != mini_batch.end(); edge++) {
     node_set.insert(edge->first);
     node_set.insert(edge->second);

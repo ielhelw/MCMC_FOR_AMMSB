@@ -62,8 +62,6 @@ NetworkGraph::NetworkGraph(const std::string &filename, ::size_t progress) {
 }
 #endif
 
-Edge::Edge() {}
-
 Edge::Edge(std::istream &s) { (void)get(s); }
 
 std::ostream &Edge::put(std::ostream &s) const {

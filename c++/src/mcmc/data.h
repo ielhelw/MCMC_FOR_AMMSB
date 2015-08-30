@@ -63,7 +63,8 @@ typedef int32_t Vertex;
 class Edge {
  public:
   // google::sparse_hash_map requires me to have a default constructor
-  Edge();
+  // inline for performance
+  Edge() { }
 
   // inline for performance
   Edge(Vertex a, Vertex b) : first(a), second(b) {}
@@ -121,7 +122,7 @@ struct EdgeHash {
 #ifdef MCMC_GRAPH_COMPATIBILITY_MODE
 
 typedef std::unordered_set<Vertex> VertexSet;
-typedef std::set<Vertex> OrderedVertexSet;
+typedef std::set<Vertex> NodeSet;
 typedef std::set<Edge> MinibatchSet;
 
 typedef std::map<Edge, bool> EdgeMap;
@@ -130,7 +131,7 @@ typedef std::set<Edge> NetworkGraph;
 #else  // def MCMC_GRAPH_COMPATIBILITY_MODE
 
 typedef std::unordered_set<Vertex> VertexSet;
-typedef VertexSet OrderedVertexSet;
+typedef std::unordered_set<Vertex> NodeSet;
 typedef std::unordered_set<Edge, EdgeHash> MinibatchSet;
 
 #  ifndef MCMC_EDGESET_IS_ADJACENCY_LIST
@@ -323,6 +324,8 @@ class NetworkGraph {
 
 #endif  // def MCMC_GRAPH_COMPATIBILITY_MODE
 
+typedef NodeSet MinibatchNodeSet;
+typedef NodeSet NeighborSet;
 typedef std::list<Edge> EdgeList;
 
 

@@ -28,8 +28,6 @@ typedef std::unordered_map<Edge, int> EdgeMapZ;
 #endif
 #endif
 
-typedef OrderedVertexSet NeighborSet;
-
 class MCMCSamplerStochastic : public Learner {
  public:
   /**
@@ -91,7 +89,7 @@ class MCMCSamplerStochastic : public Learner {
   NeighborSet sample_neighbor_nodes(::size_t sample_size, Vertex nodeId,
                                     Random::Random *rnd);
 
-  OrderedVertexSet nodes_in_batch(const MinibatchSet &mini_batch) const;
+  MinibatchNodeSet nodes_in_batch(const MinibatchSet &mini_batch) const;
 
   // replicated in both mcmc_sampler_
   double a;

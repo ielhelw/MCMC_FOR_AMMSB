@@ -134,8 +134,6 @@ do { \
   print_mem_usage(std::cerr); \
 } while (0)
 
-typedef OrderedVertexSet NeighborSet;
-
 using ::mcmc::timer::Timer;
 
 
@@ -794,16 +792,18 @@ void MCMCSamplerStochasticDistributed::check_perplexity() {
     // TODO load pi for the held-out set to calculate perplexity
     double ppx_score = cal_perplexity_held_out();
     t_perplexity_.stop();
-    std::cout << std::fixed << std::setprecision(12) <<
-      "step count: " << step_count <<
-      " perplexity for hold out set: " << ppx_score << std::endl;
-    ppxs_held_out.push_back(ppx_score);
+    if (mpi_rank_ == mpi_master_) {
+      std::cout << std::fixed << std::setprecision(12) <<
+        "step count: " << step_count <<
+        " perplexity for hold out set: " << ppx_score << std::endl;
+      ppxs_held_out.push_back(ppx_score);
 
-    clock_t t2 = clock();
-    double diff = (double)t2 - (double)t_start_;
-    double seconds = diff / CLOCKS_PER_SEC;
-    timings_.push_back(seconds);
-    iterations.push_back(step_count);
+      clock_t t2 = clock();
+      double diff = (double)t2 - (double)t_start_;
+      double seconds = diff / CLOCKS_PER_SEC;
+      timings_.push_back(seconds);
+      iterations.push_back(step_count);
+    }
 #if 0
     if (ppx_score < 5.0) {
       stepsize_switch = true;
@@ -983,7 +983,7 @@ EdgeSample MCMCSamplerStochasticDistributed::deploy_mini_batch() {
 
     // iterate through each node in the mini batch.
     t_nodes_in_mini_batch_.start();
-    OrderedVertexSet nodes = nodes_in_batch(mini_batch);
+    MinibatchNodeSet nodes = nodes_in_batch(mini_batch);
     t_nodes_in_mini_batch_.stop();
     // std::cerr << "mini_batch size " << mini_batch.size() <<
     //   " num_node_sample " << num_node_sample << std::endl;
