@@ -21,6 +21,13 @@ Learner::Learner(const Options &args) : args_(args) {
 #ifdef MCMC_RANDOM_SYSTEM
   std::cerr << "MCMC_RANDOM_SYSTEM enabled" << std::endl;
 #endif
+  std::cerr << "Build type " <<
+#ifdef NDEBUG
+    "Release"
+#else
+    "Debug"
+#endif
+    << std::endl;
 
   // model priors
   alpha = args_.alpha;

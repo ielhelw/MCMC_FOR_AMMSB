@@ -380,6 +380,11 @@ class OOBNetwork {
   }
 
   void close() {
+    if (socket_ == nullptr) {
+      // Uninitialized
+      return;
+    }
+
     boost::system::error_code error;
 
     uint32_t opcode = static_cast<uint32_t>(OPCODE::QUIT);
