@@ -804,6 +804,8 @@ void MCMCSamplerStochasticDistributed::check_perplexity() {
       timings_.push_back(seconds);
       iterations.push_back(step_count);
     }
+
+    print_mem_usage(std::cout);
 #if 0
     if (ppx_score < 5.0) {
       stepsize_switch = true;

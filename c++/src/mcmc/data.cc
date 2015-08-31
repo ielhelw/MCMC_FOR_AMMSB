@@ -1,4 +1,7 @@
 #include "mcmc/data.h"
+
+#include <chrono>
+
 #include "mcmc/fileio.h"
 
 #include <fstream>
@@ -7,6 +10,10 @@ namespace mcmc {
 
 // FIXME: does not belong here, but in ? np? misc? stats?
 void print_mem_usage(std::ostream &s) {
+  using namespace std::chrono;
+
+  static auto t_start = system_clock::now();
+
   static const int64_t MEGA = 1 << 20;
   static int64_t pagesize = 0;
   static std::string proc_statm;
@@ -17,6 +24,9 @@ void print_mem_usage(std::ostream &s) {
     proc_statm = ss.str();
     s << "For memory query file " << proc_statm << std::endl;
   }
+
+  auto t_now = system_clock::now();
+  auto t_ms = duration_cast<milliseconds>(t_now - t_start).count();
 
   std::ifstream statm(proc_statm);
   if (!statm) {
@@ -33,7 +43,7 @@ void print_mem_usage(std::ostream &s) {
   ::size_t dirty;
   statm >> total >> resident >> shared >> text >> data >> library >> dirty;
 
-  s << "Memory usage: total " << ((total * pagesize) / MEGA) << "MB "
+  s << std::setprecision(3) << (t_ms / 1000.0) << " Memory usage: total " << ((total * pagesize) / MEGA) << "MB "
     << "resident " << ((resident * pagesize) / MEGA) << "MB " << std::endl;
 }
 
