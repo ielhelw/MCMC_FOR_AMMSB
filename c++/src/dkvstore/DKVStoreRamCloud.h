@@ -21,7 +21,14 @@
 #error "This file should not be included if the project is not setup to support RamCloud"
 #endif
 
+#ifndef __INTEL_COMPILER
+#pragma GCC diagnostic ignored "-Wunused-variable"
+#pragma GCC diagnostic push
+#endif
 #include <RamCloud.h>
+#ifndef __INTEL_COMPILER
+#pragma GCC diagnostic pop
+#endif
 
 #include "dkvstore/DKVStore.h"
 
