@@ -212,7 +212,6 @@ MCMCSamplerStochasticDistributed::MCMCSamplerStochasticDistributed(
   t_load_pi_minibatch_     = Timer("      load minibatch pi");
   t_load_pi_neighbor_      = Timer("      load neighbor pi");
   t_update_phi_            = Timer("      update_phi");
-  t_update_phi_in_         = Timer("      update_phi in graph");
   t_barrier_phi_           = Timer("    barrier to update phi");
   t_update_pi_             = Timer("    update_pi");
   t_store_pi_minibatch_    = Timer("      store minibatch pi");
@@ -670,7 +669,6 @@ void MCMCSamplerStochasticDistributed::run() {
   std::cout << t_load_pi_minibatch_ << std::endl;
   std::cout << t_load_pi_neighbor_ << std::endl;
   std::cout << t_update_phi_ << std::endl;
-  std::cout << t_update_phi_in_ << std::endl;
   std::cout << t_barrier_phi_ << std::endl;
   std::cout << t_update_pi_ << std::endl;
   std::cout << t_store_pi_minibatch_ << std::endl;
@@ -1187,9 +1185,6 @@ void MCMCSamplerStochasticDistributed::update_phi_node(
     int32_t neighbor = neighbors[ix];
     if (i != neighbor) {
       int y_ab = 0;		// observation
-      if (omp_get_max_threads() == 1) {
-        t_update_phi_in_.start();
-      }
       if (args_.REPLICATED_NETWORK) {
         Edge edge(std::min(i, neighbor), std::max(i, neighbor));
         if (edge.in(network.get_linked_edges())) {
@@ -1200,9 +1195,6 @@ void MCMCSamplerStochasticDistributed::update_phi_node(
         if (local_network_.find(edge)) {
           y_ab = 1;
         }
-      }
-      if (omp_get_max_threads() == 1) {
-        t_update_phi_in_.stop();
       }
 
       std::vector<double> probs(K);

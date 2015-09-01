@@ -28,6 +28,15 @@ Learner::Learner(const Options &args) : args_(args) {
     "Debug"
 #endif
     << std::endl;
+  std::cerr << "Graph implementation: " <<
+#ifdef MCMC_GRAPH_COMPATIBILITY_MODE
+    "compatibility mode"
+#elif defined MCMC_EDGESET_IS_ADJACENCY_LIST
+    "adjacency list (google sparseset)"
+#else
+    "default sequential"
+#endif
+    << std::endl;
 
   // model priors
   alpha = args_.alpha;

@@ -228,7 +228,6 @@ class MCMCSamplerStochasticDistributed : public MCMCSamplerStochastic {
   Timer         t_nodes_in_mini_batch_;
   Timer         t_sample_neighbor_nodes_;
   Timer         t_update_phi_;
-  Timer         t_update_phi_in_;
   Timer         t_load_pi_minibatch_;
   Timer         t_load_pi_neighbor_;
   Timer         t_barrier_phi_;

@@ -165,11 +165,12 @@ void MCMCSamplerStochastic::run() {
       timings.push_back(seconds);
       iterations.push_back(step_count);
 #if 0
-				if (ppx_score < 5.0) {
-					stepsize_switch = true;
-					//print "switching to smaller step size mode!"
-				}
+      if (ppx_score < 5.0) {
+        stepsize_switch = true;
+        //print "switching to smaller step size mode!"
+      }
 #endif
+      print_mem_usage(std::cout);
     }
 
     // write into file

@@ -43,7 +43,7 @@ void print_mem_usage(std::ostream &s) {
   ::size_t dirty;
   statm >> total >> resident >> shared >> text >> data >> library >> dirty;
 
-  s << std::setprecision(3) << (t_ms / 1000.0) << " Memory usage: total " << ((total * pagesize) / MEGA) << "MB "
+  s << std::fixed << std::setprecision(3) << (t_ms / 1000.0) << " Memory usage: total " << ((total * pagesize) / MEGA) << "MB "
     << "resident " << ((resident * pagesize) / MEGA) << "MB " << std::endl;
 }
 
