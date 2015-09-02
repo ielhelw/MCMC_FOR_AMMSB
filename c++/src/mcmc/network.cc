@@ -11,7 +11,7 @@ Network::Network(const NetworkInfo& info)
       num_total_edges(info.E),
       held_out_ratio_(info.held_out_ratio),
       held_out_size_(info.held_out_size) {
-  fan_out_cumul_distro = std::vector<::size_t>(1, info.max_fan_out);
+  fan_out_cumul_distro = std::vector< ::size_t>(1, info.max_fan_out);
   assert(N != 0);
 }
 
@@ -325,7 +325,7 @@ void Network::init_train_link_map() {
 void Network::adjacency_list_init(int random_seed, int world_rank) {
   cumulative_edges.resize(N);
 
-  if (linked_edges->edges_at_size() != static_cast<::size_t>(N)) {
+  if (linked_edges->edges_at_size() != static_cast< ::size_t>(N)) {
     throw MCMCException("AdjList size and/or cumul size corrupt");
   }
 
@@ -364,7 +364,7 @@ void Network::sample_random_edges(const NetworkGraph* linked_edges, ::size_t p,
   // duplicates. Trust on unordered_set to filter out the duplicates. We need to
   // iterate until the requested number of edges has been inserted though.
   while (collector.size() < p) {
-    std::vector<std::unordered_set<Edge, EdgeHash>> thread_edges(omp_get_max_threads());
+    std::vector<std::unordered_set<Edge, EdgeHash> > thread_edges(omp_get_max_threads());
 
 #pragma omp parallel for
     for (::size_t i = 0; i < p - collector.size(); ++i) {
@@ -597,7 +597,7 @@ void Network::calc_max_fan_out() {
 #endif
 
   std::sort(fan_out_cumul_distro.begin(), fan_out_cumul_distro.end(),
-            descending<::size_t>);
+            descending< ::size_t>);
   std::partial_sum(fan_out_cumul_distro.begin(), fan_out_cumul_distro.end(),
                    fan_out_cumul_distro.begin());
 

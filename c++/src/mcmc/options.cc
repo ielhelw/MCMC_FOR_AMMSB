@@ -27,30 +27,30 @@ namespace mcmc {
         assert(*arg >= 'A' && *arg <= 'F');
         a = *arg - 'A' + 10;
       }
-      if ((std::numeric_limits<::size_t>::max() - a) / base < n) {
+      if ((std::numeric_limits< ::size_t>::max() - a) / base < n) {
         throw mcmc::NumberFormatException("Overflow in parse_size_t");
       }
       n = a + n * base;
     } else if (base <= 10 && isdigit(*arg)) {
       int a = *arg - '0';
-      if ((std::numeric_limits<::size_t>::max() - a) / base < n) {
+      if ((std::numeric_limits< ::size_t>::max() - a) / base < n) {
         throw mcmc::NumberFormatException("Overflow in parse_size_t");
       }
       n = a + n * base;
     } else if (strcasecmp(arg, "g") == 0 || strcasecmp(arg, "gb") == 0) {
-      if ((std::numeric_limits<::size_t>::max() >> 30) < n) {
+      if ((std::numeric_limits< ::size_t>::max() >> 30) < n) {
         throw mcmc::NumberFormatException("Overflow in parse_size_t");
       }
       n *= 1ULL << 30;
       break;
     } else if (strcasecmp(arg, "m") == 0 || strcasecmp(arg, "mb") == 0) {
-      if ((std::numeric_limits<::size_t>::max() >> 20) < n) {
+      if ((std::numeric_limits< ::size_t>::max() >> 20) < n) {
         throw mcmc::NumberFormatException("Overflow in parse_size_t");
       }
       n *= 1ULL << 20;
       break;
     } else if (strcasecmp(arg, "k") == 0 || strcasecmp(arg, "kb") == 0) {
-      if ((std::numeric_limits<::size_t>::max() >> 10) < n) {
+      if ((std::numeric_limits< ::size_t>::max() >> 10) < n) {
         throw mcmc::NumberFormatException("Overflow in parse_size_t");
       }
       n *= 1ULL << 10;

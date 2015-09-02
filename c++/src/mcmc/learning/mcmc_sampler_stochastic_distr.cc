@@ -313,7 +313,7 @@ void MCMCSamplerStochasticDistributed::BroadcastHeldOut() {
       for (::size_t i = 0; i < surplus; ++i) {
         count[i] = held_out_marshall_size + 1;
       }
-      for (::size_t i = surplus; i < static_cast<::size_t>(mpi_size_); ++i) {
+      for (::size_t i = surplus; i < static_cast< ::size_t>(mpi_size_); ++i) {
         count[i] = held_out_marshall_size;
       }
     }
@@ -582,7 +582,7 @@ void MCMCSamplerStochasticDistributed::run() {
 
   using namespace std::chrono;
 
-  std::vector<std::vector<double>> phi_node(max_minibatch_nodes_,
+  std::vector<std::vector<double> > phi_node(max_minibatch_nodes_,
                                             std::vector<double>(K + 1));
 
   int r;
@@ -836,7 +836,7 @@ void MCMCSamplerStochasticDistributed::check_perplexity() {
 
 
 void MCMCSamplerStochasticDistributed::ScatterSubGraph(
-    const std::vector<std::vector<int32_t>> &subminibatch) {
+    const std::vector<std::vector<int32_t> > &subminibatch) {
   std::vector<int32_t> set_size(nodes_.size());
   std::vector<Vertex> flat_subgraph;
   int r;
@@ -958,7 +958,7 @@ void MCMCSamplerStochasticDistributed::ScatterSubGraph(
 
 
 EdgeSample MCMCSamplerStochasticDistributed::deploy_mini_batch() {
-  std::vector<std::vector<int>> subminibatch;
+  std::vector<std::vector<int> > subminibatch;
   std::vector<int32_t> minibatch_chunk(mpi_size_);      // FIXME: lift to class
   std::vector<int32_t> scatter_minibatch;               // FIXME: lift to class
   std::vector<int32_t> scatter_displs(mpi_size_);       // FIXME: lift to class
@@ -1080,7 +1080,7 @@ EdgeSample MCMCSamplerStochasticDistributed::deploy_mini_batch() {
 
 
 void MCMCSamplerStochasticDistributed::update_phi(
-    std::vector<std::vector<double>>* phi_node) {
+    std::vector<std::vector<double> >* phi_node) {
   std::vector<double*> pi_node;
   std::vector<double*> pi_neighbor;
   std::vector<int32_t> flat_neighbors;

@@ -211,9 +211,9 @@ class Network {
 #endif
     ::size_t chunk =
         (a->size() + omp_get_max_threads() - 1) / omp_get_max_threads();
-    std::vector<::size_t> chunk_sum(omp_get_max_threads());
+    std::vector< ::size_t> chunk_sum(omp_get_max_threads());
 #pragma omp parallel for
-    for (::size_t t = 0; t < static_cast<::size_t>(omp_get_max_threads());
+    for (::size_t t = 0; t < static_cast< ::size_t>(omp_get_max_threads());
          ++t) {
       for (::size_t i = chunk * t + 1; i < std::min(a->size(), chunk * (t + 1));
            ++i) {
@@ -221,12 +221,12 @@ class Network {
       }
     }
     chunk_sum[0] = 0;
-    for (::size_t t = 1; t < static_cast<::size_t>(omp_get_max_threads());
+    for (::size_t t = 1; t < static_cast< ::size_t>(omp_get_max_threads());
          ++t) {
       chunk_sum[t] = chunk_sum[t - 1] + (*a)[t * chunk - 1];
     }
 #pragma omp parallel for
-    for (::size_t t = 0; t < static_cast<::size_t>(omp_get_max_threads());
+    for (::size_t t = 0; t < static_cast< ::size_t>(omp_get_max_threads());
          ++t) {
       for (::size_t i = chunk * t; i < std::min(a->size(), chunk * (t + 1));
            ++i) {
@@ -307,7 +307,7 @@ class Network {
   ::size_t held_out_size_;
 
 #ifdef MCMC_EDGESET_IS_ADJACENCY_LIST
-  std::vector<::size_t> cumulative_edges;
+  std::vector< ::size_t> cumulative_edges;
   std::vector<Random::Random*> thread_random;
 #endif
 
@@ -327,7 +327,7 @@ class Network {
   EdgeMap held_out_map;  // store all held out edges
   EdgeMap test_map;      // store all test edges
 
-  std::vector<::size_t> fan_out_cumul_distro;
+  std::vector< ::size_t> fan_out_cumul_distro;
   ::size_t progress = 0;
 
   SourceAwareRandom *rng_;

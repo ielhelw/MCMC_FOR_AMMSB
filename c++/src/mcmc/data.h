@@ -187,7 +187,7 @@ class NetworkGraph {
       ++edge_iterator_;
       if (edge_iterator_ == outer_.edges_at_[v_].end()) {
         ++v_;
-        if (static_cast<::size_t>(v_) != outer_.edges_at_.size()) {
+        if (static_cast< ::size_t>(v_) != outer_.edges_at_.size()) {
           edge_iterator_ = outer_.edges_at_[v_].begin();
         }
       }
@@ -198,7 +198,7 @@ class NetworkGraph {
       if (v_ != other.v_) {
         return true;
       }
-      if (static_cast<::size_t>(v_) == outer_.edges_at_.size()) {
+      if (static_cast< ::size_t>(v_) == outer_.edges_at_.size()) {
         return false;
       }
       return edge_iterator_ != other.edge_iterator_;
@@ -260,7 +260,7 @@ class NetworkGraph {
 #endif
 
   iterator find(const key_type& k) {
-    if (static_cast<::size_t>(k.first) >= edges_at_.size()) {
+    if (static_cast< ::size_t>(k.first) >= edges_at_.size()) {
       return end();
     }
 
@@ -272,7 +272,7 @@ class NetworkGraph {
   }
 
   const_iterator find(const key_type& k) const {
-    if (static_cast<::size_t>(k.first) >= edges_at_.size()) {
+    if (static_cast< ::size_t>(k.first) >= edges_at_.size()) {
       return end();
     }
 
@@ -284,7 +284,7 @@ class NetworkGraph {
   }
 
   std::pair<iterator, bool> insert(const value_type& val) {
-    ::size_t max_v = static_cast<::size_t>(std::max(val.first, val.second));
+    ::size_t max_v = static_cast< ::size_t>(std::max(val.first, val.second));
     if (max_v >= edges_at_.size()) {
       edges_at_.resize(max_v + 1);
     }

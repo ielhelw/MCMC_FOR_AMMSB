@@ -154,7 +154,7 @@ class Learner {
   ::size_t N;
 
   std::vector<double> beta;
-  std::vector<std::vector<double>> pi;
+  std::vector<std::vector<double> > pi;
 
   ::size_t mini_batch_size;
   double link_ratio;

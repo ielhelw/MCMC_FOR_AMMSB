@@ -176,7 +176,7 @@ class OOBNetworkServer {
       }
     }
 
-    std::vector<std::vector<PeerInfo>> peer_oob(oob_.num_hosts_,
+    std::vector<std::vector<PeerInfo> > peer_oob(oob_.num_hosts_,
                                                 std::vector<PeerInfo>(oob_.num_hosts_));
     for (::size_t i = 0; i < oob_.num_hosts_; ++i) {
       boost::system::error_code error;

@@ -367,7 +367,7 @@ uint64_t DKVStoreRDMA::OffsetOf(DKVStoreRDMA::KeyType key) {
 
 
 void DKVStoreRDMA::post_batches(
-    const std::vector<std::vector<PostDescriptor<DKVStoreRDMA::ValueType>>>
+    const std::vector<std::vector<PostDescriptor<DKVStoreRDMA::ValueType> > >
       &post_descriptor,
     const std::vector< ::size_t> &posts,
     uint32_t local_key,

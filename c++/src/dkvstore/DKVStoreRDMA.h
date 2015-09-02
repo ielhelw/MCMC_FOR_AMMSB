@@ -336,7 +336,7 @@ class DKVStoreRDMA : public DKVStoreInterface {
 
   ::size_t PollForCookies(::size_t current, ::size_t at_least, BatchTimer &timer);
 
-  void post_batches(const std::vector<std::vector<PostDescriptor<ValueType>>> &post_descriptor,
+  void post_batches(const std::vector<std::vector<PostDescriptor<ValueType> > > &post_descriptor,
                     const std::vector< ::size_t> &posts,
                     uint32_t local_key,
                     enum ibv_wr_opcode opcode,
@@ -349,7 +349,7 @@ class DKVStoreRDMA : public DKVStoreInterface {
 
   std::vector< ::ibv_wc> wc_;
 
-  std::vector<std::vector<PostDescriptor<ValueType>>> post_descriptor_;
+  std::vector<std::vector<PostDescriptor<ValueType> > > post_descriptor_;
   std::vector< ::size_t> posts_;
 
   bool include_master_;	// if unset, the KV area is distributed over all nodes

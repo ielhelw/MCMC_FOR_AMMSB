@@ -8,14 +8,24 @@ int main(int argc, char *argv[]) {
   namespace po = boost::program_options;
   try {
     std::cout << "Command line: ";
-    for (int i = 0; i < argc; i++) {
+    for (int i = 0; i < argc; ++i) {
       std::cout << argv[i] << " ";
     }
     std::cout << std::endl;
 
+#ifdef MCMC_ENABLE_DISTRIBUTED
+    bool do_distributed = true;
+    bool do_sequential = false;
+#else
+    bool do_sequential = true;
+#endif
+
     po::options_description desc("Commandline options");
     desc.add_options()
       ("help", "help")
+#ifdef MCMC_ENABLE_DISTRIBUTED
+      ("sequential", po::bool_switch(&do_sequential), "sequential run")
+#endif
     ;
     po::variables_map vm;
     po::parsed_options parsed = po::command_line_parser(argc, argv)
@@ -44,18 +54,26 @@ int main(int argc, char *argv[]) {
     args.Parse(remains);
 
 #ifdef MCMC_ENABLE_DISTRIBUTED
-      // Parameter set for Python comparison:
-      // -d -f ../../../../datasets/netscience.txt -c relativity -K 15 -m 147 -n 10 --mcmc.alpha 0.01 --mcmc.epsilon 0.0000001 --mcmc.held-out-ratio 0.009999999776
+    if (do_sequential) {
+      do_distributed = false;
+    }
+
+    if (do_distributed) {
       std::cout << "start MCMC stochastical distributed " << std::endl;
       MCMCSamplerStochasticDistributed mcmcSampler(args);
-#else
+      mcmcSampler.init();
+      mcmcSampler.run();
+    }
+#endif
+
+    if (do_sequential) {
       // Parameter set for Python comparison:
       // -s -f ../../../../datasets/netscience.txt -c relativity -K 15 -m 147 -n 10 --mcmc.alpha 0.01 --mcmc.epsilon 0.0000001 --mcmc.held-out-ratio 0.009999999776 -i 1
       std::cout << "start MCMC stochastical" << std::endl;
       MCMCSamplerStochastic mcmcSampler(args);
-#endif
       mcmcSampler.init();
       mcmcSampler.run();
+    }
 
     return 0;
   } catch (mcmc::IOException &e) {

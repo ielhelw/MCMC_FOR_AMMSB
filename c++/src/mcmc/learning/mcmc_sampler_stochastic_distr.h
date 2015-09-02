@@ -155,12 +155,12 @@ class MCMCSamplerStochasticDistributed : public MCMCSamplerStochastic {
 
   void check_perplexity();
 
-  void ScatterSubGraph(const std::vector<std::vector<int32_t>> &subminibatch);
+  void ScatterSubGraph(const std::vector<std::vector<int32_t> > &subminibatch);
 
   EdgeSample deploy_mini_batch();
 
 
-  void update_phi(std::vector<std::vector<double>>* phi_node);
+  void update_phi(std::vector<std::vector<double> >* phi_node);
 
 
   void update_phi_node(::size_t index, Vertex i, const double* pi_node,

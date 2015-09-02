@@ -4,7 +4,7 @@ SET(CMAKE_MODULE_PATH "${PROJECT_SOURCE_DIR}/cmake")
 
 SET(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++11")
 SET(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wall -Werror")
-SET(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-unused-local-typedefs")
+# Comditional to GCC SET(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-unused-local-typedefs")
 
 set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -O0 -g3")
 set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -g")
@@ -33,7 +33,8 @@ endif()
 ######################################
 ## CONDITIONAL OPTION ON DISTR MODE ##
 ######################################
-SET(MCMC_ENABLE_OPENMP ${MCMC_BUILD_MODE_DISTR} CACHE BOOL "Enable the use of OpenMP" FORCE)
+# SET(MCMC_ENABLE_OPENMP ${MCMC_BUILD_MODE_DISTR} CACHE BOOL "Enable the use of OpenMP" FORCE)
+SET(MCMC_ENABLE_OPENMP ${MCMC_BUILD_MODE_DISTR} CACHE BOOL "Enable the use of OpenMP")
 if (MCMC_ENABLE_OPENMP)
   find_package(OpenMP)
   if (OPENMP_FOUND)

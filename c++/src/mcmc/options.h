@@ -99,7 +99,7 @@ namespace program_options {
 #define VALIDATE_SPECIALIZE(T)                                             \
   template <>                                                              \
   inline void validate<T, char>(                                           \
-      boost::any & v, const std::vector<std::basic_string<char>> &xs, T *, \
+      boost::any & v, const std::vector<std::basic_string<char> > &xs, T *, \
       long) {                                                              \
     validators::check_first_occurrence(v);                                 \
     std::basic_string<char> s(validators::get_single_string(xs));          \
@@ -148,24 +148,24 @@ class Options {
       ("mcmc.a", po::value<double>(&a)->default_value(0.01), "a")
       ("mcmc.b", po::value<double>(&b)->default_value(1024), "b")
       ("mcmc.c", po::value<double>(&c)->default_value(0.55), "c")
-      ("mcmc.K,K", po::value<::size_t>(&K)->default_value(300), "K")
+      ("mcmc.K,K", po::value< ::size_t>(&K)->default_value(300), "K")
       ("mcmc.mini-batch-size,m",
-       po::value<::size_t>(&mini_batch_size)->default_value(0),
+       po::value< ::size_t>(&mini_batch_size)->default_value(0),
           "mini_batch_size")
       ("mcmc.num-node-sample,n",
-       po::value<::size_t>(&num_node_sample)->default_value(0),
+       po::value< ::size_t>(&num_node_sample)->default_value(0),
        "neighbor sample size")
       ("mcmc.strategy",
        po::value<std::string>(&strategy)->default_value("unspecified"),
        "sampling strategy")
       ("mcmc.max-iteration,x",
-       po::value<::size_t>(&max_iteration)->default_value(10000000),
+       po::value< ::size_t>(&max_iteration)->default_value(10000000),
        "max_iteration")
       ("mcmc.interval,i",
-       po::value<::size_t>(&interval)->default_value(0),
+       po::value< ::size_t>(&interval)->default_value(0),
        "perplexity interval")
       ("mcmc.num-updates",
-       po::value<::size_t>(&num_updates)->default_value(1000),
+       po::value< ::size_t>(&num_updates)->default_value(1000),
        "num_updates")
       ("mcmc.held-out-ratio,h",
        po::value<double>(&held_out_ratio)->default_value(0.0),
@@ -205,7 +205,7 @@ class Options {
          ),
        "D-KV store type (file/ramcloud/rdma)")
       ("mcmc.max-pi-cache",
-       po::value<::size_t>(&max_pi_cache_entries_)->default_value(0),
+       po::value< ::size_t>(&max_pi_cache_entries_)->default_value(0),
        "minibatch chunk size")
       ("mcmc.master_is_worker",
        po::bool_switch(&forced_master_is_worker)->default_value(false),

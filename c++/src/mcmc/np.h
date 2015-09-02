@@ -61,8 +61,8 @@ void normalize(std::vector<T> *r, const std::vector<T> &a) {
  * r = a / np.sum(a, 1)[:,np:newaxis]
  */
 template <typename T>
-void row_normalize(std::vector<std::vector<T>> *r,
-                   const std::vector<std::vector<T>> &a) {
+void row_normalize(std::vector<std::vector<T> > *r,
+                   const std::vector<std::vector<T> > &a) {
   // No: requires normalize to return its result. What about for_each w/ 2
   // arguments?
   // std::transform(a.begin(), a.end(), r->begin(), normalize<T>);
@@ -92,8 +92,8 @@ std::vector<int> xrange(int from, int upto);
 template <typename T>
 static ::ssize_t find_le_linear(
     const std::vector<T> &p, T location,
-    ::size_t up = std::numeric_limits<::size_t>::max(), ::size_t lo = 0) {
-  if (up == std::numeric_limits<::size_t>::max()) {
+    ::size_t up = std::numeric_limits< ::size_t>::max(), ::size_t lo = 0) {
+  if (up == std::numeric_limits< ::size_t>::max()) {
     up = p.size();
   }
 
@@ -112,15 +112,15 @@ static ::ssize_t find_le_linear(
 
 template <typename T>
 static ::ssize_t find_le(const std::vector<T> &p, T location,
-                         ::size_t up = std::numeric_limits<::size_t>::max(),
+                         ::size_t up = std::numeric_limits< ::size_t>::max(),
                          ::size_t lo = 0) {
 #ifdef MCMC_EFFICIENCY_COMPATIBILITY_MODE
-  static const ::size_t LINEAR_LIMIT = std::numeric_limits<::size_t>::max();
+  static const ::size_t LINEAR_LIMIT = std::numeric_limits< ::size_t>::max();
 #else
   static const ::size_t LINEAR_LIMIT = 30;
 #endif
 
-  if (up == std::numeric_limits<::size_t>::max()) {
+  if (up == std::numeric_limits< ::size_t>::max()) {
     up = p.size();
   }
 
