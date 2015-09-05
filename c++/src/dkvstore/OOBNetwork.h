@@ -43,6 +43,7 @@ class OOB {
  public:
   OOB(const std::string &server = "", uint32_t port = 0, ::size_t num_hosts = 0)
       : server_(server), port_(port), num_hosts_(num_hosts) {
+    hostname_ = boost::asio::ip::host_name();
     if (port_ == 0) {
       port_ = 0x3eda;
     }
@@ -54,7 +55,6 @@ class OOB {
       auto hostnames = get_prun_env();
       num_hosts_ = hostnames.size();
     }
-    hostname_ = boost::asio::ip::host_name();
   }
 
   static std::string getenv_str(const std::string& name) {
@@ -67,7 +67,7 @@ class OOB {
     return s;
   }
 
-  static std::vector<std::string> get_prun_env() {
+  std::vector<std::string> get_prun_env() const {
     std::string hosts;
     hosts = getenv_str("PRUN_PE_HOSTS");
     if (hosts == "") {
@@ -95,8 +95,8 @@ class OOB {
     if (hosts == "") {
       std::cerr << "Option rdma.oob-server not set, " <<
         "no PRUN/SLURM environment. " <<
-        "Assume OOB server is localhost" << std::endl;
-      hosts = "localhost";
+        "Assume OOB server is me" << std::endl;
+      hosts = hostname_;
     }
     hosts = boost::trim_copy(hosts);
     std::vector<std::string> hostnames;
