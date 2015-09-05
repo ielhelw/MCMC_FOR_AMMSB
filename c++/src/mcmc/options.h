@@ -140,14 +140,14 @@ class Options {
     ;
     desc_mcmc.add_options()
       // mcmc options
-      ("mcmc.alpha", po::value<double>(&alpha)->default_value(0.01), "alpha")
+      ("mcmc.alpha", po::value<double>(&alpha)->default_value(0.0), "alpha")
       ("mcmc.eta0", po::value<double>(&eta0)->default_value(1.0), "eta0")
       ("mcmc.eta1", po::value<double>(&eta1)->default_value(1.0), "eta1")
       ("mcmc.epsilon",
        po::value<double>(&epsilon)->default_value(0.0000001), "epsilon")
-      ("mcmc.a", po::value<double>(&a)->default_value(0.01), "a")
+      ("mcmc.a", po::value<double>(&a)->default_value(0.00), "a")
       ("mcmc.b", po::value<double>(&b)->default_value(1024), "b")
-      ("mcmc.c", po::value<double>(&c)->default_value(0.55), "c")
+      ("mcmc.c", po::value<double>(&c)->default_value(0.5), "c")
       ("mcmc.K,K", po::value< ::size_t>(&K)->default_value(300), "K")
       ("mcmc.mini-batch-size,m",
        po::value< ::size_t>(&mini_batch_size)->default_value(0),
@@ -216,6 +216,13 @@ class Options {
     ;
     desc_all.add(desc_distr);
 #endif
+
+    if (a == 0.0) {
+      a = std::pow(b, -c);
+    }
+    if (alpha == 0.0) {
+      alpha = 1.0 / K;
+    }
   }
 
   Options(int argc, char** argv) : Options() {

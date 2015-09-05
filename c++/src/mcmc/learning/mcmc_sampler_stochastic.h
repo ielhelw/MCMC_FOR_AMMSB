@@ -91,6 +91,11 @@ class MCMCSamplerStochastic : public Learner {
 
   MinibatchNodeSet nodes_in_batch(const MinibatchSet &mini_batch) const;
 
+  double get_eps_t() {
+    return a * std::pow(1 + step_count / b, -c);	// step size
+    // return std::pow(1024+step_count, -0.5);
+  }
+
   // replicated in both mcmc_sampler_
   double a;
   double b;

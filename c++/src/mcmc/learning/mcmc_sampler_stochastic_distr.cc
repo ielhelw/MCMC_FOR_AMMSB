@@ -1085,8 +1085,7 @@ void MCMCSamplerStochasticDistributed::update_phi(
   std::vector<double*> pi_neighbor;
   std::vector<int32_t> flat_neighbors;
 
-  double eps_t  = a * std::pow(1 + step_count / b, -c);	// step size
-  // double eps_t = std::pow(1024+step_count, -0.5);
+  double eps_t = get_eps_t();
 
   for (::size_t chunk_start = 0;
        chunk_start < nodes_.size();
@@ -1273,8 +1272,7 @@ void MCMCSamplerStochasticDistributed::update_beta(
   t_load_pi_beta_.stop();
 
   // update gamma, only update node in the grad
-  double eps_t = a * std::pow(1.0 + step_count / b, -c);
-  //double eps_t = std::pow(1024+step_count, -0.5);
+  double eps_t = get_eps_t();
   t_beta_calc_grads_.start();
   std::vector<Edge> v_mini_batch(mini_batch.begin(), mini_batch.end());
 #pragma omp parallel for // num_threads (12)

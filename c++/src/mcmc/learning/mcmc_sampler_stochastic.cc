@@ -303,8 +303,7 @@ void MCMCSamplerStochastic::update_beta(const MinibatchSet &mini_batch,
                  np::sum<double>);
 
   // update gamma, only update node in the grad
-  double eps_t = a * std::pow(1.0 + step_count / b, -c);
-  // double eps_t = std::pow(1024+step_count, -0.5);
+  double eps_t = get_eps_t();
   for (auto edge = mini_batch.begin(); edge != mini_batch.end(); edge++) {
     int y = 0;
     if (edge->in(network.get_linked_edges())) {
@@ -403,8 +402,7 @@ void MCMCSamplerStochastic::update_phi(Vertex i, const NeighborSet &neighbors
 #endif
                                        ) {
 #ifdef MCMC_EFFICIENCY_COMPATIBILITY_MODE
-  double eps_t = a * std::pow(1 + step_count / b, -c);  // step size
-// double eps_t = std::pow(1024+step_count, -0.5);
+  double eps_t = get_eps_t();
 #endif
 
   if (false) {
