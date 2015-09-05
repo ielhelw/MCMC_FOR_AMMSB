@@ -2,7 +2,6 @@
 #define MCMC_TIMER_H__
 
 #include <iostream>
-#include <iomanip>
 #include <chrono>
 
 #include "mcmc/config.h"
@@ -12,8 +11,7 @@ namespace timer {
 
 class Timer {
  public:
-  Timer(const std::string &name = "")
-      : name(name), t_total(std::chrono::duration<int>(0)), N(0) {}
+  Timer(const std::string &name = "");
 
   inline void start() { t_start = std::chrono::high_resolution_clock::now(); }
 
@@ -28,52 +26,13 @@ class Timer {
 
   inline ::size_t ticks() const { return N; }
 
-  inline void reset() {
-    t_total = std::chrono::duration<int>(0);
-    N = 0;
-  }
+  void reset();
 
-  static void setTabular(bool on) { tabular = on; }
+  static void setTabular(bool on);
 
-  static void printHeader(std::ostream &s) {
-    if (tabular) {
-      s << std::left << std::setw(nameWidth) << "timer";
-      s << std::right << std::setw(totalWidth) << "total (s)";
-      s << std::right << std::setw(tickWidth) << "ticks";
-      s << std::right << std::setw(perTickWidth) << "per tick (us)";
-      s << std::right << std::endl;
-    }
-  }
+  static void printHeader(std::ostream &s);
 
-  std::ostream &put(std::ostream &s) const {
-    using namespace std::chrono;
-
-    s << std::setw(nameWidth) << std::left << name;
-    if (N == 0) {
-      s << "<unused>";
-    } else {
-      if (tabular) {
-        s << std::setprecision(3) << std::right << std::setw(totalWidth)
-          << (duration_cast<milliseconds>(t_total).count() / (double)MILLI);
-        s << std::right << std::setw(tickWidth) << N;
-        s << std::setprecision(3) << std::fixed << std::right
-          << std::setw(perTickWidth)
-          << (duration_cast<nanoseconds>(t_total).count() / (double)MILLI / N);
-      } else {
-        s << " total " << std::setprecision(3) << std::right
-          << std::setw(totalWidth)
-          << (duration_cast<milliseconds>(t_total).count() / (double)MILLI)
-          << "s";
-        s << "; ticks " << std::right << std::setw(tickWidth) << N;
-        s << "; per tick " << std::fixed << std::setprecision(3) << std::right
-          << std::setw(perTickWidth)
-          << (duration_cast<nanoseconds>(t_total).count() / (double)MILLI / N)
-          << "us";
-      }
-    }
-
-    return s;
-  }
+  std::ostream &put(std::ostream &s) const;
 
  protected:
   static const ::size_t MILLI = 1000;
@@ -91,9 +50,7 @@ class Timer {
   static bool tabular;
 };
 
-inline std::ostream &operator<<(std::ostream &s, const Timer &timer) {
-  return timer.put(s);
-}
+std::ostream &operator<<(std::ostream &s, const Timer &timer);
 
 }  // namespace mcmc
 }  // namespace timer
