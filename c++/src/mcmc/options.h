@@ -145,7 +145,7 @@ class Options {
       ("mcmc.eta1", po::value<double>(&eta1)->default_value(1.0), "eta1")
       ("mcmc.epsilon",
        po::value<double>(&epsilon)->default_value(0.0000001), "epsilon")
-      ("mcmc.a", po::value<double>(&a)->default_value(0.00), "a")
+      ("mcmc.a", po::value<double>(&a)->default_value(0.0), "a")
       ("mcmc.b", po::value<double>(&b)->default_value(1024), "b")
       ("mcmc.c", po::value<double>(&c)->default_value(0.5), "c")
       ("mcmc.K,K", po::value< ::size_t>(&K)->default_value(300), "K")
@@ -216,13 +216,6 @@ class Options {
     ;
     desc_all.add(desc_distr);
 #endif
-
-    if (a == 0.0) {
-      a = std::pow(b, -c);
-    }
-    if (alpha == 0.0) {
-      alpha = 1.0 / K;
-    }
   }
 
   Options(int argc, char** argv) : Options() {
@@ -249,6 +242,13 @@ class Options {
       po::notify(vm);
     }
     remains = po::collect_unrecognized(parsed.options, po::include_positional);
+
+    if (a == 0.0) {
+      a = std::pow(b, -c);
+    }
+    if (alpha == 0.0) {
+      alpha = 1.0 / K;
+    }
   }
 
   const std::vector<std::string> &getRemains() const { return remains; }
