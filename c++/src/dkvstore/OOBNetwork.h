@@ -141,6 +141,10 @@ class OOBNetworkServer {
 
     tcp::acceptor acceptor(io_service_,
                            tcp::endpoint(tcp::v4(), oob_.port_));
+    std::vector<int32_t> rank;
+    if (oob_.hostnames().size() > 0) {
+      rank.resize(oob_.hostnames().size());
+    }
     int32_t ranks = 1;
     for (::size_t i = 0; i < oob_.num_hosts_; ++i) {
       boost::system::error_code error;
@@ -164,7 +168,6 @@ class OOBNetworkServer {
       }
       peer_hostname[size] = '\0';
 
-      int32_t rank;
       if (oob_.hostnames().size() > 0) {
         auto it = std::find(oob_.hostnames().begin(), oob_.hostnames().end(),
                             std::string(peer_hostname));
@@ -172,15 +175,15 @@ class OOBNetworkServer {
           throw NetworkException("Host " + std::string(peer_hostname) +
                                  " not found in hostnames list");
         }
-        rank = std::distance(oob_.hostnames().begin(), it);
+        rank[i] = std::distance(oob_.hostnames().begin(), it);
       } else if (oob_.hostname_ == peer_hostname) {
-        rank = 0;
+        rank.push_back(0);
       } else {
-        rank = ranks;
+        rank.push_back(ranks);
         ranks++;
       }
       boost::asio::write(server_socket[i],
-                         boost::asio::buffer(&rank, sizeof rank),
+                         boost::asio::buffer(&rank[i], sizeof rank[i]),
                          boost::asio::transfer_all(),
                          error);
       if (error) {
@@ -188,14 +191,15 @@ class OOBNetworkServer {
       }
     }
 
-    std::vector<std::vector<PeerInfo> > peer_oob(oob_.num_hosts_,
-                                                std::vector<PeerInfo>(oob_.num_hosts_));
+    std::vector<std::vector<PeerInfo> > peer_oob(
+        oob_.num_hosts_, std::vector<PeerInfo>(oob_.num_hosts_));
     for (::size_t i = 0; i < oob_.num_hosts_; ++i) {
       boost::system::error_code error;
 
       boost::asio::read(server_socket[i],
-                        boost::asio::buffer(peer_oob[i].data(),
-                                            peer_oob[i].size() * sizeof peer_oob[i][0]),
+                        boost::asio::buffer(peer_oob[rank[i]].data(),
+                                            peer_oob[rank[i]].size() *
+                                             sizeof peer_oob[rank[i]][0]),
                         boost::asio::transfer_all(), error);
     }
 
@@ -204,11 +208,12 @@ class OOBNetworkServer {
 
       std::vector<PeerInfo> scatter(oob_.num_hosts_);
       for (::size_t j = 0; j < oob_.num_hosts_; ++j) {
-        scatter[j] = peer_oob[j][i];
+        scatter[j] = peer_oob[j][rank[i]];
       }
       boost::asio::write(server_socket[i],
                          boost::asio::buffer(scatter.data(),
-                                             scatter.size() * sizeof scatter[0]),
+                                             scatter.size() *
+                                               sizeof scatter[0]),
                          boost::asio::transfer_all(), error);
       if (error) {
         throw boost::system::system_error(error);
@@ -231,25 +236,25 @@ class OOBNetworkServer {
           throw boost::system::system_error(error);
         }
         switch (static_cast<OPCODE>(opcode)) {
-        case OPCODE::QUIT:
-          if (quit[i]) {
-            throw NetworkException("Host " + std::to_string(i) +
-                                   " already quit");
-          }
-          quit[i] = true;
-          quitted++;
-          break;
-        case OPCODE::BARRIER:
-          synced++;
-          if (synced == oob_.num_hosts_) {
-            synced = 0;
-            // Release all workers
-            for (::size_t j = 0; j < oob_.num_hosts_; ++j) {
-              boost::asio::write(server_socket[j],
-                                 boost::asio::buffer(&opcode, sizeof opcode),
-                                 boost::asio::transfer_all(), error);
+          case OPCODE::QUIT:
+            if (quit[i]) {
+              throw NetworkException("Host " + std::to_string(i) +
+                                     " already quit");
             }
-          }
+            quit[i] = true;
+            quitted++;
+            break;
+          case OPCODE::BARRIER:
+            synced++;
+            if (synced == oob_.num_hosts_) {
+              synced = 0;
+              // Release all workers
+              for (::size_t j = 0; j < oob_.num_hosts_; ++j) {
+                boost::asio::write(server_socket[j],
+                                   boost::asio::buffer(&opcode, sizeof opcode),
+                                   boost::asio::transfer_all(), error);
+              }
+            }
         }
       }
     }
@@ -344,7 +349,9 @@ class OOBNetwork {
       throw boost::system::system_error(error);
     }
 
-    std::cerr << oob_.hostname_ << ": RDMA OOB network: receive message from master, my rank is " << rank_ << std::endl;
+    std::cerr << oob_.hostname_ <<
+      ": RDMA OOB network: receive message from master, my rank is " << rank_ <<
+      std::endl;
 
     *my_rank = rank_;
     *num_hosts = oob_.num_hosts_;
@@ -365,7 +372,8 @@ class OOBNetwork {
     peer_oob->resize(oob_.num_hosts_);
     boost::asio::read(*socket_,
                       boost::asio::buffer(peer_oob->data(),
-                                          peer_oob->size() * sizeof (*peer_oob)[0]),
+                                          peer_oob->size() *
+                                           sizeof (*peer_oob)[0]),
                       boost::asio::transfer_all(), error);
     if (error) {
       throw boost::system::system_error(error);

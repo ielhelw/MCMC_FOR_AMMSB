@@ -245,10 +245,12 @@ void DKVStoreRDMA::Init(::size_t value_size, ::size_t total_values,
   /* exchange using o-o-b network info required to connect QPs */
   std::vector<cm_con_data_t> my_con_data(options_.oob_num_servers());
   for (::size_t i = 0; i < options_.oob_num_servers(); ++i) {
+    cm_con_data_t *con = &my_con_data[i];
     if (i == oob_rank_) {
-      // std::cerr << "FIXME " << __LINE__ << ": What about me?" << std::endl;
+#ifndef NDEBUG
+      memset(con, 0, sizeof *con);
+#endif
     } else {
-      cm_con_data_t *con = &my_con_data[i];
       con->value      = reinterpret_cast<uint64_t>(value_.area_);
       con->cache      = reinterpret_cast<uint64_t>(cache_.area_);
       con->value_rkey = value_.region_.mr->rkey;
@@ -275,8 +277,9 @@ void DKVStoreRDMA::Init(::size_t value_size, ::size_t total_values,
     if (i == oob_rank_) {
       // std::cerr << "FIXME " << __LINE__ << ": What about me?" << std::endl;
     } else {
-      /* save the remote side attributes, we will need it for the post SR */
+      assert(remote_con_data[i].value != 0);
       peer_[i].props = remote_con_data[i];
+      /* save the remote side attributes, we will need it for the post SR */
       peer_[i].connection.rnode.lid     = remote_con_data[i].lid;
       peer_[i].connection.rnode.alt_lid = remote_con_data[i].alt_lid;
       peer_[i].connection.remote.qpn    = remote_con_data[i].qp_num;
@@ -293,6 +296,7 @@ void DKVStoreRDMA::Init(::size_t value_size, ::size_t total_values,
       std::cout << std::dec;
     }
   }
+  assert(remote_con_data[oob_rank_].value == 0);
 
   // Sync before we move the QPs to the next state
   barrier();
