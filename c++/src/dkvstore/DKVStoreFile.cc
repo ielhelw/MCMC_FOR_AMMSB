@@ -37,23 +37,24 @@ void DKVStoreFileOptions::Parse(const std::vector<std::string> &args) {
   po::notify(vm);
 }
 
-DKVStoreFile::~DKVStoreFile() {
-}
-
-void DKVStoreFile::Init(::size_t value_size, ::size_t total_values,
-                        ::size_t max_cache_capacity,
-                        ::size_t max_write_capacity,
-                        const std::vector<std::string> &args) {
-  ::DKV::DKVStoreInterface::Init(value_size, total_values,
-                                 max_cache_capacity, max_write_capacity,
-                                 args);
-
-  std::cerr << "DKVStoreFile::Init args ";
+DKVStoreFile::DKVStoreFile(const std::vector<std::string> &args)
+    : DKVStoreInterface(args) {
+  std::cerr << "DKVStoreFile args ";
   for (auto a : args) {
     std::cerr << a << " ";
   }
   std::cerr << std::endl;
   options_.Parse(args);
+}
+
+DKVStoreFile::~DKVStoreFile() {
+}
+
+void DKVStoreFile::Init(::size_t value_size, ::size_t total_values,
+                        ::size_t max_cache_capacity,
+                        ::size_t max_write_capacity) {
+  ::DKV::DKVStoreInterface::Init(value_size, total_values,
+                                 max_cache_capacity, max_write_capacity);
 }
 
 void DKVStoreFile::ReadKVRecords(std::vector<ValueType *> &cache,

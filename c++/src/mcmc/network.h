@@ -150,11 +150,11 @@ class Network {
   EdgeSample sample_mini_batch(::size_t mini_batch_size,
                                strategy::strategy strategy) const;
 
-  ::size_t minibatch_nodes_for_strategy(::size_t mini_batch_size,
-                                        strategy::strategy strategy) const;
+  ::size_t max_minibatch_nodes_for_strategy(::size_t mini_batch_size,
+                                            strategy::strategy strategy) const;
 
-  ::size_t minibatch_edges_for_strategy(::size_t mini_batch_size,
-                                        strategy::strategy strategy) const;
+  ::size_t max_minibatch_edges_for_strategy(::size_t mini_batch_size,
+                                            strategy::strategy strategy) const;
 
   ::size_t get_num_linked_edges() const;
 

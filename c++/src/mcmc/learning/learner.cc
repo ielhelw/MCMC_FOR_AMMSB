@@ -21,6 +21,9 @@ Learner::Learner(const Options &args) : args_(args) {
 #ifdef MCMC_RANDOM_SYSTEM
   std::cerr << "MCMC_RANDOM_SYSTEM enabled" << std::endl;
 #endif
+
+  std::cerr << "PID " << getpid() << std::endl;
+
   std::cerr << "Build type " <<
 #ifdef NDEBUG
     "Release"
@@ -106,12 +109,16 @@ void Learner::LoadNetwork(int world_rank, bool allocate_pi) {
 Learner::~Learner() {}
 
 void Learner::info(std::ostream &s) {
+  s.unsetf(std::ios_base::floatfield);
+  s << std::setprecision(6);
   s << "N " << N;
   s << " E " << network.get_num_linked_edges();
-  s << " K " << K;
-  s << " iterations " << max_iteration;
-  s << " minibatch size " << mini_batch_size;
   s << " link ratio " << link_ratio;
+  s << " K " << K << std::endl;
+  s << "minibatch size " << mini_batch_size;
+  s << " epsilon " << epsilon;
+  s << " alpha " << alpha;
+  s << " iterations " << max_iteration;
   s << " convergence " << CONVERGENCE_THRESHOLD;
   s << std::endl;
   s << "omp max threads " << omp_get_max_threads() << std::endl;

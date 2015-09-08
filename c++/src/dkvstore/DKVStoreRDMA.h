@@ -280,7 +280,7 @@ class DKVStoreRDMA : public DKVStoreInterface {
   typedef DKVStoreInterface::KeyType   KeyType;
   typedef DKVStoreInterface::ValueType ValueType;
 
-  DKVStoreRDMA();
+  DKVStoreRDMA(const std::vector<std::string> &args);
 
   virtual ~DKVStoreRDMA();
 
@@ -294,8 +294,7 @@ class DKVStoreRDMA : public DKVStoreInterface {
 
  public:
   VIRTUAL void Init(::size_t value_size, ::size_t total_values,
-                    ::size_t max_cache_capacity, ::size_t max_write_capacity,
-                    const std::vector<std::string> &args);
+                    ::size_t max_cache_capacity, ::size_t max_write_capacity);
 
   virtual bool include_master() {
     return include_master_;
@@ -353,7 +352,7 @@ class DKVStoreRDMA : public DKVStoreInterface {
   std::vector< ::size_t> posts_;
 
   bool include_master_;	// if unset, the KV area is distributed over all nodes
-  						// except the master. Watch out for the case #hosts == 1
+                        // except the master. Watch out for the case #hosts == 1
 
   /* memory buffer pointers, used for RDMA and send ops */
   rdma_area<ValueType> value_;

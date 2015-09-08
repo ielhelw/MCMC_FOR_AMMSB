@@ -13,6 +13,7 @@ Network::Network(const NetworkInfo& info)
       held_out_size_(info.held_out_size) {
   fan_out_cumul_distro = std::vector< ::size_t>(1, info.max_fan_out);
   assert(N != 0);
+  print_mem_usage(std::cerr);
 }
 
 Network::~Network() {
@@ -177,17 +178,17 @@ EdgeSample Network::sample_mini_batch(::size_t mini_batch_size,
   }
 }
 
-::size_t Network::minibatch_nodes_for_strategy(
+::size_t Network::max_minibatch_nodes_for_strategy(
     ::size_t mini_batch_size, strategy::strategy strategy) const {
   switch (strategy) {
     case strategy::STRATIFIED_RANDOM_NODE:
-      return minibatch_edges_for_strategy(mini_batch_size, strategy) + 1;
+      return max_minibatch_edges_for_strategy(mini_batch_size, strategy) + 1;
     default:
       throw MCMCException("Invalid sampling strategy");
   }
 }
 
-::size_t Network::minibatch_edges_for_strategy(
+::size_t Network::max_minibatch_edges_for_strategy(
     ::size_t mini_batch_size, strategy::strategy strategy) const {
   switch (strategy) {
     case strategy::STRATIFIED_RANDOM_NODE:

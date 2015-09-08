@@ -70,11 +70,13 @@ class MCMCSamplerStochastic : public Learner {
   */
   MCMCSamplerStochastic(const Options &args);
 
-  virtual void init();
-
   virtual ~MCMCSamplerStochastic();
 
-  virtual void run();
+  virtual void init();
+
+  void sampler_stochastic_info(std::ostream &s);
+
+  void run() override;
 
  protected:
   void update_beta(const MinibatchSet &mini_batch, double scale);

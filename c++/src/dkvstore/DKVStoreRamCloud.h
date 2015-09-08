@@ -72,11 +72,12 @@ class DKVStoreRamCloud : public DKVStoreInterface {
   typedef DKVStoreInterface::KeyType KeyType;
   typedef DKVStoreInterface::ValueType ValueType;
 
+  DKVStoreRamCloud(const std::vector<std::string> &args);
+
   ~DKVStoreRamCloud();
 
   virtual void Init(::size_t value_size, ::size_t total_values,
                     ::size_t max_cache_capacity, ::size_t max_write_capacity,
-                    const std::vector<std::string> &args);
 
   virtual void ReadKVRecords(std::vector<ValueType *> &cache,
                              const std::vector<KeyType> &key,
