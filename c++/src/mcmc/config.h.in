@@ -35,6 +35,8 @@ namespace mcmc {
 #  error "No point in RDMA without distributed algorithm"
 #endif
 
+#cmakedefine MCMC_ENABLE_GNUPLOT
+
 
 }  // namespace mcmc
 

@@ -164,6 +164,9 @@ void MCMCSamplerStochastic::run() {
                 << "step count: " << step_count
                 << " perplexity for hold out set: " << ppx_score << std::endl;
       ppxs_held_out.push_back(ppx_score);
+#ifdef MCMC_ENABLE_GNUPLOT
+      GnuPlot();
+#endif
 
       t2 = clock();
       double diff = (double)t2 - (double)t1;

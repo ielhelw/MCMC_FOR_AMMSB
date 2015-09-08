@@ -212,5 +212,18 @@ double Learner::cal_perplexity(const EdgeMap &data) {
   return (-avg_likelihood);
 }
 
+#ifdef MCMC_ENABLE_GNUPLOT
+void Learner::GnuPlot() {
+  gp << "set xtics" << std::endl;
+  gp << "set ytics" << std::endl;
+  gp << "set grid xtics" << std::endl;
+  gp << "set grid ytics" << std::endl;
+  gp << "set xrange [0:]" << std::endl;
+  gp << "set yrange [0:]" << std::endl;
+  gp << "plot '-' with lines title 'Perplexity'" << std::endl;
+  gp.send1d(ppxs_held_out);
+}
+#endif
+
 }  // namespace learning
 }  // namespace mcmc
