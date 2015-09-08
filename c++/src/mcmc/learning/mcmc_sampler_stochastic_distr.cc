@@ -234,8 +234,6 @@ MCMCSamplerStochasticDistributed::MCMCSamplerStochasticDistributed(
 
 
 MCMCSamplerStochasticDistributed::~MCMCSamplerStochasticDistributed() {
-  delete d_kv_store_;
-
   for (auto &p : pi_update_) {
     delete[] p;
   }
@@ -401,16 +399,19 @@ void MCMCSamplerStochasticDistributed::init() {
   std::cerr << "Use D-KV store type " << args_.dkv_type << std::endl;
   switch (args_.dkv_type) {
   case DKV::TYPE::FILE:
-    d_kv_store_ = new DKV::DKVFile::DKVStoreFile();
+    d_kv_store_ = std::unique_ptr<DKV::DKVFile::DKVStoreFile>(
+                    new DKV::DKVFile::DKVStoreFile(args_.getRemains()));
     break;
 #ifdef MCMC_ENABLE_RAMCLOUD
   case DKV::TYPE::RAMCLOUD:
-    d_kv_store_ = new DKV::DKVRamCloud::DKVStoreRamCloud();
+    d_kv_store_ = std::unique_ptr<DKV::DKVRamCloud::DKVStoreRamCloud>(
+                    new DKV::DKVRamCloud::DKVStoreRamCloud(args_.getRemains()));
     break;
 #endif
 #ifdef MCMC_ENABLE_RDMA
   case DKV::TYPE::RDMA:
-    d_kv_store_ = new DKV::DKVRDMA::DKVStoreRDMA();
+    d_kv_store_ = std::unique_ptr<DKV::DKVRDMA::DKVStoreRDMA>(
+                    new DKV::DKVRDMA::DKVStoreRDMA(args_.getRemains()));
     break;
 #endif
   }
@@ -435,9 +436,8 @@ void MCMCSamplerStochasticDistributed::init() {
     // old default for STRATIFIED_RANDOM_NODE_SAMPLING
     mini_batch_size = N / 10;
   }
-  std::cerr << "num_node_sample " << num_node_sample <<
-    " a " << a << " b " << b << " c " << c << " alpha " << alpha <<
-    " eta (" << eta[0] << "," << eta[1] << ")" << std::endl;
+
+  sampler_stochastic_info(std::cerr);
 
   if (args_.max_pi_cache_entries_ == 0) {
     std::ifstream meminfo("/proc/meminfo");
@@ -464,7 +464,8 @@ void MCMCSamplerStochasticDistributed::init() {
     args_.max_pi_cache_entries_ = pi_total / 32;
   }
 
-  max_minibatch_nodes_ = network.minibatch_nodes_for_strategy(
+  // Calculate DKV store buffer requirements
+  max_minibatch_nodes_ = network.max_minibatch_nodes_for_strategy(
                             mini_batch_size, strategy);
   ::size_t workers;
   if (master_is_worker_) {
@@ -472,6 +473,7 @@ void MCMCSamplerStochasticDistributed::init() {
   } else {
     workers = mpi_size_ - 1;
   }
+
   // pi cache hosts chunked subset of minibatch nodes + their neighbors
   max_minibatch_chunk_ = args_.max_pi_cache_entries_ / (1 + real_num_node_sample());
   ::size_t max_my_minibatch_nodes = std::min(max_minibatch_chunk_,
@@ -512,7 +514,7 @@ void MCMCSamplerStochasticDistributed::init() {
     " mine " << max_my_perp_nodes <<
     " chunk " << max_perplexity_chunk_ << std::endl;
 
-  d_kv_store_->Init(K + 1, N, max_pi_cache, max_my_minibatch_nodes, args_.getRemains());
+  d_kv_store_->Init(K + 1, N, max_pi_cache, max_my_minibatch_nodes);
 
   master_hosts_pi_ = d_kv_store_->include_master();
 
@@ -656,7 +658,13 @@ void MCMCSamplerStochasticDistributed::run() {
     // auto l2 = std::chrono::system_clock::now();
   }
 
+  r = MPI_Barrier(MPI_COMM_WORLD);
+  mpi_error_test(r, "MPI_Barrier(post pi) fails");
+
   check_perplexity();
+
+  r = MPI_Barrier(MPI_COMM_WORLD);
+  mpi_error_test(r, "MPI_Barrier(post pi) fails");
 
   Timer::printHeader(std::cout);
   std::cout << t_populate_pi_ << std::endl;
@@ -1181,6 +1189,7 @@ void MCMCSamplerStochasticDistributed::update_phi_node(
   }
 
   double phi_i_sum = pi_node[K];
+  assert(! std::isnan(phi_i_sum));
   std::vector<double> grads(K, 0.0);	// gradient for K classes
 
   for (::size_t ix = 0; ix < real_num_node_sample(); ++ix) {
@@ -1203,7 +1212,10 @@ void MCMCSamplerStochasticDistributed::update_phi_node(
       double e = (y_ab == 1) ? epsilon : 1.0 - epsilon;
       for (::size_t k = 0; k < K; ++k) {
         double f = (y_ab == 1) ? (beta[k] - epsilon) : (epsilon - beta[k]);
+        assert(! std::isnan(beta[k]));
+        assert(! std::isnan(epsilon));
         probs[k] = pi_node[k] * (pi[ix][k] * f + e);
+        assert(! std::isnan(probs[k]));
       }
 
       double prob_sum = np::sum(probs);
@@ -1212,7 +1224,13 @@ void MCMCSamplerStochasticDistributed::update_phi_node(
       //    " phi_i_sum " << phi_i_sum <<
       //    " #sample " << real_num_node_sample() << std::endl;
       for (::size_t k = 0; k < K; ++k) {
+        assert(! std::isnan(probs[k]));
+        assert(! std::isnan(prob_sum));
+        assert(! std::isnan(pi_node[k]));
+        assert(! std::isnan(phi_i_sum));
+        assert(phi_i_sum > 0);
         grads[k] += ((probs[k] / prob_sum) / pi_node[k] - 1.0) / phi_i_sum;
+        assert(! std::isnan(grads[k]));
       }
     } else {
       std::cerr << "Skip self loop <" << i << "," << neighbor << ">" << std::endl;
@@ -1224,9 +1242,11 @@ void MCMCSamplerStochasticDistributed::update_phi_node(
   // update phi for node i
   for (::size_t k = 0; k < K; ++k) {
     double phi_node_k = pi_node[k] * phi_i_sum;
+    assert(! std::isnan(phi_node_k));
     (*phi_node)[k] = std::abs(phi_node_k + eps_t / 2 * (alpha - phi_node_k +
                                                         Nn * grads[k]) +
                               sqrt(eps_t * phi_node_k) * noise[k]);
+    assert(! std::isnan((*phi_node)[k]));
   }
 }
 
@@ -1293,13 +1313,17 @@ void MCMCSamplerStochasticDistributed::update_beta(
     double pi_sum = 0.0;
     for (::size_t k = 0; k < K; ++k) {
       // Note: this is the KV-store cached pi, not the Learner item
-      pi_sum += pi[i][k] * pi[j][k];
+      assert(! std::isnan(pi[i][k]));
+      assert(! std::isnan(pi[j][k]));
       double f = pi[i][k] * pi[j][k];
+      assert(! std::isnan(f));
+      pi_sum += f;
       if (y == 1) {
         probs[k] = beta[k] * f;
       } else {
         probs[k] = (1.0 - beta[k]) * f;
       }
+      assert(! std::isnan(probs[k]));
     }
 
     double prob_0 = ((y == 1) ? epsilon : (1.0 - epsilon)) * (1.0 - pi_sum);
@@ -1339,6 +1363,7 @@ void MCMCSamplerStochasticDistributed::update_beta(
                              eps_t / 2.0 * (eta[i] - theta[k][i] +
                                             scale * grads_beta_[0][k][i]) +
                              f * noise[k][i]);
+      assert(! std::isnan(theta[k][i]));
     }
   }
 

@@ -129,9 +129,9 @@ class MCMCSamplerStochasticDistributed : public MCMCSamplerStochastic {
 
   void MasterAwareLoadNetwork();
 
-  virtual void init();
+  void init() override;
 
-  virtual void run();
+  void run() override;
 
  protected:
   template <typename T>
@@ -210,7 +210,7 @@ class MCMCSamplerStochasticDistributed : public MCMCSamplerStochastic {
   bool          master_is_worker_;
   bool          master_hosts_pi_;
 
-  DKV::DKVStoreInterface* d_kv_store_;
+  std::unique_ptr<DKV::DKVStoreInterface> d_kv_store_;
 
   Random::Random* phi_init_rng_;
   std::vector<Random::Random*> neighbor_sample_rng_;

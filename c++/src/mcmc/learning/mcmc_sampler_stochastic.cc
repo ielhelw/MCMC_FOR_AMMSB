@@ -34,9 +34,7 @@ void MCMCSamplerStochastic::init() {
     mini_batch_size =
         N / 10;  // old default for STRATIFIED_RANDOM_NODE_SAMPLING
   }
-  std::cerr << "num_node_sample " << num_node_sample << " a " << a << " b " << b
-            << " c " << c << " alpha " << alpha << " eta (" << eta[0] << ","
-            << eta[1] << ")" << std::endl;
+  info(std::cerr);
 
   // model parameters and re-parameterization
   // since the model parameter - \pi and \beta should stay in the simplex,
@@ -125,6 +123,14 @@ void MCMCSamplerStochastic::init() {
 }
 
 MCMCSamplerStochastic::~MCMCSamplerStochastic() {
+}
+
+void MCMCSamplerStochastic::sampler_stochastic_info(std::ostream &s) {
+  s.unsetf(std::ios_base::floatfield);
+  s << std::setprecision(6);
+  s << "num_node_sample " << num_node_sample << std::endl;
+  s << "a " << a << " b " << b << " c " << c;
+  s << " eta (" << eta[0] << "," << eta[1] << ")" << std::endl;
 }
 
 void MCMCSamplerStochastic::run() {

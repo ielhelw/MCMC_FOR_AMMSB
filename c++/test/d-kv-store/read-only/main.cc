@@ -54,7 +54,6 @@ class DKVWrapper {
   DKVWrapper(const mcmc::Options &options,
              const std::vector<std::string> &remains)
       : options_(options), remains_(remains) {
-    d_kv_store_.PurgeKVRecords();
   }
 
   void run() {
@@ -124,6 +123,7 @@ class DKVWrapper {
     std::vector<std::string> remains = po::collect_unrecognized(parsed.options,
                                                                 po::include_positional);
 
+    d_kv_store_ = std::unique_ptr<DKVStore>(new DKVStore(remains));
     // bool no_populate = vm["no-populate"].as<bool>();
     bool bidirectional = ! unidirectional;
     bool random_request = ! no_random_request;
@@ -179,7 +179,7 @@ class DKVWrapper {
     }
 
     ::size_t my_m;
-    if (d_kv_store_.include_master()) {
+    if (d_kv_store_->include_master()) {
       my_m = (m + n_hosts - 1) / n_hosts;
     } else {
       my_m = (m + (n_hosts - 1) - 1) / (n_hosts - 1);
@@ -187,13 +187,13 @@ class DKVWrapper {
     ::size_t average_m = (m + n_hosts - 1) / n_hosts;
 
     try {
-      d_kv_store_.Init(K, N, my_m * n, my_m, remains);
+      d_kv_store_->Init(K, N, my_m * n, my_m);
     } catch (po::error &e) {
       std::cerr << "Option error: " << e.what() << std::endl;
       return;
     }
 
-    d_kv_store_.barrier();
+    d_kv_store_->barrier();
 
     mcmc::Random::Random random(seed + rank);
 
@@ -202,20 +202,24 @@ class DKVWrapper {
       " n " << n <<
       " hosts " << n_hosts << " rank " << rank <<
       " seed " << seed << std::endl;
-    std::cout << "bidirectional " << bidirectional << " random " << random_request << " single-request " << single_request << " read " << do_read << " write " << do_write << std::endl;
+    std::cout << "bidirectional " << bidirectional <<
+      " random " << random_request <<
+      " single-request " << single_request <<
+      " read " << do_read << " write " << do_write << std::endl;
 
     auto t = hires::now();
     // populate
     if (! no_populate) {
-      if (d_kv_store_.include_master() || rank != 0) {
+      if (d_kv_store_->include_master() || rank != 0) {
         ::size_t from = rank;
         ::size_t to   = N;
         ::size_t chunk = n_hosts;
-        if (! d_kv_store_.include_master()) {
+        if (! d_kv_store_->include_master()) {
           from--;
           chunk--;
         }
-        std::cerr << "********* Populate with keys " << from << ".." << to << " step " << chunk << std::endl;
+        std::cerr << "********* Populate with keys " << from << ".." <<
+          to << " step " << chunk << std::endl;
         for (::size_t i = from; i < to; i += chunk) {
           // std::vector<double> pi = random.randn(K);
           std::vector<double> pi(K);
@@ -224,7 +228,8 @@ class DKVWrapper {
           }
           std::vector<int32_t> k(1, static_cast<int32_t>(i));
           std::vector<const double *> v(1, pi.data());
-          d_kv_store_.WriteKVRecords(k, v);
+          d_kv_store_->WriteKVRecords(k, v);
+          d_kv_store_->PurgeKVRecords();
         }
       }
       duration dur = std::chrono::duration_cast<duration>(hires::now() - t);
@@ -232,7 +237,7 @@ class DKVWrapper {
         (1000.0 * dur.count()) << "ms thrp " << (GB(N, K) / dur.count()) <<
         " GB/s" << std::endl;
 
-      d_kv_store_.barrier();
+      d_kv_store_->barrier();
     }
 
     std::vector<double *> cache(average_m * n);
@@ -248,7 +253,8 @@ class DKVWrapper {
           }
       } else if (random_request) {
           if (average_m * n * 2 >= N) {
-            std::cerr << "Warning: sampling " << (average_m * n) << " from " << N << " might take a long time" << std::endl;
+            std::cerr << "Warning: sampling " << (average_m * n) <<
+              " from " << N << " might take a long time" << std::endl;
           }
           neighbor = random.sampleRange(N, average_m * n);
       } else {
@@ -260,8 +266,10 @@ class DKVWrapper {
      
       if (check_duplicates) {
         for (::size_t i = 0; i < neighbor->size() - 1; ++i) {
-          if (std::find(neighbor->begin() + i + 1, neighbor->end(), (*neighbor)[i]) != neighbor->end()) {
-            std::cerr << "neighbor sample[" << i << "] has duplicate value " << (*neighbor)[i] << std::endl;
+          if (std::find(neighbor->begin() + i + 1, neighbor->end(),
+                        (*neighbor)[i]) != neighbor->end()) {
+            std::cerr << "neighbor sample[" << i << "] has duplicate value " <<
+              (*neighbor)[i] << std::endl;
           }
         }
       }
@@ -272,11 +280,11 @@ class DKVWrapper {
             std::endl;
           // Read the values for the neighbors
           auto t = hires::now();
-          d_kv_store_.ReadKVRecords(cache, *neighbor,
+          d_kv_store_->ReadKVRecords(cache, *neighbor,
                                     DKV::RW_MODE::READ_ONLY);
           duration dur = std::chrono::duration_cast<duration>(hires::now() - t);
-          std::cout << average_m << " Read " << average_m << "x" << n << "x" << K <<
-            " takes " << (1000.0 * dur.count()) << "ms thrp " <<
+          std::cout << average_m << " Read " << average_m << "x" << n <<
+            "x" << K << " takes " << (1000.0 * dur.count()) << "ms thrp " <<
             (GB(average_m * n, K) / dur.count()) << " GB/s" << std::endl;
           if (false) {
             for (::size_t i = 0; i < average_m * n; ++i) {
@@ -294,11 +302,14 @@ class DKVWrapper {
               for (::size_t k = 0; k < K; k++) {
                 if (cache[i][k] != key + (double)k / K) {
                   miss++;
-                  std::cerr << "Ooppss... key " << key << " wrong value[" << k << "] " << cache[i][k] << " should be " << (key + (double)k / K) << std::endl;
+                  std::cerr << "Ooppss... key " << key <<
+                    " wrong value[" << k << "] " << cache[i][k] <<
+                    " should be " << (key + (double)k / K) << std::endl;
                 }
               }
             }
-            std::cout << "Verify: checked " << (average_m * n) << " vectors, wrong values: " << miss << std::endl;
+            std::cout << "Verify: checked " << (average_m * n) <<
+              " vectors, wrong values: " << miss << std::endl;
           }
         }
       }
@@ -309,10 +320,10 @@ class DKVWrapper {
             std::endl;
           // Read the values for the neighbors
           auto t = hires::now();
-          d_kv_store_.WriteKVRecords(*neighbor, constify(cache));
+          d_kv_store_->WriteKVRecords(*neighbor, constify(cache));
           duration dur = std::chrono::duration_cast<duration>(hires::now() - t);
-          std::cout << average_m << " Write " << average_m << "x" << n << "x" << K <<
-            " takes " << (1000.0 * dur.count()) << "ms thrp " <<
+          std::cout << average_m << " Write " << average_m << "x" << n <<
+            "x" << K << " takes " << (1000.0 * dur.count()) << "ms thrp " <<
             (GB(average_m * n, K) / dur.count()) << " GB/s" << std::endl;
           if (false) {
             for (::size_t i = 0; i < average_m * n; ++i) {
@@ -328,13 +339,13 @@ class DKVWrapper {
 
       if (false) {
         std::cout << "*********" << iter << ":  Sync... " << std::endl;
-        d_kv_store_.barrier();
+        d_kv_store_->barrier();
       }
 
-      d_kv_store_.PurgeKVRecords();
+      d_kv_store_->PurgeKVRecords();
 
       std::cout << "*********" << iter << ":  Sync... " << std::endl;
-      d_kv_store_.barrier();
+      d_kv_store_->barrier();
       std::cerr << "*********" << iter << ":  Sync done" << std::endl;
 
       delete neighbor;
@@ -347,7 +358,7 @@ class DKVWrapper {
 protected:
   const mcmc::Options &options_;
   const std::vector<std::string> &remains_;
-  DKVStore d_kv_store_;
+  std::unique_ptr<DKVStore> d_kv_store_;
 };
 
 int main(int argc, char *argv[]) {
@@ -357,60 +368,71 @@ int main(int argc, char *argv[]) {
   }
   std::cout << std::endl;
 
-    mcmc::Options options(argc, argv);
+  mcmc::Options options(argc, argv);
 
-    DKV::TYPE dkv_type;
-    po::options_description desc("D-KV store test program");
-    desc.add_options()
-      ("help", "help")
-      ("dkv.type",
-       po::value<DKV::TYPE>(&dkv_type)->multitoken()->default_value(DKV::TYPE::FILE),
-       "D-KV store type (file/ramcloud/rdma)")
-      ;
+  DKV::TYPE dkv_type;
+  po::options_description desc("D-KV store test program");
+  desc.add_options()
+    ("help", "help")
+    ("dkv.type",
+     po::value<DKV::TYPE>(&dkv_type)->multitoken()->default_value(
+#ifdef MCMC_ENABLE_RDMA
+        DKV::TYPE::RDMA
+#elif defined MCMC_ENABLE_RAMCLOUD
+        DKV::TYPE::RAMCLOUD
+#else
+        DKV::TYPE::FILE
+#endif
+        ),
+     "D-KV store type (file/ramcloud/rdma)")
+    ;
 
-    po::variables_map vm;
-    po::parsed_options parsed = po::basic_command_line_parser<char>(options.getRemains()).options(desc).allow_unregistered().run();
-    po::store(parsed, vm);
-    // po::basic_command_line_parser<char> clp(options.getRemains());
-    // clp.options(desc).allow_unregistered.run();
-    // po::store(clp.run(), vm);
-    po::notify(vm);
+  po::variables_map vm;
+  po::parsed_options parsed = po::basic_command_line_parser<char>(
+    options.getRemains()).options(desc).allow_unregistered().run();
+  po::store(parsed, vm);
+  // po::basic_command_line_parser<char> clp(options.getRemains());
+  // clp.options(desc).allow_unregistered.run();
+  // po::store(clp.run(), vm);
+  po::notify(vm);
 
-    if (vm.count("help") > 0) {
-        std::cout << desc << std::endl;
-        return 0;
-    }
+  if (vm.count("help") > 0) {
+      std::cout << desc << std::endl;
+      return 0;
+  }
 
-	std::cerr << "D-KV store " << dkv_type << std::endl;
+  std::cerr << "D-KV store " << dkv_type << std::endl;
 
-    std::vector<std::string> remains = po::collect_unrecognized(parsed.options, po::include_positional);
-    std::cerr << "main has unparsed options: \"";
-    for (auto r : remains) {
-      std::cerr << r << " ";
-    }
-    std::cerr << "\"" << std::endl;
+  std::vector<std::string> remains = po::collect_unrecognized(
+    parsed.options, po::include_positional);
+  std::cerr << "main has unparsed options: \"";
+  for (auto r : remains) {
+    std::cerr << r << " ";
+  }
+  std::cerr << "\"" << std::endl;
 
-    switch (dkv_type) {
-	case DKV::TYPE::FILE: {
-        DKVWrapper<DKV::DKVFile::DKVStoreFile> dkv_store(options, remains);
-        dkv_store.run();
-        break;
+  switch (dkv_type) {
+    case DKV::TYPE::FILE: {
+      DKVWrapper<DKV::DKVFile::DKVStoreFile> dkv_store(options, remains);
+      dkv_store.run();
+      break;
     }
 #ifdef MCMC_ENABLE_RAMCLOUD
-	case DKV::TYPE::RAMCLOUD: {
-        DKVWrapper<DKV::DKVRamCloud::DKVStoreRamCloud> dkv_store(options, remains);
-        dkv_store.run();
-        break;
+    case DKV::TYPE::RAMCLOUD: {
+      DKVWrapper<DKV::DKVRamCloud::DKVStoreRamCloud> dkv_store(options,
+                                                               remains);
+      dkv_store.run();
+      break;
     }
 #endif
 #ifdef MCMC_ENABLE_RDMA
-	case DKV::TYPE::RDMA: {
-        DKVWrapper<DKV::DKVRDMA::DKVStoreRDMA> dkv_store(options, remains);
-        dkv_store.run();
-        break;
+    case DKV::TYPE::RDMA: {
+      DKVWrapper<DKV::DKVRDMA::DKVStoreRDMA> dkv_store(options, remains);
+      dkv_store.run();
+      break;
     }
 #endif
-    }
+  }
 
-    return 0;
+  return 0;
 }

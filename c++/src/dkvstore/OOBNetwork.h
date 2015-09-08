@@ -47,13 +47,12 @@ class OOB {
     if (port_ == 0) {
       port_ = 0x3eda;
     }
+    hostnames_ = get_prun_env();
     if (server_ == "") {
-      auto hostnames = get_prun_env();
-      server_ = hostnames[0];
+      server_ = hostnames_[0];
     }
     if (num_hosts_ == 0) {
-      auto hostnames = get_prun_env();
-      num_hosts_ = hostnames.size();
+      num_hosts_ = hostnames_.size();
     }
   }
 
@@ -95,7 +94,7 @@ class OOB {
     if (hosts == "") {
       std::cerr << "Option rdma.oob-server not set, " <<
         "no PRUN/SLURM environment. " <<
-        "Assume OOB server is me" << std::endl;
+        "Assume OOB server is me = " << hostname_ << std::endl;
       hosts = hostname_;
     }
     hosts = boost::trim_copy(hosts);
@@ -109,10 +108,15 @@ class OOB {
     return server_ == hostname_;
   }
 
+  const std::vector<std::string> &hostnames() const {
+    return hostnames_;
+  }
+
   std::string   server_;
   uint32_t      port_;
   ::size_t      num_hosts_;
   std::string   hostname_;
+  std::vector<std::string> hostnames_;
 };
 
 enum OPCODE {
@@ -161,7 +165,15 @@ class OOBNetworkServer {
       peer_hostname[size] = '\0';
 
       int32_t rank;
-      if (oob_.hostname_ == peer_hostname) {
+      if (oob_.hostnames().size() > 0) {
+        auto it = std::find(oob_.hostnames().begin(), oob_.hostnames().end(),
+                            std::string(peer_hostname));
+        if (it == oob_.hostnames().end()) {
+          throw NetworkException("Host " + std::string(peer_hostname) +
+                                 " not found in hostnames list");
+        }
+        rank = std::distance(oob_.hostnames().begin(), it);
+      } else if (oob_.hostname_ == peer_hostname) {
         rank = 0;
       } else {
         rank = ranks;

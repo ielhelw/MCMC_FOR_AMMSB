@@ -69,10 +69,10 @@ void DKVStoreRDMAOptions::Parse(const std::vector<std::string> &args) {
   po::notify(vm);
 }
 
-/*
- * Class description
- */
-DKVStoreRDMA::DKVStoreRDMA() {
+
+DKVStoreRDMA::DKVStoreRDMA(const std::vector<std::string> &args)
+    : DKVStoreInterface(args) {
+  options_.Parse(args);
 }
 
 DKVStoreRDMA::~DKVStoreRDMA() {
@@ -102,7 +102,8 @@ DKVStoreRDMA::~DKVStoreRDMA() {
 
   std::cout << t_barrier_ << std::endl;
 
-  std::cout << "posts " << num_posts_ << " messages " << msgs_per_post_ << " msgs/post " << ((double)msgs_per_post_ / num_posts_) << std::endl;
+  std::cout << "posts " << num_posts_ << " messages " << msgs_per_post_ <<
+    " msgs/post " << ((double)msgs_per_post_ / num_posts_) << std::endl;
   // std::chrono::high_resolution_clock::duration dt;
   std::cout << "Local read   " << bytes_local_read     << "B " <<
     GBs_from_timer(t_read_.local, bytes_local_read) << "GB/s" << std::endl;
@@ -147,10 +148,7 @@ double DKVStoreRDMA::GBs_from_timer(const Timer &timer, int64_t bytes) {
 
 void DKVStoreRDMA::Init(::size_t value_size, ::size_t total_values,
                         ::size_t max_cache_capacity,
-                        ::size_t max_write_capacity,
-                        const std::vector<std::string> &args) {
-  options_.Parse(args);
-
+                        ::size_t max_write_capacity) {
   // Feed the options to the QPerf Req
   Req.mtu_size = options_.mtu();
   Req.id = options_.dev_name().c_str();
@@ -176,7 +174,8 @@ void DKVStoreRDMA::Init(::size_t value_size, ::size_t total_values,
   t_write_.host   = Timer("     per-host write");
   t_barrier_      = Timer("RDMA barrier");
 
-  oob_network_.Init(options_.oob_server(), options_.oob_port(), options_.mutable_oob_num_servers(), &oob_rank_);
+  oob_network_.Init(options_.oob_server(), options_.oob_port(),
+                    options_.mutable_oob_num_servers(), &oob_rank_);
 
   if (options_.force_include_master()) {
     include_master_ = true;

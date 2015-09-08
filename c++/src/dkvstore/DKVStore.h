@@ -179,12 +179,13 @@ class DKVStoreInterface {
   typedef int32_t KeyType;
   typedef double ValueType;
 
+  DKVStoreInterface(const std::vector<std::string> &args) { }
+
   virtual ~DKVStoreInterface() {
   }
 
   virtual void Init(::size_t value_size, ::size_t total_values,
-                    ::size_t max_cache_capacity, ::size_t max_write_capacity,
-                    const std::vector<std::string> &args) {
+                    ::size_t max_cache_capacity, ::size_t max_write_capacity) {
     value_size_ = value_size;
     total_values_ = total_values;
     cache_buffer_.Init(value_size * max_cache_capacity);

@@ -34,24 +34,27 @@ void DKVStoreRamCloudOptions::Parse(const std::vector<std::string> &args) {
   po::notify(vm);
 }
 
-DKVStoreRamCloud::~DKVStoreRamCloud() {
-  delete client_;
-}
 
-void DKVStoreRamCloud::Init(::size_t value_size, ::size_t total_values,
-                            ::size_t max_cache_capacity,
-                            ::size_t max_write_capacity,
-                            const std::vector<std::string> &args) {
-  ::DKV::DKVStoreInterface::Init(value_size, total_values,
-                                 max_cache_capacity, max_write_capacity,
-                                 args);
-  std::cerr << "DKVStoreRamCloud::Init args ";
+DKVStoreRamCloud::DKVStoreRamCloud(const std::vector<std::string> &args)
+    : DKVStoreInterface(args) {
+  std::cerr << "DKVStoreRamCloud args ";
   for (auto a : args) {
     std::cerr << a << " ";
   }
   std::cerr << std::endl;
 
   options_.Parse(args);
+}
+
+DKVStoreRamCloud::~DKVStoreRamCloud() {
+  delete client_;
+}
+
+void DKVStoreRamCloud::Init(::size_t value_size, ::size_t total_values,
+                            ::size_t max_cache_capacity,
+                            ::size_t max_write_capacity) {
+  ::DKV::DKVStoreInterface::Init(value_size, total_values,
+                                 max_cache_capacity, max_write_capacity);
 
   std::ostringstream coordinator;
   coordinator << options_.proto() << ":host=" << options_.host() << ",port=" << options_.port();

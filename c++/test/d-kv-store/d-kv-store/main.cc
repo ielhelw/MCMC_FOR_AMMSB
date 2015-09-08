@@ -47,7 +47,6 @@ class DKVWrapper {
  public:
   DKVWrapper(const mcmc::Options &options, const std::vector<std::string> &remains)
       : options_(options), remains_(remains) {
-    d_kv_store_.PurgeKVRecords();
   }
 
   void run() {
@@ -89,6 +88,7 @@ class DKVWrapper {
     std::vector<std::string> remains = po::collect_unrecognized(parsed.options,
                                                                 po::include_positional);
 
+    d_kv_store_ = std::unique_ptr<DKVStore>(new DKVStore(remains));
     bool no_populate = vm["no-populate"].as<bool>();
     bool verify = vm["verify"].as<bool>();
 
@@ -123,7 +123,7 @@ class DKVWrapper {
 
     ::size_t my_m = (m + n_hosts - 1) / n_hosts;
 
-    d_kv_store_.Init(K, N, my_m * n, my_m, remains);
+    d_kv_store_->Init(K, N, my_m * n, my_m);
 
     mcmc::Random::Random random(seed + rank);
 
@@ -146,8 +146,8 @@ class DKVWrapper {
         }
         std::vector<int32_t> k(1, static_cast<int32_t>(i));
         std::vector<const double *> v(1, pi.data());
-        d_kv_store_.WriteKVRecords(k, v);
-        d_kv_store_.PurgeKVRecords();
+        d_kv_store_->WriteKVRecords(k, v);
+        d_kv_store_->PurgeKVRecords();
       }
       duration dur = std::chrono::duration_cast<duration>(hires::now() - t);
       std::cout << "Populate " << N << "x" << K << " takes " <<
@@ -156,7 +156,7 @@ class DKVWrapper {
     }
 
     std::vector<double *> cache(my_m * n);
-    std::vector<double *> overwrite = d_kv_store_.GetWriteKVRecords(my_m);
+    std::vector<double *> overwrite = d_kv_store_->GetWriteKVRecords(my_m);
     for (::size_t iter = 0; iter < iterations; ++iter) {
       std::vector<int32_t> *minibatch = random.sampleRange(N, my_m);
 
@@ -174,7 +174,7 @@ class DKVWrapper {
           std::endl;
         // Read the values for the neighbors
         auto t = hires::now();
-        d_kv_store_.ReadKVRecords(cache, *neighbor,
+        d_kv_store_->ReadKVRecords(cache, *neighbor,
                                   DKV::RW_MODE::READ_ONLY);
         duration dur = std::chrono::duration_cast<duration>(hires::now() - t);
         std::cout << my_m << " Read " << my_m << "x" << n << "x" << K <<
@@ -208,14 +208,14 @@ class DKVWrapper {
 
         // Write new values to the KV-store
         auto t = hires::now();
-        d_kv_store_.WriteKVRecords(*minibatch, constify(overwrite));
+        d_kv_store_->WriteKVRecords(*minibatch, constify(overwrite));
         duration dur = std::chrono::duration_cast<duration>(hires::now() - t);
         std::cout << my_m << " Write " << my_m << "x" << K << " takes " <<
           (1000.0 * dur.count()) << " thrp " << (GB(my_m, K) / dur.count()) <<
           " GB/s" << std::endl;
       }
 
-      d_kv_store_.PurgeKVRecords();
+      d_kv_store_->PurgeKVRecords();
 
       delete neighbor;
 
@@ -231,7 +231,7 @@ class DKVWrapper {
 protected:
   const mcmc::Options &options_;
   const std::vector<std::string> &remains_;
-  DKVStore d_kv_store_;
+  std::unique_ptr<DKVStore> d_kv_store_;
 };
 
 int main(int argc, char *argv[]) {

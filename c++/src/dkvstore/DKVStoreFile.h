@@ -50,14 +50,12 @@ class DKVStoreFile : public DKVStoreInterface {
   typedef DKVStoreInterface::KeyType KeyType;
   typedef DKVStoreInterface::ValueType ValueType;
 
-  DKVStoreFile() {
-  }
+  DKVStoreFile(const std::vector<std::string> &args);
 
   virtual ~DKVStoreFile();
 
   virtual void Init(::size_t value_size, ::size_t total_values,
-                    ::size_t max_cache_capacity, ::size_t max_write_capacity,
-                    const std::vector<std::string> &args);
+                    ::size_t max_cache_capacity, ::size_t max_write_capacity);
 
   virtual void ReadKVRecords(std::vector<ValueType *> &cache,
 							 const std::vector<KeyType> &key,
