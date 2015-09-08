@@ -485,7 +485,6 @@ void DKVStoreRDMA::WriteKVRecords(const std::vector<KeyType> &key,
       bytes_local_written += value_size_ * sizeof(ValueType);
 
     } else {
-std::cerr << "key " << key[i] << " owner " << owner << std::endl;
       const ValueType *source;
       if (write_.contains(value[i])) {
         source = value[i];
