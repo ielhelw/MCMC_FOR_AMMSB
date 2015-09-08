@@ -31,10 +31,10 @@ void MCMCSamplerStochastic::init() {
     num_node_sample = args_.num_node_sample;
   }
   if (args_.mini_batch_size == 0) {
-    mini_batch_size =
-        N / 10;  // old default for STRATIFIED_RANDOM_NODE_SAMPLING
+    // old default for STRATIFIED_RANDOM_NODE_SAMPLING
+    mini_batch_size = N / 10;
   }
-  info(std::cerr);
+  sampler_stochastic_info(std::cerr);
 
   // model parameters and re-parameterization
   // since the model parameter - \pi and \beta should stay in the simplex,
@@ -237,7 +237,7 @@ void MCMCSamplerStochastic::run() {
 // << num_node_sample << std::endl;
 
 #ifndef MCMC_EFFICIENCY_COMPATIBILITY_MODE
-    double eps_t = a * std::pow(1 + step_count / b, -c);  // step size
+    double eps_t = get_eps_t();
 // double eps_t = std::pow(1024+step_count, -0.5);
 #endif
 
