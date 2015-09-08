@@ -220,6 +220,19 @@ void Learner::GnuPlot() {
   gp << "set grid ytics" << std::endl;
   gp << "set xrange [0:]" << std::endl;
   gp << "set yrange [0:]" << std::endl;
+  gp << std::fixed
+     << std::setprecision(8)
+     << "set title \"" << args_.input_filename_ << "\\n"
+     << "K=" << args_.K
+     << ", MiniBatch=" << args_.mini_batch_size
+     << ", Neighbors=" << args_.num_node_sample
+     << ", alpha=" << args_.alpha << "\\n"
+     << "eta=(" << args_.eta0 << "," << args_.eta1 << ")" << "\\n"
+     << "eps=" << args_.epsilon << "\\n"
+     << "a=" << args_.a << ",b=" << args_.b << ",c=" << args_.c << "\\n"
+     << "held-out=" << args_.held_out_ratio << "\\n"
+     << "interval=" << args_.interval
+     << "\"" << std::endl;
   gp << "plot '-' with lines title 'Perplexity'" << std::endl;
   gp.send1d(ppxs_held_out);
 }
