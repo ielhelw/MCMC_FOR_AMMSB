@@ -108,6 +108,8 @@ class MCMCSamplerStochastic : public Learner {
 
   std::vector<std::vector<double> > theta;  // parameterization for \beta
   std::vector<std::vector<double> > phi;    // parameterization for \pi
+
+  std::chrono::time_point<std::chrono::system_clock> t_start_;
 };
 
 }  // namespace learning

@@ -19,7 +19,6 @@
 #include <utility>
 #include <numeric>
 #include <algorithm>	// min, max
-#include <chrono>
 
 #include "mcmc/exception.h"
 
@@ -247,7 +246,6 @@ class MCMCSamplerStochasticDistributed : public MCMCSamplerStochastic {
   Timer         t_broadcast_beta_;
   Timer         t_deploy_minibatch_;
 
-  clock_t	t_start_;
   std::vector<double> timings_;
 };
 

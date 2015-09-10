@@ -396,6 +396,9 @@ void MCMCSamplerStochasticDistributed::init() {
   r = MPI_Comm_rank(MPI_COMM_WORLD, &mpi_rank_);
   mpi_error_test(r, "MPI_Comm_rank() fails");
 
+  std::cerr << "MPI_Init() done, rank " << mpi_rank_ <<
+    " size " << mpi_size_ << std::endl;
+
   std::cerr << "Use D-KV store type " << args_.dkv_type << std::endl;
   switch (args_.dkv_type) {
   case DKV::TYPE::FILE:
@@ -592,7 +595,8 @@ void MCMCSamplerStochasticDistributed::run() {
   r = MPI_Barrier(MPI_COMM_WORLD);
   mpi_error_test(r, "MPI_Barrier(initial) fails");
 
-  t_start_ = clock();
+  t_start_ = std::chrono::system_clock::now();
+
   while (step_count < max_iteration && ! is_converged()) {
 
     t_outer_.start();
@@ -794,27 +798,30 @@ void MCMCSamplerStochasticDistributed::init_pi() {
 
 void MCMCSamplerStochasticDistributed::check_perplexity() {
   if (step_count % interval == 0) {
+    using namespace std::chrono;
+
     t_perplexity_.start();
     // TODO load pi for the held-out set to calculate perplexity
     double ppx_score = cal_perplexity_held_out();
     t_perplexity_.stop();
     if (mpi_rank_ == mpi_master_) {
-      std::cout << std::fixed << std::setprecision(12) <<
-        "step count: " << step_count <<
-        " perplexity for hold out set: " << ppx_score << std::endl;
+      auto t_now = system_clock::now();
+      auto t_ms = duration_cast<milliseconds>(t_now - t_start_).count();
+      std::cout << std::fixed
+                << "step count: " << step_count
+                << " time: " << std::setprecision(3) << (t_ms / 1000.0)
+                << " perplexity for hold out set: " << std::setprecision(12) <<
+                ppx_score << std::endl;
       ppxs_held_out.push_back(ppx_score);
 #ifdef MCMC_ENABLE_GNUPLOT
       GnuPlot();
 #endif
 
-      clock_t t2 = clock();
-      double diff = (double)t2 - (double)t_start_;
-      double seconds = diff / CLOCKS_PER_SEC;
+      double seconds = t_ms / 1000.0;
       timings_.push_back(seconds);
       iterations.push_back(step_count);
     }
 
-    print_mem_usage(std::cout);
 #if 0
     if (ppx_score < 5.0) {
       stepsize_switch = true;

@@ -151,7 +151,7 @@ class Options {
       ("mcmc.K,K", po::value< ::size_t>(&K)->default_value(300), "K")
       ("mcmc.mini-batch-size,m",
        po::value< ::size_t>(&mini_batch_size)->default_value(0),
-          "mini_batch_size")
+       "mini_batch_size")
       ("mcmc.num-node-sample,n",
        po::value< ::size_t>(&num_node_sample)->default_value(0),
        "neighbor sample size")
@@ -290,11 +290,11 @@ class Options {
   mutable ::size_t	max_pi_cache_entries_;
   bool REPLICATED_NETWORK;
 #endif
-    po::options_description desc_all;
-    po::options_description desc_mcmc;
-    po::options_description desc_io;
+  po::options_description desc_all;
+  po::options_description desc_mcmc;
+  po::options_description desc_io;
 #ifdef MCMC_ENABLE_DISTRIBUTED
-    po::options_description desc_distr;
+  po::options_description desc_distr;
 #endif
 
   friend std::ostream& operator<<(std::ostream& out, const Options& opts);

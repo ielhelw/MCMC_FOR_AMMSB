@@ -23,6 +23,14 @@ Network::~Network() {
   delete const_cast<Data*>(data_);
 }
 
+::size_t Network::num_pieces_for_minibatch(::size_t mini_batch_size) const {
+  return N / mini_batch_size;
+}
+
+::size_t Network::real_minibatch_size(::size_t mini_batch_size) const {
+  return N / num_pieces_for_minibatch(mini_batch_size);
+}
+
 void Network::Init(const Options& args, double held_out_ratio,
                    SourceAwareRandom* rng, int world_rank) {
   rng_ = rng;
@@ -167,12 +175,9 @@ void Network::FillInfo(NetworkInfo* info) {
 EdgeSample Network::sample_mini_batch(::size_t mini_batch_size,
                                       strategy::strategy strategy) const {
   switch (strategy) {
-    case strategy::STRATIFIED_RANDOM_NODE: {
-      ::size_t num_pieces = (N + mini_batch_size - 1) / mini_batch_size;
-      // std::cerr << "Set stratified random node sampling divisor to " <<
-      //   num_pieces << " mini_batch_size " << mini_batch_size << std::endl;
-      return stratified_random_node_sampling(num_pieces);
-    }
+    case strategy::STRATIFIED_RANDOM_NODE:
+      return stratified_random_node_sampling(
+               num_pieces_for_minibatch(mini_batch_size));
     default:
       throw MCMCException("Invalid sampling strategy");
   }

@@ -131,6 +131,9 @@ void MCMCSamplerStochastic::sampler_stochastic_info(std::ostream &s) {
   s << "num_node_sample " << num_node_sample << std::endl;
   s << "a " << a << " b " << b << " c " << c;
   s << " eta (" << eta[0] << "," << eta[1] << ")" << std::endl;
+  s << "minibatch size: specified " << mini_batch_size <<
+    " from num_pieces (" << network.num_pieces_for_minibatch(mini_batch_size) <<
+    ") is " << network.real_minibatch_size(mini_batch_size) << std::endl;
 }
 
 void MCMCSamplerStochastic::run() {
@@ -146,6 +149,7 @@ void MCMCSamplerStochastic::run() {
   timer::Timer::setTabular(true);
 
   using namespace std::chrono;
+  t_start_ = system_clock::now();
 
   clock_t t1, t2;
   std::vector<double> timings;
@@ -160,9 +164,13 @@ void MCMCSamplerStochastic::run() {
       t_perplexity.start();
       double ppx_score = cal_perplexity_held_out();
       t_perplexity.stop();
-      std::cout << std::fixed << std::setprecision(12)
+      auto t_now = system_clock::now();
+      auto t_ms = duration_cast<milliseconds>(t_now - t_start_).count();
+      std::cout << std::fixed
                 << "step count: " << step_count
-                << " perplexity for hold out set: " << ppx_score << std::endl;
+                << " time: " << std::setprecision(3) << (t_ms / 1000.0)
+                << " perplexity for hold out set: " << std::setprecision(12) <<
+                ppx_score << std::endl;
       ppxs_held_out.push_back(ppx_score);
 #ifdef MCMC_ENABLE_GNUPLOT
       GnuPlot();
@@ -179,7 +187,6 @@ void MCMCSamplerStochastic::run() {
         //print "switching to smaller step size mode!"
       }
 #endif
-      print_mem_usage(std::cout);
     }
 
     // write into file

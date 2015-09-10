@@ -149,6 +149,8 @@ class Network {
    */
   EdgeSample sample_mini_batch(::size_t mini_batch_size,
                                strategy::strategy strategy) const;
+  ::size_t num_pieces_for_minibatch(::size_t mini_batch_size) const;
+  ::size_t real_minibatch_size(::size_t mini_batch_size) const;
 
   ::size_t max_minibatch_nodes_for_strategy(::size_t mini_batch_size,
                                             strategy::strategy strategy) const;
