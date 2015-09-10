@@ -32,6 +32,11 @@ cmake \
         -DTINYXML2_ROOT=$THIRDPARTY/tinyxml2 \
         -DSPARSEHASH_ROOT=$SPARSEHASH_ROOT \
         -DMCMC_BUILD_MODE=DISTR \
+# optionally:
+	-DCMAKE_BUILD_TYPE=Release \
+	-DCMAKE_BUILD_TYPE=Debug \
+	-DGNUPLOTIO_ROOT:UNINITIALIZED=$THIRDPARTY/gnuplot-iostream \
+	-DMCMC_GNUPLOT_ENABLE=ON \
         ..
 cd ..
 
