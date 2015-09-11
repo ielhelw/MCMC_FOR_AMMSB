@@ -684,8 +684,6 @@ void MCMCSamplerStochasticDistributed::run() {
   std::cout << t_barrier_phi_ << std::endl;
   std::cout << t_update_pi_ << std::endl;
   std::cout << t_store_pi_minibatch_ << std::endl;
-  std::cout << t_purge_pi_perp_ << std::endl;
-  std::cout << t_reduce_perp_ << std::endl;
   std::cout << t_barrier_pi_ << std::endl;
   std::cout << t_update_beta_ << std::endl;
   std::cout << t_beta_zero_ << std::endl;
@@ -698,6 +696,7 @@ void MCMCSamplerStochasticDistributed::run() {
   std::cout << t_perplexity_ << std::endl;
   std::cout << t_load_pi_perp_ << std::endl;
   std::cout << t_cal_edge_likelihood_ << std::endl;
+  std::cout << t_purge_pi_perp_ << std::endl;
   std::cout << t_reduce_perp_ << std::endl;
 }
 
