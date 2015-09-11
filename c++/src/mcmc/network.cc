@@ -24,7 +24,7 @@ Network::~Network() {
 }
 
 ::size_t Network::num_pieces_for_minibatch(::size_t mini_batch_size) const {
-  return N / mini_batch_size;
+  return (N + mini_batch_size - 1) / mini_batch_size;
 }
 
 ::size_t Network::real_minibatch_size(::size_t mini_batch_size) const {
