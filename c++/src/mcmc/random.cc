@@ -149,6 +149,10 @@ uint64_t Random::rand() {
   return r;
 }
 
+double Random::random() {
+  return 1.0 * rand() / std::numeric_limits<uint64_t>::max();
+}
+
 double Random::randn() {
   return gsl_ran_gaussian_ziggurat(1.0);
 }
@@ -157,10 +161,11 @@ double Random::randn() {
 
 uint64_t Random::seed(int x) const { return 0; }
 
-double Random::randn() {
-  std::default_random_engine generator;
-  std::normal_distribution<double> normalDistribution;
+double Random::random() {
+  return 1.0 * rand() / RAND_MAX;
+}
 
+double Random::randn() {
   return normalDistribution(generator);
 }
 
@@ -168,10 +173,6 @@ double Random::randn() {
 
 int64_t Random::randint(int64_t from, int64_t upto) {
   return (rand() % (upto + 1 - from)) + from;
-}
-
-double Random::random() {
-  return (1.0 * rand() / std::numeric_limits<uint64_t>::max());
 }
 
 
@@ -247,6 +248,7 @@ double Random::gamma(double p1, double p2) {
 #endif  // def MCMC_RANDOM_SYSTEM
 }
 
+#ifdef UNFOLD
 std::vector<std::vector<double> > Random::gamma(double p1, double p2,
                                                 ::size_t n1, ::size_t n2) {
   std::vector<std::vector<double> > a(n1, std::vector<double>(n2));
@@ -259,6 +261,33 @@ std::vector<std::vector<double> > Random::gamma(double p1, double p2,
 
   return a;
 }
+#else
+std::vector<std::vector<double> > Random::gamma(double p1, double p2,
+                                                ::size_t n1, ::size_t n2) {
+  std::vector<std::vector<double> > a(n1, std::vector<double>(n2));
+#ifdef MCMC_RANDOM_SYSTEM
+#if __GNUC_MINOR__ >= 5
+  std::gamma_distribution<double> gammaDistribution(p1, p2);
+
+  for (::size_t i = 0; i < n1; i++) {
+    for (::size_t j = 0; j < n2; j++) {
+      a[i][j] = gammaDistribution(generator);
+    }
+  }
+#else  // if __GNUC_MINOR__ >= 5
+  throw UnimplementedException("random::gamma");
+#endif
+#else
+  for (::size_t i = 0; i < n1; i++) {
+    for (::size_t j = 0; j < n2; j++) {
+      a[i][j] = gsl_ran_gamma(p1, p2);
+    }
+  }
+#endif  // def MCMC_RANDOM_SYSTEM
+
+  return a;
+}
+#endif
 
 #ifndef MCMC_RANDOM_SYSTEM
 /* gauss.c - gaussian random numbers, using the Ziggurat method
