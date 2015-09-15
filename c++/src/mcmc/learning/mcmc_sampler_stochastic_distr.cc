@@ -1513,7 +1513,7 @@ double MCMCSamplerStochasticDistributed::cal_perplexity_held_out() {
     avg_likelihood = (accu.link.likelihood + accu.non_link.likelihood) /
       (accu.link.count + accu.non_link.count);
   }
-  if (true && mpi_rank_ == mpi_master_) {
+  if (false && mpi_rank_ == mpi_master_) {
     double avg_likelihood1 = link_ratio *
       (accu.link.likelihood / accu.link.count) +
       (1.0 - link_ratio) * (accu.non_link.likelihood / accu.non_link.count);

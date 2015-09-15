@@ -197,7 +197,7 @@ double Learner::cal_perplexity(const EdgeMap &data) {
     avg_likelihood =
         (link_likelihood + non_link_likelihood) / (link_count + non_link_count);
   }
-  if (true) {
+  if (false) {
     double avg_likelihood1 =
         link_ratio * (link_likelihood / link_count) +
         (1.0 - link_ratio) * (non_link_likelihood / non_link_count);
