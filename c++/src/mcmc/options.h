@@ -172,7 +172,12 @@ class Options {
        "held_out_ratio")
       ("mcmc.seed",
        po::value<int>(&random_seed)->default_value(42), "random seed")
-    ;
+#ifdef MCMC_ENABLE_GNUPLOT
+      ("mcmc.disable-gnuplot",
+       po::bool_switch(&disable_gnuplot_)->default_value(false),
+       "disable gnuplot of perplexity")
+#endif
+      ;
     desc_all.add(desc_mcmc);
 
       // input options 
@@ -282,6 +287,10 @@ class Options {
   bool input_compressed_;
 
   int random_seed;
+
+#ifdef MCMC_ENABLE_GNUPLOT
+  bool disable_gnuplot_;
+#endif
 
   std::vector<std::string> remains;
 #ifdef MCMC_ENABLE_DISTRIBUTED

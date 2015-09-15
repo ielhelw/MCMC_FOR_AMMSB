@@ -32,7 +32,7 @@ namespace mcmc {
 #  error "No point in RamCloud without distributed algorithm"
 #endif
 #if defined MCMC_ENABLE_RDMA && ! defined MCMC_ENABLE_DISTRIBUTED
-#  error "No point in RDMA without distributed algorithm"
+// #  error "No point in RDMA without distributed algorithm"
 #endif
 
 #cmakedefine MCMC_ENABLE_GNUPLOT

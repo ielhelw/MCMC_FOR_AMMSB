@@ -173,7 +173,9 @@ void MCMCSamplerStochastic::run() {
                 ppx_score << std::endl;
       ppxs_held_out.push_back(ppx_score);
 #ifdef MCMC_ENABLE_GNUPLOT
-      GnuPlot();
+      if (! args_.disable_gnuplot_) {
+        GnuPlot();
+      }
 #endif
 
       t2 = clock();
