@@ -1,0 +1,15 @@
+#!/bin/bash
+
+me=`basename $0`
+TMPFILE=/tmp/$me-cmd-$$
+echo TMPFILE $TMPFILE
+pp_title=`dirname $0`/pp-title
+
+# trap "rm -f $TMPFILE" TERM INT EXIT
+
+(echo -n "plot "; for f in "$@"; do
+	title="`$pp_title "$f"`"
+	# echo "title $title"
+	echo -n "\"< grep '^average_count' $f\" using 6:(exp(\$14)) title \"$title\", "
+done; echo "") > $TMPFILE
+gnuplot $TMPFILE -

@@ -1,0 +1,161 @@
+#!/bin/perl
+
+use strict;
+
+use File::Basename;
+use File::Temp qw/ tempfile tempdir /;
+
+my $floatmatch = qr/[+-]?\d*(\.\d+)?([eE][+-]?\d+)?/;
+
+my @average_count = ();
+my @step_count = ();
+my @time = ();
+my @perplexity = ();
+
+my $random_seed;
+my $application;
+my $np = "";
+my $dataset;
+my $N;
+my $E;
+my $link_ratio;
+my $held_out_ratio;
+my $held_out_size = 0;
+my $K;
+my $num_node_sample;
+my $a;
+my $b;
+my $c;
+my $eta0;
+my $eta1;
+my $minibatch_size;
+my $epsilon;
+my $alpha;
+my $iterations;
+my $convergence;
+my $max_average_domain = "auto";
+
+my ( $tmphandle, $tmpfile ) = tempfile( UNLINK => 1 );
+
+# system("gnuplot $tmpfile -");
+
+while (<>) {
+	s/^\s+//;
+	s/\s+$//;
+
+	if (0) {
+
+	} elsif (m/^average_count is: (\d+) step count: (\d+) time: ($floatmatch) perplexity for hold out set: ($floatmatch)$/) {
+		# push @average_count, $1;
+		# push @step_count, $2;
+		# push @time, $3;
+		# push @perplexity, $4;
+
+	} elsif (m/^Random seed (.*)$/) {
+		$random_seed = $1;
+
+	} elsif (m/^start MCMC (.*)$/) {
+		$application = $1;
+
+	} elsif (m/^MPI_Init\(\) done, rank \d+ size (\d+)$/) {
+		$np = $1;
+
+	} elsif (m/^Handle input dataset from file (.*)$/) {
+		$dataset = basename($1);
+		if ($dataset eq "graph.gz") {
+			$dataset = basename(dirname($1));
+		}
+
+	} elsif (m/^num_node_sample (\d+)$/) {
+		$num_node_sample = $1;
+
+	} elsif (m/^Set held_out_ratio to default ($floatmatch)$/) {
+		$held_out_ratio = $1;
+
+	} elsif (m/^WARNING: Expect held-out size (\d+), get (\d+)N (\d+) E (\d+) link ratio ($floatmatch) K (\d+)$/) {
+		$held_out_size = $2;
+		$N = $3;
+		$E = $4;
+		$link_ratio = $5;
+		$K = $8;
+
+	} elsif (m/^WARNING: Expect held-out size (\d+), get (\d+)$/) {
+		$held_out_size = $2;
+
+	} elsif (m/^N (\d+) E (\d+) link ratio ($floatmatch) K (\d+)$/) {
+		$N = $1;
+		$E = $2;
+		$link_ratio = $3;
+		$K = $6;
+
+	} elsif (m/^a ($floatmatch) b ($floatmatch) c ($floatmatch) eta \(($floatmatch),($floatmatch)\)$/) {
+		$a = $1;
+		$b = $4;
+		$c = $7;
+		$eta0 = $10;
+		$eta1 = $13;
+
+	} elsif (m/^minibatch size (\d+) epsilon ($floatmatch) alpha ($floatmatch) iterations (\d+) convergence ($floatmatch)/) {
+		$minibatch_size = $1;
+		$epsilon = $2;
+		$alpha = $5;
+		$iterations = $8;
+		$convergence = $9;
+
+	} elsif (m/^minibatch size (\d+) epsilon ($floatmatch) alpha ($floatmatch) iterations (\d+) convergence ($floatmatch) max average domain (\d+)$/) {
+		$minibatch_size = $1;
+		$epsilon = $2;
+		$alpha = $5;
+		$iterations = $8;
+		$convergence = $9;
+		$max_average_domain = $12;
+		if ($max_average_domain eq "18446744073709551615") {
+			$max_average_domain = "auto";
+		}
+
+	} elsif (m/^N (\d+) E (\d+) K (\d+) iterations (\d+) minibatch size (\d+) link ratio ($floatmatch) convergence ($floatmatch)/) {
+		$N = $1;
+		$E = $2;
+		$K = $3;
+		$iterations = $4;
+		$minibatch_size = $5;
+		$convergence = $9;
+
+	} elsif (m/^num_node_sample (\d+) a ($floatmatch) b ($floatmatch) c ($floatmatch) alpha ($floatmatch) eta \(($floatmatch),($floatmatch)\)/) {
+		$num_node_sample = $1;
+		$a = $2;
+		$b = $5;
+		$c = $8;
+		$alpha = $11;
+		$eta0 = $14;
+		$eta1 = $17
+
+	} else {
+		# print "Ignore this line: \"$_\"\n";
+	}
+}
+
+if ($held_out_size > 0) {
+	$held_out_ratio = sprintf("%.3g", (1.0 * $held_out_size) / $E);
+	# print "held_out_ratio $held_out_size / $E = $held_out_ratio\n";
+}
+
+if ($np eq "") {
+	if ($ARGV =~ /^.*-np(\d+).*$/) {
+		$np = $1;
+		# print "Inferred np = $np from file name\n";
+	}
+}
+
+# print "application \"$application\" dataset \"$dataset\" np $np\n";
+# print "minibatch size $minibatch_size num_node_sample $num_node_sample\n";
+# print "a $a b $b c $c eta ($eta0,$eta1) alpha $alpha epsilon $epsilon\n";
+
+print "$dataset h=$held_out_ratio K=$K m=$minibatch_size n=$num_node_sample a=$a b=$b c=$c eta=($eta0,$eta1) alpha=$alpha";
+if ($max_average_domain ne "auto") {
+	print " max[av]=$max_average_domain";
+}
+if ($np ne "") {
+	print " np=$np";
+}
+print "\n";
