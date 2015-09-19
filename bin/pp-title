@@ -26,6 +26,7 @@ my $num_node_sample;
 my $a;
 my $b;
 my $c;
+my $eps_t;
 my $eta0;
 my $eta1;
 my $minibatch_size;
@@ -94,6 +95,14 @@ while (<>) {
 		$c = $7;
 		$eta0 = $10;
 		$eta1 = $13;
+		if ($c eq "0") {
+			$eps_t = $a;
+		}
+
+	} elsif (m/^eps_t ($floatmatch) eta \(($floatmatch),($floatmatch)\)$/) {
+		$eps_t = $1;
+		$eta0 = $4;
+		$eta1 = $7;
 
 	} elsif (m/^minibatch size (\d+) epsilon ($floatmatch) alpha ($floatmatch) iterations (\d+) convergence ($floatmatch)/) {
 		$minibatch_size = $1;
@@ -151,7 +160,13 @@ if ($np eq "") {
 # print "minibatch size $minibatch_size num_node_sample $num_node_sample\n";
 # print "a $a b $b c $c eta ($eta0,$eta1) alpha $alpha epsilon $epsilon\n";
 
-print "$dataset h=$held_out_ratio K=$K m=$minibatch_size n=$num_node_sample a=$a b=$b c=$c eta=($eta0,$eta1) alpha=$alpha";
+print "$dataset h=$held_out_ratio K=$K m=$minibatch_size n=$num_node_sample";
+if ($eps_t ne "") {
+	print " eps_t=$eps_t";
+} else {
+	print " a=$a b=$b c=$c";
+}
+print " eta=($eta0,$eta1) alpha=$alpha";
 if ($max_average_domain ne "auto") {
 	print " max[av]=$max_average_domain";
 }
