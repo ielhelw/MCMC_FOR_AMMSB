@@ -1162,6 +1162,8 @@ void MCMCSamplerStochasticDistributed::update_phi(
                       &(*phi_node)[chunk_start + i]);
     }
     t_update_phi_.stop();
+
+    d_kv_store_->PurgeKVRecords();
   }
 }
 
