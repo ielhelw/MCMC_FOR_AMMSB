@@ -7,9 +7,10 @@ pp_title=`dirname $0`/pp-title
 
 # trap "rm -f $TMPFILE" TERM INT EXIT
 
-(echo -n "plot "; for f in "$@"; do
+(echo "set y2tics"; echo -n "plot "; for f in "$@"; do
 	title="`$pp_title "$f"`"
 	# echo "title $title"
 	echo -n "\"< grep '^average_count' $f\" using 6:(exp(\$14)) with lines title \"$title\", "
+	echo -n "\"< grep '^average_count' $f\" using 6:8 axes x1y2 with lines notitle, "
 done; echo "") > $TMPFILE
 gnuplot $TMPFILE -
