@@ -3,6 +3,8 @@
 
 #include <cmath>
 
+#include <boost/circular_buffer.hpp>
+
 #include "mcmc/config.h"
 
 #include "mcmc/types.h"
@@ -10,10 +12,6 @@
 #include "mcmc/network.h"
 #include "mcmc/source-aware-random.h"
 #include "mcmc/preprocess/data_factory.h"
-
-#ifdef MCMC_ENABLE_GNUPLOT
-#include "gnuplot-iostream.h"
-#endif
 
 
 namespace mcmc {
@@ -48,15 +46,9 @@ class Learner {
  protected:
   void info(std::ostream &s);
 
-  const std::vector<double> &get_ppxs_held_out() const;
-
-  const std::vector<double> &get_ppxs_test() const;
-
   void set_max_iteration(::size_t max_iteration);
 
   double cal_perplexity_held_out();
-
-  double cal_perplexity_test();
 
   bool is_converged() const;
 
@@ -148,10 +140,6 @@ class Learner {
     return s;
   }
 
-#ifdef MCMC_ENABLE_GNUPLOT
-  void GnuPlot();
-#endif
-
   const Options args_;
   Network network;
 
@@ -169,10 +157,9 @@ class Learner {
 
   ::size_t step_count;
 
-  std::vector<double> ppxs_held_out;
-  std::vector<double> ppxs_test;
-  std::vector<double> iterations;
-  std::vector<double> ppx_for_heldout;
+  boost::circular_buffer<double> ppxs_heldout_cb_;
+  // Used to calculate perplexity per edge in the held-out set.
+  std::vector<double> ppx_per_heldout_edge_;
 
   ::size_t max_iteration;
 
@@ -189,10 +176,6 @@ class Learner {
   const bool RANDOM_PRESERVE_RANGE_ORDER = true;
 #else
   const bool RANDOM_PRESERVE_RANGE_ORDER = false;
-#endif
-
-#ifdef MCMC_ENABLE_GNUPLOT
-  Gnuplot gp;
 #endif
 };
 

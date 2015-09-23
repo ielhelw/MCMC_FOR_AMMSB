@@ -280,7 +280,7 @@ void MCMCSamplerStochasticDistributed::BroadcastNetworkInfo() {
     // ration between link edges and non-link edges
     link_ratio = network.get_num_linked_edges() / ((N * (N - 1)) / 2.0);
 
-    ppx_for_heldout = std::vector<double>(network.get_held_out_size(), 0.0);
+    ppx_per_heldout_edge_ = std::vector<double>(network.get_held_out_size(), 0.0);
 
     this->info(std::cerr);
   }
@@ -728,18 +728,6 @@ void MCMCSamplerStochasticDistributed::init_beta() {
   np::row_normalize(&temp, theta);
   std::transform(temp.begin(), temp.end(), beta.begin(),
                  np::SelectColumn<double>(1));
-
-  if (true) {
-    std::cout << std::fixed << std::setprecision(12) << "beta[0] " << beta[0] <<
-      std::endl;
-  } else {
-    std::cerr << "beta ";
-    for (::size_t k = 0; k < K; ++k) {
-      std::cerr << std::fixed << std::setprecision(12) << beta[k] << " ";
-    }
-    std::cerr << std::endl;
-  }
-
 }
 
 
@@ -761,15 +749,6 @@ void MCMCSamplerStochasticDistributed::init_pi() {
     std::endl;
   for (int32_t i = mpi_rank_; i < static_cast<int32_t>(N); i += mpi_size_) {
     std::vector<double> phi_pi = phi_init_rng_->gamma(1, 1, 1, K)[0];
-    if (true) {
-      if (i < 10) {
-        std::cerr << "phi[" << i << "]: ";
-        for (::size_t k = 0; k < std::min(K, 10UL); ++k) {
-          std::cerr << std::fixed << std::setprecision(12) << phi_pi[k] << " ";
-        }
-        std::cerr << std::endl;
-      }
-    }
 #ifndef NDEBUG
     for (auto ph : phi_pi) {
       assert(ph >= 0.0);
@@ -777,15 +756,6 @@ void MCMCSamplerStochasticDistributed::init_pi() {
 #endif
 
     pi_from_phi(pi, phi_pi);
-    if (true) {
-      if (i < 10) {
-        std::cerr << "pi[" << i << "]: ";
-        for (::size_t k = 0; k < std::min(K, 10UL); ++k) {
-          std::cerr << std::fixed << std::setprecision(12) << pi[k] << " ";
-        }
-        std::cerr << std::endl;
-      }
-    }
 
     std::vector<int32_t> node(1, i);
     std::vector<const double*> pi_wrapper(1, pi);
@@ -813,45 +783,12 @@ void MCMCSamplerStochasticDistributed::check_perplexity() {
                 << " time: " << std::setprecision(3) << (t_ms / 1000.0)
                 << " perplexity for hold out set: " << std::setprecision(12) <<
                 ppx_score << std::endl;
-      ppxs_held_out.push_back(ppx_score);
-#ifdef MCMC_ENABLE_GNUPLOT
-      if (! args_.disable_gnuplot_) {
-        GnuPlot();
-      }
-#endif
+      ppxs_heldout_cb_.push_back(ppx_score);
 
       double seconds = t_ms / 1000.0;
       timings_.push_back(seconds);
-      iterations.push_back(step_count);
     }
 
-#if 0
-    if (ppx_score < 5.0) {
-      stepsize_switch = true;
-      //print "switching to smaller step size mode!"
-    }
-#endif
-  }
-
-  // write into file
-  if (step_count % 2000 == 1) {
-    if (false) {
-      throw MCMCException(
-          "Implement parallel dump of perplexity[node] history");
-      std::ofstream myfile;
-      std::string file_name = "mcmc_stochastic_" + to_string(K) +
-        "_num_nodes_" + to_string(num_node_sample) + "_us_air.txt";
-      myfile.open (file_name);
-      int size = ppxs_held_out.size();
-      for (int i = 0; i < size; ++i){
-
-        //int iteration = i * 100 + 1;
-        myfile << iterations[i] << "    " << timings_[i] << "    " <<
-          ppxs_held_out[i] << "\n";
-      }
-
-      myfile.close();
-    }
   }
 }
 
@@ -966,14 +903,6 @@ void MCMCSamplerStochasticDistributed::ScatterSubGraph(
     Vertex* marshall = &flat_subgraph[offset];
     local_network_.unmarshall_local_graph(i, marshall, set_size[i]);
     offset += set_size[i];
-    if (false) {
-      std::cerr << "Vertex " << nodes_[i] << ": ";
-      for (auto p : local_network_.linked_edges(i)) {
-        std::cerr << p << " ";
-      }
-      std::cerr << std::endl;
-      std::cerr << "Unmarshalled " << set_size[i] << " edges" << std::endl;
-    }
   }
 }
 
@@ -993,13 +922,6 @@ EdgeSample MCMCSamplerStochasticDistributed::deploy_mini_batch() {
                                            strategy::STRATIFIED_RANDOM_NODE);
     t_mini_batch_.stop();
     const MinibatchSet &mini_batch = *edgeSample.first;
-    if (false) {
-      std::cerr << "Minibatch[" << mini_batch.size() << "]: ";
-      for (auto e : mini_batch) {
-        std::cerr << e << " ";
-      }
-      std::cerr << std::endl;
-    }
     // std::cerr << "Done sample_mini_batch" << std::endl;
 
     // iterate through each node in the mini batch.
@@ -1021,17 +943,6 @@ EdgeSample MCMCSamplerStochasticDistributed::deploy_mini_batch() {
       } else {
         subminibatch[owner].push_back(n);
       }
-    }
-    if (false) {
-      std::cerr << "#nodes " << nodes.size() <<
-        " #unassigned " << unassigned.size() <<
-        " upb " << upper_bound << std::endl;
-
-      std::cerr << "subminibatch[" << subminibatch.size() << "] = [";
-      for (auto s : subminibatch) {
-        std::cerr << s.size() << " ";
-      }
-      std::cerr << "]" << std::endl;
     }
 
     ::size_t i = master_is_worker_ ? 0 : 1;
@@ -1083,14 +994,6 @@ EdgeSample MCMCSamplerStochasticDistributed::deploy_mini_batch() {
     mpi_error_test(r, "MPI_Scatterv of minibatch fails");
   }
 
-  if (false) {
-    std::cerr << "Master gives me minibatch nodes[" << my_minibatch_size <<
-      "] ";
-    for (auto n : nodes_) {
-      std::cerr << n << " ";
-    }
-    std::cerr << std::endl;
-  }
 
   if (! args_.REPLICATED_NETWORK) {
     ScatterSubGraph(subminibatch);
@@ -1177,28 +1080,6 @@ void MCMCSamplerStochasticDistributed::update_phi_node(
     double eps_t, Random::Random* rnd,
     std::vector<double>* phi_node	// out parameter
     ) {
-  if (false) {
-    std::cerr << "update_phi pre ";
-    std::cerr << "phi[" << i << "] ";
-    for (::size_t k = 0; k < K; ++k) {
-      std::cerr << std::fixed << std::setprecision(12) << (pi_node[k] * pi_node[K]) << " ";
-    }
-    std::cerr << std::endl;
-    std::cerr << "pi[" << i << "] ";
-    for (::size_t k = 0; k < K; ++k) {
-      std::cerr << std::fixed << std::setprecision(12) << pi_node[k] << " ";
-    }
-    std::cerr << std::endl;
-    for (::size_t ix = 0; ix < real_num_node_sample(); ++ix) {
-      int32_t neighbor = neighbors[ix];
-      std::cerr << "pi[" << neighbor << "] ";
-      for (::size_t k = 0; k < K; ++k) {
-        std::cerr << std::fixed << std::setprecision(12) << pi[ix][k] << " ";
-      }
-      std::cerr << std::endl;
-      ++ix;
-    }
-  }
 
   double phi_i_sum = pi_node[K];
   assert(! std::isnan(phi_i_sum));
@@ -1459,15 +1340,15 @@ double MCMCSamplerStochasticDistributed::cal_perplexity_held_out() {
       }
 
       //cout<<"AVERAGE COUNT: " <<average_count;
-      ppx_for_heldout[i] = (ppx_for_heldout[i] * (average_count-1) + edge_likelihood)/(average_count);
+      ppx_per_heldout_edge_[i] = (ppx_per_heldout_edge_[i] * (average_count-1) + edge_likelihood)/(average_count);
       // Edge e(chunk_nodes[a], chunk_nodes[b]);
       // std::cout << std::fixed << std::setprecision(12) << e <<
       //   " in? " << (edge_in.is_edge ? "True" : "False") <<
       //   " -> " << edge_likelihood << " av. " << average_count <<
-      //   " ppx[" << i << "] " << ppx_for_heldout[i] << std::endl;
+      //   " ppx[" << i << "] " << ppx_per_heldout_edge_[i] << std::endl;
       if (edge_in.is_edge) {
         perp_.accu_[omp_get_thread_num()].link.count++;
-        perp_.accu_[omp_get_thread_num()].link.likelihood += std::log(ppx_for_heldout[i]);
+        perp_.accu_[omp_get_thread_num()].link.likelihood += std::log(ppx_per_heldout_edge_[i]);
         //link_likelihood += edge_likelihood;
 
         if (std::isnan(perp_.accu_[omp_get_thread_num()].link.likelihood)){
@@ -1478,7 +1359,7 @@ double MCMCSamplerStochasticDistributed::cal_perplexity_held_out() {
         //perp_.accu_[omp_get_thread_num()].non_link.likelihood +=
         //  edge_likelihood;
         perp_.accu_[omp_get_thread_num()].non_link.likelihood +=
-          std::log(ppx_for_heldout[i]);
+          std::log(ppx_per_heldout_edge_[i]);
         if (std::isnan(perp_.accu_[omp_get_thread_num()].non_link.likelihood)){
           std::cerr << "non_link_likelihood is NaN; potential bug" << std::endl;
         }
@@ -1521,22 +1402,7 @@ double MCMCSamplerStochasticDistributed::cal_perplexity_held_out() {
     avg_likelihood = (accu.link.likelihood + accu.non_link.likelihood) /
       (accu.link.count + accu.non_link.count);
   }
-  if (false && mpi_rank_ == mpi_master_) {
-    double avg_likelihood1 = link_ratio *
-      (accu.link.likelihood / accu.link.count) +
-      (1.0 - link_ratio) * (accu.non_link.likelihood / accu.non_link.count);
-    std::cout << std::fixed << std::setprecision(12) <<
-      avg_likelihood << " " << (accu.link.likelihood / accu.link.count) <<
-      " " << accu.link.count << " " <<
-      (accu.non_link.likelihood / accu.non_link.count) << " " <<
-      accu.non_link.count << " " << avg_likelihood1 << std::endl;
-    // std::cout << "perplexity score is: " << exp(-avg_likelihood) <<
-    //   std::endl;
-  }
 
-  // return std::exp(-avg_likelihood);
-
-  //if (step_count > 1000000)
   average_count = average_count + 1;
   if (mpi_rank_ == mpi_master_) {
     std::cout << "average_count is: " << average_count << " ";

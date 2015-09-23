@@ -80,12 +80,6 @@ else(MCMC_XORSHIFT_ENABLE)
   SET(MCMC_RANDOM_SYSTEM "1")
 endif(MCMC_XORSHIFT_ENABLE)
 
-option (MCMC_GNUPLOT_ENABLE "Enable gnuplot tracking" OFF)
-if (MCMC_GNUPLOT_ENABLE)
-  find_package(GnuplotIostream REQUIRED)
-  SET(MCMC_ENABLE_GNUPLOT "1")
-endif(MCMC_GNUPLOT_ENABLE)
-
 add_subdirectory(src)
 add_subdirectory(apps)
 add_subdirectory(test)

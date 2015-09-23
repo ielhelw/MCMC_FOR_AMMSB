@@ -5,7 +5,7 @@
 namespace mcmc {
 namespace learning {
 
-Learner::Learner(const Options &args) : args_(args) {
+Learner::Learner(const Options &args) : args_(args), ppxs_heldout_cb_(10) {
 #ifdef MCMC_RANDOM_COMPATIBILITY_MODE
   std::cerr << "MCMC_RANDOM_COMPATIBILITY_MODE enabled" << std::endl;
 #endif
@@ -95,13 +95,10 @@ void Learner::LoadNetwork(int world_rank, bool allocate_pi) {
     mini_batch_size = N / 2;  // default option.
   }
 
-  // ration between link edges and non-link edges
+  // ratio between link edges and non-link edges
   link_ratio = network.get_num_linked_edges() / ((N * (N - 1)) / 2.0);
-  // store perplexity for all the iterations
-  // ppxs_held_out = [];
-  // ppxs_test = [];
 
-  ppx_for_heldout = std::vector<double>(network.get_held_out_size(), 0.0);
+  ppx_per_heldout_edge_ = std::vector<double>(network.get_held_out_size(), 0.0);
 
   info(std::cerr);
 }
@@ -124,12 +121,6 @@ void Learner::info(std::ostream &s) {
   s << "omp max threads " << omp_get_max_threads() << std::endl;
 }
 
-const std::vector<double> &Learner::get_ppxs_held_out() const {
-  return ppxs_held_out;
-}
-
-const std::vector<double> &Learner::get_ppxs_test() const { return ppxs_test; }
-
 void Learner::set_max_iteration(::size_t max_iteration) {
   this->max_iteration = max_iteration;
 }
@@ -138,22 +129,12 @@ double Learner::cal_perplexity_held_out() {
   return cal_perplexity(network.get_held_out_set());
 }
 
-double Learner::cal_perplexity_test() {
-  return cal_perplexity(network.get_test_set());
-}
-
 bool Learner::is_converged() const {
-  ::size_t n = ppxs_held_out.size();
-  if (n < 2) {
-    return false;
-  }
-  if (std::abs(ppxs_held_out[n - 1] - ppxs_held_out[n - 2]) /
-          ppxs_held_out[n - 2] >
-      CONVERGENCE_THRESHOLD) {
-    return false;
-  }
-
-  return true;
+  ::size_t n = ppxs_heldout_cb_.size();
+  if (n < 2) return false;
+  return std::abs(ppxs_heldout_cb_[n - 1] - ppxs_heldout_cb_[n - 2]) /
+             ppxs_heldout_cb_[n - 2] <=
+         CONVERGENCE_THRESHOLD;
 }
 
 double Learner::cal_perplexity(const EdgeMap &data) {
@@ -172,12 +153,12 @@ double Learner::cal_perplexity(const EdgeMap &data) {
       std::cerr << "edge_likelihood is NaN; potential bug" << std::endl;
     }
 
-    ppx_for_heldout[i] =
-        (ppx_for_heldout[i] * (average_count - 1) + edge_likelihood) /
+    ppx_per_heldout_edge_[i] =
+        (ppx_per_heldout_edge_[i] * (average_count - 1) + edge_likelihood) /
         (average_count);
     if (edge->second) {
       link_count++;
-      link_likelihood += std::log(ppx_for_heldout[i]);
+      link_likelihood += std::log(ppx_per_heldout_edge_[i]);
 
       if (std::isnan(link_likelihood)) {
         std::cerr << "link_likelihood is NaN; potential bug" << std::endl;
@@ -185,7 +166,7 @@ double Learner::cal_perplexity(const EdgeMap &data) {
     } else {
       assert(! e.in(network.get_linked_edges()));
       non_link_count++;
-      non_link_likelihood += std::log(ppx_for_heldout[i]);
+      non_link_likelihood += std::log(ppx_per_heldout_edge_[i]);
       if (std::isnan(non_link_likelihood)) {
         std::cerr << "non_link_likelihood is NaN; potential bug" << std::endl;
       }
@@ -197,46 +178,11 @@ double Learner::cal_perplexity(const EdgeMap &data) {
     avg_likelihood =
         (link_likelihood + non_link_likelihood) / (link_count + non_link_count);
   }
-  if (false) {
-    double avg_likelihood1 =
-        link_ratio * (link_likelihood / link_count) +
-        (1.0 - link_ratio) * (non_link_likelihood / non_link_count);
-    std::cerr << std::fixed << std::setprecision(12) << avg_likelihood << " "
-              << (link_likelihood / link_count) << " " << link_count << " "
-              << (non_link_likelihood / non_link_count) << " " << non_link_count
-              << " " << avg_likelihood1 << std::endl;
-  }
 
   average_count = average_count + 1;
   std::cout << "average_count is: " << average_count << " ";
   return (-avg_likelihood);
 }
-
-#ifdef MCMC_ENABLE_GNUPLOT
-void Learner::GnuPlot() {
-  gp << "set xtics" << std::endl;
-  gp << "set ytics" << std::endl;
-  gp << "set grid xtics" << std::endl;
-  gp << "set grid ytics" << std::endl;
-  gp << "set xrange [0:]" << std::endl;
-  gp << "set yrange [0:]" << std::endl;
-  gp << std::fixed
-     << std::setprecision(8)
-     << "set title \"" << args_.input_filename_ << "\\n"
-     << "K=" << args_.K
-     << ", MiniBatch=" << args_.mini_batch_size
-     << ", Neighbors=" << args_.num_node_sample
-     << ", alpha=" << args_.alpha << "\\n"
-     << "eta=(" << args_.eta0 << "," << args_.eta1 << ")" << "\\n"
-     << "eps=" << args_.epsilon << "\\n"
-     << "a=" << args_.a << ",b=" << args_.b << ",c=" << args_.c << "\\n"
-     << "held-out=" << args_.held_out_ratio << "\\n"
-     << "interval=" << args_.interval
-     << "\"" << std::endl;
-  gp << "plot '-' with lines title 'Perplexity'" << std::endl;
-  gp.send1d(ppxs_held_out);
-}
-#endif
 
 }  // namespace learning
 }  // namespace mcmc
