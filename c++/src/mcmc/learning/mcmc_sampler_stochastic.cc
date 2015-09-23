@@ -109,7 +109,7 @@ void MCMCSamplerStochastic::run() {
   t1 = clock();
   while (step_count < max_iteration && !is_converged()) {
     t_outer.start();
-    if (step_count % interval == 0) {
+    if ((step_count - 1) % interval == 0) {
       t_perplexity.start();
       double ppx_score = cal_perplexity_held_out();
       t_perplexity.stop();
