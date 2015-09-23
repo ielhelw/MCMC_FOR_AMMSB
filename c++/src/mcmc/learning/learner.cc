@@ -124,22 +124,12 @@ void Learner::info(std::ostream &s) {
   s << "omp max threads " << omp_get_max_threads() << std::endl;
 }
 
-const std::vector<double> &Learner::get_ppxs_held_out() const {
-  return ppxs_held_out;
-}
-
-const std::vector<double> &Learner::get_ppxs_test() const { return ppxs_test; }
-
 void Learner::set_max_iteration(::size_t max_iteration) {
   this->max_iteration = max_iteration;
 }
 
 double Learner::cal_perplexity_held_out() {
   return cal_perplexity(network.get_held_out_set());
-}
-
-double Learner::cal_perplexity_test() {
-  return cal_perplexity(network.get_test_set());
 }
 
 bool Learner::is_converged() const {

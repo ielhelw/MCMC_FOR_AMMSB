@@ -782,11 +782,6 @@ void MCMCSamplerStochasticDistributed::check_perplexity() {
                 << " perplexity for hold out set: " << std::setprecision(12) <<
                 ppx_score << std::endl;
       ppxs_held_out.push_back(ppx_score);
-#ifdef MCMC_ENABLE_GNUPLOT
-      if (! args_.disable_gnuplot_) {
-        GnuPlot();
-      }
-#endif
 
       double seconds = t_ms / 1000.0;
       timings_.push_back(seconds);

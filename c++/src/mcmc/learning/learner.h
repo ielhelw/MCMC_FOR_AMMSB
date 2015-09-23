@@ -44,15 +44,9 @@ class Learner {
  protected:
   void info(std::ostream &s);
 
-  const std::vector<double> &get_ppxs_held_out() const;
-
-  const std::vector<double> &get_ppxs_test() const;
-
   void set_max_iteration(::size_t max_iteration);
 
   double cal_perplexity_held_out();
-
-  double cal_perplexity_test();
 
   bool is_converged() const;
 

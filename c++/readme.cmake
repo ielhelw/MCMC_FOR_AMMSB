@@ -35,8 +35,6 @@ cmake \
 # optionally:
 	-DCMAKE_BUILD_TYPE=Release \
 	-DCMAKE_BUILD_TYPE=Debug \
-	-DGNUPLOTIO_ROOT:UNINITIALIZED=$THIRDPARTY/gnuplot-iostream \
-	-DMCMC_GNUPLOT_ENABLE=ON \
         ..
 cd ..
 

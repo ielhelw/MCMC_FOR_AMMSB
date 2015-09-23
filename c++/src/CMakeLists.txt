@@ -84,9 +84,6 @@ target_include_directories(mcmc PUBLIC
   ${TINYXML2_INCLUDE_DIRS}
   ${SPARSEHASH_INCLUDE_DIRS}
 )
-if (MCMC_GNUPLOT_ENABLE)
-  target_include_directories(mcmc PUBLIC ${GNUPLOTIO_INCLUDE_DIRS} )
-endif (MCMC_GNUPLOT_ENABLE)
 
 target_link_libraries(mcmc
   ${Boost_PROGRAM_OPTIONS_LIBRARY}
