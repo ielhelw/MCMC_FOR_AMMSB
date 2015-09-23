@@ -785,7 +785,6 @@ void MCMCSamplerStochasticDistributed::check_perplexity() {
 
       double seconds = t_ms / 1000.0;
       timings_.push_back(seconds);
-      iterations.push_back(step_count);
     }
 
   }

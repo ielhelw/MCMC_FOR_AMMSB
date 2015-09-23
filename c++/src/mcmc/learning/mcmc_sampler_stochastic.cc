@@ -126,7 +126,6 @@ void MCMCSamplerStochastic::run() {
       double diff = (double)t2 - (double)t1;
       double seconds = diff / CLOCKS_PER_SEC;
       timings.push_back(seconds);
-      iterations.push_back(step_count);
     }
     t_mini_batch.start();
     EdgeSample edgeSample = network.sample_mini_batch(

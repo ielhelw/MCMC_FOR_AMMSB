@@ -95,13 +95,10 @@ void Learner::LoadNetwork(int world_rank, bool allocate_pi) {
     mini_batch_size = N / 2;  // default option.
   }
 
-  // ration between link edges and non-link edges
+  // ratio between link edges and non-link edges
   link_ratio = network.get_num_linked_edges() / ((N * (N - 1)) / 2.0);
-  // store perplexity for all the iterations
-  // ppxs_held_out = [];
-  // ppxs_test = [];
 
-  ppx_for_heldout = std::vector<double>(network.get_held_out_size(), 0.0);
+  ppx_per_heldout_edge_ = std::vector<double>(network.get_held_out_size(), 0.0);
 
   info(std::cerr);
 }
@@ -134,16 +131,10 @@ double Learner::cal_perplexity_held_out() {
 
 bool Learner::is_converged() const {
   ::size_t n = ppxs_held_out.size();
-  if (n < 2) {
-    return false;
-  }
-  if (std::abs(ppxs_held_out[n - 1] - ppxs_held_out[n - 2]) /
-          ppxs_held_out[n - 2] >
-      CONVERGENCE_THRESHOLD) {
-    return false;
-  }
-
-  return true;
+  if (n < 2) return false;
+  return std::abs(ppxs_held_out[n - 1] - ppxs_held_out[n - 2]) /
+             ppxs_held_out[n - 2] <=
+         CONVERGENCE_THRESHOLD;
 }
 
 double Learner::cal_perplexity(const EdgeMap &data) {
@@ -162,12 +153,12 @@ double Learner::cal_perplexity(const EdgeMap &data) {
       std::cerr << "edge_likelihood is NaN; potential bug" << std::endl;
     }
 
-    ppx_for_heldout[i] =
-        (ppx_for_heldout[i] * (average_count - 1) + edge_likelihood) /
+    ppx_per_heldout_edge_[i] =
+        (ppx_per_heldout_edge_[i] * (average_count - 1) + edge_likelihood) /
         (average_count);
     if (edge->second) {
       link_count++;
-      link_likelihood += std::log(ppx_for_heldout[i]);
+      link_likelihood += std::log(ppx_per_heldout_edge_[i]);
 
       if (std::isnan(link_likelihood)) {
         std::cerr << "link_likelihood is NaN; potential bug" << std::endl;
@@ -175,7 +166,7 @@ double Learner::cal_perplexity(const EdgeMap &data) {
     } else {
       assert(! e.in(network.get_linked_edges()));
       non_link_count++;
-      non_link_likelihood += std::log(ppx_for_heldout[i]);
+      non_link_likelihood += std::log(ppx_per_heldout_edge_[i]);
       if (std::isnan(non_link_likelihood)) {
         std::cerr << "non_link_likelihood is NaN; potential bug" << std::endl;
       }

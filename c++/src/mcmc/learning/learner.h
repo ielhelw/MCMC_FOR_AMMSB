@@ -156,9 +156,6 @@ class Learner {
   ::size_t step_count;
 
   std::vector<double> ppxs_held_out;
-  std::vector<double> ppxs_test;
-  std::vector<double> iterations;
-  std::vector<double> ppx_for_heldout;
 
   ::size_t max_iteration;
 
@@ -176,6 +173,10 @@ class Learner {
 #else
   const bool RANDOM_PRESERVE_RANGE_ORDER = false;
 #endif
+
+ private:
+  // Used to calculate perplexity per edge in the held-out set.
+  std::vector<double> ppx_per_heldout_edge_;
 };
 
 }  // namespace learning
