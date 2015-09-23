@@ -5,7 +5,7 @@
 namespace mcmc {
 namespace learning {
 
-Learner::Learner(const Options &args) : args_(args) {
+Learner::Learner(const Options &args) : args_(args), ppxs_heldout_cb_(10) {
 #ifdef MCMC_RANDOM_COMPATIBILITY_MODE
   std::cerr << "MCMC_RANDOM_COMPATIBILITY_MODE enabled" << std::endl;
 #endif
@@ -130,10 +130,10 @@ double Learner::cal_perplexity_held_out() {
 }
 
 bool Learner::is_converged() const {
-  ::size_t n = ppxs_held_out.size();
+  ::size_t n = ppxs_heldout_cb_.size();
   if (n < 2) return false;
-  return std::abs(ppxs_held_out[n - 1] - ppxs_held_out[n - 2]) /
-             ppxs_held_out[n - 2] <=
+  return std::abs(ppxs_heldout_cb_[n - 1] - ppxs_heldout_cb_[n - 2]) /
+             ppxs_heldout_cb_[n - 2] <=
          CONVERGENCE_THRESHOLD;
 }
 

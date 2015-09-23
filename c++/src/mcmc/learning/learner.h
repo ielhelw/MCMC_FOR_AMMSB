@@ -3,6 +3,8 @@
 
 #include <cmath>
 
+#include <boost/circular_buffer.hpp>
+
 #include "mcmc/config.h"
 
 #include "mcmc/types.h"
@@ -155,7 +157,7 @@ class Learner {
 
   ::size_t step_count;
 
-  std::vector<double> ppxs_held_out;
+  boost::circular_buffer<double> ppxs_heldout_cb_;
 
   ::size_t max_iteration;
 

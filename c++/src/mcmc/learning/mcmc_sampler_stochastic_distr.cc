@@ -781,7 +781,7 @@ void MCMCSamplerStochasticDistributed::check_perplexity() {
                 << " time: " << std::setprecision(3) << (t_ms / 1000.0)
                 << " perplexity for hold out set: " << std::setprecision(12) <<
                 ppx_score << std::endl;
-      ppxs_held_out.push_back(ppx_score);
+      ppxs_heldout_cb_.push_back(ppx_score);
 
       double seconds = t_ms / 1000.0;
       timings_.push_back(seconds);

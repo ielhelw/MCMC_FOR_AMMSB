@@ -120,7 +120,7 @@ void MCMCSamplerStochastic::run() {
                 << " time: " << std::setprecision(3) << (t_ms / 1000.0)
                 << " perplexity for hold out set: " << std::setprecision(12) <<
                 ppx_score << std::endl;
-      ppxs_held_out.push_back(ppx_score);
+      ppxs_heldout_cb_.push_back(ppx_score);
 
       t2 = clock();
       double diff = (double)t2 - (double)t1;
