@@ -197,15 +197,6 @@ double Learner::cal_perplexity(const EdgeMap &data) {
     avg_likelihood =
         (link_likelihood + non_link_likelihood) / (link_count + non_link_count);
   }
-  if (false) {
-    double avg_likelihood1 =
-        link_ratio * (link_likelihood / link_count) +
-        (1.0 - link_ratio) * (non_link_likelihood / non_link_count);
-    std::cerr << std::fixed << std::setprecision(12) << avg_likelihood << " "
-              << (link_likelihood / link_count) << " " << link_count << " "
-              << (non_link_likelihood / non_link_count) << " " << non_link_count
-              << " " << avg_likelihood1 << std::endl;
-  }
 
   average_count = average_count + 1;
   std::cout << "average_count is: " << average_count << " ";
