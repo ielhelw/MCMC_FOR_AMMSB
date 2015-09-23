@@ -158,6 +158,8 @@ class Learner {
   ::size_t step_count;
 
   boost::circular_buffer<double> ppxs_heldout_cb_;
+  // Used to calculate perplexity per edge in the held-out set.
+  std::vector<double> ppx_per_heldout_edge_;
 
   ::size_t max_iteration;
 
@@ -175,10 +177,6 @@ class Learner {
 #else
   const bool RANDOM_PRESERVE_RANGE_ORDER = false;
 #endif
-
- private:
-  // Used to calculate perplexity per edge in the held-out set.
-  std::vector<double> ppx_per_heldout_edge_;
 };
 
 }  // namespace learning

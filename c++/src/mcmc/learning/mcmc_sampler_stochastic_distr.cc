@@ -280,7 +280,7 @@ void MCMCSamplerStochasticDistributed::BroadcastNetworkInfo() {
     // ration between link edges and non-link edges
     link_ratio = network.get_num_linked_edges() / ((N * (N - 1)) / 2.0);
 
-    ppx_for_heldout = std::vector<double>(network.get_held_out_size(), 0.0);
+    ppx_per_heldout_edge_ = std::vector<double>(network.get_held_out_size(), 0.0);
 
     this->info(std::cerr);
   }
@@ -1337,14 +1337,14 @@ double MCMCSamplerStochasticDistributed::cal_perplexity_held_out() {
       }
 
       //cout<<"AVERAGE COUNT: " <<average_count;
-      ppx_for_heldout[i] = (ppx_for_heldout[i] * (average_count-1) + edge_likelihood)/(average_count);
+      ppx_per_heldout_edge_[i] = (ppx_per_heldout_edge_[i] * (average_count-1) + edge_likelihood)/(average_count);
       // std::cout << std::fixed << std::setprecision(12) << e <<
       //   " in? " << (e.in(network.get_linked_edges()) ? "True" : "False") <<
       //   " -> " << edge_likelihood << " av. " << average_count <<
-      //   " ppx[" << i << "] " << ppx_for_heldout[i] << std::endl;
+      //   " ppx[" << i << "] " << ppx_per_heldout_edge_[i] << std::endl;
       if (edge_in.is_edge) {
         perp_.accu_[omp_get_thread_num()].link.count++;
-        perp_.accu_[omp_get_thread_num()].link.likelihood += std::log(ppx_for_heldout[i]);
+        perp_.accu_[omp_get_thread_num()].link.likelihood += std::log(ppx_per_heldout_edge_[i]);
         //link_likelihood += edge_likelihood;
 
         if (std::isnan(perp_.accu_[omp_get_thread_num()].link.likelihood)){
@@ -1355,7 +1355,7 @@ double MCMCSamplerStochasticDistributed::cal_perplexity_held_out() {
         //perp_.accu_[omp_get_thread_num()].non_link.likelihood +=
         //  edge_likelihood;
         perp_.accu_[omp_get_thread_num()].non_link.likelihood +=
-          std::log(ppx_for_heldout[i]);
+          std::log(ppx_per_heldout_edge_[i]);
         if (std::isnan(perp_.accu_[omp_get_thread_num()].non_link.likelihood)){
           std::cerr << "non_link_likelihood is NaN; potential bug" << std::endl;
         }
