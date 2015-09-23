@@ -11,10 +11,6 @@
 #include "mcmc/source-aware-random.h"
 #include "mcmc/preprocess/data_factory.h"
 
-#ifdef MCMC_ENABLE_GNUPLOT
-#include "gnuplot-iostream.h"
-#endif
-
 
 namespace mcmc {
 namespace learning {
@@ -148,10 +144,6 @@ class Learner {
     return s;
   }
 
-#ifdef MCMC_ENABLE_GNUPLOT
-  void GnuPlot();
-#endif
-
   const Options args_;
   Network network;
 
@@ -189,10 +181,6 @@ class Learner {
   const bool RANDOM_PRESERVE_RANGE_ORDER = true;
 #else
   const bool RANDOM_PRESERVE_RANGE_ORDER = false;
-#endif
-
-#ifdef MCMC_ENABLE_GNUPLOT
-  Gnuplot gp;
 #endif
 };
 
