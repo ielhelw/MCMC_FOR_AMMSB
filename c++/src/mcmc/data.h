@@ -184,11 +184,18 @@ class NetworkGraph {
     }
 
     Iterator& operator++() {
+      if (static_cast<::size_t>(v_) == outer_.edges_at_.size()) return *this;
       ++edge_iterator_;
       if (edge_iterator_ == outer_.edges_at_[v_].end()) {
         ++v_;
-        if (static_cast< ::size_t>(v_) != outer_.edges_at_.size()) {
-          edge_iterator_ = outer_.edges_at_[v_].begin();
+        for (; static_cast< ::size_t>(v_) < outer_.edges_at_.size(); ++v_) {
+          if (!outer_.edges_at_[v_].empty()) {
+            edge_iterator_ = outer_.edges_at_[v_].begin();
+            break;
+          }
+        }
+        if (static_cast<::size_t>(v_) == outer_.edges_at_.size()) {
+          edge_iterator_ = outer_.edges_at_.back().end();
         }
       }
       return *this;
@@ -205,6 +212,14 @@ class NetworkGraph {
     }
 
     Edge operator*() {
+      if (v_ < 0 || static_cast<::size_t>(v_) >= outer_.edges_at_.size()) {
+        std::cout << "ISSUE 1" << std::endl;
+        abort();
+      }
+      if (edge_iterator_ == outer_.edges_at_[v_].end()) {
+        std::cout << "ISSUE 2: v=" << v_ << ", edges_at_.size=" << outer_.edges_at_.size() << std::endl;
+        abort();
+      }
       return Edge(v_, *edge_iterator_);
     }
 
@@ -235,7 +250,13 @@ class NetworkGraph {
     if (edges_at_.size() == 0) {
       return end();
     }
-    return iterator(*this, 0, edges_at_[0].begin());
+    Vertex i = 0;
+    for (; static_cast<::size_t>(i) < edges_at_.size(); ++i) {
+      if (!edges_at_[i].empty()) {
+        return iterator(*this, i, edges_at_[i].begin());
+      }
+    }
+    return end();
   }
 
   iterator end() noexcept {
@@ -246,7 +267,13 @@ class NetworkGraph {
     if (edges_at_.size() == 0) {
       return end();
     }
-    return const_iterator(*this, 0, edges_at_[0].begin());
+    Vertex i = 0;
+    for (; static_cast<::size_t>(i) < edges_at_.size(); ++i) {
+      if (!edges_at_[i].empty()) {
+        return const_iterator(*this, i, edges_at_[i].begin());
+      }
+    }
+    return end();
   }
 
   const_iterator end() const noexcept {
