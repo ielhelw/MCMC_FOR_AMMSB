@@ -604,13 +604,15 @@ void MCMCSamplerStochasticDistributed::run() {
     //if (step_count > 200000){
     //interval = 2;
     //}
-    check_perplexity();
 
     t_broadcast_beta_.start();
     r = MPI_Bcast(beta.data(), beta.size(), MPI_DOUBLE, mpi_master_,
                   MPI_COMM_WORLD);
     mpi_error_test(r, "MPI_Bcast of beta fails");
     t_broadcast_beta_.stop();
+
+    // requires beta at the workers
+    check_perplexity();
 
     t_deploy_minibatch_.start();
     // edgeSample is nonempty only at the master
@@ -1435,7 +1437,8 @@ double MCMCSamplerStochasticDistributed::cal_perplexity_held_out() {
 
     // chunk_size is about edges; nodes are at 2i and 2i+1
     std::vector<int32_t> chunk_nodes(perp_.nodes_.begin() + 2 * chunk_start,
-                                     perp_.nodes_.begin() + 2 * (chunk_start + chunk));
+                                     perp_.nodes_.begin() + 2 * (chunk_start +
+                                                                 chunk));
 
     t_load_pi_perp_.start();
     d_kv_store_->ReadKVRecords(perp_.pi_, chunk_nodes, DKV::RW_MODE::READ_ONLY);
@@ -1457,8 +1460,9 @@ double MCMCSamplerStochasticDistributed::cal_perplexity_held_out() {
 
       //cout<<"AVERAGE COUNT: " <<average_count;
       ppx_for_heldout[i] = (ppx_for_heldout[i] * (average_count-1) + edge_likelihood)/(average_count);
+      // Edge e(chunk_nodes[a], chunk_nodes[b]);
       // std::cout << std::fixed << std::setprecision(12) << e <<
-      //   " in? " << (e.in(network.get_linked_edges()) ? "True" : "False") <<
+      //   " in? " << (edge_in.is_edge ? "True" : "False") <<
       //   " -> " << edge_likelihood << " av. " << average_count <<
       //   " ppx[" << i << "] " << ppx_for_heldout[i] << std::endl;
       if (edge_in.is_edge) {
