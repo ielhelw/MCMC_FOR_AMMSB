@@ -796,7 +796,7 @@ void MCMCSamplerStochasticDistributed::init_pi() {
 
 
 void MCMCSamplerStochasticDistributed::check_perplexity() {
-  if (step_count % interval == 0) {
+  if ((step_count - 1) % interval == 0) {
     using namespace std::chrono;
 
     t_perplexity_.start();

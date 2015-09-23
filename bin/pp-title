@@ -83,6 +83,9 @@ while (<>) {
 	} elsif (m/^WARNING: Expect held-out size (\d+), get (\d+)$/) {
 		$held_out_size = $2;
 
+	} elsif (m/Edges in held-out set (\d+)$/) {
+		$held_out_size = $1;
+
 	} elsif (m/^N (\d+) E (\d+) link ratio ($floatmatch) K (\d+)$/) {
 		$N = $1;
 		$E = $2;
@@ -129,6 +132,12 @@ while (<>) {
 		$iterations = $4;
 		$minibatch_size = $5;
 		$convergence = $9;
+
+	} elsif (m/^Set num_pieces \d+ minibatch size (\d+)$/) {
+		$minibatch_size = $1;
+
+	} elsif (m/^minibatch size: specified \d+ from num_pieces \(\d+\) is (\d+)$/) {
+		$minibatch_size = $1;
 
 	} elsif (m/^num_node_sample (\d+) a ($floatmatch) b ($floatmatch) c ($floatmatch) alpha ($floatmatch) eta \(($floatmatch),($floatmatch)\)/) {
 		$num_node_sample = $1;

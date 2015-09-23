@@ -160,7 +160,7 @@ void MCMCSamplerStochastic::run() {
     // if (step_count > 200000){
     // interval = 2;
     //}
-    if (step_count % interval == 0) {
+    if ((step_count - 1) % interval == 0) {
       t_perplexity.start();
       double ppx_score = cal_perplexity_held_out();
       t_perplexity.stop();

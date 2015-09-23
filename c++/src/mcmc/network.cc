@@ -480,7 +480,7 @@ void Network::init_held_out_set() {
   }
 
   if (progress != 0) {
-    std::cerr << "Edges in held-out set " << count << std::endl;
+    std::cerr << "Edges in held-out set " << held_out_map.size() << std::endl;
     print_mem_usage(std::cerr);
   }
 
