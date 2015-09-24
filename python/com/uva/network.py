@@ -234,12 +234,13 @@ class Network(object):
             self.__train_link_map[edge[1]].remove(edge[0])
         # print sampled_linked_edges
 
-        sys.stdout.write("Sampled part of held out set:\n")
-        for m in sorted(sampled_linked_edges):
-            a, b = m
-            sys.stdout.write("(%d,%d) " % (a, b))
-        sys.stdout.write("\n")
-        
+        if False:
+            sys.stdout.write("Sampled part of held out set:\n")
+            for m in sorted(sampled_linked_edges):
+                a, b = m
+                sys.stdout.write("(%d,%d) " % (a, b))
+            sys.stdout.write("\n")
+
         # sample p non-linked edges from the network 
         while p > 0:
             edge = self.__sample_non_link_edge_for_held_out()

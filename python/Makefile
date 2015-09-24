@@ -3,6 +3,8 @@
 default: python
 
 python:
+	@echo "On DAS, don't forget to set your PYTHONPATH to a recent Cython code drop"
+	@echo "Don't forget to set your LD_LIBRARY_PATH to include $$MCMC/<build>/src"
 	python setup.py install_lib --install-dir=.
 
 clean:

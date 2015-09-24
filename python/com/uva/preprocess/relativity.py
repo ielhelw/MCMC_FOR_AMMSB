@@ -5,7 +5,8 @@ from com.uva.data import Data
 class Relativity(DataSet):
     """ Process relativity data set """
     
-    def __init__(self):
+    def __init__(self, filename):
+        self.filename = filename
         pass
     
     def _process(self):
@@ -29,7 +30,10 @@ class Relativity(DataSet):
         # TODO: try catch block.  
         # f= open("/home/liwenzhe/workspace/SGRLDForMMSB/datasets/CA-GrQc.txt", 'r')
         # f= open("datasets/CA-GrQc.txt", 'r')
-        file = "datasets/netscience.txt"
+        if self.filename == "":
+            file = "datasets/netscience.txt"
+        else:
+            file = self.filename
         print "relativity::open(\"" + file + "\")";
         f= open(file, 'r')
         lines = f.readlines()

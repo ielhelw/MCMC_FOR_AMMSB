@@ -42,6 +42,8 @@ class MCMCSamplerStochastic(Learner):
     def __init__(self, args, graph, compatibility_mode):
         # call base class initialization
         Learner.__init__(self, args, graph, compatibility_mode)
+
+        self._interval = args.interval
         
         # step size parameters. 
         self.__a = args.a
@@ -55,7 +57,8 @@ class MCMCSamplerStochastic(Learner):
         #self.__num_node_sample = int(math.sqrt(self._network.get_num_nodes())) 
         
         # TODO: automative update.....
-        self.__num_node_sample = int(self._N/50)
+        # self.__num_node_sample = int(self._N/50)
+        self.__num_node_sample = args.neighbors
         # model parameters and re-parameterization
         # since the model parameter - \pi and \beta should stay in the simplex, 
         # we need to restrict the sum of probability equals to 1.  The way we
@@ -88,7 +91,7 @@ class MCMCSamplerStochastic(Learner):
     def run(self):
         """ run mini-batch based MCMC sampler, based on the sungjin's note """
             
-        if True and self._step_count % 1 == 0:
+        if True and (self._step_count - 1) % self._interval == 0:
             ppx_score = self._cal_perplexity_held_out()
             sys.stdout.write("step count: %d perplexity for hold out set is: %.12f\n" % (self._step_count, ppx_score))
             self._ppxs_held_out.append(ppx_score)
@@ -118,7 +121,7 @@ class MCMCSamplerStochastic(Learner):
                 mini_batch = sorted(mini_batch)
             self.__update_beta(mini_batch, scale)
 
-            if self._step_count % 1 == 0:
+            if (self._step_count - 1) % self._interval == 0:
                 ppx_score = self._cal_perplexity_held_out()
                 sys.stdout.write("step count: %d perplexity for hold out set is: %.12f\n" % (self._step_count, ppx_score))
                 self._ppxs_held_out.append(ppx_score)
