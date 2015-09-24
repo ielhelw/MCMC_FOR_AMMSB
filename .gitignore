@@ -3,10 +3,10 @@ __pycache__/
 *.py[cod]
 
 # C extensions
-com/uva/*.so
-com/uva/*.c
-com/uva/custom_random/*.so
-com/uva/custom_random/*.cpp
+python/com/uva/*.so
+python/com/uva/*.c
+python/com/uva/custom_random/*.so
+python/com/uva/custom_random/*.cpp
 
 # Distribution / packaging
 .Python
