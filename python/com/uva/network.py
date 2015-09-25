@@ -133,6 +133,9 @@ class Network(object):
     def set_num_pieces(self, num_pieces):
         self.__num_pieces = num_pieces
         print "**************** set num_pieces to " + str(num_pieces)
+
+    def get_minibatch_size(num_pieces):
+        return __N / num_pieces
     
     
     def __stratified_random_node_sampling(self, num_pieces):
@@ -151,6 +154,7 @@ class Network(object):
         nodeId = random.get("minibatch sampler").randint(0, self.__N-1)
         # decide to sample links or non-links
         flag = random.get("minibatch sampler").randint(0,1)      # flag=0: non-link edges  flag=1: link edges
+        # sys.stderr.write ("Sample minibatch num_pieces %d minibatch size %d\n" % (num_pieces, (self.__N / self.__num_pieces)))
         
         mini_batch_set = Set()
 
@@ -175,7 +179,7 @@ class Network(object):
                     edge = (min(nodeId, neighborId), max(nodeId, neighborId))
                     if edge in self.__linked_edges or edge in self.__held_out_map or \
                             edge in self.__test_map or edge in mini_batch_set:
-                        print "Discard edge " + str(edge)
+                        # print "Discard edge " + str(edge)
                         continue
                     
                     # add it into mini_batch_set
