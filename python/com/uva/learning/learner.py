@@ -16,7 +16,10 @@ class Learner(object):
 
         self._network = network
         # model priors
-        self._alpha = args.alpha
+        if args.alpha == 0.0:
+            self._alpha = 1.0 / args.K
+        else:
+            self._alpha = args.alpha
         self._eta = np.zeros(2)
         self._eta[0] = args.eta0
         self._eta[1] = args.eta1

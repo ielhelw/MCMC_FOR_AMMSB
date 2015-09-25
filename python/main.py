@@ -22,9 +22,15 @@ def work_mcmc (sampler, ppxs):
 def main():
     # default args for WenZhe's C++ implementation:
     #   --K=15 --alpha=0.01 --epsilon=0.0000001 --hold_out_prob=0.009999999776
+
+    sys.stdout.write("Invoked with: ")
+    for a in sys.argv:
+        sys.stdout.write("%s " % a)
+    sys.stdout.write("\n")
+
     parser = argparse.ArgumentParser()
     parser.add_argument('--filename', '-f', type=str, default="netscience.txt", required=False)
-    parser.add_argument('--alpha', type=float, default=0.01, required=False)
+    parser.add_argument('--alpha', type=float, default=0.0, required=False)
     parser.add_argument('--eta0', type=float, default=1, required=False)
     parser.add_argument('--eta1', type=float, default=1, required=False)
     parser.add_argument('--K', '-K', type=int, default=300, required=False)

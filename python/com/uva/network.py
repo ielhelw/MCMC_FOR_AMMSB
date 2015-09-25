@@ -251,11 +251,12 @@ class Network(object):
             self.__held_out_map[edge] = False
             p -= 1
 
-        sys.stdout.write("Held out set:\n")
-        for m in sorted(self.__held_out_map):
-            a, b = m
-            sys.stdout.write("(%d,%d) " % (a, b))
-        sys.stdout.write("\n")
+        if False:
+            sys.stdout.write("Held out set:\n")
+            for m in sorted(self.__held_out_map):
+                a, b = m
+                sys.stdout.write("(%d,%d) " % (a, b))
+            sys.stdout.write("\n")
     
     
     def __init_test_set(self):
