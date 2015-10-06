@@ -1,5 +1,5 @@
 
-THIRDPARTY=`(cd ../../../../3rdparty; pwd)`
+THIRDPARTY=`(cd ../../3rdparty; pwd)`
 
 # On das4:
 module load boost-1.54
@@ -19,7 +19,7 @@ cmake \
         -DTINYXML2_ROOT=$THIRDPARTY/tinyxml2 \
         -DSPARSEHASH_ROOT=$SPARSEHASH_ROOT \
         -DMCMC_BUILD_MODE=SEQ \
-        ..
+        ../c++
 cd ..
 
 mkdir build-distr
@@ -35,7 +35,7 @@ cmake \
 # optionally:
 	-DCMAKE_BUILD_TYPE=Release \
 	-DCMAKE_BUILD_TYPE=Debug \
-        ..
+        ../c++
 cd ..
 
 mkdir build-compat
@@ -47,5 +47,5 @@ cmake \
         -DGTEST_ROOT=$THIRDPARTY/gtest-1.7.0 \
         -DTINYXML2_ROOT=$THIRDPARTY/tinyxml2 \
         -DMCMC_BUILD_MODE=COMPAT \
-        ..
+        ../c++
 cd ..
