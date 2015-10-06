@@ -12,7 +12,7 @@ class DataFactory(object):
     """
     
     @staticmethod
-    def get_data(dataset_name):
+    def get_data(dataset_name, filename):
         """
         Get data function, according to the input data set name. 
         """
@@ -20,7 +20,7 @@ class DataFactory(object):
         if dataset_name == "netscience":
             dataObj = NetScience()
         elif dataset_name == "relativity":
-            dataObj  = Relativity()
+            dataObj  = Relativity(filename)
         elif dataset_name == "hep_ph":
             dataObj = HepPH()
         # elif dataset_name == "astro_ph":

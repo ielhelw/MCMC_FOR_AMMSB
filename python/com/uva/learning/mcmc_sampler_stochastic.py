@@ -1,5 +1,6 @@
 import sys
 
+from com.uva.timer import Timer
 from com.uva.learning.learner import Learner
 from sets import Set
 import math
@@ -42,6 +43,9 @@ class MCMCSamplerStochastic(Learner):
     def __init__(self, args, graph, compatibility_mode):
         # call base class initialization
         Learner.__init__(self, args, graph, compatibility_mode)
+
+        self._interval = args.interval
+        self.__num_pieces = args.num_pieces
         
         # step size parameters. 
         self.__a = args.a
@@ -55,7 +59,8 @@ class MCMCSamplerStochastic(Learner):
         #self.__num_node_sample = int(math.sqrt(self._network.get_num_nodes())) 
         
         # TODO: automative update.....
-        self.__num_node_sample = int(self._N/50)
+        # self.__num_node_sample = int(self._N/50)
+        self.__num_node_sample = args.num_node_sample
         # model parameters and re-parameterization
         # since the model parameter - \pi and \beta should stay in the simplex, 
         # we need to restrict the sum of probability equals to 1.  The way we
@@ -72,11 +77,6 @@ class MCMCSamplerStochastic(Learner):
         self.update_pi_from_phi()
         self.update_beta_from_theta()
 
-        sys.stdout.write("beta[0] %.12f\n" % self._beta[0])
-        sys.stdout.write("phi[0][0] %.12f\n" % self.__phi[0][0])
-        sys.stdout.write("pi[0][0] %.12f\n" % self._pi[0][0])
-        sys.stdout.write("a %.12f b %.12f c %.12f\n" % (self.__a, self.__b, self.__c))
-
 
     def update_pi_from_phi(self):
         self._pi = self.__phi/np.sum(self.__phi,1)[:,np.newaxis]
@@ -87,19 +87,39 @@ class MCMCSamplerStochastic(Learner):
 
     def run(self):
         """ run mini-batch based MCMC sampler, based on the sungjin's note """
-            
-        if True and self._step_count % 1 == 0:
-            ppx_score = self._cal_perplexity_held_out()
-            sys.stdout.write("step count: %d perplexity for hold out set is: %.12f\n" % (self._step_count, ppx_score))
-            self._ppxs_held_out.append(ppx_score)
+
+        sys.stdout.write("beta[0] %.12f\n" % self._beta[0])
+        sys.stdout.write("phi[0][0] %.12f\n" % self.__phi[0][0])
+        sys.stdout.write("pi[0][0] %.12f\n" % self._pi[0][0])
+        sys.stdout.write("a %.f b %.f c %.f\n" % (self.__a, self.__b, self.__c))
+        sys.stdout.write("minibatch size %d num_node_sample %d\n" % ((self._network.get_num_nodes() / self.__num_pieces), self.__num_node_sample))
+
+        t_outer = Timer("outer");
+        t_sample_minibatch = Timer("sample minibatch")
+        t_sample_neighbors = Timer("sample neighbors")
+        t_update_phi = Timer("update phi");
+        t_update_pi = Timer("update pi");
+        t_update_beta = Timer("update beta");
+        t_perp  = Timer("perplexity");
+
+        t_outer.start();
 
         while self._step_count < self._max_iteration and not self._is_converged():
+
+            if (self._step_count - 1) % self._interval == 0:
+                t_perp.start()
+                ppx_score = self._cal_perplexity_held_out()
+                t_perp.stop()
+                sys.stdout.write("step count: %d perplexity for hold out set is: %.12f\n" % (self._step_count, ppx_score))
+                self._ppxs_held_out.append(ppx_score)
            
-            (mini_batch, scale) = self._network.sample_mini_batch(self._mini_batch_size, "stratified-random-node")
+            (mini_batch, scale) = self._network.sample_mini_batch(self.__num_pieces, "stratified-random-node")
             # latent_vars = {}
             # size = {}
             
+            t_sample_minibatch.start()
             nodes_in_mini_batch = list(self.__nodes_in_batch(mini_batch))
+            t_sample_minibatch.stop()
             if self._compatibility_mode:  # to be able to replay from C++
                 nodes_in_mini_batch = sorted(nodes_in_mini_batch)
             # print "minibatch(" + str(len(mini_batch)) + " " + str(sorted(mini_batch))
@@ -107,21 +127,24 @@ class MCMCSamplerStochastic(Learner):
             # iterate through each node in the mini batch. 
             for node in nodes_in_mini_batch:
                 # sample a mini-batch of neighbors
+                t_sample_neighbors.start()
                 neighbors = self.__sample_neighbor_nodes(self.__num_node_sample, node)
+                t_sample_neighbors.stop()
                 if self._compatibility_mode:  # to be able to replay from C++
                     neighbors = sorted(neighbors)
+                t_update_phi.start()
                 self.__update_phi(node, neighbors)
+                t_update_phi.stop()
 
+            t_update_pi.start()
             self.update_pi_from_phi()
+            t_update_pi.stop()
             # update beta
             if self._compatibility_mode:  # to be able to replay from C++
                 mini_batch = sorted(mini_batch)
+            t_update_beta.start()
             self.__update_beta(mini_batch, scale)
-
-            if self._step_count % 1 == 0:
-                ppx_score = self._cal_perplexity_held_out()
-                sys.stdout.write("step count: %d perplexity for hold out set is: %.12f\n" % (self._step_count, ppx_score))
-                self._ppxs_held_out.append(ppx_score)
+            t_update_beta.stop()
                             
             self._step_count += 1
             
@@ -133,6 +156,17 @@ class MCMCSamplerStochastic(Learner):
             ps.print_stats()
             print s.getvalue()
             """
+
+        t_outer.stop();
+
+        t_outer.print_header()
+        t_outer.report()
+        t_sample_minibatch.report()
+        t_sample_neighbors.report()
+        t_update_phi.report()
+        t_update_pi.report()
+        t_update_beta.report()
+        t_perp.report()
 
 
     def __update_beta(self, mini_batch, scale):

@@ -16,7 +16,10 @@ class Learner(object):
 
         self._network = network
         # model priors
-        self._alpha = args.alpha
+        if args.alpha == 0.0:
+            self._alpha = 1.0 / args.K
+        else:
+            self._alpha = args.alpha
         self._eta = np.zeros(2)
         self._eta[0] = args.eta0
         self._eta[1] = args.eta1
@@ -54,8 +57,8 @@ class Learner(object):
         self._ppx_for_heldout = np.zeros(network.get_held_out_size())
 
         sys.stdout.write("K %d N %d\n" % (self._K, self._N))
-        sys.stdout.write("alpha %.12f eta %.12f,%.12f epsilon %.12f\n" % (self._alpha, self._eta[0], self._eta[1], self._epsilon))
-        sys.stdout.write("mini_batch size %d\n" % self._mini_batch_size)
+        sys.stdout.write("alpha %.f eta %.f,%.f epsilon %.f\n" % (self._alpha, self._eta[0], self._eta[1], self._epsilon))
+        sys.stdout.write("mini_batch size parameter %d\n" % self._mini_batch_size)
         sys.stdout.write("compatibility mode %s\n" % str(self._compatibility_mode))
 
         
