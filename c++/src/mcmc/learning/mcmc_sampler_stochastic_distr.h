@@ -12,20 +12,6 @@
 
 #include "mcmc/learning/mcmc_sampler_stochastic.h"
 
-#ifdef MAYBE_UNUSED
-#include <cinttypes>
-#include <cmath>
-
-#include <utility>
-#include <numeric>
-#include <algorithm>	// min, max
-
-#include "mcmc/exception.h"
-
-#include "mcmc/np.h"
-
-#endif
-
 namespace mcmc {
 namespace learning {
 

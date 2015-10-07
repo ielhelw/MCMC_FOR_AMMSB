@@ -178,6 +178,8 @@ EdgeSample Network::sample_mini_batch(::size_t mini_batch_size,
     case strategy::STRATIFIED_RANDOM_NODE:
       return stratified_random_node_sampling(
                num_pieces_for_minibatch(mini_batch_size));
+    case strategy::RANDOM_EDGE:
+      return random_edge_sampling(mini_batch_size);
     default:
       throw MCMCException("Invalid sampling strategy");
   }
@@ -188,6 +190,8 @@ EdgeSample Network::sample_mini_batch(::size_t mini_batch_size,
   switch (strategy) {
     case strategy::STRATIFIED_RANDOM_NODE:
       return max_minibatch_edges_for_strategy(mini_batch_size, strategy) + 1;
+    case strategy::RANDOM_EDGE:
+      return 2 * mini_batch_size;
     default:
       throw MCMCException("Invalid sampling strategy");
   }
@@ -199,6 +203,8 @@ EdgeSample Network::sample_mini_batch(::size_t mini_batch_size,
     case strategy::STRATIFIED_RANDOM_NODE:
       return std::max(mini_batch_size + 1, get_max_fan_out(1));
     // return fan_out_cumul_distro[mini_batch_size];
+    case strategy::RANDOM_EDGE:
+      return mini_batch_size;
     default:
       throw MCMCException("Invalid sampling strategy");
   }
@@ -216,8 +222,75 @@ const EdgeMap& Network::get_held_out_set() const { return held_out_map; }
 
 const EdgeMap& Network::get_test_set() const { return test_map; }
 
+EdgeSample Network::sample_full_training_set() const {
+  MinibatchSet* mini_batch_set = new MinibatchSet();
+
+  for (auto edge : *linked_edges) {
+    if (edge.first < edge.second) {
+      if (edge.in(held_out_map) || edge.in(test_map) ||
+          edge.in(*mini_batch_set)) {
+        continue;
+      }
+      mini_batch_set->insert(edge);
+    }
+  }
+
+  double weight = (N - 1) * N / 2.0 / mini_batch_set->size();
+  // double weight = 1.0;
+
+  // std::cerr << "Minibatch size " << mini_batch_set->size() << " weight " << weight << std::endl;
+
+  return EdgeSample(mini_batch_set, weight);
+}
+
+EdgeSample Network::random_edge_sampling(::size_t mini_batch_size) const {
+#ifdef MCMC_EDGESET_IS_ADJACENCY_LIST
+  ::size_t undirected_edges = linked_edges->size() / 2;
+#else
+  ::size_t undirected_edges = linked_edges->size();
+#endif
+  if (mini_batch_size >= undirected_edges - held_out_map.size() - test_map.size()) {
+    return sample_full_training_set();
+  }
+
+  MinibatchSet* mini_batch_set = new MinibatchSet();
+
+  while (mini_batch_set->size() < mini_batch_size) {
+#ifdef MCMC_EDGESET_IS_ADJACENCY_LIST
+    std::vector<Edge>* sampled_linked_edges = new std::vector<Edge>();
+    sample_random_edges(linked_edges, mini_batch_size, sampled_linked_edges);
+#elif defined MCMC_RANDOM_COMPATIBILITY_MODE
+    Random::Random* rng = rng_->random(SourceAwareRandom::MINIBATCH_SAMPLER);
+    auto sampled_linked_edges = rng->sampleList(*linked_edges, mini_batch_size);
+#else
+    Random::Random* rng = rng_->random(SourceAwareRandom::MINIBATCH_SAMPLER);
+    auto sampled_linked_edges = rng->sample(*linked_edges, mini_batch_size);
+#endif
+    for (auto edge : *sampled_linked_edges) {
+      if (mini_batch_set->size() == mini_batch_size) {
+        break;
+      }
+      if (edge.first < edge.second) {
+        if (edge.in(held_out_map) || edge.in(test_map) ||
+            edge.in(*mini_batch_set)) {
+          continue;
+        }
+        mini_batch_set->insert(edge);
+      }
+    }
+    delete sampled_linked_edges;
+  }
+
+  double weight = (N - 1) * N / 2.0 / mini_batch_set->size();
+
+  // std::cerr << "Minibatch size " << mini_batch_set->size() << std::endl;
+
+  return EdgeSample(mini_batch_set, weight);
+}
+
 EdgeSample Network::stratified_random_node_sampling(::size_t num_pieces) const {
   Random::Random* rng = rng_->random(SourceAwareRandom::MINIBATCH_SAMPLER);
+  // FIXME: why is this while(true) loop?
   while (true) {
     // randomly select the node ID
     int nodeId = rng->randint(0, N - 1);
@@ -235,7 +308,7 @@ EdgeSample Network::stratified_random_node_sampling(::size_t num_pieces) const {
       // greatly smaller than N.
       // ::size_t mini_batch_size = (int)((N - train_link_map[nodeId].size()) /
       // num_pieces);
-      ::size_t mini_batch_size = (int)(N / num_pieces);
+      ::size_t mini_batch_size = (::size_t)(N / num_pieces);
       int p = (int)mini_batch_size;
 
       while (p > 0) {
@@ -311,6 +384,8 @@ EdgeSample Network::stratified_random_node_sampling(::size_t num_pieces) const {
 
       return EdgeSample(mini_batch_set, N);
     }
+
+    throw MCMCException("Cannot be reached");
   }
 }
 
@@ -363,7 +438,7 @@ void Network::adjacency_list_end() {
 }
 
 void Network::sample_random_edges(const NetworkGraph* linked_edges, ::size_t p,
-                                  std::vector<Edge>* edges) {
+                                  std::vector<Edge>* edges) const {
   std::unordered_set<Edge, EdgeHash> collector;
 
   // The graph has a hit for (a,b) as well as (b,a). Therefore it contains

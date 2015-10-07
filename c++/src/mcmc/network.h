@@ -174,6 +174,9 @@ class Network {
   void set_num_pieces(::size_t num_pieces);
 #endif
 
+  EdgeSample sample_full_training_set() const;
+  EdgeSample random_edge_sampling(::size_t mini_batch_size) const;
+
   /**
    * stratified sampling approach gives more attention to link edges (the edge
    * is connected by two
@@ -249,7 +252,7 @@ class Network {
   void adjacency_list_end();
 
   void sample_random_edges(const NetworkGraph* linked_edges, ::size_t p,
-                           std::vector<Edge>* edges);
+                           std::vector<Edge>* edges) const;
 
 #endif  // def MCMC_EDGESET_IS_ADJACENCY_LIST
 

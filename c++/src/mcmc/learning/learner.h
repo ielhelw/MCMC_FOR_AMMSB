@@ -109,16 +109,13 @@ class Learner {
         sum += pi_a[k] * pi_b[k];
 #else
         double f = pi_a[k] * pi_b[k];
-        assert(!std::isnan(f));
         s += f * (1.0 - beta[k]);
         sum += f;
-        assert(!std::isnan(s));
 #endif
-        assert(!std::isnan(sum));
       }
       s += (1.0 - sum) * (1.0 - epsilon);
     }
-#else
+#else   // def DONT_FOLD_Y
     int iy = y ? 1 : 0;
     int y2_1 = 2 * iy - 1;
     int y_1 = iy - 1;
@@ -131,7 +128,7 @@ class Learner {
     if (!y) {
       s += (1.0 - sum) * (1.0 - epsilon);
     }
-#endif
+#endif  // def DONT_FOLD_Y
 
     if (s < 1.0e-30) {
       s = 1.0e-30;

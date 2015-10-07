@@ -1,5 +1,14 @@
 #include "mcmc/learning/mcmc_sampler_stochastic.h"
 
+#include <cmath>
+#include <algorithm>  // min, max
+
+#ifdef MCMC_EFFICIENCY_COMPATIBILITY_MODE
+#  ifdef MCMC_NO_NOISE
+#    error "The NO_NOISE flag has not been implemented in compatibility mode"
+#  endif
+#endif
+
 namespace mcmc {
 namespace learning {
 
@@ -84,9 +93,19 @@ void MCMCSamplerStochastic::sampler_stochastic_info(std::ostream &s) {
   s << "num_node_sample " << num_node_sample << std::endl;
   s << "a " << a << " b " << b << " c " << c;
   s << " eta (" << eta[0] << "," << eta[1] << ")" << std::endl;
-  s << "minibatch size: specified " << mini_batch_size <<
-    " from num_pieces (" << network.num_pieces_for_minibatch(mini_batch_size) <<
-    ") is " << network.real_minibatch_size(mini_batch_size) << std::endl;
+  switch (strategy) {
+    case strategy::STRATIFIED_RANDOM_NODE:
+      s << "minibatch size: specified " << mini_batch_size <<
+          " from num_pieces (" <<
+          network.num_pieces_for_minibatch(mini_batch_size) <<
+          ") is " << network.real_minibatch_size(mini_batch_size) << std::endl;
+      break;
+    case strategy::RANDOM_EDGE:
+      s << "minibatch size: " << mini_batch_size << std::endl;
+  }
+#ifdef MCMC_NO_NOISE
+  s << "remove noise to do SungJin's experiment" << std::endl;
+#endif
 }
 
 void MCMCSamplerStochastic::run() {
@@ -128,8 +147,8 @@ void MCMCSamplerStochastic::run() {
       timings.push_back(seconds);
     }
     t_mini_batch.start();
-    EdgeSample edgeSample = network.sample_mini_batch(
-        mini_batch_size, strategy::STRATIFIED_RANDOM_NODE);
+    EdgeSample edgeSample = network.sample_mini_batch(mini_batch_size,
+                                                      strategy);
     t_mini_batch.stop();
     const MinibatchSet &mini_batch = *edgeSample.first;
     double scale = edgeSample.second;
@@ -271,11 +290,16 @@ void MCMCSamplerStochastic::update_beta(const MinibatchSet &mini_batch,
           eps_t / 2 * (eta[i] - theta[k][i] + scale * grads[k][i]) +
           std::pow(eps_t, .5) * std::pow(theta[k][i], .5) * noise[k][i]);
 #else
+#ifndef MCMC_NO_NOISE
       double f = std::sqrt(eps_t * theta[k][i]);
+#endif
       theta[k][i] =
           std::abs(theta[k][i] +
-                   eps_t / 2.0 * (eta[i] - theta[k][i] + scale * grads[k][i]) +
-                   f * noise[k][i]);
+                   eps_t / 2.0 * (eta[i] - theta[k][i] + scale * grads[k][i])
+#ifndef MCMC_NO_NOISE
+                   + f * noise[k][i]
+#endif
+                   );
 #endif
     }
   }
@@ -350,8 +374,11 @@ void MCMCSamplerStochastic::update_phi(Vertex i, const NeighborSet &neighbors
                  std::pow(eps_t, 0.5) * std::pow(phi[i][k], 0.5) * noise[k]);
 #else
     phi[i][k] =
-        std::abs(phi[i][k] + eps_t / 2 * (alpha - phi[i][k] + Nn * grads[k]) +
-                 sqrt(eps_t * phi[i][k]) * noise[k]);
+        std::abs(phi[i][k] + eps_t / 2 * (alpha - phi[i][k] + Nn * grads[k])
+#ifndef MCMC_NO_NOISE
+                 + std::sqrt(eps_t * phi[i][k]) * noise[k]
+#endif
+                 );
 #endif
   }
 

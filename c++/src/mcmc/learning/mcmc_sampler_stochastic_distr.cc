@@ -919,7 +919,7 @@ EdgeSample MCMCSamplerStochasticDistributed::deploy_mini_batch() {
     // std::cerr << "Invoke sample_mini_batch" << std::endl;
     t_mini_batch_.start();
     edgeSample = network.sample_mini_batch(mini_batch_size,
-                                           strategy::STRATIFIED_RANDOM_NODE);
+                                           strategy);
     t_mini_batch_.stop();
     const MinibatchSet &mini_batch = *edgeSample.first;
     // std::cerr << "Done sample_mini_batch" << std::endl;
@@ -1137,8 +1137,11 @@ void MCMCSamplerStochasticDistributed::update_phi_node(
     double phi_node_k = pi_node[k] * phi_i_sum;
     assert(! std::isnan(phi_node_k));
     (*phi_node)[k] = std::abs(phi_node_k + eps_t / 2 * (alpha - phi_node_k +
-                                                        Nn * grads[k]) +
-                              sqrt(eps_t * phi_node_k) * noise[k]);
+                                                        Nn * grads[k])
+#ifndef MCMC_NO_NOISE
+                              + sqrt(eps_t * phi_node_k) * noise[k]
+#endif
+                              );
     assert(! std::isnan((*phi_node)[k]));
   }
 }
@@ -1251,11 +1254,16 @@ void MCMCSamplerStochasticDistributed::update_beta(
 #pragma omp parallel for
   for (::size_t k = 0; k < K; ++k) {
     for (::size_t i = 0; i < 2; ++i) {
+#ifndef MCMC_NO_NOISE
       double f = std::sqrt(eps_t * theta[k][i]);
+#endif
       theta[k][i] = std::abs(theta[k][i] +
                              eps_t / 2.0 * (eta[i] - theta[k][i] +
-                                            scale * grads_beta_[0][k][i]) +
-                             f * noise[k][i]);
+                                            scale * grads_beta_[0][k][i])
+#ifndef MCMC_NO_NOISE
+                             + f * noise[k][i]
+#endif
+                             );
       assert(! std::isnan(theta[k][i]));
     }
   }

@@ -62,13 +62,7 @@ Learner::Learner(const Options &args) : args_(args), ppxs_heldout_cb_(10) {
 
   rng_.Init(args_.random_seed);
 
-  if (args_.strategy == "unspecified") {
-    strategy = strategy::STRATIFIED_RANDOM_NODE;
-  } else if (args_.strategy == "stratified-random-node") {
-    strategy = strategy::STRATIFIED_RANDOM_NODE;
-  } else {
-    throw MCMCException("Unknown strategy type: " + args_.strategy);
-  }
+  strategy = args_.strategy;
 }
 
 void Learner::LoadNetwork(int world_rank, bool allocate_pi) {
@@ -118,6 +112,7 @@ void Learner::info(std::ostream &s) {
   s << " iterations " << max_iteration;
   s << " convergence " << CONVERGENCE_THRESHOLD;
   s << std::endl;
+  s << "sampling strategy " << strategy << std::endl;
   s << "omp max threads " << omp_get_max_threads() << std::endl;
 }
 

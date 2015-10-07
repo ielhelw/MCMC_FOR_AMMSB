@@ -4,9 +4,10 @@
 #include <cmath>
 
 #include <utility>
-#include <numeric>
-#include <algorithm>  // min, max
 #include <chrono>
+#include <vector>
+
+#include "mcmc/config.h"
 
 #include "mcmc/np.h"
 #include "mcmc/random.h"

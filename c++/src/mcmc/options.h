@@ -7,6 +7,7 @@
 #include <boost/program_options.hpp>
 
 #include "mcmc/config.h"
+#include "mcmc/types.h"
 #include "mcmc/exception.h"
 
 #include "dkvstore/DKVStore.h"
@@ -156,7 +157,8 @@ class Options {
        po::value< ::size_t>(&num_node_sample)->default_value(0),
        "neighbor sample size")
       ("mcmc.strategy",
-       po::value<std::string>(&strategy)->default_value("unspecified"),
+       po::value<strategy::strategy>(&strategy)->multitoken()->default_value(
+          strategy::STRATIFIED_RANDOM_NODE),
        "sampling strategy")
       ("mcmc.max-iteration,x",
        po::value< ::size_t>(&max_iteration)->default_value(10000000),
@@ -263,7 +265,7 @@ class Options {
   ::size_t K;
   ::size_t mini_batch_size;
   ::size_t num_node_sample;
-  std::string strategy;
+  strategy::strategy strategy;
   double epsilon;
   ::size_t max_iteration;
   ::size_t interval;
