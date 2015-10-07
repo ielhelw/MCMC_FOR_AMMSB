@@ -10,15 +10,15 @@ trap "rm -f $TMPFILE" TERM INT EXIT
 color=1
 (
  echo "set y2tics"
- echo "set xlabel \"iterations\""
+ echo "set xlabel \"time\""
  echo "set ylabel \"perplexity\""
- echo "set y2label \"time\""
+ echo "set y2label \"iterations\""
  echo -n "plot "
  for f in "$@"; do
 	title="`$pp_title "$f"`"
 	# echo "title $title"
-	echo -n "\"< grep '^average_count' $f\" using 6:(exp(\$14)) with lines linetype 2 linecolor $color title \"$title\", "
-	echo -n "\"< grep '^average_count' $f\" using 6:8 axes x1y2 with lines linetype 2 linecolor $color notitle, "
+	echo -n "\"< grep '^average_count' $f\" using 8:(exp(\$14)) with lines linetype 2 linecolor $color title \"$title\", "
+	echo -n "\"< grep '^average_count' $f\" using 8:6 axes x1y2 with lines linetype 2 linecolor $color notitle, "
 	color=$(( $color + 1))
 done; echo "") > $TMPFILE
 gnuplot $TMPFILE -
