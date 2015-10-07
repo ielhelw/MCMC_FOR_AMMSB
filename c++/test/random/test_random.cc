@@ -43,9 +43,9 @@ int main(int argc, char *argv[]) {
 		std::cout << std::endl;
 	}
 	
-	std::cout << "randint(2**20):" << std::endl;
+	std::cout << "randint(3LL**30):" << std::endl;
 	for (int i = 0; i < 64; ++i) {
-		std::cout << rgen.randint(0, 1 << 20) << " ";
+		std::cout << rgen.randint(0, 3LL << 30) << " ";
 		if ((i + 1) % 8 == 0) {
 			std::cout << std::endl;
 		}

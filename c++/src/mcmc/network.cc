@@ -18,7 +18,7 @@ Network::Network(const NetworkInfo& info)
 
 Network::~Network() {
 #ifdef MCMC_EDGESET_IS_ADJACENCY_LIST
-  adjacency_list_end();
+  thread_random_end();
 #endif
   delete const_cast<Data*>(data_);
 }
@@ -51,6 +51,10 @@ void Network::Init(const Options& args, double held_out_ratio,
   N = data_->N;             // number of nodes in the graph
   linked_edges = data_->E;  // all pair of linked edges.
 
+#ifdef MCMC_EDGESET_IS_ADJACENCY_LIST
+  thread_random_init(args.random_seed, world_rank);
+#endif
+
   if (args.input_class_ == "preprocessed") {
     ReadAuxData(args.input_filename_ + "/aux.gz", true);
 #ifdef MCMC_EDGESET_IS_ADJACENCY_LIST
@@ -73,7 +77,7 @@ void Network::Init(const Options& args, double held_out_ratio,
 
   } else {
 #ifdef MCMC_EDGESET_IS_ADJACENCY_LIST
-    adjacency_list_init(args.random_seed, world_rank);
+    adjacency_list_init();
     // number of undirected edges
     num_total_edges = cumulative_edges[N - 1] / 2;
 #else
@@ -403,7 +407,7 @@ void Network::init_train_link_map() {
 }
 
 #ifdef MCMC_EDGESET_IS_ADJACENCY_LIST
-void Network::adjacency_list_init(int random_seed, int world_rank) {
+void Network::adjacency_list_init() {
   cumulative_edges.resize(N);
 
   if (linked_edges->edges_at_size() != static_cast< ::size_t>(N)) {
@@ -420,7 +424,9 @@ void Network::adjacency_list_init(int random_seed, int world_rank) {
       << cumulative_edges[cumulative_edges.size() - 1] << " max edge "
       << (cumulative_edges[cumulative_edges.size() - 1] +
           linked_edges->edges_at(cumulative_edges.size() - 1).size()) << std::endl;
+}
 
+void Network::thread_random_init(int random_seed, int world_rank) {
   std::cerr << "Create per-thread GRAPH_INIT randoms" << std::endl;
   thread_random.resize(omp_get_max_threads());
   for (::size_t i = 0; i < thread_random.size(); ++i) {
@@ -431,7 +437,7 @@ void Network::adjacency_list_init(int random_seed, int world_rank) {
   }
 }
 
-void Network::adjacency_list_end() {
+void Network::thread_random_end() {
   for (auto r : thread_random) {
     delete r;
   }
@@ -452,7 +458,7 @@ void Network::sample_random_edges(const NetworkGraph* linked_edges, ::size_t p,
       // Draw from 2 |Edges| since each edge is represented twice
       ::size_t edge_index =
           thread_random[omp_get_thread_num()]->randint(0,
-                                                       2 * num_total_edges - 1);
+                                                       2LL * num_total_edges - 1);
       // locate the vertex where this edge lives
       // Actually search for find_ge, so do edge_index + 1
       int v1 = np::find_le(cumulative_edges, edge_index + 1);

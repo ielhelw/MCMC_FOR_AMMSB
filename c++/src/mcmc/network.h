@@ -247,9 +247,10 @@ class Network {
 #endif
   }
 
-  void adjacency_list_init(int random_seed, int world_rank);
+  void thread_random_init(int random_seed, int world_rank);
+  void thread_random_end();
 
-  void adjacency_list_end();
+  void adjacency_list_init();
 
   void sample_random_edges(const NetworkGraph* linked_edges, ::size_t p,
                            std::vector<Edge>* edges) const;
