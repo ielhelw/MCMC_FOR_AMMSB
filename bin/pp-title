@@ -34,6 +34,7 @@ my $epsilon;
 my $alpha;
 my $iterations;
 my $convergence;
+my $strategy = "(stratified node)";
 my $max_average_domain = "auto";
 
 my ( $tmphandle, $tmpfile ) = tempfile( UNLINK => 1 );
@@ -148,6 +149,9 @@ while (<>) {
 		$eta0 = $14;
 		$eta1 = $17
 
+	} elsif (m/^sampling strategy (.*)$/) {
+		$strategy = $1;
+
 	} else {
 		# print "Ignore this line: \"$_\"\n";
 	}
@@ -169,7 +173,7 @@ if ($np eq "") {
 # print "minibatch size $minibatch_size num_node_sample $num_node_sample\n";
 # print "a $a b $b c $c eta ($eta0,$eta1) alpha $alpha epsilon $epsilon\n";
 
-print "$dataset h=$held_out_ratio K=$K m=$minibatch_size n=$num_node_sample";
+print "$dataset $strategy h=$held_out_ratio K=$K m=$minibatch_size n=$num_node_sample";
 if ($eps_t ne "") {
 	print " eps_t=$eps_t";
 } else {
