@@ -18,6 +18,7 @@ MCMCSamplerStochastic::MCMCSamplerStochastic(const Options &args)
   this->a = args_.a;
   this->b = args_.b;
   this->c = args_.c;
+  this->max_sampler_source_ = args_.max_sampler_source;
 
   // control parameters for learning
   if (args_.interval == 0) {
@@ -94,13 +95,16 @@ void MCMCSamplerStochastic::sampler_stochastic_info(std::ostream &s) {
   s << "a " << a << " b " << b << " c " << c;
   s << " eta (" << eta[0] << "," << eta[1] << ")" << std::endl;
   switch (strategy) {
-    case strategy::STRATIFIED_RANDOM_NODE:
+    case strategy::RANDOM_NODE_NONLINKED:       // fallthrough
+    case strategy::RANDOM_NODE:
       s << "minibatch size: specified " << mini_batch_size <<
-          " from num_pieces (" <<
-          network.num_pieces_for_minibatch(mini_batch_size) <<
-          ") is " << network.real_minibatch_size(mini_batch_size) << std::endl;
-      break;
-    case strategy::RANDOM_EDGE:
+        " from num_pieces (" <<
+        network.num_pieces_for_minibatch(strategy, mini_batch_size,
+                                         max_sampler_source_) <<
+        ") is " << network.real_minibatch_size(strategy, mini_batch_size,
+                                               max_sampler_source_) <<
+        std::endl;
+    default:
       s << "minibatch size: " << mini_batch_size << std::endl;
   }
 #ifdef MCMC_NO_NOISE
@@ -147,8 +151,8 @@ void MCMCSamplerStochastic::run() {
       timings.push_back(seconds);
     }
     t_mini_batch.start();
-    EdgeSample edgeSample = network.sample_mini_batch(mini_batch_size,
-                                                      strategy);
+    EdgeSample edgeSample = network.sample_mini_batch(strategy, mini_batch_size,
+                                                      max_sampler_source_);
     t_mini_batch.stop();
     const MinibatchSet &mini_batch = *edgeSample.first;
     double scale = edgeSample.second;

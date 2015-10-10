@@ -147,18 +147,29 @@ class Network {
    *  scale equals to 1/h(x), insuring the sampling gives the unbiased
    *gradients.
    */
-  EdgeSample sample_mini_batch(::size_t mini_batch_size,
-                               strategy::strategy strategy) const;
-  ::size_t num_pieces_for_minibatch(::size_t mini_batch_size) const;
-  ::size_t real_minibatch_size(::size_t mini_batch_size) const;
+  EdgeSample sample_mini_batch(strategy::strategy strategy,
+                               ::size_t mini_batch_size,
+                               ::size_t max_sampler_source) const;
 
-  ::size_t max_minibatch_nodes_for_strategy(::size_t mini_batch_size,
-                                            strategy::strategy strategy) const;
+  ::size_t num_pieces_for_minibatch(strategy::strategy strategy,
+                                    ::size_t mini_batch_size,
+                                    ::size_t max_source) const;
 
-  ::size_t max_minibatch_edges_for_strategy(::size_t mini_batch_size,
-                                            strategy::strategy strategy) const;
+  ::size_t real_minibatch_size(strategy::strategy strategy,
+                               ::size_t mini_batch_size,
+                               ::size_t max_source) const;
+
+  ::size_t max_minibatch_nodes_for_strategy(strategy::strategy strategy,
+                                            ::size_t mini_batch_size,
+                                            ::size_t max_sampler_source) const;
+
+  ::size_t max_minibatch_edges_for_strategy(strategy::strategy strategy,
+                                            ::size_t mini_batch_size,
+                                            ::size_t max_sampler_source) const;
 
   ::size_t get_num_linked_edges() const;
+
+  ::size_t get_num_training_set_edges() const;
 
   ::size_t get_held_out_size() const;
 
@@ -174,8 +185,17 @@ class Network {
   void set_num_pieces(::size_t num_pieces);
 #endif
 
-  EdgeSample sample_full_training_set() const;
-  EdgeSample random_edge_sampling(::size_t mini_batch_size) const;
+ protected:
+  EdgeSample sampler_full_training_set() const;
+  EdgeSample sampler_pair_links(::size_t mini_batch_size) const;
+  EdgeSample sampler_pair_nonlinks(::size_t mini_batch_size) const;
+  EdgeSample sampler_pair(::size_t mini_batch_size) const;
+  EdgeSample sampler_node_links(::size_t mini_batch_size,
+                                ::size_t max_source,
+                                int source_node = -1) const;
+  EdgeSample sampler_node_nonlinks(::size_t mini_batch_size,
+                                   ::size_t max_source,
+                                   int source_node = -1) const;
 
   /**
    * stratified sampling approach gives more attention to link edges (the edge
@@ -191,9 +211,8 @@ class Network {
    * edges
    *         we sample equals to  number of all non-link edges / num_pieces
    */
-  EdgeSample stratified_random_node_sampling(::size_t num_pieces) const;
+  EdgeSample sampler_node(::size_t mini_batch_size, ::size_t max_source) const;
 
- protected:
   /**
    * create a set for each node, which contains list of
    * nodes. i.e {0: Set[2,3,4], 1: Set[3,5,6]...}
