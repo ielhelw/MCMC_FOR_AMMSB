@@ -169,8 +169,14 @@ if ($np eq "") {
 	}
 }
 
-if ($alpha == 1.0 / $K) {
-	$alpha = "1/K"
+my $dot = rindex $alpha, ".";
+if ($dot != -1) {
+	my $decimals = length($alpha) - $dot - 1;
+	my $one_over_K = 1.0 / $K;
+	$one_over_K = int($one_over_K * 10.0 ** $decimals) / (10.0 ** $decimals);
+	if ($alpha == $one_over_K) {
+		$alpha = "1/K";
+	}
 }
 
 # print "application \"$application\" dataset \"$dataset\" np $np\n";
