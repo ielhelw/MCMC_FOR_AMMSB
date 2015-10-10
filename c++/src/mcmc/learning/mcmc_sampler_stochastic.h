@@ -106,7 +106,6 @@ class MCMCSamplerStochastic : public Learner {
 
   ::size_t num_node_sample;
   ::size_t interval;
-  ::size_t max_sampler_source_;
 
   std::vector<std::vector<double> > theta;  // parameterization for \beta
   std::vector<std::vector<double> > phi;    // parameterization for \pi

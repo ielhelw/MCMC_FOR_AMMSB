@@ -43,11 +43,11 @@ Network::~Network() {
                                       ::size_t max_source) const {
 #if defined MCMC_STRATIFIED_COMPATIBILITY_MODE
   switch (strategy) {
-    case strategy::RANDOM_PAIR_NONLINKED: // fallthrough
-    case strategy::RANDOM_PAIR_LINKED:    // fallthrough
+    case strategy::RANDOM_PAIR_NONLINKS: // fallthrough
+    case strategy::RANDOM_PAIR_LINKS:    // fallthrough
     case strategy::RANDOM_PAIR:           // fallthrough
-    case strategy::RANDOM_NODE_LINKED:    // fallthrough
-    case strategy::RANDOM_NODE_NONLINKED:
+    case strategy::RANDOM_NODE_LINKS:    // fallthrough
+    case strategy::RANDOM_NODE_NONLINKS:
       return mini_batch_size;
     case strategy::RANDOM_NODE:
       std::cerr << "For now, do compatibility minibatch size calculation" << std::endl;
@@ -209,16 +209,16 @@ EdgeSample Network::sample_mini_batch(strategy::strategy strategy,
                                       ::size_t mini_batch_size,
                                       ::size_t max_sources) const {
   switch (strategy) {
-    case strategy::RANDOM_PAIR_NONLINKED:
-      return sampler_pair_nonlinks(mini_batch_size);
-    case strategy::RANDOM_PAIR_LINKED:
+    case strategy::RANDOM_PAIR_LINKS:
       return sampler_pair_links(mini_batch_size);
+    case strategy::RANDOM_PAIR_NONLINKS:
+      return sampler_pair_nonlinks(mini_batch_size);
     case strategy::RANDOM_PAIR:
       return sampler_pair(mini_batch_size);
-    case strategy::RANDOM_NODE_LINKED:
-      return sampler_node_nonlinks(mini_batch_size, max_sources);
-    case strategy::RANDOM_NODE_NONLINKED:
+    case strategy::RANDOM_NODE_LINKS:
       return sampler_node_links(mini_batch_size, max_sources);
+    case strategy::RANDOM_NODE_NONLINKS:
+      return sampler_node_nonlinks(mini_batch_size, max_sources);
     case strategy::RANDOM_NODE:
       return sampler_node(mini_batch_size, max_sources);
   }
@@ -230,13 +230,13 @@ EdgeSample Network::sample_mini_batch(strategy::strategy strategy,
     strategy::strategy strategy, ::size_t mini_batch_size,
     ::size_t max_sources) const {
   switch (strategy) {
-    case strategy::RANDOM_PAIR_NONLINKED: // fallthrough
-    case strategy::RANDOM_PAIR_LINKED:
+    case strategy::RANDOM_PAIR_LINKS:
+    case strategy::RANDOM_PAIR_NONLINKS: // fallthrough
     case strategy::RANDOM_PAIR:
       return 2 * max_minibatch_edges_for_strategy(strategy, mini_batch_size,
                                                   max_sources);
-    case strategy::RANDOM_NODE_LINKED:    // fallthrough
-    case strategy::RANDOM_NODE_NONLINKED: // fallthrough
+    case strategy::RANDOM_NODE_LINKS:    // fallthrough
+    case strategy::RANDOM_NODE_NONLINKS: // fallthrough
     case strategy::RANDOM_NODE:
       return max_minibatch_edges_for_strategy(strategy, mini_batch_size,
                                               max_sources) + 1;
@@ -249,12 +249,12 @@ EdgeSample Network::sample_mini_batch(strategy::strategy strategy,
     strategy::strategy strategy, ::size_t mini_batch_size,
     ::size_t max_sources) const {
   switch (strategy) {
-    case strategy::RANDOM_PAIR_NONLINKED: // fallthrough
-    case strategy::RANDOM_PAIR_LINKED:    // fallthrough
+    case strategy::RANDOM_PAIR_LINKS:    // fallthrough
+    case strategy::RANDOM_PAIR_NONLINKS: // fallthrough
     case strategy::RANDOM_PAIR:
       return std::min(mini_batch_size, get_num_training_set_edges());
-    case strategy::RANDOM_NODE_LINKED:    // fallthrough
-    case strategy::RANDOM_NODE_NONLINKED: // fallthrough
+    case strategy::RANDOM_NODE_LINKS:    // fallthrough
+    case strategy::RANDOM_NODE_NONLINKS: // fallthrough
     case strategy::RANDOM_NODE:
       return mini_batch_size + get_max_fan_out(1) - 1;
     // return fan_out_cumul_distro[mini_batch_size];

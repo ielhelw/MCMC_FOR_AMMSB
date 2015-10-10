@@ -469,7 +469,7 @@ void MCMCSamplerStochasticDistributed::init() {
 
   // Calculate DKV store buffer requirements
   max_minibatch_nodes_ = network.max_minibatch_nodes_for_strategy(
-                            strategy, mini_batch_size, max_sampler_source_);
+                            strategy_, mini_batch_size, max_sampler_source_);
   ::size_t workers;
   if (master_is_worker_) {
     workers = mpi_size_;
@@ -918,7 +918,7 @@ EdgeSample MCMCSamplerStochasticDistributed::deploy_mini_batch() {
   if (mpi_rank_ == mpi_master_) {
     // std::cerr << "Invoke sample_mini_batch" << std::endl;
     t_mini_batch_.start();
-    edgeSample = network.sample_mini_batch(strategy, mini_batch_size,
+    edgeSample = network.sample_mini_batch(strategy_, mini_batch_size,
                                            max_sampler_source_);
     t_mini_batch_.stop();
     const MinibatchSet &mini_batch = *edgeSample.first;
