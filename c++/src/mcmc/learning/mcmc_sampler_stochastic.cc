@@ -93,15 +93,13 @@ void MCMCSamplerStochastic::sampler_stochastic_info(std::ostream &s) {
   s << "num_node_sample " << num_node_sample << std::endl;
   s << "a " << a << " b " << b << " c " << c;
   s << " eta (" << eta[0] << "," << eta[1] << ")" << std::endl;
-  switch (strategy_) {
+  switch (network.strategy()) {
     case strategy::RANDOM_NODE_NONLINKS:       // fallthrough
     case strategy::RANDOM_NODE:
       s << "minibatch size: specified " << mini_batch_size <<
         " from num_pieces (" <<
-        network.num_pieces_for_minibatch(strategy_, mini_batch_size,
-                                         max_sampler_source_) <<
-        ") is " << network.real_minibatch_size(strategy_, mini_batch_size,
-                                               max_sampler_source_) <<
+        network.num_pieces_for_minibatch(mini_batch_size) <<
+        ") is " << network.real_minibatch_size(mini_batch_size) <<
         std::endl;
     default:
       s << "minibatch size: " << mini_batch_size << std::endl;
@@ -150,8 +148,7 @@ void MCMCSamplerStochastic::run() {
       timings.push_back(seconds);
     }
     t_mini_batch.start();
-    EdgeSample edgeSample = network.sample_mini_batch(
-      strategy_, mini_batch_size, max_sampler_source_);
+    EdgeSample edgeSample = network.sample_mini_batch(mini_batch_size);
     t_mini_batch.stop();
     const MinibatchSet &mini_batch = *edgeSample.first;
     double scale = edgeSample.second;

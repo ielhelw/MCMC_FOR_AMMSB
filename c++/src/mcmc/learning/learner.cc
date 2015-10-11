@@ -61,9 +61,6 @@ Learner::Learner(const Options &args) : args_(args), ppxs_heldout_cb_(10) {
   stepsize_switch = false;
 
   rng_.Init(args_.random_seed);
-
-  strategy_ = args_.strategy;
-  this->max_sampler_source_ = args_.max_sampler_source;
 }
 
 void Learner::LoadNetwork(int world_rank, bool allocate_pi) {
@@ -103,9 +100,9 @@ Learner::~Learner() {}
 void Learner::info(std::ostream &s) {
   s.unsetf(std::ios_base::floatfield);
   s << std::setprecision(6);
-  s << "N " << N;
-  s << " E " << network.get_num_linked_edges();
-  s << " link ratio " << link_ratio;
+  s << "N " << N;                               // network
+  s << " E " << network.get_num_linked_edges(); // network
+  s << " link ratio " << link_ratio;            // network
   s << " K " << K << std::endl;
   s << "minibatch size " << mini_batch_size;
   s << " epsilon " << epsilon;
@@ -113,9 +110,8 @@ void Learner::info(std::ostream &s) {
   s << " iterations " << max_iteration;
   s << " convergence " << CONVERGENCE_THRESHOLD;
   s << std::endl;
-  s << "sampling strategy " << strategy_ <<
-    " mxs " << max_sampler_source_ << std::endl;
   s << "omp max threads " << omp_get_max_threads() << std::endl;
+  network.Info(s);
 }
 
 void Learner::set_max_iteration(::size_t max_iteration) {

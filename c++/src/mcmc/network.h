@@ -51,6 +51,14 @@ struct EdgeMapItem {
   bool is_edge;
 };
 
+struct SamplerDescriptor {
+  strategy::strategy strategy_;
+  ::size_t max_source_;
+  ::size_t max_source_nonlinks_;
+  bool breadth_first_;
+  double nonlink_ratio_;
+};
+
 class Network {
  public:
   Network();
@@ -78,6 +86,8 @@ class Network {
    */
   void Init(const Options& args, double held_out_ratio,
             SourceAwareRandom *rng, int world_rank = 0);
+
+  void Info(std::ostream& s) const;
 
   const Data* get_data() const;
 
@@ -113,6 +123,8 @@ class Network {
   // graph
   void FillInfo(NetworkInfo* info);
 
+  strategy::strategy strategy() const { return sampler_.strategy_; }
+
   /**
    * Sample a mini-batch of edges from the training data.
    * There are four different sampling strategies for edge sampling
@@ -147,25 +159,12 @@ class Network {
    *  scale equals to 1/h(x), insuring the sampling gives the unbiased
    *gradients.
    */
-  EdgeSample sample_mini_batch(strategy::strategy strategy,
-                               ::size_t mini_batch_size,
-                               ::size_t max_sampler_source) const;
+  EdgeSample sample_mini_batch(::size_t mini_batch_size) const;
 
-  ::size_t num_pieces_for_minibatch(strategy::strategy strategy,
-                                    ::size_t mini_batch_size,
-                                    ::size_t max_source) const;
-
-  ::size_t real_minibatch_size(strategy::strategy strategy,
-                               ::size_t mini_batch_size,
-                               ::size_t max_source) const;
-
-  ::size_t max_minibatch_nodes_for_strategy(strategy::strategy strategy,
-                                            ::size_t mini_batch_size,
-                                            ::size_t max_sampler_source) const;
-
-  ::size_t max_minibatch_edges_for_strategy(strategy::strategy strategy,
-                                            ::size_t mini_batch_size,
-                                            ::size_t max_sampler_source) const;
+  ::size_t num_pieces_for_minibatch(::size_t mini_batch_size) const;
+  ::size_t real_minibatch_size(::size_t mini_batch_size) const;
+  ::size_t max_minibatch_nodes_for_strategy(::size_t mini_batch_size) const;
+  ::size_t max_minibatch_edges_for_strategy(::size_t mini_batch_size) const;
 
   ::size_t get_num_linked_edges() const;
 
@@ -191,10 +190,8 @@ class Network {
   EdgeSample sampler_pair_nonlinks(::size_t mini_batch_size) const;
   EdgeSample sampler_pair(::size_t mini_batch_size) const;
   EdgeSample sampler_node_links(::size_t mini_batch_size,
-                                ::size_t max_source,
                                 int source_node = -1) const;
   EdgeSample sampler_node_nonlinks(::size_t mini_batch_size,
-                                   ::size_t max_source,
                                    int source_node = -1) const;
 
   /**
@@ -211,7 +208,7 @@ class Network {
    * edges
    *         we sample equals to  number of all non-link edges / num_pieces
    */
-  EdgeSample sampler_node(::size_t mini_batch_size, ::size_t max_source) const;
+  EdgeSample sampler_node(::size_t mini_batch_size) const;
 
   /**
    * create a set for each node, which contains list of
@@ -334,8 +331,7 @@ class Network {
 #ifdef MCMC_EDGESET_IS_ADJACENCY_LIST
   std::vector< ::size_t> cumulative_edges;
   std::vector<Random::Random*> thread_random;
-#endif
-
+#else
 // The map stores all the neighboring nodes for each node, within the training
 // set. The purpose of keeping this object is to make the stratified sampling
 // process easier, in which case we need to sample all the neighboring nodes
@@ -346,9 +342,9 @@ class Network {
 //   .............
 // 10000: [0,441,9000]
 //                         }
-#ifndef MCMC_EDGESET_IS_ADJACENCY_LIST
   std::vector<VertexSet> train_link_map;  //
 #endif
+
   EdgeMap held_out_map;  // store all held out edges
   EdgeMap test_map;      // store all test edges
 
@@ -356,6 +352,8 @@ class Network {
   ::size_t progress = 0;
 
   SourceAwareRandom *rng_;
+
+  SamplerDescriptor sampler_;
 };
 
 };  // namespace mcmc

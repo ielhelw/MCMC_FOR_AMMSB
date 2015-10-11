@@ -165,9 +165,6 @@ class Learner {
   bool stepsize_switch;
   ::size_t average_count;
 
-  strategy::strategy strategy_;
-  ::size_t max_sampler_source_;
-
   SourceAwareRandom rng_;
 
 #ifdef MCMC_RANDOM_COMPATIBILITY_MODE

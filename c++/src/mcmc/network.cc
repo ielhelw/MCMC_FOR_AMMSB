@@ -32,17 +32,13 @@ Network::~Network() {
   delete const_cast<Data*>(data_);
 }
 
-::size_t Network::num_pieces_for_minibatch(strategy::strategy strategy,
-                                           ::size_t mini_batch_size,
-                                           ::size_t max_source) const {
+::size_t Network::num_pieces_for_minibatch(::size_t mini_batch_size) const {
   return (N + mini_batch_size - 1) / mini_batch_size;
 }
 
-::size_t Network::real_minibatch_size(strategy::strategy strategy,
-                                      ::size_t mini_batch_size,
-                                      ::size_t max_source) const {
+::size_t Network::real_minibatch_size(::size_t mini_batch_size) const {
 #if defined MCMC_STRATIFIED_COMPATIBILITY_MODE
-  switch (strategy) {
+  switch (sampler_.strategy_) {
     case strategy::RANDOM_PAIR_NONLINKS: // fallthrough
     case strategy::RANDOM_PAIR_LINKS:    // fallthrough
     case strategy::RANDOM_PAIR:           // fallthrough
@@ -51,8 +47,7 @@ Network::~Network() {
       return mini_batch_size;
     case strategy::RANDOM_NODE:
       std::cerr << "For now, do compatibility minibatch size calculation" << std::endl;
-      return N / num_pieces_for_minibatch(strategy, mini_batch_size,
-                                          max_source);
+      return N / num_pieces_for_minibatch(mini_batch_size);
   }
   throw MCMCException("Invalid sampling strategy");
 #else
@@ -125,6 +120,21 @@ void Network::Init(const Options& args, double held_out_ratio,
 
     calc_max_fan_out();
   }
+
+  sampler_.strategy_ = args.strategy;
+  sampler_.max_source_ = args.sampler_max_source;
+  sampler_.max_source_nonlinks_ = args.sampler_max_source_nonlinks;
+  sampler_.breadth_first_ = args.sampler_breadth_first;
+  sampler_.nonlink_ratio_ = args.sampler_nonlink_ratio;
+}
+
+void Network::Info(std::ostream &s) const {
+  s << "sampling strategy " << sampler_.strategy_ <<
+    " mxs " << sampler_.max_source_ <<
+    " /nonlinks " << sampler_.max_source_nonlinks_ <<
+    " breadth-first " << sampler_.breadth_first_ <<
+    " nonlink ratio " << sampler_.nonlink_ratio_ <<
+    std::endl;
 }
 
 const Data* Network::get_data() const { return data_; }
@@ -205,10 +215,8 @@ void Network::FillInfo(NetworkInfo* info) {
   info->max_fan_out = fan_out_cumul_distro[0];
 }
 
-EdgeSample Network::sample_mini_batch(strategy::strategy strategy,
-                                      ::size_t mini_batch_size,
-                                      ::size_t max_sources) const {
-  switch (strategy) {
+EdgeSample Network::sample_mini_batch(::size_t mini_batch_size) const {
+  switch (sampler_.strategy_) {
     case strategy::RANDOM_PAIR_LINKS:
       return sampler_pair_links(mini_batch_size);
     case strategy::RANDOM_PAIR_NONLINKS:
@@ -216,39 +224,35 @@ EdgeSample Network::sample_mini_batch(strategy::strategy strategy,
     case strategy::RANDOM_PAIR:
       return sampler_pair(mini_batch_size);
     case strategy::RANDOM_NODE_LINKS:
-      return sampler_node_links(mini_batch_size, max_sources);
+      return sampler_node_links(mini_batch_size);
     case strategy::RANDOM_NODE_NONLINKS:
-      return sampler_node_nonlinks(mini_batch_size, max_sources);
+      return sampler_node_nonlinks(mini_batch_size);
     case strategy::RANDOM_NODE:
-      return sampler_node(mini_batch_size, max_sources);
+      return sampler_node(mini_batch_size);
   }
 
   throw MCMCException("Invalid sampling strategy");
 }
 
 ::size_t Network::max_minibatch_nodes_for_strategy(
-    strategy::strategy strategy, ::size_t mini_batch_size,
-    ::size_t max_sources) const {
-  switch (strategy) {
+    ::size_t mini_batch_size) const {
+  switch (sampler_.strategy_) {
     case strategy::RANDOM_PAIR_LINKS:
     case strategy::RANDOM_PAIR_NONLINKS: // fallthrough
     case strategy::RANDOM_PAIR:
-      return 2 * max_minibatch_edges_for_strategy(strategy, mini_batch_size,
-                                                  max_sources);
+      return 2 * max_minibatch_edges_for_strategy(mini_batch_size);
     case strategy::RANDOM_NODE_LINKS:    // fallthrough
     case strategy::RANDOM_NODE_NONLINKS: // fallthrough
     case strategy::RANDOM_NODE:
-      return max_minibatch_edges_for_strategy(strategy, mini_batch_size,
-                                              max_sources) + 1;
+      return max_minibatch_edges_for_strategy(mini_batch_size) + 1;
   }
 
   throw MCMCException("Invalid sampling strategy");
 }
 
 ::size_t Network::max_minibatch_edges_for_strategy(
-    strategy::strategy strategy, ::size_t mini_batch_size,
-    ::size_t max_sources) const {
-  switch (strategy) {
+    ::size_t mini_batch_size) const {
+  switch (sampler_.strategy_) {
     case strategy::RANDOM_PAIR_LINKS:    // fallthrough
     case strategy::RANDOM_PAIR_NONLINKS: // fallthrough
     case strategy::RANDOM_PAIR:
@@ -376,7 +380,12 @@ EdgeSample Network::sampler_pair_nonlinks(::size_t mini_batch_size) const {
 
 EdgeSample Network::sampler_pair(::size_t mini_batch_size) const {
   Random::Random* rng = rng_->random(SourceAwareRandom::MINIBATCH_SAMPLER);
-  int flag = rng->randint(0, 1);
+  int flag;
+  if (sampler_.nonlink_ratio_ == 0.5) {
+    flag = rng->randint(0, 1);
+  } else {
+    flag = (rng->random() > sampler_.nonlink_ratio_);
+  }
 
   if (flag == 1) {
     return sampler_pair_links(mini_batch_size);
@@ -387,19 +396,20 @@ EdgeSample Network::sampler_pair(::size_t mini_batch_size) const {
 
 
 /* sample link edges from node(s) */
-EdgeSample Network::sampler_node_links(
-    ::size_t mini_batch_size, ::size_t max_sources, int source_node) const {
+// @arg source_node has meaning only #ifdef MCMC_STRATIFIED_COMPATIBILITY_MODE
+EdgeSample Network::sampler_node_links(::size_t mini_batch_size,
+                                       int source_node) const {
 #if ! defined MCMC_STRATIFIED_COMPATIBILITY_MODE
   Random::Random* rng = rng_->random(SourceAwareRandom::MINIBATCH_SAMPLER);
 #endif
   MinibatchSet* mini_batch_set = new MinibatchSet();
 
   for (::size_t num_sources = 0;
-       num_sources < max_sources && mini_batch_set->size() < mini_batch_size;
+       num_sources < sampler_.max_source_;
        ++num_sources) {
     // randomly select the node ID
 #if defined MCMC_STRATIFIED_COMPATIBILITY_MODE
-    if (max_sources != 1) {
+    if (sampler_.max_source_ != 1) {
       throw MCMCException("sampler compatibility requires max_sources == 1");
     }
     int nodeId = source_node;
@@ -445,72 +455,77 @@ EdgeSample Network::sampler_node_links(
 
 
 /* sample non-link edges from node(s) */
-EdgeSample Network::sampler_node_nonlinks(
-    ::size_t mini_batch_size, ::size_t max_sources, int source_node) const {
+// @arg source_node has meaning only #ifdef MCMC_STRATIFIED_COMPATIBILITY_MODE
+EdgeSample Network::sampler_node_nonlinks(::size_t mini_batch_size,
+                                          int source_node) const {
   Random::Random* rng = rng_->random(SourceAwareRandom::MINIBATCH_SAMPLER);
   MinibatchSet* mini_batch_set = new MinibatchSet();
 
-  ::size_t num_pieces = num_pieces_for_minibatch(strategy::RANDOM_NODE,
-                                                 mini_batch_size, max_sources);
+  ::size_t num_pieces = num_pieces_for_minibatch(mini_batch_size);
 
 #if defined MCMC_STRATIFIED_COMPATIBILITY_MODE
   std::cerr << "For now, use compatibility num_pieces calculation" << std::endl;
   mini_batch_size = (::size_t)(N / num_pieces);
 #endif
 
-  // randomly select the node ID
-#if defined MCMC_STRATIFIED_COMPATIBILITY_MODE
-  if (max_sources != 1) {
-    throw MCMCException("sampler compatibility requires max_sources == 1");
-  }
-  int nodeId = source_node;
-#else
-  int nodeId = rng->randint(0, N - 1);
-#endif
-  // decide to sample links or non-links
-  // flag=0: non-link edges  flag=1: link edges
-  // std::cerr << "num_pieces " << num_pieces << " flag " << flag <<
-  // std::endl;
-
-  // this is approximation, since the size of self.train_link_map[nodeId]
-  // greatly smaller than N.
-  // ::size_t mini_batch_size = (int)((N - train_link_map[nodeId].size()) /
-  // num_pieces);
   int p = (int)mini_batch_size;
-
-  while (p > 0) {
-    // because of the sparsity, when we sample $mini_batch_size*2$ nodes, the list
-    // likely
-    // contains at least mini_batch_size valid nodes.
-#ifdef MCMC_EFFICIENCY_COMPATIBILITY_MODE
-    auto nodeList = rng->sample(np::xrange(0, N), mini_batch_size * 2);
-#else
-    auto nodeList = rng->sampleRange(N, mini_batch_size * 2);
-#endif
-    for (auto neighborId : *nodeList) {
-      // std::cerr << "random neighbor " << *neighborId << std::endl;
-      if (p < 0) {
-        // std::cerr << __func__ << ": Are you sure p < 0 is a good idea?"
-        // << std::endl;
-        break;
-      }
-      if (neighborId == nodeId) {
-        continue;
-      }
-
-      // check condition, and insert into mini_batch_set if it is valid.
-      Edge edge(std::min(nodeId, neighborId),
-                std::max(nodeId, neighborId));
-      if (edge.in(*linked_edges) || edge.in(held_out_map) ||
-          edge.in(test_map) || edge.in(*mini_batch_set)) {
-        continue;
-      }
-
-      mini_batch_set->insert(edge);
-      p--;
+  ::size_t sources_left = sampler_.max_source_nonlinks_;
+  while (p >= 0) {
+    ::size_t subsample_size = (p + 1) / sources_left;
+    --sources_left;
+    // randomly select the node ID
+#if defined MCMC_STRATIFIED_COMPATIBILITY_MODE
+    if (sampler_.max_source_nonlinks_ != 1) {
+      throw MCMCException("sampler compatibility requires max_sources == 1");
     }
+    int nodeId = source_node;
+#else
+    int nodeId = rng->randint(0, N - 1);
+#endif
+    // decide to sample links or non-links
+    // flag=0: non-link edges  flag=1: link edges
+    // std::cerr << "num_pieces " << num_pieces << " flag " << flag <<
+    // std::endl;
 
-    delete nodeList;
+    // this is approximation, since the size of self.train_link_map[nodeId]
+    // greatly smaller than N.
+    // ::size_t mini_batch_size = (int)((N - train_link_map[nodeId].size()) /
+    // num_pieces);
+
+    while (subsample_size > 0) {
+      // because of the sparsity, when we sample $mini_batch_size*2$ nodes,
+      // the list likely contains at least mini_batch_size valid nodes.
+#ifdef MCMC_EFFICIENCY_COMPATIBILITY_MODE
+      auto nodeList = rng->sample(np::xrange(0, N), mini_batch_size * 2);
+#else
+      auto nodeList = rng->sampleRange(N, mini_batch_size * 2);
+#endif
+      for (auto neighborId : *nodeList) {
+        // std::cerr << "random neighbor " << *neighborId << std::endl;
+        if (p < 0) {
+          // std::cerr << __func__ << ": Are you sure p < 0 is a good idea?"
+          // << std::endl;
+          break;
+        }
+        if (neighborId == nodeId) {
+          continue;
+        }
+
+        // check condition, and insert into mini_batch_set if it is valid.
+        Edge edge(std::min(nodeId, neighborId),
+                  std::max(nodeId, neighborId));
+        if (edge.in(*linked_edges) || edge.in(held_out_map) ||
+            edge.in(test_map) || edge.in(*mini_batch_set)) {
+          continue;
+        }
+
+        mini_batch_set->insert(edge);
+        p--;
+        --subsample_size;
+      }
+
+      delete nodeList;
+    }
   }
 
   if (false) {
@@ -522,8 +537,7 @@ EdgeSample Network::sampler_node_nonlinks(
 }
 
 
-EdgeSample Network::sampler_node(::size_t mini_batch_size,
-                                 ::size_t max_sources) const {
+EdgeSample Network::sampler_node(::size_t mini_batch_size) const {
   auto* rng = rng_->random(SourceAwareRandom::MINIBATCH_SAMPLER);
 #if defined MCMC_STRATIFIED_COMPATIBILITY_MODE
   // For WenZhe compatibility, reorder random accesses
@@ -531,12 +545,17 @@ EdgeSample Network::sampler_node(::size_t mini_batch_size,
 #else
   int source_node = -1;
 #endif
-  int flag = rng->randint(0, 1);
+  int flag;
+  if (sampler_.nonlink_ratio_ == 0.5) {
+    flag = rng->randint(0, 1);
+  } else {
+    flag = (rng->random() > sampler_.nonlink_ratio_);
+  }
 
   if (flag == 1) {
-    return sampler_node_links(mini_batch_size, max_sources, source_node);
+    return sampler_node_links(mini_batch_size, source_node);
   } else {
-    return sampler_node_nonlinks(mini_batch_size, max_sources, source_node);
+    return sampler_node_nonlinks(mini_batch_size, source_node);
   }
 }
 

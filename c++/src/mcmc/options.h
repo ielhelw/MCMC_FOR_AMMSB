@@ -156,13 +156,24 @@ class Options {
       ("mcmc.num-node-sample,n",
        po::value< ::size_t>(&num_node_sample)->default_value(0),
        "neighbor sample size")
+
       ("mcmc.strategy",
        po::value<strategy::strategy>(&strategy)->multitoken()->default_value(
           strategy::RANDOM_NODE),
        "sampling strategy")
-      ("mcmc.max-sampler-source",
-       po::value< ::size_t>(&max_sampler_source)->default_value(1),
+      ("mcmc.sampler.max-source",
+       po::value< ::size_t>(&sampler_max_source)->default_value(1),
        "max #sources in random-node sampling")
+      ("mcmc.sampler.max-source-nonlink",
+       po::value< ::size_t>(&sampler_max_source_nonlinks)->default_value(1),
+       "max #sources in random-node sampling")
+      ("mcmc.sampler.breadth-first",
+       po::bool_switch(&sampler_breadth_first)->default_value(false),
+       "max #sources in random-node sampling")
+      ("mcmc.sampler.nonlink-ratio",
+       po::value<double>(&sampler_nonlink_ratio)->default_value(0.5),
+       "ratio of nonlinks in links/nonlinks sampler")
+
       ("mcmc.max-iteration,x",
        po::value< ::size_t>(&max_iteration)->default_value(10000000),
        "max_iteration")
@@ -268,11 +279,16 @@ class Options {
   ::size_t K;
   ::size_t mini_batch_size;
   ::size_t num_node_sample;
-  strategy::strategy strategy;
-  ::size_t max_sampler_source;
+
   double epsilon;
   ::size_t max_iteration;
   ::size_t interval;
+
+  strategy::strategy strategy;
+  ::size_t sampler_max_source;
+  ::size_t sampler_max_source_nonlinks;
+  bool sampler_breadth_first;
+  double sampler_nonlink_ratio;
 
   // parameters for step size
   double a;
