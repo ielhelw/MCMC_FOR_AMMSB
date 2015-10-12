@@ -154,7 +154,7 @@ const Data *Relativity::process() {
       Vertex node2 = node_id_map[i.second];
       Edge eIdent(i.first, i.second);
       if (node1 == node2) {
-        std::cerr << "Self-link " << eIdent << ": ignore" << std::endl;
+        // std::cerr << "Self-link " << eIdent << ": ignore" << std::endl;
         self_links++;
         continue;
       }
