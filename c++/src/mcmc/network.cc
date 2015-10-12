@@ -1,4 +1,7 @@
 #include "mcmc/network.h"
+
+#include <deque>
+
 #include "mcmc/preprocess/data_factory.h"
 
 #if defined MCMC_RANDOM_COMPATIBILITY_MODE
@@ -46,7 +49,6 @@ Network::~Network() {
     case strategy::RANDOM_NODE_NONLINKS:
       return mini_batch_size;
     case strategy::RANDOM_NODE:
-      std::cerr << "For now, do compatibility minibatch size calculation" << std::endl;
       return N / num_pieces_for_minibatch(mini_batch_size);
   }
   throw MCMCException("Invalid sampling strategy");
@@ -404,50 +406,101 @@ EdgeSample Network::sampler_node_links(::size_t mini_batch_size,
 #endif
   MinibatchSet* mini_batch_set = new MinibatchSet();
 
-  for (::size_t num_sources = 0;
-       num_sources < sampler_.max_source_;
-       ++num_sources) {
-    // randomly select the node ID
-#if defined MCMC_STRATIFIED_COMPATIBILITY_MODE
-    if (sampler_.max_source_ != 1) {
-      throw MCMCException("sampler compatibility requires max_sources == 1");
-    }
-    int nodeId = source_node;
-#else
-    int nodeId = rng->randint(0, N - 1);
-#endif
+  if (sampler_.breadth_first_) {
+    std::deque<int> bf_queue;
 
-    // return all linked edges
-#ifdef MCMC_EDGESET_IS_ADJACENCY_LIST
-    if (mini_batch_set->size() + linked_edges->edges_at(nodeId).size() >
-        mini_batch_size) {
-      break;
-    }
-    for (auto neighborId : linked_edges->edges_at(nodeId)) {
-      Edge e(std::min(nodeId, neighborId), std::max(nodeId, neighborId));
-      if (!e.in(test_map) && !e.in(held_out_map)) {
-        mini_batch_set->insert(e);
+    while (mini_batch_set->size() < mini_batch_size) {
+      if (bf_queue.empty()) {
+        int nodeId = rng->randint(0, N - 1);
+        // std::cerr << "New root node " << nodeId << std::endl;
+        bf_queue.push_back(nodeId);
       }
-    }
-#else
-    if (false) {
-      std::cerr << "train_link_map[" << nodeId << "] size "
-        << train_link_map[nodeId].size() << std::endl;
-    }
-    if (mini_batch_set->size() + train_link_map[nodeId].size() >
-        mini_batch_size) {
-      break;
-    }
-    for (auto neighborId : train_link_map[nodeId]) {
-      Edge edge(std::min(nodeId, neighborId), std::max(nodeId, neighborId));
-      mini_batch_set->insert(edge);
-    }
-#endif
-  }
 
-  if (false) {
-    std::cerr << "B Create mini batch size " << mini_batch_set->size()
-      << " scale " << N << std::endl;
+      int nodeId = bf_queue.front();
+      bf_queue.pop_front();
+      // std::cerr << "Handle deq'ed node " << nodeId << std::endl;
+
+#ifdef MCMC_EDGESET_IS_ADJACENCY_LIST
+      for (auto neighborId : linked_edges->edges_at(nodeId)) {
+        if (mini_batch_set->size() >= mini_batch_size) {
+          break;
+        }
+        Edge e(std::min(nodeId, neighborId), std::max(nodeId, neighborId));
+        if (!e.in(test_map) && !e.in(held_out_map) && !e.in(*mini_batch_set)) {
+          mini_batch_set->insert(e);
+          bf_queue.push_back(neighborId);
+        }
+      }
+#else
+      if (false) {
+        std::cerr << "train_link_map[" << nodeId << "] size "
+          << train_link_map[nodeId].size() << std::endl;
+      }
+      for (auto neighborId : train_link_map[nodeId]) {
+        if (mini_batch_set->size() >= mini_batch_size) {
+          break;
+        }
+        Edge edge(std::min(nodeId, neighborId), std::max(nodeId, neighborId));
+        if (!e.in(*mini_batch_set)) {
+          mini_batch_set->insert(edge);
+          bf_queue.push_back(neighborId);
+        }
+      }
+#endif
+    }
+
+    if (false) {
+      std::cerr << "B' Create mini batch size " << mini_batch_set->size()
+        << " scale " << N << std::endl;
+      // dump(std::cerr, *mini_batch_set);
+    }
+
+  } else {
+    for (::size_t num_sources = 0;
+         num_sources < sampler_.max_source_;
+         ++num_sources) {
+      // randomly select the node ID
+#if defined MCMC_STRATIFIED_COMPATIBILITY_MODE
+      if (sampler_.max_source_ != 1) {
+        throw MCMCException("sampler compatibility requires max_sources == 1");
+      }
+      int nodeId = source_node;
+#else
+      int nodeId = rng->randint(0, N - 1);
+#endif
+
+      // return all linked edges
+#ifdef MCMC_EDGESET_IS_ADJACENCY_LIST
+      if (mini_batch_set->size() + linked_edges->edges_at(nodeId).size() >
+          mini_batch_size) {
+        break;
+      }
+      for (auto neighborId : linked_edges->edges_at(nodeId)) {
+        Edge e(std::min(nodeId, neighborId), std::max(nodeId, neighborId));
+        if (!e.in(test_map) && !e.in(held_out_map)) {
+          mini_batch_set->insert(e);
+        }
+      }
+#else
+      if (false) {
+        std::cerr << "train_link_map[" << nodeId << "] size "
+          << train_link_map[nodeId].size() << std::endl;
+      }
+      if (mini_batch_set->size() + train_link_map[nodeId].size() >
+          mini_batch_size) {
+        break;
+      }
+      for (auto neighborId : train_link_map[nodeId]) {
+        Edge edge(std::min(nodeId, neighborId), std::max(nodeId, neighborId));
+        mini_batch_set->insert(edge);
+      }
+#endif
+    }
+
+    if (false) {
+      std::cerr << "B Create mini batch size " << mini_batch_set->size()
+        << " scale " << N << std::endl;
+    }
   }
 
   return EdgeSample(mini_batch_set, N);
@@ -502,7 +555,7 @@ EdgeSample Network::sampler_node_nonlinks(::size_t mini_batch_size,
 #endif
       for (auto neighborId : *nodeList) {
         // std::cerr << "random neighbor " << *neighborId << std::endl;
-        if (p < 0) {
+        if (p < 0 || subsample_size == 0) {
           // std::cerr << __func__ << ": Are you sure p < 0 is a good idea?"
           // << std::endl;
           break;

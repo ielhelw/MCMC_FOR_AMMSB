@@ -46,7 +46,7 @@ inline std::istream& operator>> (std::istream& in, strategy& strategy) {
 }
 
 
-inline std::ostream& operator<< (std::ostream& s, strategy& strategy) {
+inline std::ostream& operator<< (std::ostream& s, const strategy& strategy) {
   namespace po = boost::program_options;
 
   switch (strategy) {
