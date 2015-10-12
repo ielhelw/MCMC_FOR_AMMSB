@@ -38,25 +38,26 @@ typedef std::pair<MinibatchSet*, double> EdgeSample;
  * data.
  */
 
-struct NetworkInfo {
-  int32_t N;
-  int64_t E;
-  int32_t max_fan_out;
-  double held_out_ratio;
-  int64_t held_out_size;
-};
-
-struct EdgeMapItem {
-  Edge edge;
-  bool is_edge;
-};
-
 struct SamplerDescriptor {
   strategy::strategy strategy_;
   ::size_t max_source_;
   ::size_t max_source_nonlinks_;
   bool breadth_first_;
   double nonlink_ratio_;
+};
+
+struct NetworkInfo {
+  int32_t N;
+  int64_t E;
+  int32_t max_fan_out;
+  double held_out_ratio;
+  int64_t held_out_size;
+  SamplerDescriptor sampler;
+};
+
+struct EdgeMapItem {
+  Edge edge;
+  bool is_edge;
 };
 
 class Network {

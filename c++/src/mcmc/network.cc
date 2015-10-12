@@ -19,7 +19,8 @@ Network::Network(const NetworkInfo& info)
       linked_edges(NULL),
       num_total_edges(info.E),
       held_out_ratio_(info.held_out_ratio),
-      held_out_size_(info.held_out_size) {
+      held_out_size_(info.held_out_size),
+      sampler_(info.sampler) {
   fan_out_cumul_distro = std::vector< ::size_t>(1, info.max_fan_out);
   assert(N != 0);
   print_mem_usage(std::cerr);
@@ -215,6 +216,7 @@ void Network::FillInfo(NetworkInfo* info) {
   info->held_out_ratio = held_out_ratio_;
   info->held_out_size = held_out_size_;
   info->max_fan_out = fan_out_cumul_distro[0];
+  info->sampler = sampler_;
 }
 
 EdgeSample Network::sample_mini_batch(::size_t mini_batch_size) const {
