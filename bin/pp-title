@@ -173,8 +173,9 @@ my $dot = rindex $alpha, ".";
 if ($dot != -1) {
 	my $decimals = length($alpha) - $dot - 1;
 	my $one_over_K = 1.0 / $K;
-	$one_over_K = int($one_over_K * 10.0 ** $decimals) / (10.0 ** $decimals);
-	if ($alpha == $one_over_K) {
+	my $one_over_K_lb = int($one_over_K * 10.0 ** $decimals) / (10.0 ** $decimals);
+	my $one_over_K_ub = int($one_over_K * 10.0 ** $decimals + 1) / (10.0 ** $decimals);
+	if ($alpha >= $one_over_K_lb && $alpha <= $one_over_K_ub) {
 		$alpha = "1/K";
 	}
 }
