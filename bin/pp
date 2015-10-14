@@ -4,8 +4,9 @@ me=`basename $0`
 TMPFILE=/tmp/$me-cmd-$$
 echo TMPFILE $TMPFILE
 pp_title=`dirname $0`/pp-title
+pp_get_perp_col=`dirname $0`/pp-get-perp-col
 
-trap "rm -f $TMPFILE" TERM INT EXIT
+# trap "rm -f $TMPFILE" TERM INT EXIT
 
 color=1
 (
@@ -15,10 +16,13 @@ color=1
  echo "set y2label \"time\""
  echo -n "plot "
  for f in "$@"; do
+	perp="`$pp_get_perp_col "$f"`"
 	title="`$pp_title "$f"`"
 	# echo "title $title"
-	echo -n "\"< grep '^average_count' $f\" using 6:(exp(\$14)) with lines linetype 2 linecolor $color title \"$title\", "
-	echo -n "\"< grep '^average_count' $f\" using 6:8 axes x1y2 with lines linetype 2 linecolor $color notitle, "
+	echo -n "\"< grep '^average_count' $f\" using 6:(exp(\$$perp)) with lines linetype 2 linecolor $color title \"$title\", "
+	if [[ $perp -ge 14 ]] ; then
+		echo -n "\"< grep '^average_count' $f\" using 6:8 axes x1y2 with lines linetype 2 linecolor $color notitle, "
+	fi
 	color=$(( $color + 1))
 done; echo "") > $TMPFILE
 gnuplot $TMPFILE -
