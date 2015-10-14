@@ -17,7 +17,7 @@ my $application;
 my $np = "";
 my $dataset;
 my $N;
-my $E;
+my $E = 0;
 my $link_ratio;
 my $held_out_ratio;
 my $held_out_size = 0;
@@ -47,12 +47,39 @@ while (<>) {
 
 	if (0) {
 
-	} elsif (m/^average_count is: (\d+) step count: (\d+) time: ($floatmatch) perplexity for hold out set: ($floatmatch)$/) {
+	# } elsif (m/^average_count is: (\d+) step count: (\d+) time: ($floatmatch) perplexity for hold out set: ($floatmatch)$/) {
 		# push @average_count, $1;
 		# push @step_count, $2;
 		# push @time, $3;
 		# push @perplexity, $4;
 
+	# Python output
+	} elsif (m/^relativity::open\("(.*)"\)$/) {
+		$dataset = basename($1);
+
+	} elsif (m/^held_out_ratio ($floatmatch) held_out_size (\d+) num_pieces (\d+)$/) {
+		$held_out_ratio = $1;
+		$held_out_ratio =~ s/(.)0+$/\1/;
+		$held_out_size = $2;
+
+	} elsif (m/^K (\d+) N (\d+)$/) {
+		$K = $1;
+		$N = $2;
+
+	} elsif (m/^alpha ($floatmatch) eta ($floatmatch)\,($floatmatch) epsilon ($floatmatch)$/) {
+		$alpha = $1;
+		$eta0 = $4;
+		$eta1 = $7;
+		if ($c eq "0") {
+			$eps_t = $a;
+		}
+		$epsilon = $10;
+
+	} elsif (m/minibatch size (\d+) num_node_sample (\d+)/) {
+		$minibatch_size = $1;
+		$num_node_sample = $2;
+
+	# C++ output
 	} elsif (m/^Random seed (.*)$/) {
 		$random_seed = $1;
 
@@ -157,7 +184,7 @@ while (<>) {
 	}
 }
 
-if ($held_out_size > 0) {
+if ($held_out_size > 0 and $E > 0) {
 	$held_out_ratio = sprintf("%.3g", (1.0 * $held_out_size) / $E);
 	# print "held_out_ratio $held_out_size / $E = $held_out_ratio\n";
 }
