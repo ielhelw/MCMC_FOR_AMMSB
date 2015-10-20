@@ -308,8 +308,7 @@ EdgeSample Network::sampler_full_training_set() const {
     }
   }
 
-  double weight = (N - 1) * N / 2.0 / mini_batch_set->size();
-  // double weight = 1.0;
+  double weight = (double)(N - 1) * N / 2.0 / mini_batch_set->size();
 
   // std::cerr << "Minibatch size " << mini_batch_set->size() << " weight " << weight << std::endl;
 
@@ -351,7 +350,7 @@ EdgeSample Network::sampler_pair_links(::size_t mini_batch_size) const {
     delete sampled_linked_edges;
   }
 
-  double weight = (N - 1) * N / 2.0 / mini_batch_set->size();
+  double weight = (double)(N - 1) * N / 2.0 / mini_batch_set->size();
 
   // std::cerr << "Minibatch size " << mini_batch_set->size() << std::endl;
 
@@ -377,7 +376,8 @@ EdgeSample Network::sampler_pair_nonlinks(::size_t mini_batch_size) const {
     mini_batch_set->insert(edge);
   }
 
-  double weight = N * (N - 1) / 2.0 - (1.0 * num_total_edges) / mini_batch_size;
+  double weight = (double)N * (N - 1) / 2.0 - (1.0 * num_total_edges) / mini_batch_size;
+
   return EdgeSample(mini_batch_set, weight);
 }
 
@@ -408,14 +408,18 @@ EdgeSample Network::sampler_node_links(::size_t mini_batch_size,
 #endif
   MinibatchSet* mini_batch_set = new MinibatchSet();
 
+  double weight;
+
   if (sampler_.breadth_first_) {
     std::deque<int> bf_queue;
 
+    ::size_t sources = 0;
     while (mini_batch_set->size() < mini_batch_size) {
       if (bf_queue.empty()) {
         int nodeId = rng->randint(0, N - 1);
         // std::cerr << "New root node " << nodeId << std::endl;
         bf_queue.push_back(nodeId);
+        sources++;
       }
 
       int nodeId = bf_queue.front();
@@ -443,7 +447,7 @@ EdgeSample Network::sampler_node_links(::size_t mini_batch_size,
           break;
         }
         Edge edge(std::min(nodeId, neighborId), std::max(nodeId, neighborId));
-        if (!e.in(*mini_batch_set)) {
+        if (!edge.in(*mini_batch_set)) {
           mini_batch_set->insert(edge);
           bf_queue.push_back(neighborId);
         }
@@ -451,9 +455,14 @@ EdgeSample Network::sampler_node_links(::size_t mini_batch_size,
 #endif
     }
 
+    // weight = N / sources;               // <<<<<< the winner!
+    // weight = N / (sources + mini_batch_set->size());    // <<<<<< another winner!
+    // weight = N / sampler_.max_source_;
+    // weight = num_total_edges;
+    weight = (double)num_total_edges / mini_batch_set->size();
     if (false) {
       std::cerr << "B' Create mini batch size " << mini_batch_set->size()
-        << " scale " << N << std::endl;
+        << " weight " << weight << std::endl;
       // dump(std::cerr, *mini_batch_set);
     }
 
@@ -499,13 +508,15 @@ EdgeSample Network::sampler_node_links(::size_t mini_batch_size,
 #endif
     }
 
+    // weight = num_total_edges;
+    weight = (double)N / sampler_.max_source_;
     if (false) {
       std::cerr << "B Create mini batch size " << mini_batch_set->size()
-        << " scale " << N << std::endl;
+        << " weight " << weight << std::endl;
     }
   }
 
-  return EdgeSample(mini_batch_set, N);
+  return EdgeSample(mini_batch_set, weight);
 }
 
 
@@ -516,7 +527,9 @@ EdgeSample Network::sampler_node_nonlinks(::size_t mini_batch_size,
   Random::Random* rng = rng_->random(SourceAwareRandom::MINIBATCH_SAMPLER);
   MinibatchSet* mini_batch_set = new MinibatchSet();
 
+#ifdef UNUSED
   ::size_t num_pieces = num_pieces_for_minibatch(mini_batch_size);
+#endif
 
 #if defined MCMC_STRATIFIED_COMPATIBILITY_MODE
   std::cerr << "For now, use compatibility num_pieces calculation" << std::endl;
@@ -525,6 +538,7 @@ EdgeSample Network::sampler_node_nonlinks(::size_t mini_batch_size,
 
   int p = (int)mini_batch_size;
   ::size_t sources_left = sampler_.max_source_nonlinks_;
+  ::size_t num_sources = 0;
   while (p >= 0) {
     ::size_t subsample_size = (p + 1) / sources_left;
     --sources_left;
@@ -537,15 +551,7 @@ EdgeSample Network::sampler_node_nonlinks(::size_t mini_batch_size,
 #else
     int nodeId = rng->randint(0, N - 1);
 #endif
-    // decide to sample links or non-links
-    // flag=0: non-link edges  flag=1: link edges
-    // std::cerr << "num_pieces " << num_pieces << " flag " << flag <<
-    // std::endl;
-
-    // this is approximation, since the size of self.train_link_map[nodeId]
-    // greatly smaller than N.
-    // ::size_t mini_batch_size = (int)((N - train_link_map[nodeId].size()) /
-    // num_pieces);
+    num_sources++;
 
     while (subsample_size > 0) {
       // because of the sparsity, when we sample $mini_batch_size*2$ nodes,
@@ -583,12 +589,18 @@ EdgeSample Network::sampler_node_nonlinks(::size_t mini_batch_size,
     }
   }
 
+  double weight;
+  // weight = N * num_pieces;
+  weight = ((double)N * (N - 1.0) / 2.0 - num_total_edges) / mini_batch_set->size();
+  // weight = (double)N * (N - 1.0) / 2.0 / (2 * mini_batch_set->size());
+  // weight = N / (mini_batch_set->size() + num_sources); // <<<<<< the winner!
+  // weight = N / num_sources;      // <<<<<< another winner!
   if (false) {
     std::cerr << "A Create mini batch size " << mini_batch_set->size()
-      << " scale " << (N * num_pieces) << std::endl;
+      << " weight " << weight << std::endl;
   }
 
-  return EdgeSample(mini_batch_set, N * num_pieces);
+  return EdgeSample(mini_batch_set, weight);
 }
 
 

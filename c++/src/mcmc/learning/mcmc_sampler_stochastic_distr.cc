@@ -278,7 +278,7 @@ void MCMCSamplerStochasticDistributed::BroadcastNetworkInfo() {
     }
 
     // ration between link edges and non-link edges
-    link_ratio = network.get_num_linked_edges() / ((N * (N - 1)) / 2.0);
+    link_ratio = network.get_num_linked_edges() / (((double)N * (N - 1)) / 2.0);
 
     ppx_per_heldout_edge_ = std::vector<double>(network.get_held_out_size(), 0.0);
 
