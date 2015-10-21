@@ -244,11 +244,13 @@ EdgeSample Network::sample_mini_batch(::size_t mini_batch_size) const {
     case strategy::RANDOM_PAIR_LINKS:
     case strategy::RANDOM_PAIR_NONLINKS: // fallthrough
     case strategy::RANDOM_PAIR:
-      return 2 * max_minibatch_edges_for_strategy(mini_batch_size);
+      return std::min(static_cast< ::size_t>(N),
+                      2 * max_minibatch_edges_for_strategy(mini_batch_size));
     case strategy::RANDOM_NODE_LINKS:    // fallthrough
     case strategy::RANDOM_NODE_NONLINKS: // fallthrough
     case strategy::RANDOM_NODE:
-      return max_minibatch_edges_for_strategy(mini_batch_size) + 1;
+      return std::min(static_cast< ::size_t>(N),
+                      max_minibatch_edges_for_strategy(mini_batch_size) + 1);
   }
 
   throw MCMCException("Invalid sampling strategy");
