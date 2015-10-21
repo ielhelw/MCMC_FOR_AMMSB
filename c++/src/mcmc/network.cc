@@ -258,9 +258,10 @@ EdgeSample Network::sample_mini_batch(::size_t mini_batch_size) const {
     ::size_t mini_batch_size) const {
   switch (sampler_.strategy_) {
     case strategy::RANDOM_PAIR_LINKS:    // fallthrough
+      return std::min(mini_batch_size, get_num_training_set_edges());
     case strategy::RANDOM_PAIR_NONLINKS: // fallthrough
     case strategy::RANDOM_PAIR:
-      return std::min(mini_batch_size, get_num_training_set_edges());
+      return mini_batch_size;
     case strategy::RANDOM_NODE_LINKS:    // fallthrough
     case strategy::RANDOM_NODE_NONLINKS: // fallthrough
     case strategy::RANDOM_NODE:
