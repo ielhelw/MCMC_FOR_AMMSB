@@ -424,7 +424,7 @@ EdgeSample Network::sampler_pair(const SamplerDescriptor& sampler,
 EdgeSample Network::sampler_node_links(const SamplerDescriptor& sampler,
                                        ::size_t mini_batch_size,
                                        int source_node) const {
-#if ! defined MCMC_STRATIFIED_COMPATIBILITY_MODE
+#if defined MCMC_RANDOM_COMPATIBILITY_MODE || ! defined MCMC_STRATIFIED_COMPATIBILITY_MODE
   Random::Random* rng = rng_->random(SourceAwareRandom::MINIBATCH_SAMPLER);
 #endif
   MinibatchSet* mini_batch_set = new MinibatchSet();
@@ -557,12 +557,10 @@ EdgeSample Network::sampler_node_nonlinks(const SamplerDescriptor& sampler,
   Random::Random* rng = rng_->random(SourceAwareRandom::MINIBATCH_SAMPLER);
   MinibatchSet* mini_batch_set = new MinibatchSet();
 
-#ifdef UNUSED
-  ::size_t num_pieces = num_pieces_for_minibatch(sampler.strategy,
-                                                 mini_batch_size);
-#endif
-
 #if defined MCMC_STRATIFIED_COMPATIBILITY_MODE
+  ::size_t num_pieces = num_pieces_for_minibatch(sampler.strategy_,
+                                                 mini_batch_size);
+
   std::cerr << "For now, use compatibility num_pieces calculation" << std::endl;
   mini_batch_size = (::size_t)(N / num_pieces);
 #endif
