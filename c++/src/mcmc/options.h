@@ -173,6 +173,15 @@ class Options {
       ("mcmc.sampler.nonlink-ratio",
        po::value<double>(&sampler_nonlink_ratio)->default_value(0.5),
        "ratio of nonlinks in links/nonlinks sampler")
+      ("mcmc.sampler.burn-in",
+       po::value< ::size_t>(&sampler_burn_in)->default_value(false),
+       "burn-in iterations")
+      ("mcmc.sampler.weight-links",
+       po::value<double>(&sampler_weight_links)->default_value(0.0),
+       "force weight of links sampler")
+      ("mcmc.sampler.weight-nonlinks",
+       po::value<double>(&sampler_weight_nonlinks)->default_value(0.0),
+       "force weight of nonlinks sampler")
 
       ("mcmc.max-iteration,x",
        po::value< ::size_t>(&max_iteration)->default_value(10000000),
@@ -265,6 +274,20 @@ class Options {
     if (alpha == 0.0) {
       alpha = 1.0 / K;
     }
+
+    if (sampler_burn_in != 0) {
+      switch (strategy) {
+        case strategy::RANDOM_NODE:
+          strategy = strategy::RANDOM_NODE_LINKS;
+          break;
+        case strategy::RANDOM_PAIR:
+          strategy = strategy::RANDOM_PAIR_LINKS;
+          break;
+        default:
+          throw po::error("Cannot have burn-in period for strategy " +
+                          strategy);
+      }
+    }
   }
 
   const std::vector<std::string> &getRemains() const { return remains; }
@@ -289,6 +312,9 @@ class Options {
   ::size_t sampler_max_source_nonlinks;
   bool sampler_breadth_first;
   double sampler_nonlink_ratio;
+  ::size_t sampler_burn_in;
+  double sampler_weight_links;
+  double sampler_weight_nonlinks;
 
   // parameters for step size
   double a;

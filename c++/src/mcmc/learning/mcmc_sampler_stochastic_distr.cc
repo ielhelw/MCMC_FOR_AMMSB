@@ -254,6 +254,10 @@ void MCMCSamplerStochasticDistributed::BroadcastNetworkInfo() {
   NetworkInfo info;
   int r;
 
+  r = MPI_Bcast(&sampler_, sizeof sampler_, MPI_BYTE, mpi_master_,
+                MPI_COMM_WORLD);
+  mpi_error_test(r, "MPI_Bcast of sampler fails");
+
   if (mpi_rank_ == mpi_master_) {
     network.FillInfo(&info);
   }
@@ -469,7 +473,7 @@ void MCMCSamplerStochasticDistributed::init() {
 
   // Calculate DKV store buffer requirements
   max_minibatch_nodes_ = network.max_minibatch_nodes_for_strategy(
-                            mini_batch_size);
+                            sampler_.strategy_, mini_batch_size);
   ::size_t workers;
   if (master_is_worker_) {
     workers = mpi_size_;
@@ -915,10 +919,12 @@ EdgeSample MCMCSamplerStochasticDistributed::deploy_mini_batch() {
   int		r;
   EdgeSample edgeSample;
 
+  check_burn_in();
+
   if (mpi_rank_ == mpi_master_) {
     // std::cerr << "Invoke sample_mini_batch" << std::endl;
     t_mini_batch_.start();
-    edgeSample = network.sample_mini_batch(mini_batch_size);
+    edgeSample = network.sample_mini_batch(sampler_, mini_batch_size);
     t_mini_batch_.stop();
     const MinibatchSet &mini_batch = *edgeSample.first;
     // std::cerr << "Done sample_mini_batch" << std::endl;
