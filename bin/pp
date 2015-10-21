@@ -8,20 +8,65 @@ pp_get_perp_col=`dirname $0`/pp-get-perp-col
 
 # trap "rm -f $TMPFILE" TERM INT EXIT
 
+X1="iter"
+X2="time"
+
+declare -a param
+j=0
+next=
+for a in "$@" ; do
+	if [ "$next" != "" ] ; then
+		next=
+	elif [ "$a" = "-i" ] ; then
+		X1="iter"
+		X2="time"
+	elif [ "$a" = "-t" ] ; then
+		X1="time"
+		X2="iter"
+	elif [ "$a" == "--no-time" ] ; then
+		X2="none"
+	elif [ "$a" == "--no-iter" ] ; then
+		X1="time"
+		X2="none"
+	else
+		param[$j]="$a"
+		j=$[$j + 1]
+	fi
+done
+
 color=1
 (
- echo "set y2tics"
- echo "set xlabel \"iterations\""
+ if [ $X1 = "iter" ] ; then
+	 echo "set xlabel \"iterations\""
+ else
+	 echo "set xlabel \"time\""
+ fi
  echo "set ylabel \"perplexity\""
- echo "set y2label \"time\""
+ if [ $X2 = "iter" ] ; then
+	 echo "set y2tics"
+	 echo "set y2label \"iterations\""
+ elif [ $X2 = "time" ] ; then
+	 echo "set y2tics"
+	 echo "set y2label \"time\""
+ fi
  echo -n "plot "
- for f in "$@"; do
+ for f in "${param[@]}" ; do
 	perp="`$pp_get_perp_col "$f"`"
 	title="`$pp_title "$f"`"
 	# echo "title $title"
-	echo -n "\"< grep '^average_count' $f\" using 6:(exp(\$$perp)) with lines linetype 2 linecolor $color title \"$title\", "
-	if [[ $perp -ge 14 ]] ; then
-		echo -n "\"< grep '^average_count' $f\" using 6:8 axes x1y2 with lines linetype 2 linecolor $color notitle, "
+	if [ $X1 = "iter" ] ; then
+		echo -n "\"< grep '^average_count' $f\" using 6:(exp(\$$perp)) with lines linetype 2 linecolor $color title \"$title\", "
+	else
+		if [[ $perp -ge 14 ]] ; then
+			echo -n "\"< grep '^average_count' $f\" using 8:(exp(\$$perp)) with lines linetype 2 linecolor $color title \"$title\", "
+		fi
+	fi
+	if [ $X2 = "iter" ] ; then
+		echo -n "\"< grep '^average_count' $f\" using 8:6 axes x1y2 with lines linetype 2 linecolor $color notitle, "
+	elif [ $X2 = "time" ] ; then
+		if [[ $perp -ge 14 ]] ; then
+			echo -n "\"< grep '^average_count' $f\" using 6:8 axes x1y2 with lines linetype 2 linecolor $color notitle, "
+		fi
 	fi
 	color=$(( $color + 1))
 done; echo "") > $TMPFILE

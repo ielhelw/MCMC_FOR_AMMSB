@@ -178,6 +178,9 @@ while (<>) {
 
 	} elsif (m/^sampling strategy (.*)$/) {
 		$strategy = $1;
+		$strategy =~ s/ \/nonlinks 1\b//;
+		$strategy =~ s/ nonlink ratio 0\.5\b//;
+		$strategy =~ s/ breadth-first / BF /;
 
 	} else {
 		# print "Ignore this line: \"$_\"\n";
