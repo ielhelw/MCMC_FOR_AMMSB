@@ -50,8 +50,8 @@ def main():
     parser.add_argument('--output_dir', type=str,default='.', required=False)
     args = parser.parse_args()
 
-    # compatibility_mode = True
-    compatibility_mode = False
+    compatibility_mode = True
+    # compatibility_mode = False
 
     random.seed(42, compatibility_mode)
 
