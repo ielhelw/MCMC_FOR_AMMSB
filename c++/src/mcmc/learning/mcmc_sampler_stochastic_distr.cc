@@ -299,25 +299,14 @@ void MCMCSamplerStochasticDistributed::BroadcastHeldOut() {
     std::vector<int32_t> count(mpi_size_);	// FIXME: lift to class
     std::vector<int32_t> displ(mpi_size_);	// FIXME: lift to class
 
-    if (args_.REPLICATED_NETWORK) {
-      // Ensure perplexity is centrally calculated at the master's
-      for (int i = 0; i < mpi_size_; ++i) {
-        if (i == mpi_master_) {
-          count[i] = network.get_held_out_set().size();
-        } else {
-          count[i] = 0;
-        }
-      }
-    } else {
-      int32_t held_out_marshall_size = network.get_held_out_set().size() /
-                                         mpi_size_;
-      ::size_t surplus = network.get_held_out_set().size() % mpi_size_;
-      for (::size_t i = 0; i < surplus; ++i) {
-        count[i] = held_out_marshall_size + 1;
-      }
-      for (::size_t i = surplus; i < static_cast< ::size_t>(mpi_size_); ++i) {
-        count[i] = held_out_marshall_size;
-      }
+    int32_t held_out_marshall_size = network.get_held_out_set().size() /
+      mpi_size_;
+    ::size_t surplus = network.get_held_out_set().size() % mpi_size_;
+    for (::size_t i = 0; i < surplus; ++i) {
+      count[i] = held_out_marshall_size + 1;
+    }
+    for (::size_t i = surplus; i < static_cast< ::size_t>(mpi_size_); ++i) {
+      count[i] = held_out_marshall_size;
     }
 
     // Scatter the size of each held-out set subset
@@ -512,7 +501,7 @@ void MCMCSamplerStochasticDistributed::init() {
                                    max_my_perp_nodes);
 
   std::cerr << "minibatch size param " << mini_batch_size <<
-    " max " << max_minibatch_nodes_ <<
+    " max(nodes) " << max_minibatch_nodes_ <<
     " chunk " << max_minibatch_chunk_ <<
     " #neighbors(total) " << max_minibatch_neighbors << std::endl;
   std::cerr << "perplexity nodes total " <<
@@ -1169,6 +1158,9 @@ void MCMCSamplerStochasticDistributed::update_beta(
                  np::sum<double>);
   t_beta_zero_.stop();
 
+  // In a distributed implementation:
+  //  - partition the minibatch along the machines, then continue as below
+
   t_beta_rank_.start();
   // FIXME: already did the nodes_in_batch() -- only the ranking remains
   std::unordered_map<Vertex, Vertex> node_rank;
@@ -1187,6 +1179,11 @@ void MCMCSamplerStochasticDistributed::update_beta(
       nodes.push_back(j);
     }
     assert(node_rank.size() == nodes.size());
+    // staging:
+    //  have a subminibatch to collect the edges
+    //  if complete or nodes.size() + 2 >= max_pi_cache_entries:
+    //    perform update to grads for the nodes/links that are staged
+    //    reset the subminibatch, nodes, node_rank
   }
   t_beta_rank_.stop();
 
@@ -1249,6 +1246,11 @@ void MCMCSamplerStochasticDistributed::update_beta(
     }
   }
   t_beta_sum_grads_.stop();
+
+  // In a distributed implementation:
+  //  - do a reduce(+) over everybody's grads_beta[0][k][{0,1}], accumulate
+  //    is necessary only at the master's
+  //  - then only the master continues as below
 
   t_beta_update_theta_.start();
   // update theta
@@ -1322,6 +1324,10 @@ double MCMCSamplerStochasticDistributed::cal_perplexity_held_out() {
     a.link.reset();
     a.non_link.reset();
   }
+
+  t_purge_pi_perp_.start();
+  d_kv_store_->PurgeKVRecords();
+  t_purge_pi_perp_.stop();
 
   for (::size_t chunk_start = 0;
        chunk_start < perp_.data_.size();

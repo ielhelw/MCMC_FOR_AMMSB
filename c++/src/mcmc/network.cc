@@ -835,10 +835,12 @@ void Network::init_held_out_set() {
     print_mem_usage(std::cerr);
   }
 
-  if (false) {
+#if defined MCMC_RANDOM_COMPATIBILITY_MODE
+  if (true) {
     std::cout << "held_out_set:" << std::endl;
     dump(std::cout, held_out_map);
   }
+#endif
 }
 
 void Network::init_test_set() {

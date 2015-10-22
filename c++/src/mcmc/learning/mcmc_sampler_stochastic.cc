@@ -76,13 +76,7 @@ void MCMCSamplerStochastic::init() {
   // parameterization for \pi
   phi = rng_.random(SourceAwareRandom::PHI_INIT)->gamma(1, 1, N, K);
   std::cerr << "Done host random for phi" << std::endl;
-#ifndef NDEBUG
-  for (auto pph : phi) {
-    for (auto ph : pph) {
-      assert(ph >= 0.0);
-    }
-  }
-#endif
+
   pi.resize(phi.size(), std::vector<double>(phi[0].size()));
   np::row_normalize(&pi, phi);
 
@@ -90,6 +84,17 @@ void MCMCSamplerStochastic::init() {
     rng_.random(SourceAwareRandom::GRAPH_INIT)->seed(0) << ",0x" <<
     rng_.random(SourceAwareRandom::GRAPH_INIT)->seed(1) << std::endl;
   std::cerr << std::dec;
+#ifndef NDEBUG
+  for (auto pph : phi) {
+    for (auto ph : pph) {
+      assert(ph >= 0.0);
+    }
+  }
+
+  std::cout << std::fixed << std::setprecision(12) << "beta[0] " << beta[0] << std::endl;
+  std::cout << std::fixed << std::setprecision(12) << "phi[0][0] " << phi[0][0] << std::endl;
+  std::cout << std::fixed << std::setprecision(12) << "pi[0][0] " << pi[0][0] << std::endl;
+#endif
   std::cerr << "Done " << __func__ << "()" << std::endl;
 }
 
