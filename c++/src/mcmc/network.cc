@@ -641,6 +641,7 @@ EdgeSample Network::sampler_node(const SamplerDescriptor& sampler,
 #if defined MCMC_STRATIFIED_COMPATIBILITY_MODE
   // For WenZhe compatibility, reorder random accesses
   int source_node = rng->randint(0, N - 1);
+  ++mini_batch_size;
 #else
   int source_node = -1;
 #endif
