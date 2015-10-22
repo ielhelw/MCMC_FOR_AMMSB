@@ -66,7 +66,7 @@ Learner::Learner(const Options &args) : args_(args), ppxs_heldout_cb_(10) {
 void Learner::LoadNetwork(int world_rank, bool allocate_pi) {
   double held_out_ratio = args_.held_out_ratio;
   if (args_.held_out_ratio == 0.0) {
-    held_out_ratio = 0.01;
+    held_out_ratio = 0.1;
     std::cerr << "Set held_out_ratio to default " << held_out_ratio
               << std::endl;
   }
