@@ -37,9 +37,7 @@ void Network::Init(const Options& args, double held_out_ratio,
 
   held_out_ratio_ = held_out_ratio;
   if (held_out_ratio_ == 0) {
-    held_out_ratio_ = 0.1;
-    std::cerr << "Choose default held_out_ratio: " << held_out_ratio
-              << std::endl;
+    throw MCMCException("Need to specify held-out ratio");
   }
 
   progress = 1 << 20;  // FIXME: make this a parameter
