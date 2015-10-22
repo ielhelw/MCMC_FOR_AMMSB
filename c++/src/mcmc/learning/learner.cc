@@ -111,7 +111,6 @@ void Learner::info(std::ostream &s) {
   s << " convergence " << CONVERGENCE_THRESHOLD;
   s << std::endl;
   s << "omp max threads " << omp_get_max_threads() << std::endl;
-  network.Info(s);
 }
 
 void Learner::set_max_iteration(::size_t max_iteration) {

@@ -25,6 +25,15 @@ MCMCSamplerStochastic::MCMCSamplerStochastic(const Options &args)
   } else {
     interval = args_.interval;
   }
+
+  sampler_.strategy_ = args_.strategy;
+  sampler_.max_source_ = args_.sampler_max_source;
+  sampler_.max_source_nonlinks_ = args_.sampler_max_source_nonlinks;
+  sampler_.breadth_first_ = args_.sampler_breadth_first;
+  sampler_.nonlink_ratio_ = args_.sampler_nonlink_ratio;
+  sampler_.burn_in_ = args_.sampler_burn_in;
+  sampler_.weight_links_ = args_.sampler_weight_links;
+  sampler_.weight_nonlinks_ = args_.sampler_weight_nonlinks;
 }
 
 void MCMCSamplerStochastic::init() {
@@ -93,13 +102,14 @@ void MCMCSamplerStochastic::sampler_stochastic_info(std::ostream &s) {
   s << "num_node_sample " << num_node_sample << std::endl;
   s << "a " << a << " b " << b << " c " << c;
   s << " eta (" << eta[0] << "," << eta[1] << ")" << std::endl;
-  switch (network.strategy()) {
+  switch (sampler_.strategy_) {
     case strategy::RANDOM_NODE_NONLINKS:       // fallthrough
     case strategy::RANDOM_NODE:
       s << "minibatch size: specified " << mini_batch_size <<
         " from num_pieces (" <<
-        network.num_pieces_for_minibatch(mini_batch_size) <<
-        ") is " << network.real_minibatch_size(mini_batch_size) <<
+        network.num_pieces_for_minibatch(sampler_.strategy_, mini_batch_size) <<
+        ") is " << network.real_minibatch_size(sampler_.strategy_,
+                                               mini_batch_size) <<
         std::endl;
     default:
       s << "minibatch size: " << mini_batch_size << std::endl;
@@ -107,7 +117,34 @@ void MCMCSamplerStochastic::sampler_stochastic_info(std::ostream &s) {
 #ifdef MCMC_NO_NOISE
   s << "remove noise to do SungJin's experiment" << std::endl;
 #endif
+  sampler_.Info(s);
 }
+
+void MCMCSamplerStochastic::check_burn_in() {
+  if (step_count == sampler_.burn_in_) {
+    // switch sampler strategy
+    switch (sampler_.strategy_) {
+      case strategy::RANDOM_PAIR_LINKS:    // fallthrough
+        sampler_.strategy_ = strategy::RANDOM_PAIR;
+        average_count = 1;
+        std::cerr << "At burn-in iteration, switch to strategy " <<
+          sampler_.strategy_ << std::endl;
+        break;
+      case strategy::RANDOM_NODE_LINKS:    // fallthrough
+        sampler_.strategy_ = strategy::RANDOM_NODE;
+        average_count = 1;
+        std::cerr << "At burn-in iteration, switch to strategy " <<
+          sampler_.strategy_ << std::endl;
+        break;
+      default:
+        std::cerr << "OOPPPPPPSSSSSSSSS ... " <<
+          "after burn-in, cannot switch strategy from " <<
+          sampler_.strategy_ << std::endl;
+        break;
+    }
+  }
+}
+
 
 void MCMCSamplerStochastic::run() {
   /** run mini-batch based MCMC sampler, based on the sungjin's note */
@@ -148,7 +185,9 @@ void MCMCSamplerStochastic::run() {
       timings.push_back(seconds);
     }
     t_mini_batch.start();
-    EdgeSample edgeSample = network.sample_mini_batch(mini_batch_size);
+    check_burn_in();
+    EdgeSample edgeSample = network.sample_mini_batch(sampler_,
+                                                      mini_batch_size);
     t_mini_batch.stop();
     const MinibatchSet &mini_batch = *edgeSample.first;
     double scale = edgeSample.second;

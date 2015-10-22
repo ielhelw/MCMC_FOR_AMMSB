@@ -39,11 +39,16 @@ typedef std::pair<MinibatchSet*, double> EdgeSample;
  */
 
 struct SamplerDescriptor {
+  void const Info(std::ostream &s) const;
+
   strategy::strategy strategy_;
   ::size_t max_source_;
   ::size_t max_source_nonlinks_;
   bool breadth_first_;
   double nonlink_ratio_;
+  ::size_t burn_in_;
+  double weight_links_;
+  double weight_nonlinks_;
 };
 
 struct NetworkInfo {
@@ -52,7 +57,6 @@ struct NetworkInfo {
   int32_t max_fan_out;
   double held_out_ratio;
   int64_t held_out_size;
-  SamplerDescriptor sampler;
 };
 
 struct EdgeMapItem {
@@ -88,8 +92,6 @@ class Network {
   void Init(const Options& args, double held_out_ratio,
             SourceAwareRandom *rng, int world_rank = 0);
 
-  void Info(std::ostream& s) const;
-
   const Data* get_data() const;
 
   void ReadSet(FileHandle& f, EdgeMap* set);
@@ -123,8 +125,6 @@ class Network {
   // Stub info for the distributed implementation that does not replicate the
   // graph
   void FillInfo(NetworkInfo* info);
-
-  strategy::strategy strategy() const { return sampler_.strategy_; }
 
   /**
    * Sample a mini-batch of edges from the training data.
@@ -160,12 +160,17 @@ class Network {
    *  scale equals to 1/h(x), insuring the sampling gives the unbiased
    *gradients.
    */
-  EdgeSample sample_mini_batch(::size_t mini_batch_size) const;
+  EdgeSample sample_mini_batch(const SamplerDescriptor &sampler,
+                               ::size_t mini_batch_size) const;
 
-  ::size_t num_pieces_for_minibatch(::size_t mini_batch_size) const;
-  ::size_t real_minibatch_size(::size_t mini_batch_size) const;
-  ::size_t max_minibatch_nodes_for_strategy(::size_t mini_batch_size) const;
-  ::size_t max_minibatch_edges_for_strategy(::size_t mini_batch_size) const;
+  ::size_t num_pieces_for_minibatch(strategy::strategy strategy,
+                                    ::size_t mini_batch_size) const;
+  ::size_t real_minibatch_size(strategy::strategy strategy,
+                               ::size_t mini_batch_size) const;
+  ::size_t max_minibatch_nodes_for_strategy(strategy::strategy strategy,
+                                            ::size_t mini_batch_size) const;
+  ::size_t max_minibatch_edges_for_strategy(strategy::strategy strategy,
+                                            ::size_t mini_batch_size) const;
 
   ::size_t get_num_linked_edges() const;
 
@@ -186,13 +191,18 @@ class Network {
 #endif
 
  protected:
-  EdgeSample sampler_full_training_set() const;
-  EdgeSample sampler_pair_links(::size_t mini_batch_size) const;
-  EdgeSample sampler_pair_nonlinks(::size_t mini_batch_size) const;
-  EdgeSample sampler_pair(::size_t mini_batch_size) const;
-  EdgeSample sampler_node_links(::size_t mini_batch_size,
+  EdgeSample sampler_full_training_set(const SamplerDescriptor& sampler) const;
+  EdgeSample sampler_pair_links(const SamplerDescriptor& sampler,
+                                ::size_t mini_batch_size) const;
+  EdgeSample sampler_pair_nonlinks(const SamplerDescriptor& sampler,
+                                   ::size_t mini_batch_size) const;
+  EdgeSample sampler_pair(const SamplerDescriptor& sampler,
+                          ::size_t mini_batch_size) const;
+  EdgeSample sampler_node_links(const SamplerDescriptor& sampler,
+                                ::size_t mini_batch_size,
                                 int source_node = -1) const;
-  EdgeSample sampler_node_nonlinks(::size_t mini_batch_size,
+  EdgeSample sampler_node_nonlinks(const SamplerDescriptor& sampler,
+                                   ::size_t mini_batch_size,
                                    int source_node = -1) const;
 
   /**
@@ -209,7 +219,8 @@ class Network {
    * edges
    *         we sample equals to  number of all non-link edges / num_pieces
    */
-  EdgeSample sampler_node(::size_t mini_batch_size) const;
+  EdgeSample sampler_node(const SamplerDescriptor&sampler,
+                          ::size_t mini_batch_size) const;
 
   /**
    * create a set for each node, which contains list of
@@ -353,8 +364,6 @@ class Network {
   ::size_t progress = 0;
 
   SourceAwareRandom *rng_;
-
-  SamplerDescriptor sampler_;
 };
 
 };  // namespace mcmc

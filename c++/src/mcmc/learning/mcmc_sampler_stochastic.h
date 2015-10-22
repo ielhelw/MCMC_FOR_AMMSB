@@ -79,6 +79,8 @@ class MCMCSamplerStochastic : public Learner {
 
   void run() override;
 
+  void check_burn_in();
+
  protected:
   void update_beta(const MinibatchSet &mini_batch, double scale);
 
@@ -106,6 +108,8 @@ class MCMCSamplerStochastic : public Learner {
 
   ::size_t num_node_sample;
   ::size_t interval;
+
+  SamplerDescriptor sampler_;
 
   std::vector<std::vector<double> > theta;  // parameterization for \beta
   std::vector<std::vector<double> > phi;    // parameterization for \pi
