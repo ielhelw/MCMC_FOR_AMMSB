@@ -36,7 +36,7 @@ def main():
     parser.add_argument('--K', '-K', type=int, default=300, required=False)
     parser.add_argument('--mini_batch_size', '-m', type=int, default=50, required=False)   # mini-batch size
     parser.add_argument('--num-node-sample', '-n', type=int, default=50, required=False)   # neighbor sample size
-    parser.add_argument('--epsilon', type=float, default=0.05, required=False)
+    parser.add_argument('--epsilon', type=float, default=1.0e-07, required=False)
     parser.add_argument('--max_iteration', '-x', type=int, default=10000000, required=False)
     parser.add_argument('--interval', '-i', type=int, default=1000, required=False)
     
@@ -57,7 +57,7 @@ def main():
 
     # data = DataFactory.get_data("netscience")
     data = DataFactory.get_data("relativity", args.filename)
-    network = Network(data, args.hold_out_prob)
+    network = Network(data, args.hold_out_prob, compatibility_mode)
     args.num_pieces = (network.get_num_nodes() + args.mini_batch_size - 1) / args.mini_batch_size
     # network.set_num_pieces(args.num_pieces)  # compatible w/ C++ implementation
         
