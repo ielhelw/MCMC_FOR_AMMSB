@@ -21,6 +21,7 @@ Learner::Learner(const Options &args) : args_(args), ppxs_heldout_cb_(10) {
 #ifdef MCMC_RANDOM_SYSTEM
   std::cerr << "MCMC_RANDOM_SYSTEM enabled" << std::endl;
 #endif
+  std::cerr << "Floating point precision: " << (sizeof(Float) * CHAR_BIT) << std::endl;
 
   std::cerr << "PID " << getpid() << std::endl;
 
@@ -66,7 +67,7 @@ Learner::Learner(const Options &args) : args_(args), ppxs_heldout_cb_(10) {
 }
 
 void Learner::LoadNetwork(int world_rank, bool allocate_pi) {
-  double held_out_ratio = args_.held_out_ratio;
+  Float held_out_ratio = args_.held_out_ratio;
   if (args_.held_out_ratio == 0.0) {
     held_out_ratio = 0.1;
     std::cerr << "Set held_out_ratio to default " << held_out_ratio
@@ -78,9 +79,9 @@ void Learner::LoadNetwork(int world_rank, bool allocate_pi) {
   N = network.get_num_nodes();
 
   // model parameters to learn
-  beta = std::vector<double>(K, 0.0);
+  beta = std::vector<Float>(K, 0.0);
   if (allocate_pi) {
-    pi = std::vector<std::vector<double> >(N, std::vector<double>(K, 0.0));
+    pi = std::vector<std::vector<Float> >(N, std::vector<Float>(K, 0.0));
   }
 
   // parameters related to sampling
@@ -92,7 +93,7 @@ void Learner::LoadNetwork(int world_rank, bool allocate_pi) {
   // ratio between link edges and non-link edges
   link_ratio = network.get_num_linked_edges() / ((N * (N - 1)) / 2.0);
 
-  ppx_per_heldout_edge_ = std::vector<double>(network.get_held_out_size(), 0.0);
+  ppx_per_heldout_edge_ = std::vector<Float>(network.get_held_out_size(), 0.0);
 
   info(std::cerr);
 }
@@ -120,7 +121,7 @@ void Learner::set_max_iteration(::size_t max_iteration) {
   this->max_iteration = max_iteration;
 }
 
-double Learner::cal_perplexity_held_out() {
+Float Learner::cal_perplexity_held_out() {
   return cal_perplexity(network.get_held_out_set());
 }
 
@@ -132,9 +133,9 @@ bool Learner::is_converged() const {
          CONVERGENCE_THRESHOLD;
 }
 
-double Learner::cal_perplexity(const EdgeMap &data) {
-  double link_likelihood = 0.0;
-  double non_link_likelihood = 0.0;
+Float Learner::cal_perplexity(const EdgeMap &data) {
+  Float link_likelihood = 0.0;
+  Float non_link_likelihood = 0.0;
   ::size_t link_count = 0;
   ::size_t non_link_count = 0;
 
@@ -142,7 +143,7 @@ double Learner::cal_perplexity(const EdgeMap &data) {
   for (EdgeMap::const_iterator edge = data.begin(); edge != data.end();
        edge++) {
     const Edge &e = edge->first;
-    double edge_likelihood =
+    Float edge_likelihood =
         cal_edge_likelihood(pi[e.first], pi[e.second], edge->second, beta);
     if (std::isnan(edge_likelihood)) {
       std::cerr << "edge_likelihood is NaN; potential bug" << std::endl;
@@ -168,7 +169,7 @@ double Learner::cal_perplexity(const EdgeMap &data) {
     }
     i++;
   }
-  double avg_likelihood = 0.0;
+  Float avg_likelihood = 0.0;
   if (link_count + non_link_count != 0) {
     avg_likelihood =
         (link_likelihood + non_link_likelihood) / (link_count + non_link_count);

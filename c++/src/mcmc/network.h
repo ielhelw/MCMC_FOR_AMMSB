@@ -19,7 +19,7 @@
 
 namespace mcmc {
 
-typedef std::pair<MinibatchSet*, double> EdgeSample;
+typedef std::pair<MinibatchSet*, Float> EdgeSample;
 
 /**
  * Network class represents the whole graph that we read from the

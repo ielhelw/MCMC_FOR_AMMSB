@@ -42,11 +42,11 @@ class Random {
 
   int64_t randint(int64_t from, int64_t upto);
 
-  double random();
+  Float random();
 
-  double randn();
-  std::vector<double> randn(::size_t K);
-  std::vector<std::vector<double> > randn(::size_t K, ::size_t N);
+  Float randn();
+  std::vector<Float> randn(::size_t K);
+  std::vector<std::vector<Float> > randn(::size_t K, ::size_t N);
 
   template <class List>
   List *sample(const List &population, ::size_t count);
@@ -61,8 +61,8 @@ class Random {
   std::list<typename Container::value_type> *sampleList(
       const Container &population, ::size_t count);
 
-  double gamma(double p1, double p2);
-  std::vector<std::vector<double> > gamma(double p1, double p2, ::size_t n1,
+  Float gamma(Float p1, Float p2);
+  std::vector<std::vector<Float> > gamma(Float p1, Float p2, ::size_t n1,
                                           ::size_t n2);
 
   void report();
@@ -77,11 +77,11 @@ class Random {
               Inserter inserter);
 
 #ifndef MCMC_RANDOM_SYSTEM
-  double gsl_ran_gaussian_ziggurat(const double sigma);
+  Float gsl_ran_gaussian_ziggurat(const Float sigma);
 
-  double gsl_rng_uniform_pos();
+  Float gsl_rng_uniform_pos();
 
-  double gsl_ran_gamma(double a, double b);
+  Float gsl_ran_gamma(Float a, Float b);
 
   uint64_t xorshift_state[2];
 
@@ -92,7 +92,7 @@ class Random {
 
 #else
   std::default_random_engine generator;
-  std::normal_distribution<double> normalDistribution;
+  std::normal_distribution<Float> normalDistribution;
 #endif  // ndef MCMC_RANDOM_SYSTEM
 
 private:

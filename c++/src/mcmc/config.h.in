@@ -17,6 +17,16 @@ namespace mcmc {
 #cmakedefine MCMC_EFFICIENCY_COMPATIBILITY_MODE
 #cmakedefine MCMC_GRAPH_COMPATIBILITY_MODE
 
+#cmakedefine MCMC_SINGLE_PRECISION
+
+#ifdef MCMC_SINGLE_PRECISION
+typedef float   Float;
+#define FLOAT(x)        x ## f
+#else
+typedef double  Float;
+#define FLOAT(x)        x ## lf
+#endif
+
 #ifdef MCMC_EFFICIENCY_COMPATIBILITY_MODE
 #  ifndef MCMC_RANDOM_COMPATIBILITY_MODE
 #    define MCMC_RANDOM_COMPATIBILITY_MODE

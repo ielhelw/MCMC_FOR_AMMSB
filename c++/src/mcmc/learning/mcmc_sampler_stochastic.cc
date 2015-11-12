@@ -58,11 +58,11 @@ void MCMCSamplerStochastic::init() {
   // std::endl;
   // theta = rng_.random(SourceAwareRandom::THETA_INIT)->gamma(100.0, 0.01, K, 2);		//
 
-  std::vector<std::vector<double> > temp(theta.size(),
-                                         std::vector<double>(theta[0].size()));
+  std::vector<std::vector<Float> > temp(theta.size(),
+                                         std::vector<Float>(theta[0].size()));
   np::row_normalize(&temp, theta);
   std::transform(temp.begin(), temp.end(), beta.begin(),
-                 np::SelectColumn<double>(1));
+                 np::SelectColumn<Float>(1));
 
   // parameterization for \pi
   phi = rng_.random(SourceAwareRandom::PHI_INIT)->gamma(1, 1, N, K);
@@ -74,7 +74,7 @@ void MCMCSamplerStochastic::init() {
     }
   }
 #endif
-  pi.resize(phi.size(), std::vector<double>(phi[0].size()));
+  pi.resize(phi.size(), std::vector<Float>(phi[0].size()));
   np::row_normalize(&pi, phi);
 
   std::cerr << "Random seed " << std::hex << "0x" <<
@@ -130,7 +130,7 @@ void MCMCSamplerStochastic::run() {
     t_outer.start();
     if ((step_count - 1) % interval == 0) {
       t_perplexity.start();
-      double ppx_score = cal_perplexity_held_out();
+      Float ppx_score = cal_perplexity_held_out();
       t_perplexity.stop();
       auto t_now = system_clock::now();
       auto t_ms = duration_cast<milliseconds>(t_now - t_start_).count();
@@ -151,7 +151,7 @@ void MCMCSamplerStochastic::run() {
                                                       strategy);
     t_mini_batch.stop();
     const MinibatchSet &mini_batch = *edgeSample.first;
-    double scale = edgeSample.second;
+    Float scale = edgeSample.second;
 
     // iterate through each node in the mini batch.
     t_nodes_in_mini_batch.start();
@@ -159,7 +159,7 @@ void MCMCSamplerStochastic::run() {
     t_nodes_in_mini_batch.stop();
 
 #ifndef MCMC_EFFICIENCY_COMPATIBILITY_MODE
-    double eps_t = get_eps_t();
+    Float eps_t = get_eps_t();
 #endif
 
     // ************ do in parallel at each host
@@ -219,17 +219,17 @@ void MCMCSamplerStochastic::run() {
 }
 
 void MCMCSamplerStochastic::update_beta(const MinibatchSet &mini_batch,
-                                        double scale) {
-  std::vector<std::vector<double> > grads(
-      K, std::vector<double>(2, 0.0));  // gradients K*2 dimension
-  std::vector<double> probs(K);
+                                        Float scale) {
+  std::vector<std::vector<Float> > grads(
+      K, std::vector<Float>(2, 0.0));  // gradients K*2 dimension
+  std::vector<Float> probs(K);
   // sums = np.sum(self.__theta,1)
-  std::vector<double> theta_sum(theta.size());
+  std::vector<Float> theta_sum(theta.size());
   std::transform(theta.begin(), theta.end(), theta_sum.begin(),
-                 np::sum<double>);
+                 np::sum<Float>);
 
   // update gamma, only update node in the grad
-  double eps_t = get_eps_t();
+  Float eps_t = get_eps_t();
   for (auto edge = mini_batch.begin(); edge != mini_batch.end(); edge++) {
     int y = 0;
     if (edge->in(network.get_linked_edges())) {
@@ -238,14 +238,14 @@ void MCMCSamplerStochastic::update_beta(const MinibatchSet &mini_batch,
     int i = edge->first;
     int j = edge->second;
 
-    double pi_sum = 0.0;
+    Float pi_sum = 0.0;
     for (::size_t k = 0; k < K; k++) {
       pi_sum += pi[i][k] * pi[j][k];
 #ifdef MCMC_EFFICIENCY_COMPATIBILITY_MODE
       probs[k] = std::pow(beta[k], y) * std::pow(1 - beta[k], 1 - y) *
                  pi[i][k] * pi[j][k];
 #else
-      double f = pi[i][k] * pi[j][k];
+      Float f = pi[i][k] * pi[j][k];
       if (y == 1) {
         probs[k] = beta[k] * f;
       } else {
@@ -255,9 +255,9 @@ void MCMCSamplerStochastic::update_beta(const MinibatchSet &mini_batch,
     }
 
 #ifdef MCMC_EFFICIENCY_COMPATIBILITY_MODE
-    double prob_0 =
+    Float prob_0 =
         std::pow(epsilon, y) * std::pow(1 - epsilon, 1 - y) * (1 - pi_sum);
-    double prob_sum = np::sum(probs) + prob_0;
+    Float prob_sum = np::sum(probs) + prob_0;
     for (::size_t k = 0; k < K; k++) {
       grads[k][0] += (probs[k] / prob_sum) *
                      (std::abs(1 - y) / theta[k][0] - 1 / theta_sum[k]);
@@ -265,11 +265,11 @@ void MCMCSamplerStochastic::update_beta(const MinibatchSet &mini_batch,
                      (std::abs(-y) / theta[k][1] - 1 / theta_sum[k]);
     }
 #else
-    double prob_0 = ((y == 1) ? epsilon : (1.0 - epsilon)) * (1.0 - pi_sum);
-    double prob_sum = np::sum(probs) + prob_0;
+    Float prob_0 = ((y == 1) ? epsilon : (1.0 - epsilon)) * (1.0 - pi_sum);
+    Float prob_sum = np::sum(probs) + prob_0;
     for (::size_t k = 0; k < K; k++) {
-      double f = probs[k] / prob_sum;
-      double one_over_theta_sum = 1.0 / theta_sum[k];
+      Float f = probs[k] / prob_sum;
+      Float one_over_theta_sum = 1.0 / theta_sum[k];
       grads[k][0] += f * ((1 - y) / theta[k][0] - one_over_theta_sum);
       grads[k][1] += f * (y / theta[k][1] - one_over_theta_sum);
     }
@@ -279,9 +279,9 @@ void MCMCSamplerStochastic::update_beta(const MinibatchSet &mini_batch,
   // update theta
 
   // random noise.
-  std::vector<std::vector<double> > noise =
+  std::vector<std::vector<Float> > noise =
       rng_.random(SourceAwareRandom::BETA_UPDATE)->randn(K, 2);
-  // std::vector<std::vector<double> > theta_star(theta);
+  // std::vector<std::vector<Float> > theta_star(theta);
   for (::size_t k = 0; k < K; k++) {
     for (::size_t i = 0; i < 2; i++) {
 #ifdef MCMC_EFFICIENCY_COMPATIBILITY_MODE
@@ -291,7 +291,7 @@ void MCMCSamplerStochastic::update_beta(const MinibatchSet &mini_batch,
           std::pow(eps_t, .5) * std::pow(theta[k][i], .5) * noise[k][i]);
 #else
 #ifndef MCMC_NO_NOISE
-      double f = std::sqrt(eps_t * theta[k][i]);
+      Float f = std::sqrt(eps_t * theta[k][i]);
 #endif
       theta[k][i] =
           std::abs(theta[k][i] +
@@ -304,26 +304,26 @@ void MCMCSamplerStochastic::update_beta(const MinibatchSet &mini_batch,
     }
   }
 
-  std::vector<std::vector<double> > temp(theta.size(),
-                                         std::vector<double>(theta[0].size()));
+  std::vector<std::vector<Float> > temp(theta.size(),
+                                         std::vector<Float>(theta[0].size()));
   np::row_normalize(&temp, theta);
   std::transform(temp.begin(), temp.end(), beta.begin(),
-                 np::SelectColumn<double>(1));
+                 np::SelectColumn<Float>(1));
 
 }
 
 void MCMCSamplerStochastic::update_phi(Vertex i, const NeighborSet &neighbors
 #ifndef MCMC_EFFICIENCY_COMPATIBILITY_MODE
                                        ,
-                                       double eps_t
+                                       Float eps_t
 #endif
                                        ) {
 #ifdef MCMC_EFFICIENCY_COMPATIBILITY_MODE
-  double eps_t = get_eps_t();
+  Float eps_t = get_eps_t();
 #endif
 
-  double phi_i_sum = np::sum(phi[i]);
-  std::vector<double> grads(K, 0.0);  // gradient for K classes
+  Float phi_i_sum = np::sum(phi[i]);
+  std::vector<Float> grads(K, 0.0);  // gradient for K classes
 
   for (auto neighbor : neighbors) {
     if (i == neighbor) {
@@ -336,9 +336,9 @@ void MCMCSamplerStochastic::update_phi(Vertex i, const NeighborSet &neighbors
       y_ab = 1;
     }
 
-    std::vector<double> probs(K);
+    std::vector<Float> probs(K);
 #ifndef MCMC_EFFICIENCY_COMPATIBILITY_MODE
-    double e = (y_ab == 1) ? epsilon : 1.0 - epsilon;
+    Float e = (y_ab == 1) ? epsilon : 1.0 - epsilon;
 #endif
     for (::size_t k = 0; k < K; k++) {
 #ifdef MCMC_EFFICIENCY_COMPATIBILITY_MODE
@@ -347,22 +347,22 @@ void MCMCSamplerStochastic::update_phi(Vertex i, const NeighborSet &neighbors
       probs[k] += std::pow(epsilon, y_ab) * std::pow(1 - epsilon, 1 - y_ab) *
                   pi[i][k] * (1 - pi[neighbor][k]);
 #else
-      double f = (y_ab == 1) ? (beta[k] - epsilon) : (epsilon - beta[k]);
+      Float f = (y_ab == 1) ? (beta[k] - epsilon) : (epsilon - beta[k]);
       probs[k] = pi[i][k] * (pi[neighbor][k] * f + e);
 #endif
     }
 
-    double prob_sum = np::sum(probs);
+    Float prob_sum = np::sum(probs);
     for (::size_t k = 0; k < K; k++) {
       grads[k] += (probs[k] / prob_sum) / phi[i][k] - 1.0 / phi_i_sum;
     }
   }
 
   // random gaussian noise.
-  std::vector<double> noise =
+  std::vector<Float> noise =
     rng_.random(SourceAwareRandom::PHI_UPDATE)->randn(K);
 #ifndef MCMC_EFFICIENCY_COMPATIBILITY_MODE
-  double Nn = (1.0 * N) / num_node_sample;
+  Float Nn = (1.0 * N) / num_node_sample;
 #endif
   // update phi for node i
   for (::size_t k = 0; k < K; k++) {

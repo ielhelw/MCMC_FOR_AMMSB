@@ -80,12 +80,12 @@ class MCMCSamplerStochastic : public Learner {
   void run() override;
 
  protected:
-  void update_beta(const MinibatchSet &mini_batch, double scale);
+  void update_beta(const MinibatchSet &mini_batch, Float scale);
 
   void update_phi(Vertex i, const NeighborSet &neighbors
 #ifndef MCMC_EFFICIENCY_COMPATIBILITY_MODE
                   ,
-                  double eps_t
+                  Float eps_t
 #endif
                   );
 
@@ -94,21 +94,21 @@ class MCMCSamplerStochastic : public Learner {
 
   MinibatchNodeSet nodes_in_batch(const MinibatchSet &mini_batch) const;
 
-  double get_eps_t() {
+  Float get_eps_t() {
     return a * std::pow(1 + step_count / b, -c);	// step size
     // return std::pow(1024+step_count, -0.5);
   }
 
   // replicated in both mcmc_sampler_
-  double a;
-  double b;
-  double c;
+  Float a;
+  Float b;
+  Float c;
 
   ::size_t num_node_sample;
   ::size_t interval;
 
-  std::vector<std::vector<double> > theta;  // parameterization for \beta
-  std::vector<std::vector<double> > phi;    // parameterization for \pi
+  std::vector<std::vector<Float> > theta;  // parameterization for \beta
+  std::vector<std::vector<Float> > phi;    // parameterization for \pi
 
   std::chrono::time_point<std::chrono::system_clock> t_start_;
 };

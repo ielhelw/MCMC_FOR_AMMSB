@@ -48,7 +48,7 @@ class Learner {
 
   void set_max_iteration(::size_t max_iteration);
 
-  double cal_perplexity_held_out();
+  Float cal_perplexity_held_out();
 
   bool is_converged() const;
 
@@ -67,7 +67,7 @@ class Learner {
    * which is not true representation of actual data set, which is extremely
    *sparse.
    */
-  double cal_perplexity(const EdgeMap &data);
+  Float cal_perplexity(const EdgeMap &data);
 
   template <typename T>
   static void dump(const std::vector<T> &a, ::size_t n,
@@ -92,9 +92,9 @@ class Learner {
    * but this calculation can be done in O(K), by using some trick.
    */
   template <typename T>
-  double cal_edge_likelihood(const T &pi_a, const T &pi_b, bool y,
-                             const std::vector<double> &beta) const {
-    double s = 0.0;
+  Float cal_edge_likelihood(const T &pi_a, const T &pi_b, bool y,
+                             const std::vector<Float> &beta) const {
+    Float s = 0.0;
 #define DONT_FOLD_Y
 #ifdef DONT_FOLD_Y
     if (y) {
@@ -102,13 +102,13 @@ class Learner {
         s += pi_a[k] * pi_b[k] * beta[k];
       }
     } else {
-      double sum = 0.0;
+      Float sum = 0.0;
       for (::size_t k = 0; k < K; k++) {
 #ifdef MCMC_EFFICIENCY_COMPATIBILITY_MODE
         s += pi_a[k] * pi_b[k] * (1.0 - beta[k]);
         sum += pi_a[k] * pi_b[k];
 #else
-        double f = pi_a[k] * pi_b[k];
+        Float f = pi_a[k] * pi_b[k];
         s += f * (1.0 - beta[k]);
         sum += f;
 #endif
@@ -119,9 +119,9 @@ class Learner {
     int iy = y ? 1 : 0;
     int y2_1 = 2 * iy - 1;
     int y_1 = iy - 1;
-    double sum = 0.0;
+    Float sum = 0.0;
     for (::size_t k = 0; k < K; k++) {
-      double f = pi_a[k] * pi_b[k];
+      Float f = pi_a[k] * pi_b[k];
       sum += f;
       s += f * (beta[k] * y2_1 - y_1);
     }
@@ -140,27 +140,27 @@ class Learner {
   const Options args_;
   Network network;
 
-  double alpha;
-  std::vector<double> eta;
+  Float alpha;
+  std::vector<Float> eta;
   ::size_t K;
-  double epsilon;
+  Float epsilon;
   ::size_t N;
 
-  std::vector<double> beta;
-  std::vector<std::vector<double> > pi;
+  std::vector<Float> beta;
+  std::vector<std::vector<Float> > pi;
 
   ::size_t mini_batch_size;
-  double link_ratio;
+  Float link_ratio;
 
   ::size_t step_count;
 
-  boost::circular_buffer<double> ppxs_heldout_cb_;
+  boost::circular_buffer<Float> ppxs_heldout_cb_;
   // Used to calculate perplexity per edge in the held-out set.
-  std::vector<double> ppx_per_heldout_edge_;
+  std::vector<Float> ppx_per_heldout_edge_;
 
   ::size_t max_iteration;
 
-  double CONVERGENCE_THRESHOLD;
+  Float CONVERGENCE_THRESHOLD;
 
   bool stepsize_switch;
   ::size_t average_count;

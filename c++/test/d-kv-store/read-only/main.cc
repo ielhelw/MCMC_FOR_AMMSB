@@ -50,6 +50,9 @@ std::vector<const T*>& constify(std::vector<T*>& v) {
 
 template <typename DKVStore>
 class DKVWrapper {
+
+  typedef typename DKVStore::ValueType ValueType;
+
  public:
   DKVWrapper(const mcmc::Options &options,
              const std::vector<std::string> &remains)
@@ -221,13 +224,13 @@ class DKVWrapper {
         std::cerr << "********* Populate with keys " << from << ".." <<
           to << " step " << chunk << std::endl;
         for (::size_t i = from; i < to; i += chunk) {
-          // std::vector<double> pi = random.randn(K);
-          std::vector<double> pi(K);
+          // std::vector<ValueType> pi = random.randn(K);
+          std::vector<ValueType> pi(K);
           for (::size_t k = 0; k < K; k++) {
-            pi[k] = i + (double)k / K;
+            pi[k] = i + (ValueType)k / K;
           }
           std::vector<int32_t> k(1, static_cast<int32_t>(i));
-          std::vector<const double *> v(1, pi.data());
+          std::vector<const ValueType *> v(1, pi.data());
           d_kv_store_->WriteKVRecords(k, v);
           d_kv_store_->PurgeKVRecords();
         }
@@ -240,7 +243,7 @@ class DKVWrapper {
       d_kv_store_->barrier();
     }
 
-    std::vector<double *> cache(average_m * n);
+    std::vector<ValueType *> cache(average_m * n);
     for (::size_t iter = 0; iter < iterations; ++iter) {
       // Vector of requests
       std::cerr << "********* " << iter << ": Sample the neighbors" <<
@@ -300,11 +303,11 @@ class DKVWrapper {
             for (::size_t i = 0; i < average_m * n; ++i) {
               int32_t key = (*neighbor)[i];
               for (::size_t k = 0; k < K; k++) {
-                if (cache[i][k] != key + (double)k / K) {
+                if (cache[i][k] != key + (ValueType)k / K) {
                   miss++;
                   std::cerr << "Ooppss... key " << key <<
                     " wrong value[" << k << "] " << cache[i][k] <<
-                    " should be " << (key + (double)k / K) << std::endl;
+                    " should be " << (key + (ValueType)k / K) << std::endl;
                 }
               }
             }

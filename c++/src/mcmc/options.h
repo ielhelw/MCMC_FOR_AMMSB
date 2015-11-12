@@ -141,14 +141,14 @@ class Options {
     ;
     desc_mcmc.add_options()
       // mcmc options
-      ("mcmc.alpha", po::value<double>(&alpha)->default_value(0.0), "alpha")
-      ("mcmc.eta0", po::value<double>(&eta0)->default_value(1.0), "eta0")
-      ("mcmc.eta1", po::value<double>(&eta1)->default_value(1.0), "eta1")
+      ("mcmc.alpha", po::value<Float>(&alpha)->default_value(0.0), "alpha")
+      ("mcmc.eta0", po::value<Float>(&eta0)->default_value(1.0), "eta0")
+      ("mcmc.eta1", po::value<Float>(&eta1)->default_value(1.0), "eta1")
       ("mcmc.epsilon",
-       po::value<double>(&epsilon)->default_value(0.0000001), "epsilon")
-      ("mcmc.a", po::value<double>(&a)->default_value(0.0), "a")
-      ("mcmc.b", po::value<double>(&b)->default_value(1024), "b")
-      ("mcmc.c", po::value<double>(&c)->default_value(0.5), "c")
+       po::value<Float>(&epsilon)->default_value(0.0000001), "epsilon")
+      ("mcmc.a", po::value<Float>(&a)->default_value(0.0), "a")
+      ("mcmc.b", po::value<Float>(&b)->default_value(1024), "b")
+      ("mcmc.c", po::value<Float>(&c)->default_value(0.5), "c")
       ("mcmc.K,K", po::value< ::size_t>(&K)->default_value(300), "K")
       ("mcmc.mini-batch-size,m",
        po::value< ::size_t>(&mini_batch_size)->default_value(0),
@@ -259,21 +259,21 @@ class Options {
     
   std::string config_file;
 
-  double alpha;
-  double eta0;
-  double eta1;
+  Float alpha;
+  Float eta0;
+  Float eta1;
   ::size_t K;
   ::size_t mini_batch_size;
   ::size_t num_node_sample;
   strategy::strategy strategy;
-  double epsilon;
+  Float epsilon;
   ::size_t max_iteration;
   ::size_t interval;
 
   // parameters for step size
-  double a;
-  double b;
-  double c;
+  Float a;
+  Float b;
+  Float c;
 
   ::size_t num_updates;
   double held_out_ratio;

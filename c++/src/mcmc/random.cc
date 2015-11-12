@@ -5,7 +5,7 @@ namespace Random {
 
 #ifndef MCMC_RANDOM_SYSTEM
 /* tabulated values for the heigt of the Ziggurat levels */
-static const double ytab[128] = {
+static const Float ytab[128] = {
     1,               0.963598623011,   0.936280813353,   0.913041104253,
     0.892278506696,  0.873239356919,   0.855496407634,   0.838778928349,
     0.822902083699,  0.807732738234,   0.793171045519,   0.779139726505,
@@ -63,7 +63,7 @@ static const uint64_t ktab[128] = {
     15704248, 15472926};
 
 /* tabulated values of 2^{-24}*x[i] */
-static const double wtab[128] = {
+static const Float wtab[128] = {
     1.62318314817e-08, 2.16291505214e-08, 2.54246305087e-08, 2.84579525938e-08,
     3.10340022482e-08, 3.33011726243e-08, 3.53439060345e-08, 3.72152672658e-08,
     3.8950989572e-08,  4.05763964764e-08, 4.21101548915e-08, 4.35664624904e-08,
@@ -149,11 +149,11 @@ uint64_t Random::rand() {
   return r;
 }
 
-double Random::random() {
+Float Random::random() {
   return 1.0 * rand() / std::numeric_limits<uint64_t>::max();
 }
 
-double Random::randn() {
+Float Random::randn() {
   return gsl_ran_gaussian_ziggurat(1.0);
 }
 
@@ -161,11 +161,11 @@ double Random::randn() {
 
 uint64_t Random::seed(int x) const { return 0; }
 
-double Random::random() {
+Float Random::random() {
   return 1.0 * rand() / RAND_MAX;
 }
 
-double Random::randn() {
+Float Random::randn() {
   return normalDistribution(generator);
 }
 
@@ -176,8 +176,8 @@ int64_t Random::randint(int64_t from, int64_t upto) {
 }
 
 
-std::vector<double> Random::randn(::size_t K) {
-  std::vector<double> r(K);
+std::vector<Float> Random::randn(::size_t K) {
+  std::vector<Float> r(K);
   for (::size_t k = 0; k < K; k++) {
     r[k] = randn();
   }
@@ -185,8 +185,8 @@ std::vector<double> Random::randn(::size_t K) {
   return r;
 }
 
-std::vector<std::vector<double> > Random::randn(::size_t K, ::size_t N) {
-  std::vector<std::vector<double> > r(K);
+std::vector<std::vector<Float> > Random::randn(::size_t K, ::size_t N) {
+  std::vector<std::vector<Float> > r(K);
   for (::size_t k = 0; k < K; k++) {
     r[k] = randn(N);
   }
@@ -234,10 +234,10 @@ std::vector<int> *Random::sampleRange(int N, ::size_t count) {
 }
 
 
-double Random::gamma(double p1, double p2) {
+Float Random::gamma(Float p1, Float p2) {
 #ifdef MCMC_RANDOM_SYSTEM
 #if __GNUC_MINOR__ >= 5
-  std::gamma_distribution<double> gammaDistribution(p1, p2);
+  std::gamma_distribution<Float> gammaDistribution(p1, p2);
 
   return gammaDistribution(generator);
 #else  // if __GNUC_MINOR__ >= 5
@@ -249,9 +249,9 @@ double Random::gamma(double p1, double p2) {
 }
 
 #ifdef UNFOLD
-std::vector<std::vector<double> > Random::gamma(double p1, double p2,
+std::vector<std::vector<Float> > Random::gamma(Float p1, Float p2,
                                                 ::size_t n1, ::size_t n2) {
-  std::vector<std::vector<double> > a(n1, std::vector<double>(n2));
+  std::vector<std::vector<Float> > a(n1, std::vector<Float>(n2));
 
   for (::size_t i = 0; i < n1; i++) {
     for (::size_t j = 0; j < n2; j++) {
@@ -262,12 +262,12 @@ std::vector<std::vector<double> > Random::gamma(double p1, double p2,
   return a;
 }
 #else
-std::vector<std::vector<double> > Random::gamma(double p1, double p2,
+std::vector<std::vector<Float> > Random::gamma(Float p1, Float p2,
                                                 ::size_t n1, ::size_t n2) {
-  std::vector<std::vector<double> > a(n1, std::vector<double>(n2));
+  std::vector<std::vector<Float> > a(n1, std::vector<Float>(n2));
 #ifdef MCMC_RANDOM_SYSTEM
 #if __GNUC_MINOR__ >= 5
-  std::gamma_distribution<double> gammaDistribution(p1, p2);
+  std::gamma_distribution<Float> gammaDistribution(p1, p2);
 
   for (::size_t i = 0; i < n1; i++) {
     for (::size_t j = 0; j < n2; j++) {
@@ -341,10 +341,10 @@ std::vector<std::vector<double> > Random::gamma(double p1, double p2,
 // #define TICK(x)		do x++; while (0)
 #define TICK(x)
 
-double Random::gsl_ran_gaussian_ziggurat(const double sigma) {
+Float Random::gsl_ran_gaussian_ziggurat(const Float sigma) {
   uint64_t i, j;
   int sign;
-  double x, y;
+  Float x, y;
 
   // const unsigned long int range = r->type->max - r->type->min;
   // const unsigned long int offset = r->type->min;
@@ -378,13 +378,13 @@ double Random::gsl_ran_gaussian_ziggurat(const double sigma) {
 
     TICK(ktab_exceed_randn);
     if (i < 127) {
-      double y0, y1, U1;
+      Float y0, y1, U1;
       y0 = ytab[i];
       y1 = ytab[i + 1];
       U1 = random();
       y = y1 + (y0 - y1) * U1;
     } else {
-      double U1, U2;
+      Float U1, U2;
       U1 = 1.0 - random();
       U2 = random();
       x = PARAM_R - log(U1) / PARAM_R;
@@ -432,8 +432,8 @@ void Random::report() {
  *USA.
  */
 
-inline double Random::gsl_rng_uniform_pos() {
-  double x;
+inline Float Random::gsl_rng_uniform_pos() {
+  Float x;
   do {
     x = random();
   } while (x == 0);
@@ -469,27 +469,27 @@ inline double Random::gsl_rng_uniform_pos() {
  * by Brian Gough
  */
 
-double Random::gsl_ran_gamma(double a, double b) {
+Float Random::gsl_ran_gamma(Float a, Float b) {
   /* assume a > 0 */
 
-  double f = 1.0;
+  Float f = 1.0;
 #ifdef SUPPORT_RECURSION
   if (a < 1) {
-    double u = gsl_rng_uniform_pos();
+    Float u = gsl_rng_uniform_pos();
     return gsl_ran_gamma(1.0 + a, b) * pow(u, 1.0 / a);
   }
 #else
   while (a < 1) {
-    double u = gsl_rng_uniform_pos();
+    Float u = gsl_rng_uniform_pos();
     f = f * pow(u, 1.0 / a);
     a = 1.0 + a;
   }
 #endif
 
   {
-    double x, v, u;
-    double d = a - 1.0 / 3.0;
-    double c = (1.0 / 3.0) / sqrt(d);
+    Float x, v, u;
+    Float d = a - 1.0 / 3.0;
+    Float c = (1.0 / 3.0) / sqrt(d);
 
     while (1) {
       do {

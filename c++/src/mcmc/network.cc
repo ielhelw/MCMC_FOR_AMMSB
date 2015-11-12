@@ -237,8 +237,8 @@ EdgeSample Network::sample_full_training_set() const {
     }
   }
 
-  double weight = (N - 1) * N / 2.0 / mini_batch_set->size();
-  // double weight = 1.0;
+  Float weight = (N - 1) * N / 2.0 / mini_batch_set->size();
+  // Float weight = 1.0;
 
   // std::cerr << "Minibatch size " << mini_batch_set->size() << " weight " << weight << std::endl;
 
@@ -283,7 +283,7 @@ EdgeSample Network::random_edge_sampling(::size_t mini_batch_size) const {
     delete sampled_linked_edges;
   }
 
-  double weight = (N - 1) * N / 2.0 / mini_batch_set->size();
+  Float weight = (N - 1) * N / 2.0 / mini_batch_set->size();
 
   // std::cerr << "Minibatch size " << mini_batch_set->size() << std::endl;
 

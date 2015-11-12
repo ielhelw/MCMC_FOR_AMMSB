@@ -6,8 +6,8 @@
 #include <mcmc/random.h>
 
 
-double stddev(double sum, double sumsq, ::size_t N) {
-  double a = sumsq - sum * sum / N;
+mcmc::Float stddev(mcmc::Float sum, mcmc::Float sumsq, ::size_t N) {
+  mcmc::Float a = sumsq - sum * sum / N;
   if (a < 0.0) {
     std::cerr << std::setprecision(16) << "Oopppssss.... sum " << sum << " sum^2 " << (sum * sum) << " sum^2/N " << (sum * sum / N) << " sumsq " << sumsq << std::endl;
   }
@@ -45,8 +45,8 @@ int main(int argc, char *argv[]) {
   std::cout << std::fixed;
 
   if (true) {
-    double sum = 0.0;
-    double sumsq = 0.0;
+    mcmc::Float sum = 0.0;
+    mcmc::Float sumsq = 0.0;
     auto start = std::chrono::system_clock::now();
     for (::size_t i = 0; i < N; i++) {
       auto r = rgen.randint(0, N);
@@ -59,8 +59,8 @@ int main(int argc, char *argv[]) {
   }
 
   if (true) {
-    double sum = 0.0;
-    double sumsq = 0.0;
+    mcmc::Float sum = 0.0;
+    mcmc::Float sumsq = 0.0;
     auto start = std::chrono::system_clock::now();
     for (::size_t i = 0; i < N; i++) {
       auto r = rgen.random();
@@ -73,9 +73,9 @@ int main(int argc, char *argv[]) {
   }
 
   if (true) {
-    double sum = 0.0;
-    double sumsq = 0.0;
-    std::vector<double> a(K);
+    mcmc::Float sum = 0.0;
+    mcmc::Float sumsq = 0.0;
+    std::vector<mcmc::Float> a(K);
     auto start = std::chrono::system_clock::now();
     for (::size_t i = 0; i < N / K; i++) {
       a = rgen.randn(K);
@@ -91,9 +91,9 @@ int main(int argc, char *argv[]) {
   }
 
   if (true) {
-    double sum = 0.0;
-    double sumsq = 0.0;
-    std::vector<std::vector<double> > a(N/K, std::vector<double>(K));
+    mcmc::Float sum = 0.0;
+    mcmc::Float sumsq = 0.0;
+    std::vector<std::vector<mcmc::Float> > a(N/K, std::vector<mcmc::Float>(K));
     auto start = std::chrono::system_clock::now();
     a = rgen.gamma(1.0, 1.0, N / K, K);
     for (auto b : a) {

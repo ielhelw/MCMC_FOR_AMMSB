@@ -44,6 +44,9 @@ std::vector<const T*>& constify(std::vector<T*>& v) {
 
 template <typename DKVStore>
 class DKVWrapper {
+
+  typedef typename DKVStore::ValueType ValueType;
+
  public:
   DKVWrapper(const mcmc::Options &options, const std::vector<std::string> &remains)
       : options_(options), remains_(remains) {
@@ -139,13 +142,13 @@ class DKVWrapper {
       ::size_t to   = N;
       std::cerr << "********* Populate with keys " << from << ".." << to << " step " << n_hosts << std::endl;
       for (::size_t i = from; i < to; i += n_hosts) {
-        // std::vector<double> pi = random.randn(K);
-        std::vector<double> pi(K);
+        // std::vector<ValueType> pi = random.randn(K);
+        std::vector<ValueType> pi(K);
         for (::size_t k = 0; k < K; k++) {
-          pi[k] = i + (double)k / K;
+          pi[k] = i + (ValueType)k / K;
         }
         std::vector<int32_t> k(1, static_cast<int32_t>(i));
-        std::vector<const double *> v(1, pi.data());
+        std::vector<const ValueType *> v(1, pi.data());
         d_kv_store_->WriteKVRecords(k, v);
         d_kv_store_->PurgeKVRecords();
       }
@@ -155,8 +158,8 @@ class DKVWrapper {
         " GB/s" << std::endl;
     }
 
-    std::vector<double *> cache(my_m * n);
-    std::vector<double *> overwrite = d_kv_store_->GetWriteKVRecords(my_m);
+    std::vector<ValueType *> cache(my_m * n);
+    std::vector<ValueType *> overwrite = d_kv_store_->GetWriteKVRecords(my_m);
     for (::size_t iter = 0; iter < iterations; ++iter) {
       std::vector<int32_t> *minibatch = random.sampleRange(N, my_m);
 
@@ -185,9 +188,9 @@ class DKVWrapper {
           for (::size_t i = 0; i < my_m * n; ++i) {
             int32_t key = (*neighbor)[i];
             for (::size_t k = 0; k < K; k++) {
-              if (cache[i][k] < key + (double)k / K || cache[i][k] > key + (double)k / K + (double)(iter + 1) / (K * K)) {
+              if (cache[i][k] < key + (ValueType)k / K || cache[i][k] > key + (ValueType)k / K + (ValueType)(iter + 1) / (K * K)) {
                 miss++;
-                std::cerr << "Ooppss... key " << key << " wrong value[" << k << "] " << cache[i][k] << " should be (slightly over) " << (key + (double)k / K) << std::endl;
+                std::cerr << "Ooppss... key " << key << " wrong value[" << k << "] " << cache[i][k] << " should be (slightly over) " << (key + (ValueType)k / K) << std::endl;
               }
             }
           }
@@ -202,7 +205,7 @@ class DKVWrapper {
           std::endl;
         for (::size_t i = 0; i < minibatch->size(); i++) {
           for (::size_t k = 0; k < K; k++) {
-            overwrite[i][k] = (*minibatch)[i] + (double)k / K + (double)(iter + 1) / (K * K);
+            overwrite[i][k] = (*minibatch)[i] + (ValueType)k / K + (ValueType)(iter + 1) / (K * K);
           }
         }
 

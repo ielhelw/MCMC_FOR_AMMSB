@@ -30,6 +30,10 @@ else()
   SET (MCMC_BUILD_MODE_COMPAT OFF CACHE BOOL "" FORCE)
 endif()
 
+SET(MCMC_ENABLE_OPENMP ${MCMC_BUILD_MODE_DISTR} CACHE BOOL "Enable the use of OpenMP")
+
+option( MCMC_SINGLE_PRECISION  "Enable single precision" OFF )
+
 ######################################
 ## CONDITIONAL OPTION ON DISTR MODE ##
 ######################################
