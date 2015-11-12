@@ -384,10 +384,12 @@ EdgeSample Network::stratified_random_node_sampling(::size_t num_pieces) const {
                   << " scale " << N << std::endl;
       }
 
-      return EdgeSample(mini_batch_set, N);
+      if (mini_batch_set->size() != 0) {
+        return EdgeSample(mini_batch_set, N);
+      }
     }
 
-    throw MCMCException("Cannot be reached");
+    std::cerr << "Empty minibatch, try again..." << std::endl;
   }
 }
 
