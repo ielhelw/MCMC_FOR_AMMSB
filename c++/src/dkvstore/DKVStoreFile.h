@@ -26,7 +26,9 @@ class DKVStoreFileOptions : public DKVStoreOptions {
 
   void Parse(const std::vector<std::string> &args) override;
   
-  boost::program_options::options_description* GetMutable() override { return &desc_; }
+  boost::program_options::options_description* GetMutable() override {
+    return &desc_;
+  }
   
   inline const std::string& file_base() const { return file_base_; }
   inline const std::string& dir() const { return dir_; }
@@ -34,12 +36,14 @@ class DKVStoreFileOptions : public DKVStoreOptions {
  private:
   std::string file_base_;
   std::string dir_;
-	boost::program_options::options_description desc_;
+  boost::program_options::options_description desc_;
 
-  friend std::ostream& operator<<(std::ostream& out, const DKVStoreFileOptions& opts);
+  friend std::ostream& operator<<(std::ostream& out,
+                                  const DKVStoreFileOptions& opts);
 };
 
-inline std::ostream& operator<<(std::ostream& out, const DKVStoreFileOptions& opts) {
+inline std::ostream& operator<<(std::ostream& out,
+                                const DKVStoreFileOptions& opts) {
   out << opts.desc_;
   return out;
 }
@@ -58,7 +62,7 @@ class DKVStoreFile : public DKVStoreInterface {
                     ::size_t max_cache_capacity, ::size_t max_write_capacity);
 
   virtual void ReadKVRecords(std::vector<ValueType *> &cache,
-							 const std::vector<KeyType> &key,
+                             const std::vector<KeyType> &key,
                              RW_MODE::RWMode rw_mode);
 
   virtual void WriteKVRecords(const std::vector<KeyType> &key,

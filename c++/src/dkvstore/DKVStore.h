@@ -25,16 +25,18 @@
 
 #include <boost/program_options.hpp>
 
+#include <dkvstore/config.h>
+
 
 namespace DKV {
 
 enum TYPE {
-    FILE,
+  FILE,
 #ifdef MCMC_ENABLE_RAMCLOUD
-    RAMCLOUD,
+  RAMCLOUD,
 #endif
 #ifdef MCMC_ENABLE_RDMA
-    RDMA,
+  RDMA,
 #endif
 };
 
@@ -177,7 +179,7 @@ class DKVStoreInterface {
 
  public:
   typedef int32_t KeyType;
-  typedef double ValueType;
+  typedef Float ValueType;
 
   DKVStoreInterface(const std::vector<std::string> &args) { }
 
