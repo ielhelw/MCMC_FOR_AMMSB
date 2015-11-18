@@ -79,9 +79,9 @@ void Learner::LoadNetwork(int world_rank, bool allocate_pi) {
   N = network.get_num_nodes();
 
   // model parameters to learn
-  beta = std::vector<Float>(K, 0.0);
+  beta = std::vector<Float>(K, FLOAT(0.0));
   if (allocate_pi) {
-    pi = std::vector<std::vector<Float> >(N, std::vector<Float>(K, 0.0));
+    pi = std::vector<std::vector<Float> >(N, std::vector<Float>(K, FLOAT(0.0)));
   }
 
   // parameters related to sampling
@@ -91,9 +91,9 @@ void Learner::LoadNetwork(int world_rank, bool allocate_pi) {
   }
 
   // ratio between link edges and non-link edges
-  link_ratio = network.get_num_linked_edges() / ((N * (N - 1)) / 2.0);
+  link_ratio = network.get_num_linked_edges() / ((N * (double)(N - 1)) / 2.0);
 
-  ppx_per_heldout_edge_ = std::vector<Float>(network.get_held_out_size(), 0.0);
+  ppx_per_heldout_edge_ = std::vector<Float>(network.get_held_out_size(), FLOAT(0.0));
 
   info(std::cerr);
 }
@@ -134,8 +134,8 @@ bool Learner::is_converged() const {
 }
 
 Float Learner::cal_perplexity(const EdgeMap &data) {
-  Float link_likelihood = 0.0;
-  Float non_link_likelihood = 0.0;
+  Float link_likelihood = FLOAT(0.0);
+  Float non_link_likelihood = FLOAT(0.0);
   ::size_t link_count = 0;
   ::size_t non_link_count = 0;
 
@@ -169,14 +169,14 @@ Float Learner::cal_perplexity(const EdgeMap &data) {
     }
     i++;
   }
-  Float avg_likelihood = 0.0;
+  Float avg_likelihood = FLOAT(0.0);
   if (link_count + non_link_count != 0) {
     avg_likelihood =
         (link_likelihood + non_link_likelihood) / (link_count + non_link_count);
   }
 
   average_count = average_count + 1;
-  std::cout << "average_count is: " << average_count << " ";
+
   return (-avg_likelihood);
 }
 

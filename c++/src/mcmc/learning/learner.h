@@ -24,6 +24,8 @@ namespace learning {
  */
 class Learner {
  public:
+  const Float MCMC_NONZERO_GUARD = FLOAT(1.0e-24);
+
   Learner(const Options &args);
 
   void LoadNetwork(int world_rank = 0, bool allocate_pi = true);
@@ -94,7 +96,7 @@ class Learner {
   template <typename T>
   Float cal_edge_likelihood(const T &pi_a, const T &pi_b, bool y,
                              const std::vector<Float> &beta) const {
-    Float s = 0.0;
+    Float s = FLOAT(0.0);
 #define DONT_FOLD_Y
 #ifdef DONT_FOLD_Y
     if (y) {
@@ -102,36 +104,36 @@ class Learner {
         s += pi_a[k] * pi_b[k] * beta[k];
       }
     } else {
-      Float sum = 0.0;
+      Float sum = FLOAT(0.0);
       for (::size_t k = 0; k < K; k++) {
 #ifdef MCMC_EFFICIENCY_COMPATIBILITY_MODE
-        s += pi_a[k] * pi_b[k] * (1.0 - beta[k]);
+        s += pi_a[k] * pi_b[k] * (FLOAT(1.0) - beta[k]);
         sum += pi_a[k] * pi_b[k];
 #else
         Float f = pi_a[k] * pi_b[k];
-        s += f * (1.0 - beta[k]);
+        s += f * (FLOAT(1.0) - beta[k]);
         sum += f;
 #endif
       }
-      s += (1.0 - sum) * (1.0 - epsilon);
+      s += (FLOAT(1.0) - sum) * (FLOAT(1.0) - epsilon);
     }
 #else   // def DONT_FOLD_Y
     int iy = y ? 1 : 0;
     int y2_1 = 2 * iy - 1;
     int y_1 = iy - 1;
-    Float sum = 0.0;
+    Float sum = FLOAT(0.0);
     for (::size_t k = 0; k < K; k++) {
       Float f = pi_a[k] * pi_b[k];
       sum += f;
       s += f * (beta[k] * y2_1 - y_1);
     }
     if (!y) {
-      s += (1.0 - sum) * (1.0 - epsilon);
+      s += (FLOAT(1.0) - sum) * (FLOAT(1.0) - epsilon);
     }
 #endif  // def DONT_FOLD_Y
 
-    if (s < 1.0e-30) {
-      s = 1.0e-30;
+    if (s < FLOAT(1.0e-30)) {
+      s = FLOAT(1.0e-30);
     }
 
     return s;

@@ -9,6 +9,13 @@
 #include <chrono>
 
 #include "mcmc/exception.h"
+#include "mcmc/config.h"
+
+#ifdef MCMC_SINGLE_PRECISION
+#  define FLOATTYPE_MPI MPI_FLOAT
+#else
+#  define FLOATTYPE_MPI MPI_DOUBLE
+#endif
 
 #ifdef MCMC_ENABLE_DISTRIBUTED
 #  include <mpi.h>
@@ -205,11 +212,6 @@ void PerpData::Init(::size_t max_perplexity_chunk) {
 // **************************************************************************
 MCMCSamplerStochasticDistributed::MCMCSamplerStochasticDistributed(
     const Options &args) : MCMCSamplerStochastic(args), mpi_master_(0) {
-  if (sizeof(Float) != sizeof(double)) {
-    throw MCMCException("Cannot run distributed implementation with single "
-                        "precision: the DKV store doesn't (yet) support it");
-  }
-
   t_populate_pi_           = Timer("  populate pi");
   t_outer_                 = Timer("  iteration");
   t_deploy_minibatch_      = Timer("    deploy minibatch");
@@ -285,9 +287,9 @@ void MCMCSamplerStochasticDistributed::BroadcastNetworkInfo() {
     }
 
     // ration between link edges and non-link edges
-    link_ratio = network.get_num_linked_edges() / ((N * (N - 1)) / 2.0);
+    link_ratio = network.get_num_linked_edges() / ((N * (double)(N - 1)) / 2.0);
 
-    ppx_per_heldout_edge_ = std::vector<Float>(network.get_held_out_size(), 0.0);
+    ppx_per_heldout_edge_ = std::vector<Float>(network.get_held_out_size(), FLOAT(0.0));
 
     this->info(std::cerr);
   }
@@ -613,7 +615,7 @@ void MCMCSamplerStochasticDistributed::run() {
     //}
 
     t_broadcast_beta_.start();
-    r = MPI_Bcast(beta.data(), beta.size(), MPI_DOUBLE, mpi_master_,
+    r = MPI_Bcast(beta.data(), beta.size(), FLOATTYPE_MPI, mpi_master_,
                   MPI_COMM_WORLD);
     mpi_error_test(r, "MPI_Bcast of beta fails");
     t_broadcast_beta_.stop();
@@ -785,6 +787,7 @@ void MCMCSamplerStochasticDistributed::check_perplexity() {
     if (mpi_rank_ == mpi_master_) {
       auto t_now = system_clock::now();
       auto t_ms = duration_cast<milliseconds>(t_now - t_start_).count();
+      std::cout << "average_count is: " << average_count << " ";
       std::cout << std::fixed
                 << "step count: " << step_count
                 << " time: " << std::setprecision(3) << (t_ms / 1000.0)
@@ -1089,7 +1092,6 @@ void MCMCSamplerStochasticDistributed::update_phi_node(
     ) {
 
   Float phi_i_sum = pi_node[K];
-  assert(! std::isnan(phi_i_sum));
   std::vector<Float> grads(K, 0.0);	// gradient for K classes
 
   for (::size_t ix = 0; ix < real_num_node_sample(); ++ix) {
@@ -1112,10 +1114,7 @@ void MCMCSamplerStochasticDistributed::update_phi_node(
       Float e = (y_ab == 1) ? epsilon : 1.0 - epsilon;
       for (::size_t k = 0; k < K; ++k) {
         Float f = (y_ab == 1) ? (beta[k] - epsilon) : (epsilon - beta[k]);
-        assert(! std::isnan(beta[k]));
-        assert(! std::isnan(epsilon));
         probs[k] = pi_node[k] * (pi[ix][k] * f + e);
-        assert(! std::isnan(probs[k]));
       }
 
       Float prob_sum = np::sum(probs);
@@ -1124,16 +1123,12 @@ void MCMCSamplerStochasticDistributed::update_phi_node(
       //    " phi_i_sum " << phi_i_sum <<
       //    " #sample " << real_num_node_sample() << std::endl;
       for (::size_t k = 0; k < K; ++k) {
-        assert(! std::isnan(probs[k]));
-        assert(! std::isnan(prob_sum));
-        assert(! std::isnan(pi_node[k]));
-        assert(! std::isnan(phi_i_sum));
         assert(phi_i_sum > 0);
         grads[k] += ((probs[k] / prob_sum) / pi_node[k] - 1.0) / phi_i_sum;
-        assert(! std::isnan(grads[k]));
       }
     } else {
-      std::cerr << "Skip self loop <" << i << "," << neighbor << ">" << std::endl;
+      std::cerr << "Skip self loop <" << i << "," << neighbor << ">" <<
+        std::endl;
     }
   }
 
@@ -1142,14 +1137,19 @@ void MCMCSamplerStochasticDistributed::update_phi_node(
   // update phi for node i
   for (::size_t k = 0; k < K; ++k) {
     Float phi_node_k = pi_node[k] * phi_i_sum;
-    assert(! std::isnan(phi_node_k));
-    (*phi_node)[k] = std::abs(phi_node_k + eps_t / 2 * (alpha - phi_node_k +
-                                                        Nn * grads[k])
+    assert(phi_node_k > FLOAT(0.0));
+    phi_node_k = std::abs(phi_node_k + eps_t / 2 * (alpha - phi_node_k +
+                                                    Nn * grads[k])
 #ifndef MCMC_NO_NOISE
-                              + sqrt(eps_t * phi_node_k) * noise[k]
+                          + sqrt(eps_t * phi_node_k) * noise[k]
 #endif
-                              );
-    assert(! std::isnan((*phi_node)[k]));
+                         );
+    if (phi_node_k < MCMC_NONZERO_GUARD) {
+      (*phi_node)[k] = MCMC_NONZERO_GUARD;
+    } else {
+      (*phi_node)[k] = phi_node_k;
+    }
+    assert((*phi_node)[k] > FLOAT(0.0));
   }
 }
 
@@ -1216,17 +1216,13 @@ void MCMCSamplerStochasticDistributed::update_beta(
     Float pi_sum = 0.0;
     for (::size_t k = 0; k < K; ++k) {
       // Note: this is the KV-store cached pi, not the Learner item
-      assert(! std::isnan(pi[i][k]));
-      assert(! std::isnan(pi[j][k]));
       Float f = pi[i][k] * pi[j][k];
-      assert(! std::isnan(f));
       pi_sum += f;
       if (y == 1) {
         probs[k] = beta[k] * f;
       } else {
         probs[k] = (1.0 - beta[k]) * f;
       }
-      assert(! std::isnan(probs[k]));
     }
 
     Float prob_0 = ((y == 1) ? epsilon : (1.0 - epsilon)) * (1.0 - pi_sum);
@@ -1271,7 +1267,9 @@ void MCMCSamplerStochasticDistributed::update_beta(
                              + f * noise[k][i]
 #endif
                              );
-      assert(! std::isnan(theta[k][i]));
+      if (theta[k][i] < MCMC_NONZERO_GUARD) {
+        theta[k][i] = MCMC_NONZERO_GUARD;
+      }
     }
   }
 
@@ -1296,7 +1294,7 @@ void MCMCSamplerStochasticDistributed::reduce_plus(const perp_accu &in,
   r = MPI_Allreduce(MPI_IN_PLACE, count, 2, MPI_UNSIGNED_LONG, MPI_SUM,
                     MPI_COMM_WORLD);
   mpi_error_test(r, "Reduce/plus of perplexity counts fails");
-  r = MPI_Allreduce(MPI_IN_PLACE, likelihood, 2, MPI_DOUBLE, MPI_SUM,
+  r = MPI_Allreduce(MPI_IN_PLACE, likelihood, 2, FLOATTYPE_MPI, MPI_SUM,
                     MPI_COMM_WORLD);
   mpi_error_test(r, "Reduce/plus of perplexity likelihoods fails");
 
