@@ -237,7 +237,7 @@ EdgeSample Network::sample_full_training_set() const {
     }
   }
 
-  Float weight = (N - 1) * N / 2.0 / mini_batch_set->size();
+  Float weight = (N - 1) * (double)N / 2.0 / mini_batch_set->size();
   // Float weight = 1.0;
 
   // std::cerr << "Minibatch size " << mini_batch_set->size() << " weight " << weight << std::endl;
@@ -283,7 +283,7 @@ EdgeSample Network::random_edge_sampling(::size_t mini_batch_size) const {
     delete sampled_linked_edges;
   }
 
-  Float weight = (N - 1) * N / 2.0 / mini_batch_set->size();
+  Float weight = (N - 1) * (double)N / 2.0 / mini_batch_set->size();
 
   // std::cerr << "Minibatch size " << mini_batch_set->size() << std::endl;
 
@@ -349,12 +349,14 @@ EdgeSample Network::stratified_random_node_sampling(::size_t num_pieces) const {
         delete nodeList;
       }
 
+      Float scale = (Float)N * num_pieces;
+      scale *= (double)num_total_edges / ((double)N * (N - 1.0) / 2.0 - num_total_edges);
       if (false) {
         std::cerr << "A Create mini batch size " << mini_batch_set->size()
-                  << " scale " << (N * num_pieces) << std::endl;
+                  << " scale " << scale << std::endl;
       }
 
-      return EdgeSample(mini_batch_set, N * num_pieces);
+      return EdgeSample(mini_batch_set, scale);
 
     } else {
 /* sample linked edges */
@@ -384,10 +386,12 @@ EdgeSample Network::stratified_random_node_sampling(::size_t num_pieces) const {
                   << " scale " << N << std::endl;
       }
 
-      return EdgeSample(mini_batch_set, N);
+      if (mini_batch_set->size() > 0) {
+        return EdgeSample(mini_batch_set, N);
+      }
     }
 
-    throw MCMCException("Cannot be reached");
+    std::cerr << "Empty minibatch, try again..." << std::endl;
   }
 }
 
