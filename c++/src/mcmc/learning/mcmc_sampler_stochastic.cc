@@ -256,17 +256,20 @@ void MCMCSamplerStochastic::update_beta(const MinibatchSet &mini_batch,
     }
 
 #ifdef MCMC_EFFICIENCY_COMPATIBILITY_MODE
-    Float prob_0 =
-        std::pow(epsilon, y) * std::pow(FLOAT(1.0) - epsilon, FLOAT(1.0) - y) * (FLOAT(1.0) - pi_sum);
+    Float prob_0 = std::pow(epsilon, y) *
+                   std::pow(FLOAT(1.0) - epsilon, FLOAT(1.0) - y) *
+                   (FLOAT(1.0) - pi_sum);
     Float prob_sum = np::sum(probs) + prob_0;
     for (::size_t k = 0; k < K; k++) {
       grads[k][0] += (probs[k] / prob_sum) *
-                     (std::abs(FLOAT(1.0) - y) / theta[k][0] - FLOAT(1.0) / theta_sum[k]);
+                     (std::abs(FLOAT(1.0) - y) / theta[k][0] -
+                      FLOAT(1.0) / theta_sum[k]);
       grads[k][1] += (probs[k] / prob_sum) *
                      (std::abs(-y) / theta[k][1] - FLOAT(1.0) / theta_sum[k]);
     }
 #else
-    Float prob_0 = ((y == 1) ? epsilon : (FLOAT(1.0) - epsilon)) * (FLOAT(1.0) - pi_sum);
+    Float prob_0 = ((y == 1) ? epsilon : (FLOAT(1.0) - epsilon)) *
+                                          (FLOAT(1.0) - pi_sum);
     Float prob_sum = np::sum(probs) + prob_0;
     for (::size_t k = 0; k < K; k++) {
       Float f = probs[k] / prob_sum;
@@ -289,14 +292,16 @@ void MCMCSamplerStochastic::update_beta(const MinibatchSet &mini_batch,
       theta[k][i] = std::abs(
           theta[k][i] +
           eps_t / FLOAT(2.0) * (eta[i] - theta[k][i] + scale * grads[k][i]) +
-          std::pow(eps_t, FLOAT(0.5)) * std::pow(theta[k][i], FLOAT(0.5)) * noise[k][i]);
+          std::pow(eps_t, FLOAT(0.5)) *
+            std::pow(theta[k][i], FLOAT(0.5)) * noise[k][i]);
 #else
 #ifndef MCMC_NO_NOISE
       Float f = std::sqrt(eps_t * theta[k][i]);
 #endif
       theta[k][i] =
           std::abs(theta[k][i] +
-                   eps_t / FLOAT(2.0) * (eta[i] - theta[k][i] + scale * grads[k][i])
+                   eps_t / FLOAT(2.0) * (eta[i] - theta[k][i] +
+                                         scale * grads[k][i])
 #ifndef MCMC_NO_NOISE
                    + f * noise[k][i]
 #endif
@@ -345,9 +350,11 @@ void MCMCSamplerStochastic::update_phi(Vertex i, const NeighborSet &neighbors
 #endif
     for (::size_t k = 0; k < K; k++) {
 #ifdef MCMC_EFFICIENCY_COMPATIBILITY_MODE
-      probs[k] = std::pow(beta[k], y_ab) * std::pow(FLOAT(1.0) - beta[k], FLOAT(1.0) - y_ab) *
+      probs[k] = std::pow(beta[k], y_ab) * std::pow(FLOAT(1.0) - beta[k],
+                                                    FLOAT(1.0) - y_ab) *
                  pi[i][k] * pi[neighbor][k];
-      probs[k] += std::pow(epsilon, y_ab) * std::pow(FLOAT(1.0) - epsilon, FLOAT(1.0) - y_ab) *
+      probs[k] += std::pow(epsilon, y_ab) * std::pow(FLOAT(1.0) - epsilon,
+                                                     FLOAT(1.0) - y_ab) *
                   pi[i][k] * (FLOAT(1.0) - pi[neighbor][k]);
 #else
       Float f = (y_ab == 1) ? (beta[k] - epsilon) : (epsilon - beta[k]);
@@ -374,7 +381,8 @@ void MCMCSamplerStochastic::update_phi(Vertex i, const NeighborSet &neighbors
         std::abs(phi[i][k] +
                  eps_t / FLOAT(2.0) * (alpha - phi[i][k] +
                               (N * FLOAT(1.0) / num_node_sample) * grads[k]) +
-                 std::pow(eps_t, FLOAT(0.5)) * std::pow(phi[i][k], FLOAT(0.5)) * noise[k]);
+                 std::pow(eps_t, FLOAT(0.5)) *
+                  std::pow(phi[i][k], FLOAT(0.5)) * noise[k]);
 #else
     phi[i][k] =
         std::abs((phi[i][k]

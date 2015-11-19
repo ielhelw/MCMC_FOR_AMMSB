@@ -21,7 +21,8 @@ Learner::Learner(const Options &args) : args_(args), ppxs_heldout_cb_(10) {
 #ifdef MCMC_RANDOM_SYSTEM
   std::cerr << "MCMC_RANDOM_SYSTEM enabled" << std::endl;
 #endif
-  std::cerr << "Floating point precision: " << (sizeof(Float) * CHAR_BIT) << std::endl;
+  std::cerr << "Floating point precision: " << (sizeof(Float) * CHAR_BIT) <<
+    "bit" << std::endl;
 
   std::cerr << "PID " << getpid() << std::endl;
 
@@ -93,7 +94,8 @@ void Learner::LoadNetwork(int world_rank, bool allocate_pi) {
   // ratio between link edges and non-link edges
   link_ratio = network.get_num_linked_edges() / ((N * (double)(N - 1)) / 2.0);
 
-  ppx_per_heldout_edge_ = std::vector<Float>(network.get_held_out_size(), FLOAT(0.0));
+  ppx_per_heldout_edge_ = std::vector<Float>(network.get_held_out_size(),
+                                             FLOAT(0.0));
 
   info(std::cerr);
 }
