@@ -7,10 +7,8 @@ namespace DKV {
 
 #ifdef MCMC_SINGLE_PRECISION
 typedef float   Float;
-#define FLOAT(x)        x ## f
 #else
 typedef double  Float;
-#define FLOAT(x)        x
 #endif
 
 }	// namespace DKV
