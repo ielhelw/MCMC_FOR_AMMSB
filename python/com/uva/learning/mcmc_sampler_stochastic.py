@@ -91,7 +91,7 @@ class MCMCSamplerStochastic(Learner):
         sys.stdout.write("beta[0] %.12f\n" % self._beta[0])
         sys.stdout.write("phi[0][0] %.12f\n" % self.__phi[0][0])
         sys.stdout.write("pi[0][0] %.12f\n" % self._pi[0][0])
-        sys.stdout.write("a %.f b %.f c %.f\n" % (self.__a, self.__b, self.__c))
+        sys.stdout.write("a %g b %g c %g\n" % (self.__a, self.__b, self.__c))
         sys.stdout.write("minibatch size %d num_node_sample %d\n" % ((self._network.get_num_nodes() / self.__num_pieces), self.__num_node_sample))
 
         t_outer = Timer("outer");
@@ -102,6 +102,8 @@ class MCMCSamplerStochastic(Learner):
         t_update_beta = Timer("update beta");
         t_perp  = Timer("perplexity");
 
+        start = t_outer.now()
+
         t_outer.start();
 
         while self._step_count < self._max_iteration and not self._is_converged():
@@ -110,7 +112,7 @@ class MCMCSamplerStochastic(Learner):
                 t_perp.start()
                 ppx_score = self._cal_perplexity_held_out()
                 t_perp.stop()
-                sys.stdout.write("step count: %d perplexity for hold out set is: %.12f\n" % (self._step_count, ppx_score))
+                sys.stdout.write("step count: %d time: %.3f perplexity for hold out set is: %.12f\n" % (self._step_count, t_outer.now() - start, ppx_score))
                 self._ppxs_held_out.append(ppx_score)
            
             (mini_batch, scale) = self._network.sample_mini_batch(self.__num_pieces, "stratified-random-node")
@@ -130,8 +132,6 @@ class MCMCSamplerStochastic(Learner):
                 t_sample_neighbors.start()
                 neighbors = self.__sample_neighbor_nodes(self.__num_node_sample, node)
                 t_sample_neighbors.stop()
-                if self._compatibility_mode:  # to be able to replay from C++
-                    neighbors = sorted(neighbors)
                 t_update_phi.start()
                 self.__update_phi(node, neighbors)
                 t_update_phi.stop()
@@ -252,6 +252,8 @@ class MCMCSamplerStochastic(Learner):
         
         while p > 0:
             nodeList = random.sample_range("neighbor sampler", self._N, sample_size * 2)
+            if self._compatibility_mode:  # to be able to replay from C++
+                nodeList = sorted(nodeList)
             for neighborId in nodeList:
                     if p < 0:
                         if False:
@@ -268,6 +270,8 @@ class MCMCSamplerStochastic(Learner):
                         neighbor_nodes.add(neighborId)
                         p -= 1
                         
+        if self._compatibility_mode:  # to be able to replay from C++
+            neighbor_nodes = sorted(neighbor_nodes)
         return neighbor_nodes
 
     def __nodes_in_batch(self, mini_batch):

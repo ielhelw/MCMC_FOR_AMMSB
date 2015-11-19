@@ -386,7 +386,7 @@ EdgeSample Network::stratified_random_node_sampling(::size_t num_pieces) const {
                   << " scale " << N << std::endl;
       }
 
-      if (mini_batch_set->size() > 0) {
+      if (mini_batch_set->size() != 0) {
         return EdgeSample(mini_batch_set, N);
       }
     }

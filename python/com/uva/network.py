@@ -21,7 +21,7 @@ class Network(object):
     data.
     """
     
-    def __init__(self, data, held_out_ratio):
+    def __init__(self, data, held_out_ratio, compatibility_mode):
         """
         In this initialization step, we separate the whole data set
         into training, validation and testing sets. Basically, 
@@ -39,6 +39,7 @@ class Network(object):
         self.__linked_edges = data.E                       # all pair of linked edges. 
         self.__num_total_edges = len(self.__linked_edges)  # number of total edges. 
         self.__held_out_ratio = held_out_ratio             # percentage of held-out data size
+        self.__compatibility_mode = compatibility_mode
         
         # Based on the a-MMSB paper, it samples equal number of 
         # linked edges and non-linked edges. 
@@ -271,6 +272,8 @@ class Network(object):
             # here we sample twice as much as links, and select among them, which
             # is likely to contain valid p linked edges.  
             sampled_linked_edges = random.get("graph init").sample(self.__linked_edges, 2*p)
+            if self.__compatibility_mode:
+                sampled_linked_edges = sorted(sampled_linked_edges)
             for edge in sampled_linked_edges:  
                 if p < 0:
                     print sys._getframe().f_code.co_name + ": Are you sure p < 0 is a good idea?"

@@ -11,8 +11,11 @@ class Timer(object):
         self._start = timeit.default_timer()
 
     def stop(self):
-        self._total = timeit.default_timer() - self._start
+        self._total += timeit.default_timer() - self._start
         self._N += 1
+
+    def now(self):
+        return timeit.default_timer()
 
     def print_header(self, out = sys.stdout):
         out.write("%-36s %12s %8s %14s\n" % ("timer", "total (s)", "ticks", "per tick (us)"))
