@@ -57,9 +57,7 @@ def main():
 
     # data = DataFactory.get_data("netscience")
     data = DataFactory.get_data("relativity", args.filename)
-    network = Network(data, args.hold_out_prob, compatibility_mode)
-    args.num_pieces = (network.get_num_nodes() + args.mini_batch_size - 1) / args.mini_batch_size
-    # network.set_num_pieces(args.num_pieces)  # compatible w/ C++ implementation
+    network = Network(data, args.hold_out_prob, args.mini_batch_size, compatibility_mode)
         
     print "start MCMC stochastic"
     ppx_mcmc = []

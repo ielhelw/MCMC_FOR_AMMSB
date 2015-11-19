@@ -48,7 +48,7 @@ struct perp_counter {
   }
 
   ::size_t count;
-  double	likelihood;
+  Float	likelihood;
 };
 
 
@@ -63,7 +63,7 @@ class PerpData {
   void Init(::size_t max_perplexity_chunk);
 
   std::vector<Vertex> nodes_;
-  std::vector<double*> pi_;
+  std::vector<Float*> pi_;
   // OpenMP parallelism requires a vector
   std::vector<EdgeMapItem> data_;
   std::vector<perp_accu> accu_;
@@ -134,7 +134,7 @@ class MCMCSamplerStochasticDistributed : public MCMCSamplerStochastic {
   void init_beta();
 
   // Calculate pi[0..K> ++ phi_sum from phi[0..K>
-  void pi_from_phi(double* pi, const std::vector<double> &phi);
+  void pi_from_phi(Float* pi, const std::vector<Float> &phi);
 
   void init_pi();
 
@@ -145,17 +145,17 @@ class MCMCSamplerStochasticDistributed : public MCMCSamplerStochastic {
   EdgeSample deploy_mini_batch();
 
 
-  void update_phi(std::vector<std::vector<double> >* phi_node);
+  void update_phi(std::vector<std::vector<Float> >* phi_node);
 
 
-  void update_phi_node(::size_t index, Vertex i, const double* pi_node,
+  void update_phi_node(::size_t index, Vertex i, const Float* pi_node,
                        const std::vector<int32_t>::iterator &neighbors,
-                       const std::vector<double*>::iterator &pi,
-                       double eps_t, Random::Random* rnd,
-                       std::vector<double>* phi_node	// out parameter
+                       const std::vector<Float*>::iterator &pi,
+                       Float eps_t, Random::Random* rnd,
+                       std::vector<Float>* phi_node	// out parameter
                       );
 
-  void update_beta(const MinibatchSet &mini_batch, double scale);
+  void update_beta(const MinibatchSet &mini_batch, Float scale);
 
   void reduce_plus(const perp_accu &in, perp_accu* accu);
 
@@ -171,7 +171,7 @@ class MCMCSamplerStochasticDistributed : public MCMCSamplerStochastic {
    * the equal number of link edges and non-link edges for held out data and test data,
    * which is not true representation of actual data set, which is extremely sparse.
    */
-  double cal_perplexity_held_out();
+  Float cal_perplexity_held_out();
 
   int node_owner(Vertex node) const;
 
@@ -184,9 +184,9 @@ class MCMCSamplerStochasticDistributed : public MCMCSamplerStochastic {
 
   // Lift to class member to avoid (de)allocation in each iteration
   std::vector<int32_t> nodes_;		// my minibatch nodes
-  std::vector<double*> pi_update_;
+  std::vector<Float*> pi_update_;
   // gradients K*2 dimension
-  std::vector<std::vector<std::vector<double> > > grads_beta_;
+  std::vector<std::vector<std::vector<Float> > > grads_beta_;
 
   const int     mpi_master_;
   int		mpi_size_;

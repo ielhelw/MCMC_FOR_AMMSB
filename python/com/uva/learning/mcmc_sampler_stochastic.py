@@ -45,7 +45,7 @@ class MCMCSamplerStochastic(Learner):
         Learner.__init__(self, args, graph, compatibility_mode)
 
         self._interval = args.interval
-        self.__num_pieces = args.num_pieces
+        self.__num_pieces = graph.get_num_pieces()
         
         # step size parameters. 
         self.__a = args.a

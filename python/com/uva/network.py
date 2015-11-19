@@ -21,7 +21,7 @@ class Network(object):
     data.
     """
     
-    def __init__(self, data, held_out_ratio, compatibility_mode):
+    def __init__(self, data, held_out_ratio, mini_batch_size, compatibility_mode):
         """
         In this initialization step, we separate the whole data set
         into training, validation and testing sets. Basically, 
@@ -47,7 +47,8 @@ class Network(object):
 
         # it is used for stratified random node sampling. By default 10 
         # self.__num_pieces = 10    
-        self.__num_pieces = 50    
+        # self.__num_pieces = 50    
+        self.__num_pieces = (self.get_num_nodes() + mini_batch_size - 1) / mini_batch_size
 
         sys.stdout.write("held_out_ratio %.12f held_out_size %d num_pieces %d\n" % (self.__held_out_ratio, self.__held_out_size, self.__num_pieces))
         
@@ -131,6 +132,9 @@ class Network(object):
     def get_test_set(self):
         return self.__test_map
     
+    def get_num_pieces(self):
+        return self.__num_pieces
+
     def set_num_pieces(self, num_pieces):
         self.__num_pieces = num_pieces
         print "**************** set num_pieces to " + str(num_pieces)
@@ -187,7 +191,7 @@ class Network(object):
                     mini_batch_set.add(edge)
                     p -= 1
                         
-            # print "A Create mini batch size " + str(len(mini_batch_set)) + " scale " + str(self.__N * self.__num_pieces)
+            print "A Create mini batch size " + str(len(mini_batch_set)) + " scale " + str(self.__N * self.__num_pieces)
             # for e in mini_batch_set:
             #     sys.stdout.write("%s " % str(e))
             # sys.stdout.write("\n")
@@ -201,7 +205,7 @@ class Network(object):
             for neighborId in self.__train_link_map[nodeId]:
                 mini_batch_set.add((min(nodeId, neighborId),max(nodeId, neighborId)))
             
-            # print "B Create mini batch size " + str(len(mini_batch_set)) + " scale " + str(self.__N)
+            print "B Create mini batch size " + str(len(mini_batch_set)) + " scale " + str(self.__N)
             return (mini_batch_set, self.__N)   
     
 

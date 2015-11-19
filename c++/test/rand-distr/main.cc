@@ -8,14 +8,14 @@
 int main(int argc, char *argv[]) {
 	uint64_t N;
 	uint64_t K;
-	double eta[2];
+	mcmc::Float eta[2];
 
 	namespace po = ::boost::program_options;
 
 	po::options_description desc("Options");
 	desc.add_options()
-		("eta0,0", po::value<double>(&eta[0])->default_value(1.0), "eta0")
-		("eta1,1", po::value<double>(&eta[1])->default_value(1.0), "eta0")
+		("eta0,0", po::value<mcmc::Float>(&eta[0])->default_value(1.0), "eta0")
+		("eta1,1", po::value<mcmc::Float>(&eta[1])->default_value(1.0), "eta0")
 		("K,K", po::value<uint64_t>(&K)->default_value(300), "sample batch size")
 		("iterations,N", po::value<uint64_t>(&N)->default_value(1 << 28), "iterations")
 		;
@@ -37,12 +37,12 @@ int main(int argc, char *argv[]) {
         auto rgen = mcmc::Random::Random(42);
 
 	if (true) {
-		double sum = 0.0;
-		double sq  = 0.0;
+		mcmc::Float sum = 0.0;
+		mcmc::Float sq  = 0.0;
 
 		auto start = std::chrono::system_clock::now();
 		for (::size_t i = 0; i < N; i++) {
-			std::vector<std::vector<double> > r = rgen.gamma(eta[0], eta[1], 1, K);
+			std::vector<std::vector<mcmc::Float> > r = rgen.gamma(eta[0], eta[1], 1, K);
 			for (::size_t k = 0; k < K; k++) {
 				sum += r[0][k];
 				sq  += r[0][k] * r[0][k];
@@ -56,12 +56,12 @@ int main(int argc, char *argv[]) {
 	}
 
 	if (true) {
-		double sum = 0.0;
-		double sq  = 0.0;
+		mcmc::Float sum = 0.0;
+		mcmc::Float sq  = 0.0;
 
 		auto start = std::chrono::system_clock::now();
 		for (::size_t i = 0; i < N; i++) {
-			std::vector<double> r = rgen.randn(K);
+			std::vector<mcmc::Float> r = rgen.randn(K);
 			for (::size_t k = 0; k < K; k++) {
 				sum += r[k];
 				sq  += r[k] * r[k];

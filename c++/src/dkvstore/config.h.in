@@ -1,0 +1,16 @@
+#ifndef __DKVSTORE_CONFIG_H__
+#define __DKVSTORE_CONFIG_H__
+
+namespace DKV {
+
+#cmakedefine MCMC_SINGLE_PRECISION
+
+#ifdef MCMC_SINGLE_PRECISION
+typedef float   Float;
+#else
+typedef double  Float;
+#endif
+
+}	// namespace DKV
+
+#endif

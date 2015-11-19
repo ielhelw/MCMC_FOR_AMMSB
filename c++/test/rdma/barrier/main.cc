@@ -47,6 +47,9 @@ std::vector<const T*>& constify(std::vector<T*>& v) {
 
 template <typename DKVStore>
 class DKVWrapper {
+
+  typedef typename DKVStore::ValueType ValueType;
+
  public:
   DKVWrapper(const mcmc::Options &options,
              const std::vector<std::string> &remains)
@@ -166,13 +169,13 @@ class DKVWrapper {
       ::size_t to   = N;
       std::cerr << "********* Populate with keys " << from << ".." << to << " step " << n_hosts << std::endl;
       for (::size_t i = from; i < to; i += n_hosts) {
-        // std::vector<double> pi = random.randn(K);
-        std::vector<double> pi(K);
+        // std::vector<ValueType> pi = random.randn(K);
+        std::vector<ValueType> pi(K);
         for (::size_t k = 0; k < K; k++) {
           pi[k] = i * 1000.0 + (k + 1) / 1000.0;
         }
         std::vector<int32_t> k(1, static_cast<int32_t>(i));
-        std::vector<const double *> v(1, pi.data());
+        std::vector<const ValueType *> v(1, pi.data());
         d_kv_store_->WriteKVRecords(k, v);
       }
       duration dur = std::chrono::duration_cast<duration>(hires::now() - t);
@@ -181,7 +184,7 @@ class DKVWrapper {
         " GB/s" << std::endl;
     }
 
-    std::vector<double *> cache(my_m * n);
+    std::vector<ValueType *> cache(my_m * n);
     for (::size_t iter = 0; iter < iterations; ++iter) {
       // Vector of requests
       std::cerr << "********* " << iter << ": Sample the neighbors" <<

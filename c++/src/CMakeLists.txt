@@ -1,4 +1,5 @@
 configure_file(mcmc/config.h.in mcmc/config.h @ONLY )
+configure_file(dkvstore/config.h.in dkvstore/config.h @ONLY )
 
 find_package(Threads REQUIRED)
 find_package(TinyXml2 REQUIRED)

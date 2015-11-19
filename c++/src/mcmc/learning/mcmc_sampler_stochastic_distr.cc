@@ -9,6 +9,13 @@
 #include <chrono>
 
 #include "mcmc/exception.h"
+#include "mcmc/config.h"
+
+#ifdef MCMC_SINGLE_PRECISION
+#  define FLOATTYPE_MPI MPI_FLOAT
+#else
+#  define FLOATTYPE_MPI MPI_DOUBLE
+#endif
 
 #ifdef MCMC_ENABLE_DISTRIBUTED
 #  include <mpi.h>
@@ -78,6 +85,8 @@ int MPI_Comm_rank(MPI_Comm comm, int *mpi_rank) {
     return sizeof(int64_t);
   case MPI_UNSIGNED_LONG:
     return sizeof(uint64_t);
+  case MPI_FLOAT:
+    return sizeof(float);
   case MPI_DOUBLE:
     return sizeof(double);
   case MPI_BYTE:
@@ -267,9 +276,9 @@ void MCMCSamplerStochasticDistributed::BroadcastNetworkInfo() {
     N = network.get_num_nodes();
     assert(N != 0);
 
-    beta = std::vector<double>(K, 0.0);
+    beta = std::vector<Float>(K, 0.0);
     // In the distributed version, do not allocate the global pi.
-    // pi   = std::vector<std::vector<double> >(N, std::vector<double>(K, 0.0));
+    // pi   = std::vector<std::vector<Float> >(N, std::vector<Float>(K, 0.0));
 
     // parameters related to sampling
     mini_batch_size = args_.mini_batch_size;
@@ -278,9 +287,10 @@ void MCMCSamplerStochasticDistributed::BroadcastNetworkInfo() {
     }
 
     // ration between link edges and non-link edges
-    link_ratio = network.get_num_linked_edges() / ((N * (N - 1)) / 2.0);
+    link_ratio = network.get_num_linked_edges() / ((N * (double)(N - 1)) / 2.0);
 
-    ppx_per_heldout_edge_ = std::vector<double>(network.get_held_out_size(), 0.0);
+    ppx_per_heldout_edge_ = std::vector<Float>(network.get_held_out_size(),
+                                               FLOAT(0.0));
 
     this->info(std::cerr);
   }
@@ -463,7 +473,7 @@ void MCMCSamplerStochasticDistributed::init() {
               "/proc/meminfo has no line for MemTotal");
     }
     // /proc/meminfo reports KB
-    ::size_t pi_total = (1024 * mem_total) / ((K + 1) * sizeof(double));
+    ::size_t pi_total = (1024 * mem_total) / ((K + 1) * sizeof(Float));
     args_.max_pi_cache_entries_ = pi_total / 32;
   }
 
@@ -564,11 +574,11 @@ void MCMCSamplerStochasticDistributed::init() {
 
   pi_update_.resize(max_minibatch_nodes_);
   for (auto &p : pi_update_) {
-    p = new double[K + 1];
+    p = new Float[K + 1];
   }
   grads_beta_.resize(omp_get_max_threads());
   for (auto &g : grads_beta_) {
-    g = std::vector<std::vector<double> >(K, std::vector<double>(2));    // gradients K*2 dimension
+    g = std::vector<std::vector<Float> >(K, std::vector<Float>(2));    // gradients K*2 dimension
   }
 
   std::cerr << "Random seed " << std::hex << "0x" <<
@@ -587,8 +597,8 @@ void MCMCSamplerStochasticDistributed::run() {
 
   using namespace std::chrono;
 
-  std::vector<std::vector<double> > phi_node(max_minibatch_nodes_,
-                                            std::vector<double>(K + 1));
+  std::vector<std::vector<Float> > phi_node(max_minibatch_nodes_,
+                                            std::vector<Float>(K + 1));
 
   int r;
 
@@ -606,7 +616,7 @@ void MCMCSamplerStochasticDistributed::run() {
     //}
 
     t_broadcast_beta_.start();
-    r = MPI_Bcast(beta.data(), beta.size(), MPI_DOUBLE, mpi_master_,
+    r = MPI_Bcast(beta.data(), beta.size(), FLOATTYPE_MPI, mpi_master_,
                   MPI_COMM_WORLD);
     mpi_error_test(r, "MPI_Bcast of beta fails");
     t_broadcast_beta_.stop();
@@ -723,18 +733,18 @@ void MCMCSamplerStochasticDistributed::init_beta() {
   // parameterization for \beta
   // theta = rng_.random(SourceAwareRandom::THETA_INIT)->->gamma(100.0, 0.01, K, 2);
 
-  std::vector<std::vector<double> > temp(theta.size(),
-                                         std::vector<double>(theta[0].size()));
+  std::vector<std::vector<Float> > temp(theta.size(),
+                                         std::vector<Float>(theta[0].size()));
   np::row_normalize(&temp, theta);
   std::transform(temp.begin(), temp.end(), beta.begin(),
-                 np::SelectColumn<double>(1));
+                 np::SelectColumn<Float>(1));
 }
 
 
 // Calculate pi[0..K> ++ phi_sum from phi[0..K>
 void MCMCSamplerStochasticDistributed::pi_from_phi(
-    double* pi, const std::vector<double> &phi) {
-  double phi_sum = std::accumulate(phi.begin(), phi.begin() + K, 0.0);
+    Float* pi, const std::vector<Float> &phi) {
+  Float phi_sum = std::accumulate(phi.begin(), phi.begin() + K, 0.0);
   for (::size_t k = 0; k < K; ++k) {
     pi[k] = phi[k] / phi_sum;
   }
@@ -744,11 +754,11 @@ void MCMCSamplerStochasticDistributed::pi_from_phi(
 
 
 void MCMCSamplerStochasticDistributed::init_pi() {
-  double pi[K + 1];
+  Float pi[K + 1];
   std::cerr << "*************** FIXME: load pi only on pi-hoster nodes" <<
     std::endl;
   for (int32_t i = mpi_rank_; i < static_cast<int32_t>(N); i += mpi_size_) {
-    std::vector<double> phi_pi = phi_init_rng_->gamma(1, 1, 1, K)[0];
+    std::vector<Float> phi_pi = phi_init_rng_->gamma(1, 1, 1, K)[0];
 #ifndef NDEBUG
     for (auto ph : phi_pi) {
       assert(ph >= 0.0);
@@ -758,7 +768,7 @@ void MCMCSamplerStochasticDistributed::init_pi() {
     pi_from_phi(pi, phi_pi);
 
     std::vector<int32_t> node(1, i);
-    std::vector<const double*> pi_wrapper(1, pi);
+    std::vector<const Float*> pi_wrapper(1, pi);
     // Easy performance improvement: accumulate records up to write area
     // size, the Write/Purge
     d_kv_store_->WriteKVRecords(node, pi_wrapper);
@@ -773,11 +783,12 @@ void MCMCSamplerStochasticDistributed::check_perplexity() {
 
     t_perplexity_.start();
     // TODO load pi for the held-out set to calculate perplexity
-    double ppx_score = cal_perplexity_held_out();
+    Float ppx_score = cal_perplexity_held_out();
     t_perplexity_.stop();
     if (mpi_rank_ == mpi_master_) {
       auto t_now = system_clock::now();
       auto t_ms = duration_cast<milliseconds>(t_now - t_start_).count();
+      std::cout << "average_count is: " << average_count << " ";
       std::cout << std::fixed
                 << "step count: " << step_count
                 << " time: " << std::setprecision(3) << (t_ms / 1000.0)
@@ -1004,12 +1015,12 @@ EdgeSample MCMCSamplerStochasticDistributed::deploy_mini_batch() {
 
 
 void MCMCSamplerStochasticDistributed::update_phi(
-    std::vector<std::vector<double> >* phi_node) {
-  std::vector<double*> pi_node;
-  std::vector<double*> pi_neighbor;
+    std::vector<std::vector<Float> >* phi_node) {
+  std::vector<Float*> pi_node;
+  std::vector<Float*> pi_neighbor;
   std::vector<int32_t> flat_neighbors;
 
-  double eps_t = get_eps_t();
+  Float eps_t = get_eps_t();
 
   for (::size_t chunk_start = 0;
        chunk_start < nodes_.size();
@@ -1074,16 +1085,15 @@ void MCMCSamplerStochasticDistributed::update_phi(
 
 
 void MCMCSamplerStochasticDistributed::update_phi_node(
-    ::size_t index, Vertex i, const double* pi_node,
+    ::size_t index, Vertex i, const Float* pi_node,
     const std::vector<int32_t>::iterator &neighbors,
-    const std::vector<double*>::iterator &pi,
-    double eps_t, Random::Random* rnd,
-    std::vector<double>* phi_node	// out parameter
+    const std::vector<Float*>::iterator &pi,
+    Float eps_t, Random::Random* rnd,
+    std::vector<Float>* phi_node	// out parameter
     ) {
 
-  double phi_i_sum = pi_node[K];
-  assert(! std::isnan(phi_i_sum));
-  std::vector<double> grads(K, 0.0);	// gradient for K classes
+  Float phi_i_sum = pi_node[K];
+  std::vector<Float> grads(K, 0.0);	// gradient for K classes
 
   for (::size_t ix = 0; ix < real_num_node_sample(); ++ix) {
     int32_t neighbor = neighbors[ix];
@@ -1101,54 +1111,52 @@ void MCMCSamplerStochasticDistributed::update_phi_node(
         }
       }
 
-      std::vector<double> probs(K);
-      double e = (y_ab == 1) ? epsilon : 1.0 - epsilon;
+      std::vector<Float> probs(K);
+      Float e = (y_ab == 1) ? epsilon : 1.0 - epsilon;
       for (::size_t k = 0; k < K; ++k) {
-        double f = (y_ab == 1) ? (beta[k] - epsilon) : (epsilon - beta[k]);
-        assert(! std::isnan(beta[k]));
-        assert(! std::isnan(epsilon));
+        Float f = (y_ab == 1) ? (beta[k] - epsilon) : (epsilon - beta[k]);
         probs[k] = pi_node[k] * (pi[ix][k] * f + e);
-        assert(! std::isnan(probs[k]));
       }
 
-      double prob_sum = np::sum(probs);
+      Float prob_sum = np::sum(probs);
       // std::cerr << std::fixed << std::setprecision(12) << "node " << i <<
       //    " neighb " << neighbor << " prob_sum " << prob_sum <<
       //    " phi_i_sum " << phi_i_sum <<
       //    " #sample " << real_num_node_sample() << std::endl;
       for (::size_t k = 0; k < K; ++k) {
-        assert(! std::isnan(probs[k]));
-        assert(! std::isnan(prob_sum));
-        assert(! std::isnan(pi_node[k]));
-        assert(! std::isnan(phi_i_sum));
         assert(phi_i_sum > 0);
         grads[k] += ((probs[k] / prob_sum) / pi_node[k] - 1.0) / phi_i_sum;
-        assert(! std::isnan(grads[k]));
       }
     } else {
-      std::cerr << "Skip self loop <" << i << "," << neighbor << ">" << std::endl;
+      std::cerr << "Skip self loop <" << i << "," << neighbor << ">" <<
+        std::endl;
     }
   }
 
-  std::vector<double> noise = rnd->randn(K);	// random gaussian noise.
-  double Nn = (1.0 * N) / num_node_sample;
+  std::vector<Float> noise = rnd->randn(K);	// random gaussian noise.
+  Float Nn = (1.0 * N) / num_node_sample;
   // update phi for node i
   for (::size_t k = 0; k < K; ++k) {
-    double phi_node_k = pi_node[k] * phi_i_sum;
-    assert(! std::isnan(phi_node_k));
-    (*phi_node)[k] = std::abs(phi_node_k + eps_t / 2 * (alpha - phi_node_k +
-                                                        Nn * grads[k])
+    Float phi_node_k = pi_node[k] * phi_i_sum;
+    assert(phi_node_k > FLOAT(0.0));
+    phi_node_k = std::abs(phi_node_k + eps_t / 2 * (alpha - phi_node_k +
+                                                    Nn * grads[k])
 #ifndef MCMC_NO_NOISE
-                              + sqrt(eps_t * phi_node_k) * noise[k]
+                          + sqrt(eps_t * phi_node_k) * noise[k]
 #endif
-                              );
-    assert(! std::isnan((*phi_node)[k]));
+                         );
+    if (phi_node_k < MCMC_NONZERO_GUARD) {
+      (*phi_node)[k] = MCMC_NONZERO_GUARD;
+    } else {
+      (*phi_node)[k] = phi_node_k;
+    }
+    assert((*phi_node)[k] > FLOAT(0.0));
   }
 }
 
 
 void MCMCSamplerStochasticDistributed::update_beta(
-    const MinibatchSet &mini_batch, double scale) {
+    const MinibatchSet &mini_batch, Float scale) {
 
   t_beta_zero_.start();
 #pragma omp parallel for
@@ -1159,9 +1167,9 @@ void MCMCSamplerStochasticDistributed::update_beta(
     }
   }
   // sums = np.sum(self.__theta,1)
-  std::vector<double> theta_sum(theta.size());
+  std::vector<Float> theta_sum(theta.size());
   std::transform(theta.begin(), theta.end(), theta_sum.begin(),
-                 np::sum<double>);
+                 np::sum<Float>);
   t_beta_zero_.stop();
 
   t_beta_rank_.start();
@@ -1186,18 +1194,18 @@ void MCMCSamplerStochasticDistributed::update_beta(
   t_beta_rank_.stop();
 
   t_load_pi_beta_.start();
-  std::vector<double*> pi(node_rank.size());
+  std::vector<Float*> pi(node_rank.size());
   d_kv_store_->ReadKVRecords(pi, nodes, DKV::RW_MODE::READ_ONLY);
   t_load_pi_beta_.stop();
 
   // update gamma, only update node in the grad
-  double eps_t = get_eps_t();
+  Float eps_t = get_eps_t();
   t_beta_calc_grads_.start();
   std::vector<Edge> v_mini_batch(mini_batch.begin(), mini_batch.end());
 #pragma omp parallel for // num_threads (12)
   for (::size_t e = 0; e < v_mini_batch.size(); ++e) {
     const auto *edge = &v_mini_batch[e];
-    std::vector<double> probs(K);
+    std::vector<Float> probs(K);
 
     int y = 0;
     if (edge->in(network.get_linked_edges())) {
@@ -1206,27 +1214,23 @@ void MCMCSamplerStochasticDistributed::update_beta(
     Vertex i = node_rank[edge->first];
     Vertex j = node_rank[edge->second];
 
-    double pi_sum = 0.0;
+    Float pi_sum = 0.0;
     for (::size_t k = 0; k < K; ++k) {
       // Note: this is the KV-store cached pi, not the Learner item
-      assert(! std::isnan(pi[i][k]));
-      assert(! std::isnan(pi[j][k]));
-      double f = pi[i][k] * pi[j][k];
-      assert(! std::isnan(f));
+      Float f = pi[i][k] * pi[j][k];
       pi_sum += f;
       if (y == 1) {
         probs[k] = beta[k] * f;
       } else {
         probs[k] = (1.0 - beta[k]) * f;
       }
-      assert(! std::isnan(probs[k]));
     }
 
-    double prob_0 = ((y == 1) ? epsilon : (1.0 - epsilon)) * (1.0 - pi_sum);
-    double prob_sum = np::sum(probs) + prob_0;
+    Float prob_0 = ((y == 1) ? epsilon : (1.0 - epsilon)) * (1.0 - pi_sum);
+    Float prob_sum = np::sum(probs) + prob_0;
     for (::size_t k = 0; k < K; ++k) {
-      double f = probs[k] / prob_sum;
-      double one_over_theta_sum = 1.0 / theta_sum[k];
+      Float f = probs[k] / prob_sum;
+      Float one_over_theta_sum = 1.0 / theta_sum[k];
       grads_beta_[omp_get_thread_num()][k][0] += f * ((1 - y) / theta[k][0] -
                                                       one_over_theta_sum);
       grads_beta_[omp_get_thread_num()][k][1] += f * (y / theta[k][1] -
@@ -1249,13 +1253,13 @@ void MCMCSamplerStochasticDistributed::update_beta(
   // update theta
 
   // random noise.
-  std::vector<std::vector<double> > noise =
+  std::vector<std::vector<Float> > noise =
     rng_.random(SourceAwareRandom::BETA_UPDATE)->randn(K, 2);
 #pragma omp parallel for
   for (::size_t k = 0; k < K; ++k) {
     for (::size_t i = 0; i < 2; ++i) {
 #ifndef MCMC_NO_NOISE
-      double f = std::sqrt(eps_t * theta[k][i]);
+      Float f = std::sqrt(eps_t * theta[k][i]);
 #endif
       theta[k][i] = std::abs(theta[k][i] +
                              eps_t / 2.0 * (eta[i] - theta[k][i] +
@@ -1264,15 +1268,17 @@ void MCMCSamplerStochasticDistributed::update_beta(
                              + f * noise[k][i]
 #endif
                              );
-      assert(! std::isnan(theta[k][i]));
+      if (theta[k][i] < MCMC_NONZERO_GUARD) {
+        theta[k][i] = MCMC_NONZERO_GUARD;
+      }
     }
   }
 
-  std::vector<std::vector<double> > temp(theta.size(),
-                                         std::vector<double>(theta[0].size()));
+  std::vector<std::vector<Float> > temp(theta.size(),
+                                         std::vector<Float>(theta[0].size()));
   np::row_normalize(&temp, theta);
   std::transform(temp.begin(), temp.end(), beta.begin(),
-                 np::SelectColumn<double>(1));
+                 np::SelectColumn<Float>(1));
 
   d_kv_store_->PurgeKVRecords();
   t_beta_update_theta_.stop();
@@ -1284,12 +1290,12 @@ void MCMCSamplerStochasticDistributed::reduce_plus(const perp_accu &in,
                                                    perp_accu* accu) {
   int r;
   uint64_t count[2] = { in.link.count, in.non_link.count };
-  double likelihood[2] = { in.link.likelihood, in.non_link.likelihood };
+  Float likelihood[2] = { in.link.likelihood, in.non_link.likelihood };
 
   r = MPI_Allreduce(MPI_IN_PLACE, count, 2, MPI_UNSIGNED_LONG, MPI_SUM,
                     MPI_COMM_WORLD);
   mpi_error_test(r, "Reduce/plus of perplexity counts fails");
-  r = MPI_Allreduce(MPI_IN_PLACE, likelihood, 2, MPI_DOUBLE, MPI_SUM,
+  r = MPI_Allreduce(MPI_IN_PLACE, likelihood, 2, FLOATTYPE_MPI, MPI_SUM,
                     MPI_COMM_WORLD);
   mpi_error_test(r, "Reduce/plus of perplexity likelihoods fails");
 
@@ -1311,7 +1317,7 @@ void MCMCSamplerStochasticDistributed::reduce_plus(const perp_accu &in,
  * the equal number of link edges and non-link edges for held out data and test data,
  * which is not true representation of actual data set, which is extremely sparse.
  */
-double MCMCSamplerStochasticDistributed::cal_perplexity_held_out() {
+Float MCMCSamplerStochasticDistributed::cal_perplexity_held_out() {
 
   for (auto & a : perp_.accu_) {
     a.link.reset();
@@ -1341,7 +1347,7 @@ double MCMCSamplerStochasticDistributed::cal_perplexity_held_out() {
       // edge vector (+ 1)
       Vertex a = 2 * (i - chunk_start);
       Vertex b = 2 * (i - chunk_start) + 1;
-      double edge_likelihood = cal_edge_likelihood(perp_.pi_[a], perp_.pi_[b],
+      Float edge_likelihood = cal_edge_likelihood(perp_.pi_[a], perp_.pi_[b],
                                                    edge_in.is_edge, beta);
       if (std::isnan(edge_likelihood)) {
         std::cerr << "edge_likelihood is NaN; potential bug" << std::endl;
@@ -1405,7 +1411,7 @@ double MCMCSamplerStochasticDistributed::cal_perplexity_held_out() {
   t_reduce_perp_.stop();
 
   // direct calculation.
-  double avg_likelihood = 0.0;
+  Float avg_likelihood = 0.0;
   if (accu.link.count + accu.non_link.count != 0){
     avg_likelihood = (accu.link.likelihood + accu.non_link.likelihood) /
       (accu.link.count + accu.non_link.count);
