@@ -24,7 +24,7 @@ typedef float   Float;
 #define FLOAT(x)        x ## f
 #else
 typedef double  Float;
-#define FLOAT(x)        x ## lf
+#define FLOAT(x)        x
 #endif
 
 #ifdef MCMC_EFFICIENCY_COMPATIBILITY_MODE
