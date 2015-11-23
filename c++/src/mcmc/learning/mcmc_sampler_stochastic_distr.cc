@@ -218,21 +218,23 @@ MCMCSamplerStochasticDistributed::MCMCSamplerStochasticDistributed(
   t_mini_batch_            = Timer("      sample_mini_batch");
   t_nodes_in_mini_batch_   = Timer("      nodes_in_mini_batch");
   t_sample_neighbor_nodes_ = Timer("      sample_neighbor_nodes");
+  t_update_phi_pi_         = Timer("    update_phi_pi");
   t_load_pi_minibatch_     = Timer("      load minibatch pi");
   t_load_pi_neighbor_      = Timer("      load neighbor pi");
   t_update_phi_            = Timer("      update_phi");
-  t_barrier_phi_           = Timer("    barrier to update phi");
-  t_update_pi_             = Timer("    update_pi");
+  t_barrier_phi_           = Timer("      barrier to update phi");
+  t_update_pi_             = Timer("      update_pi");
   t_store_pi_minibatch_    = Timer("      store minibatch pi");
-  t_barrier_pi_            = Timer("    barrier to update pi");
-  t_update_beta_           = Timer("    update_beta");
+  t_barrier_pi_            = Timer("      barrier to update pi");
+  t_update_beta_           = Timer("    update_beta_theta");
   t_beta_zero_             = Timer("      zero beta grads");
   t_beta_rank_             = Timer("      rank minibatch nodes");
   t_beta_calc_grads_       = Timer("      beta calc grads");
   t_beta_sum_grads_        = Timer("      beta sum grads");
+  t_beta_reduce_grads_     = Timer("      beta reduce(+) grads");
   t_beta_update_theta_     = Timer("      update theta");
   t_load_pi_beta_          = Timer("      load pi update_beta");
-  t_broadcast_beta_        = Timer("      broadcast beta");
+  t_broadcast_theta_beta_  = Timer("      broadcast theta/beta");
   t_perplexity_            = Timer("  perplexity");
   t_load_pi_perp_          = Timer("      load perplexity pi");
   t_cal_edge_likelihood_   = Timer("      calc edge likelihood");
@@ -539,7 +541,7 @@ void MCMCSamplerStochasticDistributed::init() {
   perp_.Init(max_perplexity_chunk_);
 
   if (mpi_rank_ == mpi_master_) {
-    init_beta();
+    init_theta();
   }
 
   // Make phi_update_rng_ depend on mpi_rank_ and thread Id
@@ -578,7 +580,7 @@ void MCMCSamplerStochasticDistributed::init() {
   }
   grads_beta_.resize(omp_get_max_threads());
   for (auto &g : grads_beta_) {
-    g = std::vector<std::vector<Float> >(K, std::vector<Float>(2));    // gradients K*2 dimension
+    g = std::vector<std::vector<Float> >(2, std::vector<Float>(K));    // gradients K*2 dimension
   }
 
   std::cerr << "Random seed " << std::hex << "0x" <<
@@ -588,7 +590,6 @@ void MCMCSamplerStochasticDistributed::init() {
     std::endl;
   std::cerr << std::dec;
 }
-
 
 void MCMCSamplerStochasticDistributed::run() {
   /** run mini-batch based MCMC sampler, based on the sungjin's note */
@@ -615,14 +616,10 @@ void MCMCSamplerStochasticDistributed::run() {
     //interval = 2;
     //}
 
-    t_broadcast_beta_.start();
-    r = MPI_Bcast(beta.data(), beta.size(), FLOATTYPE_MPI, mpi_master_,
-                  MPI_COMM_WORLD);
-    mpi_error_test(r, "MPI_Bcast of beta fails");
-    t_broadcast_beta_.stop();
+    broadcast_theta_beta();
 
     // requires beta at the workers
-    check_perplexity();
+    check_perplexity(false);
 
     t_deploy_minibatch_.start();
     // edgeSample is nonempty only at the master
@@ -631,6 +628,7 @@ void MCMCSamplerStochasticDistributed::run() {
     t_deploy_minibatch_.stop();
     // std::cerr << "Minibatch nodes " << nodes_.size() << std::endl;
 
+    t_update_phi_pi_.start();
     update_phi(&phi_node);
 
     // all synchronize with barrier: ensure we read pi/phi_sum from current
@@ -640,32 +638,14 @@ void MCMCSamplerStochasticDistributed::run() {
     mpi_error_test(r, "MPI_Barrier(post phi) fails");
     t_barrier_phi_.stop();
 
-    // TODO calculate and store updated values for pi/phi_sum
-    t_update_pi_.start();
-#pragma omp parallel for // num_threads (12)
-    for (::size_t i = 0; i < nodes_.size(); ++i) {
-      pi_from_phi(pi_update_[i], phi_node[i]);
-    }
-    t_update_pi_.stop();
-    // std::cerr << "write back phi/pi after update" << std::endl;
-    t_store_pi_minibatch_.start();
-    d_kv_store_->WriteKVRecords(nodes_, constify(pi_update_));
-    t_store_pi_minibatch_.stop();
-    d_kv_store_->PurgeKVRecords();
+    update_pi(phi_node);
+    t_update_phi_pi_.stop();
 
-    // all synchronize with barrier
-    t_barrier_pi_.start();
-    r = MPI_Barrier(MPI_COMM_WORLD);
-    mpi_error_test(r, "MPI_Barrier(post pi) fails");
-    t_barrier_pi_.stop();
+    t_update_beta_.start();
+    update_beta(*edgeSample.first, edgeSample.second);
+    t_update_beta_.stop();
 
     if (mpi_rank_ == mpi_master_) {
-      // TODO load pi/phi values for the minibatch nodes
-      t_update_beta_.start();
-      update_beta(*edgeSample.first, edgeSample.second);
-      t_update_beta_.stop();
-
-      // TODO FIXME allocate this outside the loop
       delete edgeSample.first;
     }
 
@@ -677,7 +657,7 @@ void MCMCSamplerStochasticDistributed::run() {
   r = MPI_Barrier(MPI_COMM_WORLD);
   mpi_error_test(r, "MPI_Barrier(post pi) fails");
 
-  check_perplexity();
+  check_perplexity(true);
 
   r = MPI_Barrier(MPI_COMM_WORLD);
   mpi_error_test(r, "MPI_Barrier(post pi) fails");
@@ -688,7 +668,7 @@ void MCMCSamplerStochasticDistributed::run() {
   std::cout << t_deploy_minibatch_ << std::endl;
   std::cout << t_mini_batch_ << std::endl;
   std::cout << t_nodes_in_mini_batch_ << std::endl;
-  std::cout << "    update_phi" << std::endl;
+  std::cout << t_update_phi_pi_ << std::endl;
   std::cout << t_sample_neighbor_nodes_ << std::endl;
   std::cout << t_load_pi_minibatch_ << std::endl;
   std::cout << t_load_pi_neighbor_ << std::endl;
@@ -703,8 +683,9 @@ void MCMCSamplerStochasticDistributed::run() {
   std::cout << t_load_pi_beta_ << std::endl;
   std::cout << t_beta_calc_grads_ << std::endl;
   std::cout << t_beta_sum_grads_ << std::endl;
+  std::cout << t_beta_reduce_grads_ << std::endl;
   std::cout << t_beta_update_theta_ << std::endl;
-  std::cout << t_broadcast_beta_ << std::endl;
+  std::cout << t_broadcast_theta_beta_ << std::endl;
   std::cout << t_perplexity_ << std::endl;
   std::cout << t_load_pi_perp_ << std::endl;
   std::cout << t_cal_edge_likelihood_ << std::endl;
@@ -718,7 +699,7 @@ void MCMCSamplerStochasticDistributed::run() {
 }
 
 
-void MCMCSamplerStochasticDistributed::init_beta() {
+void MCMCSamplerStochasticDistributed::init_theta() {
   // TODO only at the Master
   // model parameters and re-parameterization
   // since the model parameter - \pi and \beta should stay in the simplex,
@@ -732,7 +713,9 @@ void MCMCSamplerStochasticDistributed::init_beta() {
   // std::cerr << "Ignore eta[] in random.gamma: use 100.0 and 0.01" << std::endl;
   // parameterization for \beta
   // theta = rng_.random(SourceAwareRandom::THETA_INIT)->->gamma(100.0, 0.01, K, 2);
+}
 
+void MCMCSamplerStochasticDistributed::beta_from_theta() {
   std::vector<std::vector<Float> > temp(theta.size(),
                                          std::vector<Float>(theta[0].size()));
   np::row_normalize(&temp, theta);
@@ -777,8 +760,8 @@ void MCMCSamplerStochasticDistributed::init_pi() {
 }
 
 
-void MCMCSamplerStochasticDistributed::check_perplexity() {
-  if ((step_count - 1) % interval == 0) {
+void MCMCSamplerStochasticDistributed::check_perplexity(bool force) {
+  if (force || (step_count - 1) % interval == 0) {
     using namespace std::chrono;
 
     t_perplexity_.start();
@@ -1155,17 +1138,126 @@ void MCMCSamplerStochasticDistributed::update_phi_node(
 }
 
 
+void MCMCSamplerStochasticDistributed::update_pi(
+    const std::vector<std::vector<Float> >& phi_node) {
+  // calculate and store updated values for pi/phi_sum
+  t_update_pi_.start();
+#pragma omp parallel for // num_threads (12)
+  for (::size_t i = 0; i < nodes_.size(); ++i) {
+    pi_from_phi(pi_update_[i], phi_node[i]);
+  }
+  t_update_pi_.stop();
+
+  t_store_pi_minibatch_.start();
+  d_kv_store_->WriteKVRecords(nodes_, constify(pi_update_));
+  t_store_pi_minibatch_.stop();
+  d_kv_store_->PurgeKVRecords();
+}
+
+
+void MCMCSamplerStochasticDistributed::broadcast_theta_beta() {
+  t_broadcast_theta_beta_.start();
+  std::vector<Float> theta_marshalled(2 * K);   // FIXME: lift to class level
+  if (mpi_rank_ == mpi_master_) {
+    for (::size_t k = 0; k < K; ++k) {
+      for (::size_t i = 0; i < 2; ++i) {
+        theta_marshalled[2 * k + i] = theta[k][i];
+      }
+    }
+  }
+  int r = MPI_Bcast(theta_marshalled.data(), theta_marshalled.size(),
+                    FLOATTYPE_MPI, mpi_master_, MPI_COMM_WORLD);
+  mpi_error_test(r, "MPI_Bcast(theta) fails");
+  if (mpi_rank_ != mpi_master_) {
+    for (::size_t k = 0; k < K; ++k) {
+      for (::size_t i = 0; i < 2; ++i) {
+        theta[k][i] = theta_marshalled[2 * k + i];
+      }
+    }
+  }
+  //-------- after broadcast of theta, replicate this at all peers:
+  beta_from_theta();
+  t_broadcast_theta_beta_.stop();
+}
+
+
+void MCMCSamplerStochasticDistributed::scatter_minibatch_for_theta(
+    const MinibatchSet &mini_batch, std::vector<Edge>* mini_batch_slice) {
+  int   r;
+  std::vector<int32_t> flattened_minibatch;
+  std::vector<int32_t> scatter_size(mpi_size_);
+  std::vector<int32_t> scatter_displs(mpi_size_);
+
+  if (mpi_rank_ == mpi_master_) {
+    ::size_t chunk = mini_batch.size() / mpi_size_;
+    ::size_t surplus = mini_batch.size() - chunk * mpi_size_;
+    ::size_t running_sum = 0;
+    ::size_t i;
+    for (i = 0; i < surplus; ++i) {
+      scatter_size[i] = 2 * (chunk + 1);
+      scatter_displs[i] = running_sum;
+      running_sum += 2 * (chunk + 1);
+    }
+    for (; i < (::size_t)mpi_size_; ++i) {
+      scatter_size[i] = 2 * chunk;
+      scatter_displs[i] = running_sum;
+      running_sum += 2 * chunk;
+    }
+    for (auto e: mini_batch) {
+      flattened_minibatch.push_back(e.first);
+      flattened_minibatch.push_back(e.second);
+    }
+  }
+
+  int32_t my_minibatch_size;
+  r = MPI_Scatter(scatter_size.data(), 1, MPI_INT,
+                  &my_minibatch_size, 1, MPI_INT,
+                  mpi_master_, MPI_COMM_WORLD);
+  mpi_error_test(r, "MPI_Scatter of minibatch sizes for update_beta fails");
+
+  std::vector<int32_t> marshalled_slice(my_minibatch_size);
+  if (mpi_rank_ == mpi_master_) {
+    r = MPI_Scatterv(flattened_minibatch.data(), scatter_size.data(),
+                     scatter_displs.data(), MPI_INT,
+                     marshalled_slice.data(), my_minibatch_size, MPI_INT,
+                     mpi_master_, MPI_COMM_WORLD);
+    mpi_error_test(r, "MPI_Scatterv of minibatch for update_beta fails");
+
+  } else {
+    r = MPI_Scatterv(NULL, NULL, NULL, MPI_INT,
+                     marshalled_slice.data(), my_minibatch_size, MPI_INT,
+                     mpi_master_, MPI_COMM_WORLD);
+    mpi_error_test(r, "MPI_Scatterv of minibatch for update_beta fails");
+  }
+
+  for (int32_t i = 0; i < my_minibatch_size / 2; ++i) {
+    mini_batch_slice->push_back(Edge(marshalled_slice[2 * i], marshalled_slice[2 * i + 1]));
+  }
+}
+
 void MCMCSamplerStochasticDistributed::update_beta(
     const MinibatchSet &mini_batch, Float scale) {
+  std::vector<Edge> mini_batch_slice;
+
+#if 0
+  // all synchronize with barrier
+  t_barrier_pi_.start();
+  r = MPI_Barrier(MPI_COMM_WORLD);
+  mpi_error_test(r, "MPI_Barrier(post pi) fails");
+  t_barrier_pi_.stop();
+#endif
+
+  scatter_minibatch_for_theta(mini_batch, &mini_batch_slice);
 
   t_beta_zero_.start();
 #pragma omp parallel for
   for (int i = 0; i < omp_get_max_threads(); ++i) {
     for (::size_t k = 0; k < K; ++k) {
-      grads_beta_[i][k][0] = 0.0;
-      grads_beta_[i][k][1] = 0.0;
+      grads_beta_[i][0][k] = 0.0;
+      grads_beta_[i][1][k] = 0.0;
     }
   }
+
   // sums = np.sum(self.__theta,1)
   std::vector<Float> theta_sum(theta.size());
   std::transform(theta.begin(), theta.end(), theta_sum.begin(),
@@ -1173,10 +1265,9 @@ void MCMCSamplerStochasticDistributed::update_beta(
   t_beta_zero_.stop();
 
   t_beta_rank_.start();
-  // FIXME: already did the nodes_in_batch() -- only the ranking remains
   std::unordered_map<Vertex, Vertex> node_rank;
   std::vector<Vertex> nodes;
-  for (auto e : mini_batch) {
+  for (auto e : mini_batch_slice) {
     Vertex i = e.first;
     Vertex j = e.second;
     if (node_rank.find(i) == node_rank.end()) {
@@ -1201,10 +1292,9 @@ void MCMCSamplerStochasticDistributed::update_beta(
   // update gamma, only update node in the grad
   Float eps_t = get_eps_t();
   t_beta_calc_grads_.start();
-  std::vector<Edge> v_mini_batch(mini_batch.begin(), mini_batch.end());
 #pragma omp parallel for // num_threads (12)
-  for (::size_t e = 0; e < v_mini_batch.size(); ++e) {
-    const auto *edge = &v_mini_batch[e];
+  for (::size_t e = 0; e < mini_batch_slice.size(); ++e) {
+    const auto *edge = &mini_batch_slice[e];
     std::vector<Float> probs(K);
 
     int y = 0;
@@ -1231,9 +1321,9 @@ void MCMCSamplerStochasticDistributed::update_beta(
     for (::size_t k = 0; k < K; ++k) {
       Float f = probs[k] / prob_sum;
       Float one_over_theta_sum = 1.0 / theta_sum[k];
-      grads_beta_[omp_get_thread_num()][k][0] += f * ((1 - y) / theta[k][0] -
+      grads_beta_[omp_get_thread_num()][0][k] += f * ((1 - y) / theta[k][0] -
                                                       one_over_theta_sum);
-      grads_beta_[omp_get_thread_num()][k][1] += f * (y / theta[k][1] -
+      grads_beta_[omp_get_thread_num()][1][k] += f * (y / theta[k][1] -
                                                       one_over_theta_sum);
     }
   }
@@ -1243,46 +1333,53 @@ void MCMCSamplerStochasticDistributed::update_beta(
 #pragma omp parallel for
   for (::size_t k = 0; k < K; ++k) {
     for (int i = 1; i < omp_get_max_threads(); ++i) {
-      grads_beta_[0][k][0] += grads_beta_[i][k][0];
-      grads_beta_[0][k][1] += grads_beta_[i][k][1];
+      grads_beta_[0][0][k] += grads_beta_[i][0][k];
+      grads_beta_[0][1][k] += grads_beta_[i][1][k];
     }
   }
   t_beta_sum_grads_.stop();
 
-  t_beta_update_theta_.start();
-  // update theta
+  //-------- reduce(+) of the grads_[0][*][0,1] to the master
+  int r;
+  t_beta_reduce_grads_.start();
+  r = MPI_Reduce(MPI_IN_PLACE, grads_beta_[0][0].data(), K, FLOATTYPE_MPI,
+                 MPI_SUM, mpi_master_, MPI_COMM_WORLD);
+  mpi_error_test(r, "Reduce/plus of grads_beta_[0][0] fails");
+  r = MPI_Reduce(MPI_IN_PLACE, grads_beta_[0][1].data(), K, FLOATTYPE_MPI,
+                 MPI_SUM, mpi_master_, MPI_COMM_WORLD);
+  mpi_error_test(r, "Reduce/plus of grads_beta_[0][1] fails");
+  t_beta_reduce_grads_.stop();
 
-  // random noise.
-  std::vector<std::vector<Float> > noise =
-    rng_.random(SourceAwareRandom::BETA_UPDATE)->randn(K, 2);
+  // update theta
+  if (mpi_rank_ == mpi_master_) {
+    t_beta_update_theta_.start();
+    // random noise.
+    std::vector<std::vector<Float> > noise =
+      rng_.random(SourceAwareRandom::BETA_UPDATE)->randn(K, 2);
 #pragma omp parallel for
-  for (::size_t k = 0; k < K; ++k) {
-    for (::size_t i = 0; i < 2; ++i) {
+    for (::size_t k = 0; k < K; ++k) {
+      for (::size_t i = 0; i < 2; ++i) {
 #ifndef MCMC_NO_NOISE
-      Float f = std::sqrt(eps_t * theta[k][i]);
+        Float f = std::sqrt(eps_t * theta[k][i]);
 #endif
-      theta[k][i] = std::abs(theta[k][i] +
-                             eps_t / 2.0 * (eta[i] - theta[k][i] +
-                                            scale * grads_beta_[0][k][i])
+        theta[k][i] = std::abs(theta[k][i] +
+                               eps_t / 2.0 * (eta[i] - theta[k][i] +
+                                              scale * grads_beta_[0][i][k])
 #ifndef MCMC_NO_NOISE
-                             + f * noise[k][i]
+                               + f * noise[k][i]
 #endif
-                             );
-      if (theta[k][i] < MCMC_NONZERO_GUARD) {
-        theta[k][i] = MCMC_NONZERO_GUARD;
+                              );
+        if (theta[k][i] < MCMC_NONZERO_GUARD) {
+          theta[k][i] = MCMC_NONZERO_GUARD;
+        }
       }
     }
+    t_beta_update_theta_.stop();
   }
 
-  std::vector<std::vector<Float> > temp(theta.size(),
-                                         std::vector<Float>(theta[0].size()));
-  np::row_normalize(&temp, theta);
-  std::transform(temp.begin(), temp.end(), beta.begin(),
-                 np::SelectColumn<Float>(1));
+  broadcast_theta_beta();
 
   d_kv_store_->PurgeKVRecords();
-  t_beta_update_theta_.stop();
-
 }
 
 

@@ -131,35 +131,32 @@ class MCMCSamplerStochasticDistributed : public MCMCSamplerStochastic {
 
   ::size_t real_num_node_sample() const;
 
-  void init_beta();
+  void init_theta();
+  void beta_from_theta();
 
   // Calculate pi[0..K> ++ phi_sum from phi[0..K>
   void pi_from_phi(Float* pi, const std::vector<Float> &phi);
 
   void init_pi();
 
-  void check_perplexity();
-
   void ScatterSubGraph(const std::vector<std::vector<int32_t> > &subminibatch);
-
   EdgeSample deploy_mini_batch();
-
-
   void update_phi(std::vector<std::vector<Float> >* phi_node);
-
-
   void update_phi_node(::size_t index, Vertex i, const Float* pi_node,
                        const std::vector<int32_t>::iterator &neighbors,
                        const std::vector<Float*>::iterator &pi,
                        Float eps_t, Random::Random* rnd,
                        std::vector<Float>* phi_node	// out parameter
                       );
+  void update_pi(const std::vector<std::vector<Float> >& phi_node);
 
+  void broadcast_theta_beta();
+  void scatter_minibatch_for_theta(const MinibatchSet &mini_batch,
+                                   std::vector<Edge>* mini_batch_slice);
   void update_beta(const MinibatchSet &mini_batch, Float scale);
 
   void reduce_plus(const perp_accu &in, perp_accu* accu);
-
-
+  void check_perplexity(bool force);
   /**
    * calculate the perplexity for data.
    * perplexity defines as exponential of negative average log likelihood. 
@@ -212,6 +209,7 @@ class MCMCSamplerStochasticDistributed : public MCMCSamplerStochastic {
   Timer         t_mini_batch_;
   Timer         t_nodes_in_mini_batch_;
   Timer         t_sample_neighbor_nodes_;
+  Timer         t_update_phi_pi_;
   Timer         t_update_phi_;
   Timer         t_load_pi_minibatch_;
   Timer         t_load_pi_neighbor_;
@@ -224,12 +222,13 @@ class MCMCSamplerStochasticDistributed : public MCMCSamplerStochastic {
   Timer         t_load_pi_beta_;
   Timer         t_beta_calc_grads_;
   Timer         t_beta_sum_grads_;
+  Timer         t_beta_reduce_grads_;
   Timer         t_beta_update_theta_;
   Timer         t_load_pi_perp_;
   Timer         t_store_pi_minibatch_;
   Timer         t_purge_pi_perp_;
   Timer         t_reduce_perp_;
-  Timer         t_broadcast_beta_;
+  Timer         t_broadcast_theta_beta_;
   Timer         t_deploy_minibatch_;
 
   std::vector<double> timings_;
