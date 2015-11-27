@@ -152,7 +152,10 @@ class MCMCSamplerStochasticDistributed : public MCMCSamplerStochastic {
 
   void broadcast_theta_beta();
   void scatter_minibatch_for_theta(const MinibatchSet &mini_batch,
-                                   std::vector<Edge>* mini_batch_slice);
+                                   std::vector<EdgeMapItem>* mini_batch_slice);
+  void beta_calc_grads(const std::vector<EdgeMapItem>& mini_batch_slice);
+  void beta_sum_grads();
+  void beta_update_theta(Float scale);
   void update_beta(const MinibatchSet &mini_batch, Float scale);
 
   void reduce_plus(const perp_accu &in, perp_accu* accu);
@@ -207,6 +210,7 @@ class MCMCSamplerStochasticDistributed : public MCMCSamplerStochastic {
   Timer         t_perplexity_;
   Timer         t_cal_edge_likelihood_;
   Timer         t_mini_batch_;
+  Timer         t_deploy_minibatch_;
   Timer         t_nodes_in_mini_batch_;
   Timer         t_sample_neighbor_nodes_;
   Timer         t_update_phi_pi_;
@@ -215,6 +219,7 @@ class MCMCSamplerStochasticDistributed : public MCMCSamplerStochastic {
   Timer         t_load_pi_neighbor_;
   Timer         t_barrier_phi_;
   Timer         t_update_pi_;
+  Timer         t_store_pi_minibatch_;
   Timer         t_barrier_pi_;
   Timer         t_update_beta_;
   Timer         t_beta_zero_;
@@ -225,11 +230,9 @@ class MCMCSamplerStochasticDistributed : public MCMCSamplerStochastic {
   Timer         t_beta_reduce_grads_;
   Timer         t_beta_update_theta_;
   Timer         t_load_pi_perp_;
-  Timer         t_store_pi_minibatch_;
   Timer         t_purge_pi_perp_;
   Timer         t_reduce_perp_;
   Timer         t_broadcast_theta_beta_;
-  Timer         t_deploy_minibatch_;
 
   std::vector<double> timings_;
 };

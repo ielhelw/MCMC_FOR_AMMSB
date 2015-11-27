@@ -47,6 +47,9 @@ struct NetworkInfo {
 };
 
 struct EdgeMapItem {
+  EdgeMapItem() { }
+  EdgeMapItem(Edge &edge, bool is_edge) : edge(edge), is_edge(is_edge) { }
+
   Edge edge;
   bool is_edge;
 };
