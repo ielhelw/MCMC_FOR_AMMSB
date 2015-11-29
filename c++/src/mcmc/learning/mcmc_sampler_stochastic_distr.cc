@@ -1536,9 +1536,6 @@ Float MCMCSamplerStochasticDistributed::cal_perplexity_held_out() {
   }
 
   average_count = average_count + 1;
-  if (mpi_rank_ == mpi_master_) {
-    std::cout << "average_count is: " << average_count << " ";
-  }
 
   return (-avg_likelihood);
 }
