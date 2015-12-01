@@ -120,14 +120,15 @@ class MCMCSamplerStochasticDistributed : public MCMCSamplerStochastic {
 
  protected:
   template <typename T>
-    std::vector<const T*>& constify(std::vector<T*>& v) {
-      // Compiler doesn't know how to automatically convert
-      // std::vector<T*> to std::vector<T const*> because the way
-      // the template system works means that in theory the two may
-      // be specialised differently.  This is an explicit conversion.
-      return reinterpret_cast<std::vector<const T*>&>(v);
-    }
+  std::vector<const T*>& constify(std::vector<T*>& v) {
+    // Compiler doesn't know how to automatically convert
+    // std::vector<T*> to std::vector<T const*> because the way
+    // the template system works means that in theory the two may
+    // be specialised differently.  This is an explicit conversion.
+    return reinterpret_cast<std::vector<const T*>&>(v);
+  }
 
+  void InitSlaveState(const NetworkInfo &info, ::size_t world_rank);
 
   ::size_t real_num_node_sample() const;
 

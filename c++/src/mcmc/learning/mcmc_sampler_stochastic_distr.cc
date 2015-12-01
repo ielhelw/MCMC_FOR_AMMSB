@@ -258,6 +258,13 @@ MCMCSamplerStochasticDistributed::~MCMCSamplerStochasticDistributed() {
   (void)MPI_Finalize();
 }
 
+void MCMCSamplerStochasticDistributed::InitSlaveState(const NetworkInfo &info,
+                                                      ::size_t world_rank) {
+  Learner::InitRandom(world_rank);
+  network = Network(info);
+  Learner::Init(false);
+}
+
 
 void MCMCSamplerStochasticDistributed::BroadcastNetworkInfo() {
   NetworkInfo info;
@@ -271,29 +278,7 @@ void MCMCSamplerStochasticDistributed::BroadcastNetworkInfo() {
   mpi_error_test(r, "MPI_Bcast of Network stub info fails");
 
   if (mpi_rank_ != mpi_master_) {
-    network = Network(info);
-
-    N = network.get_num_nodes();
-    assert(N != 0);
-
-    beta = std::vector<Float>(K, 0.0);
-    theta = std::vector<std::vector<Float> >(K, std::vector<Float>(2));
-    // In the distributed version, do not allocate the global pi.
-    // pi   = std::vector<std::vector<Float> >(N, std::vector<Float>(K, 0.0));
-
-    // parameters related to sampling
-    mini_batch_size = args_.mini_batch_size;
-    if (mini_batch_size < 1) {
-      mini_batch_size = N / 2;    // default option.
-    }
-
-    // ration between link edges and non-link edges
-    link_ratio = network.get_num_linked_edges() / ((N * (double)(N - 1)) / 2.0);
-
-    ppx_per_heldout_edge_ = std::vector<Float>(network.get_held_out_size(),
-                                               FLOAT(0.0));
-
-    this->info(std::cerr);
+    InitSlaveState(info, mpi_rank_);
   }
 }
 
@@ -537,9 +522,7 @@ void MCMCSamplerStochasticDistributed::init() {
   // Need to know max_perplexity_chunk_ to Init perp_
   perp_.Init(max_perplexity_chunk_);
 
-  if (mpi_rank_ == mpi_master_) {
-    init_theta();
-  }
+  init_theta();
 
   t_populate_pi_.start();
   init_pi();
@@ -675,15 +658,18 @@ void MCMCSamplerStochasticDistributed::run() {
 
 
 void MCMCSamplerStochasticDistributed::init_theta() {
-  // TODO only at the Master
-  // model parameters and re-parameterization
-  // since the model parameter - \pi and \beta should stay in the simplex,
-  // we need to restrict the sum of probability equals to 1.  The way we
-  // restrict this is using re-reparameterization techniques, where we
-  // introduce another set of variables, and update them first followed by
-  // updating \pi and \beta.
-  // parameterization for \beta
-  theta = rng_[0]->gamma(eta[0], eta[1], K, 2);
+  if (mpi_rank_ == mpi_master_) {
+    // model parameters and re-parameterization
+    // since the model parameter - \pi and \beta should stay in the simplex,
+    // we need to restrict the sum of probability equals to 1.  The way we
+    // restrict this is using re-reparameterization techniques, where we
+    // introduce another set of variables, and update them first followed by
+    // updating \pi and \beta.
+    // parameterization for \beta
+    theta = rng_[0]->gamma(eta[0], eta[1], K, 2);
+  } else {
+    theta = std::vector<std::vector<Float> >(K, std::vector<Float>(2));
+  }
   // std::cerr << "Ignore eta[] in random.gamma: use 100.0 and 0.01" << std::endl;
   // parameterization for \beta
   // theta = rng_[0]->->gamma(100.0, 0.01, K, 2);

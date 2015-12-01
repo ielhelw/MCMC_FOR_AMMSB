@@ -44,7 +44,7 @@ Learner::Learner(const Options &args) : args_(args), ppxs_heldout_cb_(10) {
   strategy = args_.strategy;
 }
 
-void Learner::LoadNetwork(int world_rank, bool allocate_pi) {
+void Learner::InitRandom(::size_t world_rank) {
   std::cerr << "Create per-thread randoms" << std::endl;
   rng_.resize(omp_get_max_threads());
   int seed;
@@ -56,15 +56,9 @@ void Learner::LoadNetwork(int world_rank, bool allocate_pi) {
   std::cerr << "Random seed[0] " << std::hex << "0x" << rng_[0]->seed(0) <<
     ",0x" << rng_[0]->seed(1) << std::endl;
   std::cerr << std::dec;
+}
 
-  Float held_out_ratio = args_.held_out_ratio;
-  if (args_.held_out_ratio == 0.0) {
-    held_out_ratio = 0.1;
-    std::cerr << "Set held_out_ratio to default " << held_out_ratio
-              << std::endl;
-  }
-  network.Init(args_, held_out_ratio, &rng_);
-
+void Learner::Init(bool allocate_pi) {
   // parameters related to network
   N = network.get_num_nodes();
 
@@ -87,6 +81,19 @@ void Learner::LoadNetwork(int world_rank, bool allocate_pi) {
                                              FLOAT(0.0));
 
   info(std::cerr);
+}
+
+void Learner::LoadNetwork(::size_t world_rank, bool allocate_pi) {
+  Float held_out_ratio = args_.held_out_ratio;
+  if (args_.held_out_ratio == 0.0) {
+    held_out_ratio = 0.1;
+    std::cerr << "Set held_out_ratio to default " << held_out_ratio
+              << std::endl;
+  }
+
+  InitRandom(world_rank);
+  network.Init(args_, held_out_ratio, &rng_);
+  Init(allocate_pi);
 }
 
 Learner::~Learner() {

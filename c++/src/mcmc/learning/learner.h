@@ -27,7 +27,7 @@ class Learner {
 
   Learner(const Options &args);
 
-  void LoadNetwork(int world_rank = 0, bool allocate_pi = true);
+  void LoadNetwork(::size_t world_rank = 0, bool allocate_pi = true);
 
   virtual ~Learner();
 
@@ -45,6 +45,11 @@ class Learner {
   virtual void run() = 0;
 
  protected:
+  // Three-phase init: InitRandom, network::Init, Learner::Init
+  // In the distributed setup, the slave has a *different* network init.
+  void InitRandom(::size_t world_rank);
+  void Init(bool allocate_pi);
+
   void info(std::ostream &s);
 
   void set_max_iteration(::size_t max_iteration);
