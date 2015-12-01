@@ -47,7 +47,6 @@ void print_mem_usage(std::ostream &s) {
     << "resident " << ((resident * pagesize) / MEGA) << "MB " << std::endl;
 }
 
-#ifdef MCMC_EDGESET_IS_ADJACENCY_LIST
 NetworkGraph::NetworkGraph(const std::string &filename, ::size_t progress) {
   FileHandle f(filename, true, "r");
 
@@ -70,7 +69,6 @@ NetworkGraph::NetworkGraph(const std::string &filename, ::size_t progress) {
     print_mem_usage(std::cerr);
   }
 }
-#endif
 
 Edge::Edge(std::istream &s) { (void)get(s); }
 
@@ -144,7 +142,6 @@ void Data::dump_data() const {
 }
 
 void Data::save(const std::string &filename, bool compressed) const {
-#ifdef MCMC_EDGESET_IS_ADJACENCY_LIST
   FileHandle f(filename, compressed, "w");
   int32_t num_nodes = N;
   f.write_fully(&num_nodes, sizeof num_nodes);
@@ -154,10 +151,6 @@ void Data::save(const std::string &filename, bool compressed) const {
     rc.write_metadata(f.handle());
     rc.write_nopointer_data(f.handle());
   }
-#else
-  throw MCMCException(std::string(__func__) +
-                      "() not implemented for this graph representation");
-#endif
 }
 
 } // namespace mcmc

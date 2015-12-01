@@ -14,37 +14,20 @@
 
 #include "mcmc/config.h"
 
-/**
- * Offers 2 different implementations of the NetworkGraph class:
- * 2) -DMCMC_EDGESET_IS_ADJACENCY_LIST
- *    NetworkGraph is a std::vector<google sparsehash set>
- *      least memory pressure
- *      supports distribution of subgraphs
- * 3) otherwise
- *    NetworkGraph is a std::unordered_set<Edge>
- *      fastest
- *      no support for distributed
- */
-
 #include <unistd.h>
 
 #include <utility>
 #include <map>
-#if ! defined MCMC_EDGESET_IS_ADJACENCY_LIST
-#  include <unordered_map>
-#endif
 #include <unordered_set>
 #include <list>
 #include <iostream>
 #include <iomanip>
 
-#ifdef MCMC_EDGESET_IS_ADJACENCY_LIST
 // If <cinttypes> is not included before <google/sparse_hash_set>, compile
 // errors because of missing defines of SCNd64 and friends
 #include <cinttypes>
 #include <google/sparse_hash_set>
 #include <google/sparse_hash_map>
-#endif
 
 #include "mcmc/exception.h"
 #include "mcmc/np.h"
@@ -107,13 +90,6 @@ struct EdgeHash {
 typedef std::unordered_set<Vertex> VertexSet;
 typedef std::unordered_set<Vertex> NodeSet;
 typedef std::unordered_set<Edge, EdgeHash> MinibatchSet;
-
-#ifndef MCMC_EDGESET_IS_ADJACENCY_LIST
-
-typedef std::unordered_map<Edge, bool, EdgeHash> EdgeMap;
-typedef std::unordered_set<Edge, EdgeHash> NetworkGraph;
-
-#else // ndef MCMC_EDGESET_IS_ADJACENCY_LIST
 
 class GoogleHashSet : public google::sparse_hash_set<Vertex> {
  public:
@@ -320,8 +296,6 @@ class NetworkGraph {
   std::vector<GoogleHashSet> edges_at_;
   ::size_t size_ = 0;
 };
-
-#endif  // ndef MCMC_EDGESET_IS_ADJACENCY_LIST
 
 typedef NodeSet MinibatchNodeSet;
 typedef NodeSet NeighborSet;

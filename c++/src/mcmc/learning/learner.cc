@@ -19,11 +19,7 @@ Learner::Learner(const Options &args) : args_(args), ppxs_heldout_cb_(10) {
 #endif
     << std::endl;
   std::cerr << "Graph implementation: " <<
-#if defined MCMC_EDGESET_IS_ADJACENCY_LIST
     "adjacency list (google sparseset)"
-#else
-    "default sequential"
-#endif
     << std::endl;
 
   // model priors

@@ -52,12 +52,8 @@ void Network::Init(const Options& args, double held_out_ratio,
 
   if (args.input_class_ == "preprocessed") {
     ReadAuxData(args.input_filename_ + "/aux.gz", true);
-#ifdef MCMC_EDGESET_IS_ADJACENCY_LIST
-    num_total_edges =
-        cumulative_edges[N - 1] / 2;  // number of undirected edges.
-#else
-    num_total_edges = linked_edges->size();  // number of total edges.
-#endif
+    // number of undirected edges
+    num_total_edges = cumulative_edges[N - 1] / 2;
 
     ::size_t my_held_out_size = held_out_ratio_ * get_num_linked_edges();
     std::string held_out = args.input_filename_ + "/held-out.gz";
@@ -71,13 +67,9 @@ void Network::Init(const Options& args, double held_out_ratio,
     }
 
   } else {
-#ifdef MCMC_EDGESET_IS_ADJACENCY_LIST
     adjacency_list_init();
     // number of undirected edges
     num_total_edges = cumulative_edges[N - 1] / 2;
-#else
-    num_total_edges = linked_edges->size();  // number of total edges.
-#endif
 
     // Based on the a-MMSB paper, it samples equal number of
     // linked edges and non-linked edges.
@@ -100,13 +92,9 @@ void Network::Init(const Options& args, double held_out_ratio,
 const Data* Network::get_data() const { return data_; }
 
 void Network::ReadSet(FileHandle& f, EdgeMap* set) {
-#ifdef MCMC_EDGESET_IS_ADJACENCY_LIST
   // Read held_out set
   set->read_metadata(f.handle());
   set->read_nopointer_data(f.handle());
-#else
-  throw MCMCException("Cannot read set for this representation");
-#endif
 }
 
 void Network::ReadHeldOutSet(const std::string& filename, bool compressed) {
@@ -126,11 +114,9 @@ void Network::ReadAuxData(const std::string& filename, bool compressed) {
   fan_out_cumul_distro.resize(N);
   f.read_fully(fan_out_cumul_distro.data(),
                fan_out_cumul_distro.size() * sizeof fan_out_cumul_distro[0]);
-#ifdef MCMC_EDGESET_IS_ADJACENCY_LIST
   cumulative_edges.resize(N);
   f.read_fully(cumulative_edges.data(),
                cumulative_edges.size() * sizeof cumulative_edges[0]);
-#endif
 }
 
 void Network::WriteHeldOutSet(const std::string& filename, bool compressed) {
@@ -149,10 +135,8 @@ void Network::WriteAuxData(const std::string& filename, bool compressed) {
   FileHandle f(filename, compressed, "w");
   f.write_fully(fan_out_cumul_distro.data(),
                 fan_out_cumul_distro.size() * sizeof fan_out_cumul_distro[0]);
-#ifdef MCMC_EDGESET_IS_ADJACENCY_LIST
   f.write_fully(cumulative_edges.data(),
                 cumulative_edges.size() * sizeof cumulative_edges[0]);
-#endif
 }
 
 void Network::save(const std::string& dirname) {
@@ -247,11 +231,7 @@ EdgeSample Network::sample_full_training_set() const {
 }
 
 EdgeSample Network::random_edge_sampling(::size_t mini_batch_size) {
-#ifdef MCMC_EDGESET_IS_ADJACENCY_LIST
   ::size_t undirected_edges = linked_edges->size() / 2;
-#else
-  ::size_t undirected_edges = linked_edges->size();
-#endif
   if (mini_batch_size >= undirected_edges - held_out_map.size() - test_map.size()) {
     return sample_full_training_set();
   }
@@ -259,13 +239,8 @@ EdgeSample Network::random_edge_sampling(::size_t mini_batch_size) {
   MinibatchSet* mini_batch_set = new MinibatchSet();
 
   while (mini_batch_set->size() < mini_batch_size) {
-#ifdef MCMC_EDGESET_IS_ADJACENCY_LIST
     std::vector<Edge>* sampled_linked_edges = new std::vector<Edge>();
     sample_random_edges(linked_edges, mini_batch_size, sampled_linked_edges);
-#else
-    Random::Random* rng = (*rng_)[0];
-    auto sampled_linked_edges = rng->sample(*linked_edges, mini_batch_size);
-#endif
     for (auto edge : *sampled_linked_edges) {
       if (mini_batch_set->size() == mini_batch_size) {
         break;
@@ -377,25 +352,12 @@ EdgeSample Network::stratified_random_node_sampling(::size_t num_pieces) {
     } else {
 /* sample linked edges */
 // return all linked edges
-#ifdef MCMC_EDGESET_IS_ADJACENCY_LIST
       for (auto neighborId : linked_edges->edges_at(nodeId)) {
         Edge e(std::min(nodeId, neighborId), std::max(nodeId, neighborId));
         if (!e.in(test_map) && !e.in(held_out_map)) {
           mini_batch_set->insert(e);
         }
       }
-#else
-      if (false) {
-        std::cerr << "train_link_map[" << nodeId << "] size "
-                  << train_link_map[nodeId].size() << std::endl;
-      }
-      for (VertexSet::const_iterator neighborId =
-               train_link_map[nodeId].begin();
-           neighborId != train_link_map[nodeId].end(); neighborId++) {
-        Edge edge(std::min(nodeId, *neighborId), std::max(nodeId, *neighborId));
-        mini_batch_set->insert(edge);
-      }
-#endif
 
       if (false) {
         std::cerr << "B Create mini batch size " << mini_batch_set->size()
@@ -412,19 +374,10 @@ EdgeSample Network::stratified_random_node_sampling(::size_t num_pieces) {
 }
 
 void Network::init_train_link_map() {
-#ifdef MCMC_EDGESET_IS_ADJACENCY_LIST
   std::cerr << "train_link_map is gone; calculate membership for each edge as "
                "linked_edges - held_out_map - test_map" << std::endl;
-#else
-  train_link_map = std::vector<VertexSet>(N);
-  for (auto edge = linked_edges->begin(); edge != linked_edges->end(); edge++) {
-    train_link_map[edge->first].insert(edge->second);
-    train_link_map[edge->second].insert(edge->first);
-  }
-#endif
 }
 
-#ifdef MCMC_EDGESET_IS_ADJACENCY_LIST
 void Network::adjacency_list_init() {
   cumulative_edges.resize(N);
 
@@ -499,8 +452,6 @@ void Network::sample_random_edges(const NetworkGraph* linked_edges, ::size_t p,
   edges->assign(collector.begin(), collector.end());
 }
 
-#endif  // def MCMC_EDGESET_IS_ADJACENCY_LIST
-
 void Network::init_held_out_set() {
   ::size_t p = held_out_size_ / 2;
 
@@ -513,24 +464,13 @@ void Network::init_held_out_set() {
 
   ::size_t count = 0;
   print_mem_usage(std::cerr);
-#ifndef MCMC_EDGESET_IS_ADJACENCY_LIST
-  auto* rng = (*rng_)[0];
-#endif
   while (count < p) {
-#ifdef MCMC_EDGESET_IS_ADJACENCY_LIST
     std::vector<Edge>* sampled_linked_edges = new std::vector<Edge>();
     sample_random_edges(linked_edges, p, sampled_linked_edges);
-#else
-    auto sampled_linked_edges = rng->sample(*linked_edges, p);
-#endif
     for (auto edge : *sampled_linked_edges) {
       // EdgeMap is an undirected graph, unfit for partitioning
       assert(edge.first < edge.second);
       held_out_map[edge] = true;
-#ifndef MCMC_EDGESET_IS_ADJACENCY_LIST
-      train_link_map[edge.first].erase(edge.second);
-      train_link_map[edge.second].erase(edge.first);
-#endif
       if (progress != 0 && count % progress == 0) {
         std::cerr << "Edges/in in held-out set " << count << std::endl;
         print_mem_usage(std::cerr);
@@ -574,19 +514,12 @@ void Network::init_test_set() {
   int p = (int)(held_out_size_ / 2);
   // sample p linked edges from the network
   ::size_t count = 0;
-#ifndef MCMC_EDGESET_IS_ADJACENCY_LIST
-  auto* rng = (*rng_)[0];
-#endif
   while (p > 0) {
 // Because we already used some of the linked edges for held_out sets,
 // here we sample twice as much as links, and select among them, which
 // is likely to contain valid p linked edges.
-#ifdef MCMC_EDGESET_IS_ADJACENCY_LIST
     std::vector<Edge>* sampled_linked_edges = new std::vector<Edge>();
     sample_random_edges(linked_edges, 2 * p, sampled_linked_edges);
-#else
-    auto sampled_linked_edges = rng->sample(*linked_edges, 2 * p);
-#endif
     for (auto edge : *sampled_linked_edges) {
       if (p < 0) {
         // std::cerr << __func__ << ": Are you sure p < 0 is a good idea?" <<
@@ -600,10 +533,6 @@ void Network::init_test_set() {
       }
 
       test_map[edge] = true;
-#ifndef MCMC_EDGESET_IS_ADJACENCY_LIST
-      train_link_map[edge.first].erase(edge.second);
-      train_link_map[edge.second].erase(edge.first);
-#endif
       p--;
       if (progress != 0 && count % progress == 0) {
         std::cerr << "Edges/in in test set " << count << std::endl;
@@ -637,7 +566,6 @@ void Network::init_test_set() {
 }
 
 void Network::calc_max_fan_out() {
-#ifdef MCMC_EDGESET_IS_ADJACENCY_LIST
   // The AdjacencyList is a directed link representation; an edge
   // <me, other> in adj_list[me] is matched by an edge <other, me> in
   // adj_list[other]
@@ -666,20 +594,6 @@ void Network::calc_max_fan_out() {
     fan_out_cumul_distro[i] = fan_out[i];
   }
 
-#else  // ifdef MCMC_EDGESET_IS_ADJACENCY_LIST
-  std::unordered_map<int, ::size_t> fan_out;
-
-  ::size_t i = 0;
-  for (auto e : train_link_map) {
-    fan_out[i] = e.size();
-    i++;
-  }
-
-  std::transform(
-      fan_out.begin(), fan_out.end(), std::back_inserter(fan_out_cumul_distro),
-      boost::bind(&std::unordered_map<int, ::size_t>::value_type::second, _1));
-#endif
-
   std::sort(fan_out_cumul_distro.begin(), fan_out_cumul_distro.end(),
             descending< ::size_t>);
   std::partial_sum(fan_out_cumul_distro.begin(), fan_out_cumul_distro.end(),
@@ -699,16 +613,10 @@ void Network::calc_max_fan_out() {
 }
 
 ::size_t Network::get_fan_out(Vertex i) {
-#ifdef MCMC_EDGESET_IS_ADJACENCY_LIST
   return linked_edges->edges_at(i).size();
-#else
-  throw MCMCException(std::string(__func__) +
-                      "() not implemented for this graph representation");
-#endif
 }
 
 ::size_t Network::marshall_edges_from(Vertex node, Vertex* marshall_area) {
-#ifdef MCMC_EDGESET_IS_ADJACENCY_LIST
   ::size_t i = 0;
   for (auto n : linked_edges->edges_at(node)) {
     marshall_area[i] = n;
@@ -716,10 +624,6 @@ void Network::calc_max_fan_out() {
   }
 
   return i;
-#else
-  throw MCMCException(std::string(__func__) +
-                      "() not implemented for this graph representation");
-#endif
 }
 
 Edge Network::sample_non_link_edge_for_held_out() {

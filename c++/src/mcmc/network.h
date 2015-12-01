@@ -96,14 +96,10 @@ class Network {
 
   template <typename T>
   void WriteSet(FileHandle& f, const T* set) {
-#ifdef MCMC_EDGESET_IS_ADJACENCY_LIST
     T* mset = const_cast<T*>(set);
     // Read held_out set
     mset->write_metadata(f.handle());
     mset->write_nopointer_data(f.handle());
-#else
-    throw MCMCException("Cannot write set for this representation");
-#endif
   }
 
   void WriteHeldOutSet(const std::string& filename, bool compressed);
@@ -207,8 +203,6 @@ class Network {
    */
   void init_train_link_map();
 
-#ifdef MCMC_EDGESET_IS_ADJACENCY_LIST
-
   // FIXME: move into np/
   template <typename T>
   static void prefix_sum(std::vector<T>* a) {
@@ -259,8 +253,6 @@ class Network {
 
   void sample_random_edges(const NetworkGraph* linked_edges, ::size_t p,
                            std::vector<Edge>* edges) const;
-
-#endif  // def MCMC_EDGESET_IS_ADJACENCY_LIST
 
   /**
    * Sample held out set. we draw equal number of
@@ -317,9 +309,7 @@ class Network {
   double held_out_ratio_;            // percentage of held-out data size
   ::size_t held_out_size_;
 
-#ifdef MCMC_EDGESET_IS_ADJACENCY_LIST
   std::vector< ::size_t> cumulative_edges;
-#endif
 
   std::vector<Random::Random*>* rng_;
 
@@ -333,9 +323,6 @@ class Network {
 //   .............
 // 10000: [0,441,9000]
 //                         }
-#ifndef MCMC_EDGESET_IS_ADJACENCY_LIST
-  std::vector<VertexSet> train_link_map;  //
-#endif
   EdgeMap held_out_map;  // store all held out edges
   EdgeMap test_map;      // store all test edges
 

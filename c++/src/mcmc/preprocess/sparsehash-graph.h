@@ -28,7 +28,6 @@ class SparseHashGraph : public DataSet {
   virtual ~SparseHashGraph() {}
 
   virtual const Data *process() {
-#ifdef MCMC_EDGESET_IS_ADJACENCY_LIST
     auto *E = new NetworkGraph(filename_, progress_);
     ::size_t N = E->edges_at_size();
 
@@ -40,10 +39,6 @@ class SparseHashGraph : public DataSet {
     header += "# FromNodeId\tToNodeId\n";
 
     return new Data(NULL, E, N, header);
-#else
-    throw MCMCException(std::string(__func__) +
-                        "() not implemented for this graph representation");
-#endif
   }
 };
 }

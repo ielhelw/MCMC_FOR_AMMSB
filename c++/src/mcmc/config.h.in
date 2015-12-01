@@ -9,8 +9,6 @@ namespace mcmc {
 #cmakedefine MCMC_ENABLE_OPENMP
 #cmakedefine MCMC_ENABLE_DISTRIBUTED
 
-#cmakedefine MCMC_EDGESET_IS_ADJACENCY_LIST
-
 #cmakedefine MCMC_SINGLE_PRECISION
 
 #ifdef MCMC_SINGLE_PRECISION
