@@ -874,9 +874,6 @@ void MCMCSamplerStochasticDistributed::ScatterSubGraph(
       }
     }
     t_scatter_subgraph_marshall_edges_.stop();
-    // std::cerr << "Total marshalled " << marshalled <<
-    //  " presumed " << total_edges << std::endl;
-    assert(marshalled == total_edges);
 
     // Scatter the marshalled subgraphs
     t_scatter_subgraph_scatterv_edges_.start();
