@@ -197,10 +197,6 @@ class MCMCSamplerStochasticDistributed : public MCMCSamplerStochastic {
 
   std::unique_ptr<DKV::DKVStoreInterface> d_kv_store_;
 
-  Random::Random* phi_init_rng_;
-  std::vector<Random::Random*> neighbor_sample_rng_;
-  std::vector<Random::Random*> phi_update_rng_;
-
   LocalNetwork  local_network_;
 
   PerpData      perp_;

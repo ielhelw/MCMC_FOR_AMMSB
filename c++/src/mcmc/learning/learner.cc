@@ -6,12 +6,6 @@ namespace mcmc {
 namespace learning {
 
 Learner::Learner(const Options &args) : args_(args), ppxs_heldout_cb_(10) {
-#ifdef MCMC_SOURCE_AWARE_RANDOM
-  std::cerr << "MCMC_SOURCE_AWARE_RANDOM enabled" << std::endl;
-#endif
-#ifdef MCMC_RANDOM_SYSTEM
-  std::cerr << "MCMC_RANDOM_SYSTEM enabled" << std::endl;
-#endif
   std::cerr << "Floating point precision: " << (sizeof(Float) * CHAR_BIT) <<
     "bit" << std::endl;
 
@@ -51,19 +45,29 @@ Learner::Learner(const Options &args) : args_(args), ppxs_heldout_cb_(10) {
 
   stepsize_switch = false;
 
-  rng_.Init(args_.random_seed);
-
   strategy = args_.strategy;
 }
 
 void Learner::LoadNetwork(int world_rank, bool allocate_pi) {
+  std::cerr << "Create per-thread randoms" << std::endl;
+  rng_.resize(omp_get_max_threads());
+  int seed;
+  seed = args_.random_seed;
+  for (::size_t i = 0; i < rng_.size(); ++i) {
+    int my_seed = seed + 1 + i + world_rank * rng_.size();
+    rng_[i] = new Random::Random(my_seed, seed, false);
+  }
+  std::cerr << "Random seed[0] " << std::hex << "0x" << rng_[0]->seed(0) <<
+    ",0x" << rng_[0]->seed(1) << std::endl;
+  std::cerr << std::dec;
+
   Float held_out_ratio = args_.held_out_ratio;
   if (args_.held_out_ratio == 0.0) {
     held_out_ratio = 0.1;
     std::cerr << "Set held_out_ratio to default " << held_out_ratio
               << std::endl;
   }
-  network.Init(args_, held_out_ratio, &rng_, world_rank);
+  network.Init(args_, held_out_ratio, &rng_);
 
   // parameters related to network
   N = network.get_num_nodes();
@@ -89,7 +93,11 @@ void Learner::LoadNetwork(int world_rank, bool allocate_pi) {
   info(std::cerr);
 }
 
-Learner::~Learner() {}
+Learner::~Learner() {
+  for (auto r : rng_) {
+    delete r;
+  }
+}
 
 void Learner::info(std::ostream &s) {
   s.unsetf(std::ios_base::floatfield);

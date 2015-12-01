@@ -38,8 +38,8 @@ int main(int argc, char *argv[]) {
 
 	print_mem_usage(std::cerr);
 
-        SourceAwareRandom rng;
-        rng.Init(mcmc_options.random_seed);
+        std::vector<Random::Random *> rng;
+        rng.push_back(new Random::Random(mcmc_options.random_seed));
 
 	Network network;
 	network.Init(mcmc_options, mcmc_options.held_out_ratio, &rng);

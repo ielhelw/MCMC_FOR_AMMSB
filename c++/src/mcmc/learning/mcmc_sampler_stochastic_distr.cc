@@ -255,14 +255,6 @@ MCMCSamplerStochasticDistributed::~MCMCSamplerStochasticDistributed() {
     delete[] p;
   }
 
-  delete phi_init_rng_;
-  for (auto r : neighbor_sample_rng_) {
-    delete r;
-  }
-  for (auto r : phi_update_rng_) {
-    delete r;
-  }
-
   (void)MPI_Finalize();
 }
 
@@ -549,32 +541,6 @@ void MCMCSamplerStochasticDistributed::init() {
     init_theta();
   }
 
-  // Make phi_update_rng_ depend on mpi_rank_ and thread Id
-  std::cerr << "Create per-thread PHI_UPDATE randoms" << std::endl;
-  phi_update_rng_.resize(omp_get_max_threads());
-  int seed;
-  seed = args_.random_seed + SourceAwareRandom::PHI_UPDATE;
-  for (::size_t i = 0; i < phi_update_rng_.size(); ++i) {
-    int my_seed = seed + 1 + i + mpi_rank_ * phi_update_rng_.size();
-    phi_update_rng_[i] = new Random::Random(my_seed, seed,
-                                            false);
-  }
-
-  // Make neighbor_sample_rng_ depend on mpi_rank_ and thread Id
-  std::cerr << "Create per-thread NEIGHBOR_SAMPLER randoms" << std::endl;
-  neighbor_sample_rng_.resize(omp_get_max_threads());
-  seed = args_.random_seed + SourceAwareRandom::NEIGHBOR_SAMPLER;
-  for (::size_t i = 0; i < phi_update_rng_.size(); ++i) {
-    int my_seed = seed + 1 + i + mpi_rank_ * phi_update_rng_.size();
-    neighbor_sample_rng_[i] = new Random::Random(my_seed, seed,
-                                                 false);
-  }
-
-  // Make phi_init_rng_ depend on mpi_rank_
-  seed = args_.random_seed + SourceAwareRandom::PHI_INIT;
-  phi_init_rng_ = new Random::Random(seed + 1 + mpi_rank_, seed,
-                                     false);
-
   t_populate_pi_.start();
   init_pi();
   t_populate_pi_.stop();
@@ -587,13 +553,6 @@ void MCMCSamplerStochasticDistributed::init() {
   for (auto &g : grads_beta_) {
     g = std::vector<std::vector<Float> >(2, std::vector<Float>(K));    // gradients K*2 dimension
   }
-
-  std::cerr << "Random seed " << std::hex << "0x" <<
-    rng_.random(SourceAwareRandom::GRAPH_INIT)->seed(0) <<
-    ",0x" <<
-    rng_.random(SourceAwareRandom::GRAPH_INIT)->seed(1) <<
-    std::endl;
-  std::cerr << std::dec;
 }
 
 void MCMCSamplerStochasticDistributed::run() {
@@ -724,11 +683,10 @@ void MCMCSamplerStochasticDistributed::init_theta() {
   // introduce another set of variables, and update them first followed by
   // updating \pi and \beta.
   // parameterization for \beta
-  theta = rng_.random(SourceAwareRandom::THETA_INIT)->gamma(eta[0], eta[1],
-                                                            K, 2);
+  theta = rng_[0]->gamma(eta[0], eta[1], K, 2);
   // std::cerr << "Ignore eta[] in random.gamma: use 100.0 and 0.01" << std::endl;
   // parameterization for \beta
-  // theta = rng_.random(SourceAwareRandom::THETA_INIT)->->gamma(100.0, 0.01, K, 2);
+  // theta = rng_[0]->->gamma(100.0, 0.01, K, 2);
 }
 
 void MCMCSamplerStochasticDistributed::beta_from_theta() {
@@ -757,7 +715,7 @@ void MCMCSamplerStochasticDistributed::init_pi() {
   std::cerr << "*************** FIXME: load pi only on pi-hoster nodes" <<
     std::endl;
   for (int32_t i = mpi_rank_; i < static_cast<int32_t>(N); i += mpi_size_) {
-    std::vector<Float> phi_pi = phi_init_rng_->gamma(1, 1, 1, K)[0];
+    std::vector<Float> phi_pi = rng_[0]->gamma(1, 1, 1, K)[0];
 #ifndef NDEBUG
     for (auto ph : phi_pi) {
       assert(ph >= 0.0);
@@ -1064,7 +1022,7 @@ void MCMCSamplerStochasticDistributed::update_phi(
     for (::size_t i = 0; i < chunk_nodes.size(); ++i) {
       Vertex node = chunk_nodes[i];
       // sample a mini-batch of neighbors
-      auto rng = neighbor_sample_rng_[omp_get_thread_num()];
+      auto rng = rng_[omp_get_thread_num()];
       NeighborSet neighbors = sample_neighbor_nodes(num_node_sample, node,
                                                     rng);
       assert(neighbors.size() == real_num_node_sample());
@@ -1092,7 +1050,7 @@ void MCMCSamplerStochasticDistributed::update_phi(
       update_phi_node(chunk_start + i, node, pi_node[i],
                       flat_neighbors.begin() + i * real_num_node_sample(),
                       pi_neighbor.begin() + i * real_num_node_sample(),
-                      eps_t, phi_update_rng_[omp_get_thread_num()],
+                      eps_t, rng_[omp_get_thread_num()],
                       &(*phi_node)[chunk_start + i]);
     }
     t_update_phi_.stop();
@@ -1394,8 +1352,7 @@ void MCMCSamplerStochasticDistributed::beta_update_theta(Float scale) {
     t_beta_update_theta_.start();
     Float eps_t = get_eps_t();
     // random noise.
-    std::vector<std::vector<Float> > noise =
-      rng_.random(SourceAwareRandom::BETA_UPDATE)->randn(K, 2);
+    std::vector<std::vector<Float> > noise = rng_[0]->randn(K, 2);
 #pragma omp parallel for
     for (::size_t k = 0; k < K; ++k) {
       for (::size_t i = 0; i < 2; ++i) {

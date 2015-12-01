@@ -10,7 +10,6 @@
 #include "mcmc/types.h"
 #include "mcmc/options.h"
 #include "mcmc/network.h"
-#include "mcmc/source-aware-random.h"
 #include "mcmc/preprocess/data_factory.h"
 
 
@@ -164,7 +163,7 @@ class Learner {
 
   strategy::strategy strategy;
 
-  SourceAwareRandom rng_;
+  std::vector<Random::Random*> rng_;
 };
 
 }  // namespace learning

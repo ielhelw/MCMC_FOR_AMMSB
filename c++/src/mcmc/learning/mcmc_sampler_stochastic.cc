@@ -46,11 +46,10 @@ void MCMCSamplerStochastic::init() {
   // introduce another set of variables, and update them first followed by
   // updating \pi and \beta.
   // parameterization for \beta
-  theta = rng_.random(SourceAwareRandom::THETA_INIT)->gamma(eta[0], eta[1], K,
-                                                            2);
+  theta = rng_[0]->gamma(eta[0], eta[1], K, 2);
   // std::cerr << "Ignore eta[] in random.gamma: use 100.0 and 0.01" <<
   // std::endl;
-  // theta = rng_.random(SourceAwareRandom::THETA_INIT)->gamma(100.0, 0.01, K, 2);		//
+  // theta = rng_[0]->gamma(100.0, 0.01, K, 2);		//
 
   std::vector<std::vector<Float> > temp(theta.size(),
                                          std::vector<Float>(theta[0].size()));
@@ -59,7 +58,7 @@ void MCMCSamplerStochastic::init() {
                  np::SelectColumn<Float>(1));
 
   // parameterization for \pi
-  phi = rng_.random(SourceAwareRandom::PHI_INIT)->gamma(1, 1, N, K);
+  phi = rng_[0]->gamma(1, 1, N, K);
   std::cerr << "Done host random for phi" << std::endl;
 #ifndef NDEBUG
   for (auto pph : phi) {
@@ -71,10 +70,6 @@ void MCMCSamplerStochastic::init() {
   pi.resize(phi.size(), std::vector<Float>(phi[0].size()));
   np::row_normalize(&pi, phi);
 
-  std::cerr << "Random seed " << std::hex << "0x" <<
-    rng_.random(SourceAwareRandom::GRAPH_INIT)->seed(0) << ",0x" <<
-    rng_.random(SourceAwareRandom::GRAPH_INIT)->seed(1) << std::endl;
-  std::cerr << std::dec;
   std::cerr << "Done " << __func__ << "()" << std::endl;
 }
 
@@ -162,10 +157,8 @@ void MCMCSamplerStochastic::run() {
       Vertex node = node_vector[n];
       t_sample_neighbor_nodes.start();
       // sample a mini-batch of neighbors
-      NeighborSet neighbors =
-        sample_neighbor_nodes(num_node_sample, node,
-                              rng_.random(
-                                SourceAwareRandom::NEIGHBOR_SAMPLER));
+      NeighborSet neighbors = sample_neighbor_nodes(num_node_sample, node,
+                                                    rng_[0]);
       t_sample_neighbor_nodes.stop();
 
       t_update_phi.start();
@@ -246,8 +239,7 @@ void MCMCSamplerStochastic::update_beta(const MinibatchSet &mini_batch,
   // update theta
 
   // random noise.
-  std::vector<std::vector<Float> > noise =
-      rng_.random(SourceAwareRandom::BETA_UPDATE)->randn(K, 2);
+  std::vector<std::vector<Float> > noise = rng_[0]->randn(K, 2);
   // std::vector<std::vector<Float> > theta_star(theta);
   for (::size_t k = 0; k < K; k++) {
     for (::size_t i = 0; i < 2; i++) {
@@ -301,8 +293,7 @@ void MCMCSamplerStochastic::update_phi(Vertex i, const NeighborSet &neighbors,
   }
 
   // random gaussian noise.
-  std::vector<Float> noise =
-    rng_.random(SourceAwareRandom::PHI_UPDATE)->randn(K);
+  std::vector<Float> noise = rng_[0]->randn(K);
   Float Nn = (FLOAT(1.0) * N) / num_node_sample;
   // update phi for node i
   for (::size_t k = 0; k < K; k++) {
@@ -320,7 +311,7 @@ void MCMCSamplerStochastic::update_phi(Vertex i, const NeighborSet &neighbors,
 
 NeighborSet MCMCSamplerStochastic::sample_neighbor_nodes(::size_t sample_size,
                                                          Vertex nodeId,
-                                                         Random::Random *rnd) {
+                                                         Random::Random* rnd) {
   /**
   Sample subset of neighborhood nodes.
    */

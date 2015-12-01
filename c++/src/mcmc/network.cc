@@ -17,9 +17,6 @@ Network::Network(const NetworkInfo& info)
 }
 
 Network::~Network() {
-#ifdef MCMC_EDGESET_IS_ADJACENCY_LIST
-  thread_random_end();
-#endif
   delete const_cast<Data*>(data_);
 
   std::cout << t_sample_sample_ << std::endl;
@@ -36,7 +33,7 @@ Network::~Network() {
 }
 
 void Network::Init(const Options& args, double held_out_ratio,
-                   SourceAwareRandom* rng, int world_rank) {
+                   std::vector<Random::Random*>* rng) {
   rng_ = rng;
 
   held_out_ratio_ = held_out_ratio;
@@ -52,12 +49,6 @@ void Network::Init(const Options& args, double held_out_ratio,
 
   N = data_->N;             // number of nodes in the graph
   linked_edges = data_->E;  // all pair of linked edges.
-
-#ifdef MCMC_EDGESET_IS_ADJACENCY_LIST
-  thread_random_init(args.random_seed, world_rank);
-#else
-  sample_random.push_back(rng_->random(SourceAwareRandom::MINIBATCH_SAMPLER));
-#endif
 
   if (args.input_class_ == "preprocessed") {
     ReadAuxData(args.input_filename_ + "/aux.gz", true);
@@ -272,7 +263,7 @@ EdgeSample Network::random_edge_sampling(::size_t mini_batch_size) {
     std::vector<Edge>* sampled_linked_edges = new std::vector<Edge>();
     sample_random_edges(linked_edges, mini_batch_size, sampled_linked_edges);
 #else
-    Random::Random* rng = rng_->random(SourceAwareRandom::MINIBATCH_SAMPLER);
+    Random::Random* rng = (*rng_)[0];
     auto sampled_linked_edges = rng->sample(*linked_edges, mini_batch_size);
 #endif
     for (auto edge : *sampled_linked_edges) {
@@ -298,7 +289,7 @@ EdgeSample Network::random_edge_sampling(::size_t mini_batch_size) {
 }
 
 EdgeSample Network::stratified_random_node_sampling(::size_t num_pieces) {
-  Random::Random* rng = rng_->random(SourceAwareRandom::MINIBATCH_SAMPLER);
+  Random::Random* rng = (*rng_)[0];
   while (true) {
     // randomly select the node ID
     int nodeId = rng->randint(0, N - 1);
@@ -318,7 +309,7 @@ EdgeSample Network::stratified_random_node_sampling(::size_t num_pieces) {
       // num_pieces);
       ::size_t mini_batch_size = (::size_t)(N / num_pieces);
 
-      std::vector<MinibatchSet> local_minibatch(sample_random.size());
+      std::vector<MinibatchSet> local_minibatch(rng_->size());
 
       while (mini_batch_set->size() < mini_batch_size) {
 #pragma omp parallel for
@@ -330,7 +321,7 @@ EdgeSample Network::stratified_random_node_sampling(::size_t num_pieces) {
         ::size_t sample_size = (mini_batch_size - mini_batch_set->size() + local_minibatch.size() - 1) / local_minibatch.size();
 #pragma omp parallel for
         for (::size_t t = 0; t < local_minibatch.size(); ++t) {
-          Random::Random *rng = sample_random[t];
+          Random::Random *rng = (*rng_)[t];
           auto nodeList = rng->sampleRange(N, sample_size);
           for (std::vector<int>::iterator neighborId = nodeList->begin();
                neighborId != nodeList->end(); neighborId++) {
@@ -453,34 +444,6 @@ void Network::adjacency_list_init() {
           linked_edges->edges_at(cumulative_edges.size() - 1).size()) << std::endl;
 }
 
-void Network::thread_random_init(int random_seed, int world_rank) {
-  std::cerr << "Create per-thread GRAPH_INIT randoms" << std::endl;
-  thread_random.resize(omp_get_max_threads());
-  for (::size_t i = 0; i < thread_random.size(); ++i) {
-    int seed = random_seed + SourceAwareRandom::GRAPH_INIT;
-    thread_random[i] = new Random::Random(seed + 1 + i +
-                                           world_rank * thread_random.size(),
-                                          seed, false);
-  }
-  std::cerr << "Create per-thread MINIBATCH_SAMPLER randoms" << std::endl;
-  sample_random.resize(omp_get_max_threads());
-  for (::size_t i = 0; i < sample_random.size(); ++i) {
-    int seed = random_seed + SourceAwareRandom::MINIBATCH_SAMPLER;
-    sample_random[i] = new Random::Random(seed + 1 + i +
-                                           world_rank * thread_random.size(),
-                                          seed, false);
-  }
-}
-
-void Network::thread_random_end() {
-  for (auto r : thread_random) {
-    delete r;
-  }
-  for (auto r : sample_random) {
-    delete r;
-  }
-}
-
 void Network::sample_random_edges(const NetworkGraph* linked_edges, ::size_t p,
                                   std::vector<Edge>* edges) const {
   std::unordered_set<Edge, EdgeHash> collector;
@@ -495,8 +458,8 @@ void Network::sample_random_edges(const NetworkGraph* linked_edges, ::size_t p,
     for (::size_t i = 0; i < p - collector.size(); ++i) {
       // Draw from 2 |Edges| since each edge is represented twice
       ::size_t edge_index =
-          thread_random[omp_get_thread_num()]->randint(0,
-                                                       2LL * num_total_edges - 1);
+          (*rng_)[omp_get_thread_num()]->randint(0,
+                                                 2LL * num_total_edges - 1);
       // locate the vertex where this edge lives
       // Actually search for find_ge, so do edge_index + 1
       int v1 = np::find_le(cumulative_edges, edge_index + 1);
@@ -551,7 +514,7 @@ void Network::init_held_out_set() {
   ::size_t count = 0;
   print_mem_usage(std::cerr);
 #ifndef MCMC_EDGESET_IS_ADJACENCY_LIST
-  auto* rng = rng_->random(SourceAwareRandom::GRAPH_INIT);
+  auto* rng = (*rng_)[0];
 #endif
   while (count < p) {
 #ifdef MCMC_EDGESET_IS_ADJACENCY_LIST
@@ -612,7 +575,7 @@ void Network::init_test_set() {
   // sample p linked edges from the network
   ::size_t count = 0;
 #ifndef MCMC_EDGESET_IS_ADJACENCY_LIST
-  auto* rng = rng_->random(SourceAwareRandom::GRAPH_INIT);
+  auto* rng = (*rng_)[0];
 #endif
   while (p > 0) {
 // Because we already used some of the linked edges for held_out sets,
@@ -761,7 +724,7 @@ void Network::calc_max_fan_out() {
 
 Edge Network::sample_non_link_edge_for_held_out() {
   while (true) {
-    auto* rng = rng_->random(SourceAwareRandom::GRAPH_INIT);
+    auto* rng = (*rng_)[0];
     int firstIdx = rng->randint(0, N - 1);
     int secondIdx = rng->randint(0, N - 1);
 
@@ -783,7 +746,7 @@ Edge Network::sample_non_link_edge_for_held_out() {
 
 Edge Network::sample_non_link_edge_for_test() {
   while (true) {
-    auto* rng = rng_->random(SourceAwareRandom::GRAPH_INIT);
+    auto* rng = (*rng_)[0];
     int firstIdx = rng->randint(0, N - 1);
     int secondIdx = rng->randint(0, N - 1);
 

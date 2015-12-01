@@ -12,7 +12,6 @@
 #include "mcmc/types.h"
 #include "mcmc/data.h"
 #include "mcmc/random.h"
-#include "mcmc/source-aware-random.h"
 #include "mcmc/preprocess/dataset.h"
 #include "mcmc/options.h"
 #include "mcmc/fileio.h"
@@ -83,7 +82,7 @@ class Network {
    *     					read them from file
    */
   void Init(const Options& args, double held_out_ratio,
-            SourceAwareRandom *rng, int world_rank = 0);
+            std::vector<Random::Random*>* rng_threaded);
 
   const Data* get_data() const;
 
@@ -320,9 +319,9 @@ class Network {
 
 #ifdef MCMC_EDGESET_IS_ADJACENCY_LIST
   std::vector< ::size_t> cumulative_edges;
-  std::vector<Random::Random*> thread_random;
 #endif
-  std::vector<Random::Random*> sample_random;
+
+  std::vector<Random::Random*>* rng_;
 
 // The map stores all the neighboring nodes for each node, within the training
 // set. The purpose of keeping this object is to make the stratified sampling
@@ -342,8 +341,6 @@ class Network {
 
   std::vector< ::size_t> fan_out_cumul_distro;
   ::size_t progress = 0;
-
-  SourceAwareRandom *rng_;
 
   Timer t_sample_sample_;
   Timer t_sample_merge_tail_;
