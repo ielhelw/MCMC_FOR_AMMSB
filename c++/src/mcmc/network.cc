@@ -22,15 +22,9 @@ Network::~Network() {
 #endif
   delete const_cast<Data*>(data_);
 
-#ifdef MCMC_EFFICIENCY_COMPATIBILITY_MODE
-  std::cout << t_random_sample_range_ << std::endl;
-  std::cout << t_sample_check_ << std::endl;
-  std::cout << t_sample_insert_ << std::endl;
-#else
   std::cout << t_sample_sample_ << std::endl;
   std::cout << t_sample_merge_ << std::endl;
   std::cout << t_sample_merge_tail_ << std::endl;
-#endif
 }
 
 ::size_t Network::num_pieces_for_minibatch(::size_t mini_batch_size) const {
@@ -107,15 +101,9 @@ void Network::Init(const Options& args, double held_out_ratio,
     calc_max_fan_out();
   }
 
-#ifdef MCMC_EFFICIENCY_COMPATIBILITY_MODE
-  t_random_sample_range_ = Timer("      random range sample");
-  t_sample_check_        = Timer("      sample check");
-  t_sample_insert_       = Timer("      sample insert");
-#else
   t_sample_sample_       = Timer("      sample sample");
   t_sample_merge_        = Timer("      sample merge");
   t_sample_merge_tail_   = Timer("      sample merge/tail");
-#endif
 }
 
 const Data* Network::get_data() const { return data_; }
@@ -283,9 +271,6 @@ EdgeSample Network::random_edge_sampling(::size_t mini_batch_size) {
 #ifdef MCMC_EDGESET_IS_ADJACENCY_LIST
     std::vector<Edge>* sampled_linked_edges = new std::vector<Edge>();
     sample_random_edges(linked_edges, mini_batch_size, sampled_linked_edges);
-#elif defined MCMC_RANDOM_COMPATIBILITY_MODE
-    Random::Random* rng = rng_->random(SourceAwareRandom::MINIBATCH_SAMPLER);
-    auto sampled_linked_edges = rng->sampleList(*linked_edges, mini_batch_size);
 #else
     Random::Random* rng = rng_->random(SourceAwareRandom::MINIBATCH_SAMPLER);
     auto sampled_linked_edges = rng->sample(*linked_edges, mini_batch_size);
@@ -333,48 +318,6 @@ EdgeSample Network::stratified_random_node_sampling(::size_t num_pieces) {
       // num_pieces);
       ::size_t mini_batch_size = (::size_t)(N / num_pieces);
 
-#ifdef MCMC_EFFICIENCY_COMPATIBILITY_MODE
-      int p = (int)mini_batch_size;
-      while (p > 0) {
-// because of the sparsity, when we sample $mini_batch_size*2$ nodes, the list
-// likely
-// contains at least mini_batch_size valid nodes.
-        t_random_sample_range_.start();
-        auto nodeList = rng->sample(np::xrange(0, N), mini_batch_size * 2);
-        t_random_sample_range_.stop();
-        for (std::vector<int>::iterator neighborId = nodeList->begin();
-             neighborId != nodeList->end(); neighborId++) {
-          // std::cerr << "random neighbor " << *neighborId << std::endl;
-          if (p < 0) {
-            // std::cerr << __func__ << ": Are you sure p < 0 is a good idea?"
-            // << std::endl;
-            break;
-          }
-          if (*neighborId == nodeId) {
-            continue;
-          }
-
-          // check condition, and insert into mini_batch_set if it is valid.
-          Edge edge(std::min(nodeId, *neighborId),
-                    std::max(nodeId, *neighborId));
-          t_sample_check_.start();
-          if (edge.in(*linked_edges) || edge.in(held_out_map) ||
-              edge.in(test_map) || edge.in(*mini_batch_set)) {
-            t_sample_check_.stop();
-            continue;
-          }
-          t_sample_check_.stop();
-
-          t_sample_insert_.start();
-          mini_batch_set->insert(edge);
-          t_sample_insert_.stop();
-          p--;
-        }
-
-        delete nodeList;
-      }
-
-#else
       std::vector<MinibatchSet> local_minibatch(sample_random.size());
 
       while (mini_batch_set->size() < mini_batch_size) {
@@ -430,7 +373,6 @@ EdgeSample Network::stratified_random_node_sampling(::size_t num_pieces) {
         }
       }
 
-#endif
 
       Float scale = (Float)N * num_pieces;
       scale *= (double)num_total_edges / ((double)N * (N - 1.0) / 2.0 - num_total_edges);
@@ -615,8 +557,6 @@ void Network::init_held_out_set() {
 #ifdef MCMC_EDGESET_IS_ADJACENCY_LIST
     std::vector<Edge>* sampled_linked_edges = new std::vector<Edge>();
     sample_random_edges(linked_edges, p, sampled_linked_edges);
-#elif defined MCMC_RANDOM_COMPATIBILITY_MODE
-    auto sampled_linked_edges = rng->sampleList(*linked_edges, p);
 #else
     auto sampled_linked_edges = rng->sample(*linked_edges, p);
 #endif
@@ -681,8 +621,6 @@ void Network::init_test_set() {
 #ifdef MCMC_EDGESET_IS_ADJACENCY_LIST
     std::vector<Edge>* sampled_linked_edges = new std::vector<Edge>();
     sample_random_edges(linked_edges, 2 * p, sampled_linked_edges);
-#elif defined MCMC_RANDOM_COMPATIBILITY_MODE
-    auto sampled_linked_edges = rng->sampleList(*linked_edges, 2 * p);
 #else
     auto sampled_linked_edges = rng->sample(*linked_edges, 2 * p);
 #endif

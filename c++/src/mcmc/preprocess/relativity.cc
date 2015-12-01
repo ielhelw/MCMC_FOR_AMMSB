@@ -94,11 +94,7 @@ const Data *Relativity::process() {
     }
 
   } else {
-#ifdef MCMC_GRAPH_COMPATIBILITY_MODE
-    std::set<Vertex> vertex;
-#else
     std::unordered_set<Vertex> vertex;
-#endif
 
     std::vector<mcmc::Edge> edge;
     Vertex max = std::numeric_limits<Vertex>::min();

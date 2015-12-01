@@ -557,7 +557,7 @@ void MCMCSamplerStochasticDistributed::init() {
   for (::size_t i = 0; i < phi_update_rng_.size(); ++i) {
     int my_seed = seed + 1 + i + mpi_rank_ * phi_update_rng_.size();
     phi_update_rng_[i] = new Random::Random(my_seed, seed,
-                                            RANDOM_PRESERVE_RANGE_ORDER);
+                                            false);
   }
 
   // Make neighbor_sample_rng_ depend on mpi_rank_ and thread Id
@@ -567,13 +567,13 @@ void MCMCSamplerStochasticDistributed::init() {
   for (::size_t i = 0; i < phi_update_rng_.size(); ++i) {
     int my_seed = seed + 1 + i + mpi_rank_ * phi_update_rng_.size();
     neighbor_sample_rng_[i] = new Random::Random(my_seed, seed,
-                                                 RANDOM_PRESERVE_RANGE_ORDER);
+                                                 false);
   }
 
   // Make phi_init_rng_ depend on mpi_rank_
   seed = args_.random_seed + SourceAwareRandom::PHI_INIT;
   phi_init_rng_ = new Random::Random(seed + 1 + mpi_rank_, seed,
-                                     RANDOM_PRESERVE_RANGE_ORDER);
+                                     false);
 
   t_populate_pi_.start();
   init_pi();

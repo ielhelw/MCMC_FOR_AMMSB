@@ -106,14 +106,9 @@ class Learner {
     } else {
       Float sum = FLOAT(0.0);
       for (::size_t k = 0; k < K; k++) {
-#ifdef MCMC_EFFICIENCY_COMPATIBILITY_MODE
-        s += pi_a[k] * pi_b[k] * (FLOAT(1.0) - beta[k]);
-        sum += pi_a[k] * pi_b[k];
-#else
         Float f = pi_a[k] * pi_b[k];
         s += f * (FLOAT(1.0) - beta[k]);
         sum += f;
-#endif
       }
       s += (FLOAT(1.0) - sum) * (FLOAT(1.0) - epsilon);
     }
@@ -170,12 +165,6 @@ class Learner {
   strategy::strategy strategy;
 
   SourceAwareRandom rng_;
-
-#ifdef MCMC_RANDOM_COMPATIBILITY_MODE
-  const bool RANDOM_PRESERVE_RANGE_ORDER = true;
-#else
-  const bool RANDOM_PRESERVE_RANGE_ORDER = false;
-#endif
 };
 
 }  // namespace learning

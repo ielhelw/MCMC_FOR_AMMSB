@@ -82,12 +82,7 @@ class MCMCSamplerStochastic : public Learner {
  protected:
   void update_beta(const MinibatchSet &mini_batch, Float scale);
 
-  void update_phi(Vertex i, const NeighborSet &neighbors
-#ifndef MCMC_EFFICIENCY_COMPATIBILITY_MODE
-                  ,
-                  Float eps_t
-#endif
-                  );
+  void update_phi(Vertex i, const NeighborSet &neighbors, Float eps_t);
 
   NeighborSet sample_neighbor_nodes(::size_t sample_size, Vertex nodeId,
                                     Random::Random *rnd);

@@ -6,15 +6,6 @@ namespace mcmc {
 namespace learning {
 
 Learner::Learner(const Options &args) : args_(args), ppxs_heldout_cb_(10) {
-#ifdef MCMC_RANDOM_COMPATIBILITY_MODE
-  std::cerr << "MCMC_RANDOM_COMPATIBILITY_MODE enabled" << std::endl;
-#endif
-#ifdef MCMC_EFFICIENCY_COMPATIBILITY_MODE
-  std::cerr << "MCMC_EFFICIENCY_COMPATIBILITY_MODE enabled" << std::endl;
-#endif
-#ifdef MCMC_GRAPH_COMPATIBILITY_MODE
-  std::cerr << "MCMC_GRAPH_COMPATIBILITY_MODE enabled" << std::endl;
-#endif
 #ifdef MCMC_SOURCE_AWARE_RANDOM
   std::cerr << "MCMC_SOURCE_AWARE_RANDOM enabled" << std::endl;
 #endif
@@ -34,9 +25,7 @@ Learner::Learner(const Options &args) : args_(args), ppxs_heldout_cb_(10) {
 #endif
     << std::endl;
   std::cerr << "Graph implementation: " <<
-#ifdef MCMC_GRAPH_COMPATIBILITY_MODE
-    "compatibility mode"
-#elif defined MCMC_EDGESET_IS_ADJACENCY_LIST
+#if defined MCMC_EDGESET_IS_ADJACENCY_LIST
     "adjacency list (google sparseset)"
 #else
     "default sequential"

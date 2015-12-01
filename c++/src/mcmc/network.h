@@ -345,15 +345,9 @@ class Network {
 
   SourceAwareRandom *rng_;
 
-#ifdef MCMC_EFFICIENCY_COMPATIBILITY_MODE
-  Timer t_random_sample_range_;
-  Timer t_sample_check_;
-  Timer t_sample_insert_;
-#else
   Timer t_sample_sample_;
   Timer t_sample_merge_tail_;
   Timer t_sample_merge_;
-#endif
 };
 
 };  // namespace mcmc

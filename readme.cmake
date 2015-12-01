@@ -37,15 +37,3 @@ cmake \
 	-DCMAKE_BUILD_TYPE=Debug \
         ../c++
 cd ..
-
-mkdir build-compat
-cd build-compat
-cmake \
-        -DCMAKE_C_COMPILER=`which gcc` \
-        -DCMAKE_CXX_COMPILER=`which g++` \
-        -DBOOST_ROOT=`dirname $BOOST_INCLUDE` \
-        -DGTEST_ROOT=$THIRDPARTY/gtest-1.7.0 \
-        -DTINYXML2_ROOT=$THIRDPARTY/tinyxml2 \
-        -DMCMC_BUILD_MODE=COMPAT \
-        ../c++
-cd ..

@@ -15,11 +15,7 @@
 #include "mcmc/config.h"
 
 /**
- * Offers 3 different implementations of the NetworkGraph class:
- * 1) -DMCMC_GRAPH_COMPATIBILITY_MODE
- *    NetworkGraph is a std::set<Edge>
- *      compatibility mode
- *      no support for distributed
+ * Offers 2 different implementations of the NetworkGraph class:
  * 2) -DMCMC_EDGESET_IS_ADJACENCY_LIST
  *    NetworkGraph is a std::vector<google sparsehash set>
  *      least memory pressure
@@ -34,10 +30,7 @@
 
 #include <utility>
 #include <map>
-#ifdef MCMC_GRAPH_COMPATIBILITY_MODE
-#  include <set>
-#  include <map>
-#elif ! defined MCMC_EDGESET_IS_ADJACENCY_LIST
+#if ! defined MCMC_EDGESET_IS_ADJACENCY_LIST
 #  include <unordered_map>
 #endif
 #include <unordered_set>
@@ -102,44 +95,25 @@ class Edge {
 
 struct EdgeHash {
  public:
-#ifdef MCMC_GRAPH_COMPATIBILITY_MODE
-  int32_t operator()(const mcmc::Edge &x) const {
-    // inline for performance
-    int32_t h = std::hash<int32_t>()(x.first) ^ std::hash<int32_t>()(x.second);
-    return h;
-  }
-#else
   ::size_t operator()(const mcmc::Edge &x) const {
     // inline for performance
     ::size_t h = ((size_t)x.first * (size_t)x.second) ^
       ((size_t)x.first + (size_t)x.second);
     return h;
   }
-#endif
 };
 
-
-#ifdef MCMC_GRAPH_COMPATIBILITY_MODE
-
-typedef std::unordered_set<Vertex> VertexSet;
-typedef std::set<Vertex> NodeSet;
-typedef std::set<Edge> MinibatchSet;
-
-typedef std::map<Edge, bool> EdgeMap;
-typedef std::set<Edge> NetworkGraph;
-
-#else  // def MCMC_GRAPH_COMPATIBILITY_MODE
 
 typedef std::unordered_set<Vertex> VertexSet;
 typedef std::unordered_set<Vertex> NodeSet;
 typedef std::unordered_set<Edge, EdgeHash> MinibatchSet;
 
-#  ifndef MCMC_EDGESET_IS_ADJACENCY_LIST
+#ifndef MCMC_EDGESET_IS_ADJACENCY_LIST
 
 typedef std::unordered_map<Edge, bool, EdgeHash> EdgeMap;
 typedef std::unordered_set<Edge, EdgeHash> NetworkGraph;
 
-#  else // ndef MCMC_EDGESET_IS_ADJACENCY_LIST
+#else // ndef MCMC_EDGESET_IS_ADJACENCY_LIST
 
 class GoogleHashSet : public google::sparse_hash_set<Vertex> {
  public:
@@ -348,8 +322,6 @@ class NetworkGraph {
 };
 
 #endif  // ndef MCMC_EDGESET_IS_ADJACENCY_LIST
-
-#endif  // def MCMC_GRAPH_COMPATIBILITY_MODE
 
 typedef NodeSet MinibatchNodeSet;
 typedef NodeSet NeighborSet;

@@ -3,12 +3,6 @@
 #include <cmath>
 #include <algorithm>  // min, max
 
-#ifdef MCMC_EFFICIENCY_COMPATIBILITY_MODE
-#  ifdef MCMC_NO_NOISE
-#    error "The NO_NOISE flag has not been implemented in compatibility mode"
-#  endif
-#endif
-
 namespace mcmc {
 namespace learning {
 
@@ -159,9 +153,7 @@ void MCMCSamplerStochastic::run() {
     MinibatchNodeSet nodes = nodes_in_batch(mini_batch);
     t_nodes_in_mini_batch.stop();
 
-#ifndef MCMC_EFFICIENCY_COMPATIBILITY_MODE
     Float eps_t = get_eps_t();
-#endif
 
     // ************ do in parallel at each host
     // std::cerr << "Sample neighbor nodes" << std::endl;
@@ -177,25 +169,15 @@ void MCMCSamplerStochastic::run() {
       t_sample_neighbor_nodes.stop();
 
       t_update_phi.start();
-      update_phi(node, neighbors
-#ifndef MCMC_EFFICIENCY_COMPATIBILITY_MODE
-                 ,
-                 eps_t
-#endif
-                 );
+      update_phi(node, neighbors, eps_t);
       t_update_phi.stop();
     }
 
     // ************ do in parallel at each host
     t_update_pi.start();
-#ifdef MCMC_EFFICIENCY_COMPATIBILITY_MODE
-    np::row_normalize(&pi, phi);  // update pi from phi.
-#else
-    // No need to update pi where phi is unchanged
     for (auto i : nodes) {
       np::normalize(&pi[i], phi[i]);
     }
-#endif
     t_update_pi.stop();
 
     t_update_beta.start();
@@ -242,32 +224,14 @@ void MCMCSamplerStochastic::update_beta(const MinibatchSet &mini_batch,
     Float pi_sum = FLOAT(0.0);
     for (::size_t k = 0; k < K; k++) {
       pi_sum += pi[i][k] * pi[j][k];
-#ifdef MCMC_EFFICIENCY_COMPATIBILITY_MODE
-      probs[k] = std::pow(beta[k], y) * std::pow(1 - beta[k], 1 - y) *
-                 pi[i][k] * pi[j][k];
-#else
       Float f = pi[i][k] * pi[j][k];
       if (y == 1) {
         probs[k] = beta[k] * f;
       } else {
         probs[k] = (FLOAT(1.0) - beta[k]) * f;
       }
-#endif
     }
 
-#ifdef MCMC_EFFICIENCY_COMPATIBILITY_MODE
-    Float prob_0 = std::pow(epsilon, y) *
-                   std::pow(FLOAT(1.0) - epsilon, FLOAT(1.0) - y) *
-                   (FLOAT(1.0) - pi_sum);
-    Float prob_sum = np::sum(probs) + prob_0;
-    for (::size_t k = 0; k < K; k++) {
-      grads[k][0] += (probs[k] / prob_sum) *
-                     (std::abs(FLOAT(1.0) - y) / theta[k][0] -
-                      FLOAT(1.0) / theta_sum[k]);
-      grads[k][1] += (probs[k] / prob_sum) *
-                     (std::abs(-y) / theta[k][1] - FLOAT(1.0) / theta_sum[k]);
-    }
-#else
     Float prob_0 = ((y == 1) ? epsilon : (FLOAT(1.0) - epsilon)) *
                                           (FLOAT(1.0) - pi_sum);
     Float prob_sum = np::sum(probs) + prob_0;
@@ -277,7 +241,6 @@ void MCMCSamplerStochastic::update_beta(const MinibatchSet &mini_batch,
       grads[k][0] += f * ((FLOAT(1.0) - y) / theta[k][0] - one_over_theta_sum);
       grads[k][1] += f * (y / theta[k][1] - one_over_theta_sum);
     }
-#endif
   }
 
   // update theta
@@ -288,25 +251,13 @@ void MCMCSamplerStochastic::update_beta(const MinibatchSet &mini_batch,
   // std::vector<std::vector<Float> > theta_star(theta);
   for (::size_t k = 0; k < K; k++) {
     for (::size_t i = 0; i < 2; i++) {
-#ifdef MCMC_EFFICIENCY_COMPATIBILITY_MODE
-      theta[k][i] = std::abs(
-          theta[k][i] +
-          eps_t / FLOAT(2.0) * (eta[i] - theta[k][i] + scale * grads[k][i]) +
-          std::pow(eps_t, FLOAT(0.5)) *
-            std::pow(theta[k][i], FLOAT(0.5)) * noise[k][i]);
-#else
-#ifndef MCMC_NO_NOISE
       Float f = std::sqrt(eps_t * theta[k][i]);
-#endif
       theta[k][i] =
           std::abs(theta[k][i] +
                    eps_t / FLOAT(2.0) * (eta[i] - theta[k][i] +
                                          scale * grads[k][i])
-#ifndef MCMC_NO_NOISE
                    + f * noise[k][i]
-#endif
                    );
-#endif
       if (theta[k][i] < MCMC_NONZERO_GUARD) {
         theta[k][i] = MCMC_NONZERO_GUARD;
       }
@@ -320,16 +271,8 @@ void MCMCSamplerStochastic::update_beta(const MinibatchSet &mini_batch,
                  np::SelectColumn<Float>(1));
 }
 
-void MCMCSamplerStochastic::update_phi(Vertex i, const NeighborSet &neighbors
-#ifndef MCMC_EFFICIENCY_COMPATIBILITY_MODE
-                                       ,
-                                       Float eps_t
-#endif
-                                       ) {
-#ifdef MCMC_EFFICIENCY_COMPATIBILITY_MODE
-  Float eps_t = get_eps_t();
-#endif
-
+void MCMCSamplerStochastic::update_phi(Vertex i, const NeighborSet &neighbors,
+                                       Float eps_t) {
   Float phi_i_sum = np::sum(phi[i]);
   std::vector<Float> grads(K, FLOAT(0.0));  // gradient for K classes
 
@@ -345,21 +288,10 @@ void MCMCSamplerStochastic::update_phi(Vertex i, const NeighborSet &neighbors
     }
 
     std::vector<Float> probs(K);
-#ifndef MCMC_EFFICIENCY_COMPATIBILITY_MODE
     Float e = (y_ab == 1) ? epsilon : (FLOAT(1.0) - epsilon);
-#endif
     for (::size_t k = 0; k < K; k++) {
-#ifdef MCMC_EFFICIENCY_COMPATIBILITY_MODE
-      probs[k] = std::pow(beta[k], y_ab) * std::pow(FLOAT(1.0) - beta[k],
-                                                    FLOAT(1.0) - y_ab) *
-                 pi[i][k] * pi[neighbor][k];
-      probs[k] += std::pow(epsilon, y_ab) * std::pow(FLOAT(1.0) - epsilon,
-                                                     FLOAT(1.0) - y_ab) *
-                  pi[i][k] * (FLOAT(1.0) - pi[neighbor][k]);
-#else
       Float f = (y_ab == 1) ? (beta[k] - epsilon) : (epsilon - beta[k]);
       probs[k] = pi[i][k] * (pi[neighbor][k] * f + e);
-#endif
     }
 
     Float prob_sum = np::sum(probs);
@@ -371,27 +303,14 @@ void MCMCSamplerStochastic::update_phi(Vertex i, const NeighborSet &neighbors
   // random gaussian noise.
   std::vector<Float> noise =
     rng_.random(SourceAwareRandom::PHI_UPDATE)->randn(K);
-#ifndef MCMC_EFFICIENCY_COMPATIBILITY_MODE
   Float Nn = (FLOAT(1.0) * N) / num_node_sample;
-#endif
   // update phi for node i
   for (::size_t k = 0; k < K; k++) {
-#ifdef MCMC_EFFICIENCY_COMPATIBILITY_MODE
-    phi[i][k] =
-        std::abs(phi[i][k] +
-                 eps_t / FLOAT(2.0) * (alpha - phi[i][k] +
-                              (N * FLOAT(1.0) / num_node_sample) * grads[k]) +
-                 std::pow(eps_t, FLOAT(0.5)) *
-                  std::pow(phi[i][k], FLOAT(0.5)) * noise[k]);
-#else
     phi[i][k] =
         std::abs((phi[i][k]
                  + eps_t / FLOAT(2.0) * (alpha - phi[i][k] + Nn * grads[k]))
-#ifndef MCMC_NO_NOISE
                  + std::sqrt(eps_t * phi[i][k]) * noise[k]
-#endif
                  );
-#endif
     if (phi[i][k] < MCMC_NONZERO_GUARD) {
       phi[i][k] = MCMC_NONZERO_GUARD;
     }
@@ -410,46 +329,6 @@ NeighborSet MCMCSamplerStochastic::sample_neighbor_nodes(::size_t sample_size,
   const EdgeMap &held_out_set = network.get_held_out_set();
   const EdgeMap &test_set = network.get_test_set();
 
-#ifdef MCMC_EFFICIENCY_COMPATIBILITY_MODE
-
-  while (p > 0) {
-#if 1
-    auto nodeList = rnd->sample(np::xrange(0, N), sample_size * 2);
-#else
-    // this optimization is superseeded by re-implementation below
-    auto nodeList = rnd->sampleRange(N, sample_size * 2);
-#endif
-
-    for (std::vector<Vertex>::const_iterator neighborId = nodeList->begin();
-         neighborId != nodeList->end(); neighborId++) {
-      if (p < 0) {
-        if (p != 0) {
-          // std::cerr << __func__ << ": Are you sure p < 0 is a good idea?"
-          // << std::endl;
-        }
-        break;
-      }
-      if (*neighborId == nodeId) {
-        continue;
-      }
-      // check condition, and insert into mini_batch_set if it is valid.
-      Edge edge(std::min(nodeId, *neighborId), std::max(nodeId, *neighborId));
-      if (edge.in(held_out_set) || edge.in(test_set) ||
-          neighbor_nodes.find(*neighborId) != neighbor_nodes.end()
-          ) {
-        continue;
-      } else {
-// add it into mini_batch_set
-        neighbor_nodes.insert(*neighborId);
-        p -= 1;
-      }
-    }
-
-    delete nodeList;
-  }
-
-#else   // def MCMC_EFFICIENCY_COMPATIBILITY_MODE
-
   for (int i = 0; i <= p; ++i) {
     Vertex neighborId;
     Edge edge(0, 0);
@@ -461,9 +340,6 @@ NeighborSet MCMCSamplerStochastic::sample_neighbor_nodes(::size_t sample_size,
              );
     neighbor_nodes.insert(neighborId);
   }
-
-#endif  // def MCMC_EFFICIENCY_COMPATIBILITY_MODE
-
 
   return neighbor_nodes;
 }
