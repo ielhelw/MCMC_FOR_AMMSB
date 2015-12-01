@@ -211,6 +211,12 @@ class MCMCSamplerStochasticDistributed : public MCMCSamplerStochastic {
   Timer         t_cal_edge_likelihood_;
   Timer         t_mini_batch_;
   Timer         t_deploy_minibatch_;
+  Timer         t_scatter_subgraph_;
+  Timer         t_scatter_subgraph_marshall_edge_count_;
+  Timer         t_scatter_subgraph_scatterv_edge_count_;
+  Timer         t_scatter_subgraph_marshall_edges_;
+  Timer         t_scatter_subgraph_scatterv_edges_;
+  Timer         t_scatter_subgraph_unmarshall_;
   Timer         t_nodes_in_mini_batch_;
   Timer         t_sample_neighbor_nodes_;
   Timer         t_update_phi_pi_;

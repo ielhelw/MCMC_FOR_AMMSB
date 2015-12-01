@@ -21,6 +21,16 @@ Network::~Network() {
   thread_random_end();
 #endif
   delete const_cast<Data*>(data_);
+
+#ifdef MCMC_EFFICIENCY_COMPATIBILITY_MODE
+  std::cout << t_random_sample_range_ << std::endl;
+  std::cout << t_sample_check_ << std::endl;
+  std::cout << t_sample_insert_ << std::endl;
+#else
+  std::cout << t_sample_sample_ << std::endl;
+  std::cout << t_sample_merge_ << std::endl;
+  std::cout << t_sample_merge_tail_ << std::endl;
+#endif
 }
 
 ::size_t Network::num_pieces_for_minibatch(::size_t mini_batch_size) const {
@@ -51,6 +61,8 @@ void Network::Init(const Options& args, double held_out_ratio,
 
 #ifdef MCMC_EDGESET_IS_ADJACENCY_LIST
   thread_random_init(args.random_seed, world_rank);
+#else
+  sample_random.push_back(rng_->random(SourceAwareRandom::MINIBATCH_SAMPLER));
 #endif
 
   if (args.input_class_ == "preprocessed") {
@@ -94,6 +106,16 @@ void Network::Init(const Options& args, double held_out_ratio,
 
     calc_max_fan_out();
   }
+
+#ifdef MCMC_EFFICIENCY_COMPATIBILITY_MODE
+  t_random_sample_range_ = Timer("      random range sample");
+  t_sample_check_        = Timer("      sample check");
+  t_sample_insert_       = Timer("      sample insert");
+#else
+  t_sample_sample_       = Timer("      sample sample");
+  t_sample_merge_        = Timer("      sample merge");
+  t_sample_merge_tail_   = Timer("      sample merge/tail");
+#endif
 }
 
 const Data* Network::get_data() const { return data_; }
@@ -175,7 +197,7 @@ void Network::FillInfo(NetworkInfo* info) {
 }
 
 EdgeSample Network::sample_mini_batch(::size_t mini_batch_size,
-                                      strategy::strategy strategy) const {
+                                      strategy::strategy strategy) {
   switch (strategy) {
     case strategy::STRATIFIED_RANDOM_NODE:
       return stratified_random_node_sampling(
@@ -245,7 +267,7 @@ EdgeSample Network::sample_full_training_set() const {
   return EdgeSample(mini_batch_set, weight);
 }
 
-EdgeSample Network::random_edge_sampling(::size_t mini_batch_size) const {
+EdgeSample Network::random_edge_sampling(::size_t mini_batch_size) {
 #ifdef MCMC_EDGESET_IS_ADJACENCY_LIST
   ::size_t undirected_edges = linked_edges->size() / 2;
 #else
@@ -290,9 +312,8 @@ EdgeSample Network::random_edge_sampling(::size_t mini_batch_size) const {
   return EdgeSample(mini_batch_set, weight);
 }
 
-EdgeSample Network::stratified_random_node_sampling(::size_t num_pieces) const {
+EdgeSample Network::stratified_random_node_sampling(::size_t num_pieces) {
   Random::Random* rng = rng_->random(SourceAwareRandom::MINIBATCH_SAMPLER);
-  // FIXME: why is this while(true) loop?
   while (true) {
     // randomly select the node ID
     int nodeId = rng->randint(0, N - 1);
@@ -311,17 +332,16 @@ EdgeSample Network::stratified_random_node_sampling(::size_t num_pieces) const {
       // ::size_t mini_batch_size = (int)((N - train_link_map[nodeId].size()) /
       // num_pieces);
       ::size_t mini_batch_size = (::size_t)(N / num_pieces);
-      int p = (int)mini_batch_size;
 
+#ifdef MCMC_EFFICIENCY_COMPATIBILITY_MODE
+      int p = (int)mini_batch_size;
       while (p > 0) {
 // because of the sparsity, when we sample $mini_batch_size*2$ nodes, the list
 // likely
 // contains at least mini_batch_size valid nodes.
-#ifdef MCMC_EFFICIENCY_COMPATIBILITY_MODE
+        t_random_sample_range_.start();
         auto nodeList = rng->sample(np::xrange(0, N), mini_batch_size * 2);
-#else
-        auto nodeList = rng->sampleRange(N, mini_batch_size * 2);
-#endif
+        t_random_sample_range_.stop();
         for (std::vector<int>::iterator neighborId = nodeList->begin();
              neighborId != nodeList->end(); neighborId++) {
           // std::cerr << "random neighbor " << *neighborId << std::endl;
@@ -337,17 +357,80 @@ EdgeSample Network::stratified_random_node_sampling(::size_t num_pieces) const {
           // check condition, and insert into mini_batch_set if it is valid.
           Edge edge(std::min(nodeId, *neighborId),
                     std::max(nodeId, *neighborId));
+          t_sample_check_.start();
           if (edge.in(*linked_edges) || edge.in(held_out_map) ||
               edge.in(test_map) || edge.in(*mini_batch_set)) {
+            t_sample_check_.stop();
             continue;
           }
+          t_sample_check_.stop();
 
+          t_sample_insert_.start();
           mini_batch_set->insert(edge);
+          t_sample_insert_.stop();
           p--;
         }
 
         delete nodeList;
       }
+
+#else
+      std::vector<MinibatchSet> local_minibatch(sample_random.size());
+
+      while (mini_batch_set->size() < mini_batch_size) {
+#pragma omp parallel for
+        for (::size_t t = 0; t < local_minibatch.size(); ++t) {
+          local_minibatch[t].clear();
+        }
+
+        t_sample_sample_.start();
+        ::size_t sample_size = (mini_batch_size - mini_batch_set->size() + local_minibatch.size() - 1) / local_minibatch.size();
+#pragma omp parallel for
+        for (::size_t t = 0; t < local_minibatch.size(); ++t) {
+          Random::Random *rng = sample_random[t];
+          auto nodeList = rng->sampleRange(N, sample_size);
+          for (std::vector<int>::iterator neighborId = nodeList->begin();
+               neighborId != nodeList->end(); neighborId++) {
+            // std::cerr << "random neighbor " << *neighborId << std::endl;
+            if (*neighborId != nodeId) {
+              // check condition, and insert into mini_batch_set if it is valid.
+              Edge edge(std::min(nodeId, *neighborId),
+                        std::max(nodeId, *neighborId));
+              if (! edge.in(*linked_edges) && ! edge.in(held_out_map) &&
+                  ! edge.in(test_map) && ! edge.in(*mini_batch_set)) {
+
+                local_minibatch[t].insert(edge);
+              }
+            }
+          }
+          delete nodeList;
+        }
+        t_sample_sample_.stop();
+
+        for (::size_t t = 0; t < local_minibatch.size(); ++t) {
+          ::size_t chunk = std::min(mini_batch_size - mini_batch_set->size(),
+                                    local_minibatch[t].size());
+          if (chunk < local_minibatch[t].size()) {
+            t_sample_merge_tail_.start();
+            for (auto x : local_minibatch[t]) {
+              mini_batch_set->insert(x);
+              chunk--;
+              if (chunk == 0) {
+                t_sample_merge_tail_.stop();
+                break;
+              }
+            }
+            break;
+          } else {
+            t_sample_merge_.start();
+            mini_batch_set->insert(local_minibatch[t].begin(),
+                                   local_minibatch[t].end());
+            t_sample_merge_.stop();
+          }
+        }
+      }
+
+#endif
 
       Float scale = (Float)N * num_pieces;
       scale *= (double)num_total_edges / ((double)N * (N - 1.0) / 2.0 - num_total_edges);
@@ -437,10 +520,21 @@ void Network::thread_random_init(int random_seed, int world_rank) {
                                            world_rank * thread_random.size(),
                                           seed, false);
   }
+  std::cerr << "Create per-thread MINIBATCH_SAMPLER randoms" << std::endl;
+  sample_random.resize(omp_get_max_threads());
+  for (::size_t i = 0; i < sample_random.size(); ++i) {
+    int seed = random_seed + SourceAwareRandom::MINIBATCH_SAMPLER;
+    sample_random[i] = new Random::Random(seed + 1 + i +
+                                           world_rank * thread_random.size(),
+                                          seed, false);
+  }
 }
 
 void Network::thread_random_end() {
   for (auto r : thread_random) {
+    delete r;
+  }
+  for (auto r : sample_random) {
     delete r;
   }
 }

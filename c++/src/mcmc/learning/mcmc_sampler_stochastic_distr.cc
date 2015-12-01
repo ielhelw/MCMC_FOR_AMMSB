@@ -216,6 +216,12 @@ MCMCSamplerStochasticDistributed::MCMCSamplerStochasticDistributed(
   t_outer_                 = Timer("  iteration");
   t_deploy_minibatch_      = Timer("    deploy minibatch");
   t_mini_batch_            = Timer("      sample_mini_batch");
+  t_scatter_subgraph_      = Timer("      scatter subgraph");
+  t_scatter_subgraph_marshall_edge_count_ = Timer("        marshall edge count");
+  t_scatter_subgraph_scatterv_edge_count_ = Timer("        scatterv edges");
+  t_scatter_subgraph_marshall_edges_      = Timer("        marshall edges");
+  t_scatter_subgraph_scatterv_edges_      = Timer("        scatterv edges");
+  t_scatter_subgraph_unmarshall_          = Timer("        unmarshall edges");
   t_nodes_in_mini_batch_   = Timer("      nodes_in_mini_batch");
   t_broadcast_theta_beta_  = Timer("    broadcast theta/beta");
   t_sample_neighbor_nodes_ = Timer("      sample_neighbor_nodes");
@@ -223,7 +229,7 @@ MCMCSamplerStochasticDistributed::MCMCSamplerStochasticDistributed(
   t_load_pi_minibatch_     = Timer("      load minibatch pi");
   t_load_pi_neighbor_      = Timer("      load neighbor pi");
   t_update_phi_            = Timer("      update_phi");
-  t_barrier_pi_            = Timer("      barrier after update phi");
+  t_barrier_phi_           = Timer("      barrier after update phi");
   t_update_pi_             = Timer("      update_pi");
   t_store_pi_minibatch_    = Timer("      store minibatch pi");
   t_barrier_pi_            = Timer("      barrier after update pi");
@@ -637,13 +643,13 @@ void MCMCSamplerStochasticDistributed::run() {
     t_barrier_phi_.stop();
 
     update_pi(phi_node);
-    t_update_phi_pi_.stop();
 
     // barrier: ensure we read pi/phi_sum from current iteration
     t_barrier_pi_.start();
     r = MPI_Barrier(MPI_COMM_WORLD);
     mpi_error_test(r, "MPI_Barrier(post pi) fails");
     t_barrier_pi_.stop();
+    t_update_phi_pi_.stop();
 
     t_update_beta_.start();
     update_beta(*edgeSample.first, edgeSample.second);
@@ -670,6 +676,12 @@ void MCMCSamplerStochasticDistributed::run() {
   std::cout << t_populate_pi_ << std::endl;
   std::cout << t_outer_ << std::endl;
   std::cout << t_deploy_minibatch_ << std::endl;
+  std::cout << t_scatter_subgraph_ << std::endl;
+  std::cout << t_scatter_subgraph_marshall_edge_count_ << std::endl;
+  std::cout << t_scatter_subgraph_scatterv_edge_count_ << std::endl;
+  std::cout << t_scatter_subgraph_marshall_edges_ << std::endl;
+  std::cout << t_scatter_subgraph_scatterv_edges_ << std::endl;
+  std::cout << t_scatter_subgraph_unmarshall_ << std::endl;
   std::cout << t_mini_batch_ << std::endl;
   std::cout << t_nodes_in_mini_batch_ << std::endl;
   std::cout << t_broadcast_theta_beta_ << std::endl;
@@ -760,7 +772,12 @@ void MCMCSamplerStochasticDistributed::init_pi() {
     // size, the Write/Purge
     d_kv_store_->WriteKVRecords(node, pi_wrapper);
     d_kv_store_->PurgeKVRecords();
+
+    if ((i - mpi_rank_) % (256 * 1024) == 0) {
+      std::cerr << ".";
+    }
   }
+  std::cerr << std::endl;
 }
 
 
@@ -807,6 +824,7 @@ void MCMCSamplerStochasticDistributed::ScatterSubGraph(
     std::vector<int32_t> workers_set_size;
 
     // Data dependency on workers_set_size
+    t_scatter_subgraph_marshall_edge_count_.start();
     for (int i = 0; i < mpi_size_; ++i) {
       subgraph_count[i] = 0;
       for (::size_t j = 0; j < subminibatch[i].size(); ++j) {
@@ -823,8 +841,10 @@ void MCMCSamplerStochasticDistributed::ScatterSubGraph(
       size_displ[i] = size_displ[i - 1] + size_count[i - 1];
       subgraph_displ[i] = subgraph_displ[i - 1] + subgraph_count[i - 1];
     }
+    t_scatter_subgraph_marshall_edge_count_.stop();
 
     // Scatter the fanout of each minibatch node
+    t_scatter_subgraph_scatterv_edge_count_.start();
     r = MPI_Scatterv(workers_set_size.data(),
                      size_count.data(),
                      size_displ.data(),
@@ -835,15 +855,16 @@ void MCMCSamplerStochasticDistributed::ScatterSubGraph(
                      mpi_master_,
                      MPI_COMM_WORLD);
     mpi_error_test(r, "MPI_Scatterv of minibatch fails");
+    t_scatter_subgraph_scatterv_edge_count_.stop();
 
     // Marshall the subgraphs
+    t_scatter_subgraph_marshall_edges_.start();
     ::size_t total_edges = np::sum(workers_set_size);
     std::vector<Vertex> subgraphs(total_edges);
-    ::size_t marshalled = 0;
+#pragma omp parallel for // num_threads (12)
     for (int i = 0; i < mpi_size_; ++i) {
+      ::size_t marshalled = subgraph_displ[i];
       for (::size_t j = 0; j < subminibatch[i].size(); ++j) {
-        assert(marshalled + network.get_fan_out(subminibatch[i][j]) <=
-               total_edges);
         Vertex* marshall = subgraphs.data() + marshalled;
         ::size_t n = network.marshall_edges_from(subminibatch[i][j],
                                                  marshall);
@@ -852,11 +873,13 @@ void MCMCSamplerStochasticDistributed::ScatterSubGraph(
         marshalled += n;
       }
     }
+    t_scatter_subgraph_marshall_edges_.stop();
     // std::cerr << "Total marshalled " << marshalled <<
     //  " presumed " << total_edges << std::endl;
     assert(marshalled == total_edges);
 
     // Scatter the marshalled subgraphs
+    t_scatter_subgraph_scatterv_edges_.start();
     ::size_t total_set_size = np::sum(set_size);
     flat_subgraph.resize(total_set_size);
     r = MPI_Scatterv(subgraphs.data(),
@@ -868,9 +891,11 @@ void MCMCSamplerStochasticDistributed::ScatterSubGraph(
                      MPI_INT,
                      mpi_master_,
                      MPI_COMM_WORLD);
+    t_scatter_subgraph_scatterv_edges_.stop();
 
   } else {
     // Scatter the fanout of each minibatch node
+    t_scatter_subgraph_scatterv_edge_count_.start();
     r = MPI_Scatterv(NULL,
                      NULL,
                      NULL,
@@ -881,8 +906,10 @@ void MCMCSamplerStochasticDistributed::ScatterSubGraph(
                      mpi_master_,
                      MPI_COMM_WORLD);
     mpi_error_test(r, "MPI_Scatterv of minibatch fails");
+    t_scatter_subgraph_scatterv_edge_count_.stop();
 
     // Scatter the marshalled subgraphs
+    t_scatter_subgraph_scatterv_edges_.start();
     ::size_t total_set_size = np::sum(set_size);
     flat_subgraph.resize(total_set_size);
     r = MPI_Scatterv(NULL,
@@ -894,14 +921,17 @@ void MCMCSamplerStochasticDistributed::ScatterSubGraph(
                      MPI_INT,
                      mpi_master_,
                      MPI_COMM_WORLD);
+    t_scatter_subgraph_scatterv_edges_.stop();
   }
 
+  t_scatter_subgraph_unmarshall_.start();
   ::size_t offset = 0;
   for (::size_t i = 0; i < set_size.size(); ++i) {
     Vertex* marshall = &flat_subgraph[offset];
     local_network_.unmarshall_local_graph(i, marshall, set_size[i]);
     offset += set_size[i];
   }
+  t_scatter_subgraph_unmarshall_.stop();
 }
 
 
@@ -916,8 +946,7 @@ EdgeSample MCMCSamplerStochasticDistributed::deploy_mini_batch() {
   if (mpi_rank_ == mpi_master_) {
     // std::cerr << "Invoke sample_mini_batch" << std::endl;
     t_mini_batch_.start();
-    edgeSample = network.sample_mini_batch(mini_batch_size,
-                                           strategy);
+    edgeSample = network.sample_mini_batch(mini_batch_size, strategy);
     t_mini_batch_.stop();
     const MinibatchSet &mini_batch = *edgeSample.first;
     // std::cerr << "Done sample_mini_batch" << std::endl;
@@ -994,7 +1023,9 @@ EdgeSample MCMCSamplerStochasticDistributed::deploy_mini_batch() {
 
 
   if (! args_.REPLICATED_NETWORK) {
+    t_scatter_subgraph_.start();
     ScatterSubGraph(subminibatch);
+    t_scatter_subgraph_.stop();
   }
 
   return edgeSample;

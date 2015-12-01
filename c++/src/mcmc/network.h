@@ -16,8 +16,11 @@
 #include "mcmc/preprocess/dataset.h"
 #include "mcmc/options.h"
 #include "mcmc/fileio.h"
+#include "mcmc/timer.h"
 
 namespace mcmc {
+
+using ::mcmc::timer::Timer;
 
 typedef std::pair<MinibatchSet*, Float> EdgeSample;
 
@@ -151,7 +154,7 @@ class Network {
    *gradients.
    */
   EdgeSample sample_mini_batch(::size_t mini_batch_size,
-                               strategy::strategy strategy) const;
+                               strategy::strategy strategy);
   ::size_t num_pieces_for_minibatch(::size_t mini_batch_size) const;
   ::size_t real_minibatch_size(::size_t mini_batch_size) const;
 
@@ -178,7 +181,7 @@ class Network {
 #endif
 
   EdgeSample sample_full_training_set() const;
-  EdgeSample random_edge_sampling(::size_t mini_batch_size) const;
+  EdgeSample random_edge_sampling(::size_t mini_batch_size);
 
   /**
    * stratified sampling approach gives more attention to link edges (the edge
@@ -194,7 +197,7 @@ class Network {
    * edges
    *         we sample equals to  number of all non-link edges / num_pieces
    */
-  EdgeSample stratified_random_node_sampling(::size_t num_pieces) const;
+  EdgeSample stratified_random_node_sampling(::size_t num_pieces);
 
  protected:
   /**
@@ -319,6 +322,7 @@ class Network {
   std::vector< ::size_t> cumulative_edges;
   std::vector<Random::Random*> thread_random;
 #endif
+  std::vector<Random::Random*> sample_random;
 
 // The map stores all the neighboring nodes for each node, within the training
 // set. The purpose of keeping this object is to make the stratified sampling
@@ -340,6 +344,16 @@ class Network {
   ::size_t progress = 0;
 
   SourceAwareRandom *rng_;
+
+#ifdef MCMC_EFFICIENCY_COMPATIBILITY_MODE
+  Timer t_random_sample_range_;
+  Timer t_sample_check_;
+  Timer t_sample_insert_;
+#else
+  Timer t_sample_sample_;
+  Timer t_sample_merge_tail_;
+  Timer t_sample_merge_;
+#endif
 };
 
 };  // namespace mcmc
