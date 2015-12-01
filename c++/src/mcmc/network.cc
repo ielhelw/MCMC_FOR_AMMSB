@@ -64,7 +64,7 @@ void Network::Init(const Options& args, double held_out_ratio,
 #endif
   sample_random.resize(omp_get_max_threads());
   for (::size_t i = 0; i < sample_random.size(); ++i) {
-    int seed = random_seed + SourceAwareRandom::MINIBATCH_SAMPLER;
+    int seed = args.random_seed + SourceAwareRandom::MINIBATCH_SAMPLER;
     sample_random[i] = new Random::Random(seed + 1 + i +
                                            world_rank * thread_random.size(),
                                           seed, false);
