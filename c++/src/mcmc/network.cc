@@ -61,9 +61,14 @@ void Network::Init(const Options& args, double held_out_ratio,
 
 #ifdef MCMC_EDGESET_IS_ADJACENCY_LIST
   thread_random_init(args.random_seed, world_rank);
-#else
-  sample_random.push_back(rng_->random(SourceAwareRandom::MINIBATCH_SAMPLER));
 #endif
+  sample_random.resize(omp_get_max_threads());
+  for (::size_t i = 0; i < sample_random.size(); ++i) {
+    int seed = random_seed + SourceAwareRandom::MINIBATCH_SAMPLER;
+    sample_random[i] = new Random::Random(seed + 1 + i +
+                                           world_rank * thread_random.size(),
+                                          seed, false);
+  }
 
   if (args.input_class_ == "preprocessed") {
     ReadAuxData(args.input_filename_ + "/aux.gz", true);
@@ -521,13 +526,6 @@ void Network::thread_random_init(int random_seed, int world_rank) {
                                           seed, false);
   }
   std::cerr << "Create per-thread MINIBATCH_SAMPLER randoms" << std::endl;
-  sample_random.resize(omp_get_max_threads());
-  for (::size_t i = 0; i < sample_random.size(); ++i) {
-    int seed = random_seed + SourceAwareRandom::MINIBATCH_SAMPLER;
-    sample_random[i] = new Random::Random(seed + 1 + i +
-                                           world_rank * thread_random.size(),
-                                          seed, false);
-  }
 }
 
 void Network::thread_random_end() {
