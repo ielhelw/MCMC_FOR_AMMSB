@@ -126,7 +126,7 @@ class DKVWrapper {
 
     ::size_t my_m = (m + n_hosts - 1) / n_hosts;
 
-    d_kv_store_->Init(K, N, my_m * n, my_m);
+    d_kv_store_->Init(K, N, 1, my_m * n, my_m);
 
     mcmc::Random::Random random(seed + rank);
 
@@ -159,7 +159,8 @@ class DKVWrapper {
     }
 
     std::vector<ValueType *> cache(my_m * n);
-    std::vector<ValueType *> overwrite = d_kv_store_->GetWriteKVRecords(my_m);
+    std::vector<ValueType *> overwrite = std::vector<ValueType *>(
+                                           my_m, new ValueType[K]);
     for (::size_t iter = 0; iter < iterations; ++iter) {
       std::vector<int32_t> *minibatch = random.sampleRange(N, my_m);
 
@@ -177,8 +178,7 @@ class DKVWrapper {
           std::endl;
         // Read the values for the neighbors
         auto t = hires::now();
-        d_kv_store_->ReadKVRecords(cache, *neighbor,
-                                  DKV::RW_MODE::READ_ONLY);
+        d_kv_store_->ReadKVRecords(0, cache, *neighbor);
         duration dur = std::chrono::duration_cast<duration>(hires::now() - t);
         std::cout << my_m << " Read " << my_m << "x" << n << "x" << K <<
           " takes " << (1000.0 * dur.count()) << "ms thrp " <<
@@ -225,6 +225,9 @@ class DKVWrapper {
       std::cout << "*********" << iter << ":  Sync... " << std::endl;
 
       delete minibatch;
+      for (auto ov: overwrite) {
+        delete[] ov;
+      }
     }
 
     outer.stop();

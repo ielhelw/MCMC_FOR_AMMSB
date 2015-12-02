@@ -511,7 +511,7 @@ void MCMCSamplerStochasticDistributed::init() {
     " mine " << max_my_perp_nodes <<
     " chunk " << max_perplexity_chunk_ << std::endl;
 
-  d_kv_store_->Init(K + 1, N, max_pi_cache, max_my_minibatch_nodes);
+  d_kv_store_->Init(K + 1, N, 1, max_pi_cache, max_my_minibatch_nodes);
 
   master_hosts_pi_ = d_kv_store_->include_master();
 
@@ -993,7 +993,7 @@ void MCMCSamplerStochasticDistributed::update_phi(
     // ************ load minibatch node pi from D-KV store **************
     t_load_pi_minibatch_.start();
     pi_node.resize(chunk_nodes.size());
-    d_kv_store_->ReadKVRecords(pi_node, chunk_nodes, DKV::RW_MODE::READ_ONLY);
+    d_kv_store_->ReadKVRecords(0, pi_node, chunk_nodes);
     t_load_pi_minibatch_.stop();
 
     // ************ sample neighbor nodes in parallel at each host ******
@@ -1021,9 +1021,7 @@ void MCMCSamplerStochasticDistributed::update_phi(
 
     // ************ load neighor pi from D-KV store **********
     t_load_pi_neighbor_.start();
-    d_kv_store_->ReadKVRecords(pi_neighbor,
-                               flat_neighbors,
-                               DKV::RW_MODE::READ_ONLY);
+    d_kv_store_->ReadKVRecords(0, pi_neighbor, flat_neighbors);
     t_load_pi_neighbor_.stop();
 
     t_update_phi_.start();
@@ -1255,7 +1253,7 @@ void MCMCSamplerStochasticDistributed::beta_calc_grads(
 
   t_load_pi_beta_.start();
   std::vector<Float*> pi(node_rank.size());
-  d_kv_store_->ReadKVRecords(pi, nodes, DKV::RW_MODE::READ_ONLY);
+  d_kv_store_->ReadKVRecords(0, pi, nodes);
   t_load_pi_beta_.stop();
 
   // update gamma, only update node in the grad
@@ -1425,7 +1423,7 @@ Float MCMCSamplerStochasticDistributed::cal_perplexity_held_out() {
                                                                  chunk));
 
     t_load_pi_perp_.start();
-    d_kv_store_->ReadKVRecords(perp_.pi_, chunk_nodes, DKV::RW_MODE::READ_ONLY);
+    d_kv_store_->ReadKVRecords(0, perp_.pi_, chunk_nodes);
     t_load_pi_perp_.stop();
 
     t_cal_edge_likelihood_.start();

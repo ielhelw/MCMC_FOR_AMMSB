@@ -23,8 +23,10 @@ DKVStoreFileOptions::DKVStoreFileOptions()
   : file_base_("pi"), desc_("D-KV File options") {
   namespace po = boost::program_options;
   desc_.add_options()
-    ("dkv.file.filebase,b", po::value<std::string>(&file_base_)->default_value("pi"), "File base")
-    ("dkv.file.dir,d", po::value<std::string>(&dir_)->default_value(""), "Directory")
+    ("dkv.file.filebase,b",
+     po::value<std::string>(&file_base_)->default_value("pi"), "File base")
+    ("dkv.file.dir,d",
+     po::value<std::string>(&dir_)->default_value(""), "Directory")
     ;
 }
 
@@ -51,18 +53,19 @@ DKVStoreFile::~DKVStoreFile() {
 }
 
 void DKVStoreFile::Init(::size_t value_size, ::size_t total_values,
-                        ::size_t max_cache_capacity,
+                        ::size_t num_cache_buffers,
+                        ::size_t cache_buffer_capacity,
                         ::size_t max_write_capacity) {
-  ::DKV::DKVStoreInterface::Init(value_size, total_values,
-                                 max_cache_capacity, max_write_capacity);
+  ::DKV::DKVStoreInterface::Init(value_size, total_values, num_cache_buffers,
+                                 cache_buffer_capacity, max_write_capacity);
 }
 
-void DKVStoreFile::ReadKVRecords(std::vector<ValueType *> &cache,
-                                 const std::vector<KeyType> &key,
-                                 RW_MODE::RWMode rw_mode) {
+void DKVStoreFile::ReadKVRecords(::size_t buffer,
+                                 std::vector<ValueType *> &cache,
+                                 const std::vector<KeyType> &key) {
   assert(cache.size() >= key.size());
   for (::size_t i = 0; i < key.size(); i++) {
-    ValueType *cache_pointer = cache_buffer_.get(value_size_);
+    ValueType *cache_pointer = cache_buffer_[buffer].get(value_size_);
 
     std::string pi_file = PiFileName(key[i]);
     std::ifstream reader(pi_file.c_str());
@@ -81,23 +84,16 @@ void DKVStoreFile::WriteKVRecords(const std::vector<KeyType> &key,
   }
 }
 
-std::vector<DKVStoreFile::ValueType *> DKVStoreFile::GetWriteKVRecords(::size_t n) {
-  std::vector<ValueType *> w(n);
-  for (::size_t i = 0; i < n; i++) {
-    w[i] = write_buffer_.get(value_size_);
-  }
-
-  return w;
-}
-
-void DKVStoreFile::FlushKVRecords(const std::vector<KeyType> &key) {
-  for (::size_t i = 0; i < key.size(); ++i) {
-    WriteKVRecord(key[i], value_of_[key[i]]);
-  }
-}
-
 void DKVStoreFile::PurgeKVRecords() {
-  cache_buffer_.reset();
+  for (auto b : cache_buffer_) {
+    b.reset();
+  }
+  write_buffer_.reset();
+  value_of_.clear();
+}
+
+void DKVStoreFile::PurgeKVRecords(::size_t buffer) {
+  cache_buffer_[buffer].reset();
   write_buffer_.reset();
   value_of_.clear();
 }
@@ -129,11 +125,11 @@ const std::string DKVStoreFile::PiFileName(KeyType node) const {
 }
 
 void DKVStoreFile::CreateDirNameOf(const std::string &filename) const {
-	boost::filesystem::path path(filename);
-	boost::filesystem::path dirname = path.parent_path();
-	if (! boost::filesystem::exists(dirname)) {
-		boost::filesystem::create_directories(dirname);
-	}
+  boost::filesystem::path path(filename);
+  boost::filesystem::path dirname = path.parent_path();
+  if (! boost::filesystem::exists(dirname)) {
+    boost::filesystem::create_directories(dirname);
+  }
 }
 
 } // namespace DKVFile

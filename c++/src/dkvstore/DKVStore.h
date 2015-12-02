@@ -32,9 +32,6 @@ namespace DKV {
 
 enum TYPE {
   FILE,
-#ifdef MCMC_ENABLE_RAMCLOUD
-  RAMCLOUD,
-#endif
 #ifdef MCMC_ENABLE_RDMA
   RDMA,
 #endif
@@ -50,10 +47,6 @@ inline std::istream& operator>> (std::istream& in, TYPE& dkv_type) {
   if (false) {
   } else if (token == "file") {
     dkv_type = DKV::TYPE::FILE;
-#ifdef MCMC_ENABLE_RAMCLOUD
-  } else if (token == "ramcloud") {
-    dkv_type = DKV::TYPE::RAMCLOUD;
-#endif
 #ifdef MCMC_ENABLE_RDMA
   } else if (token == "rdma") {
     dkv_type = DKV::TYPE::RDMA;
@@ -72,11 +65,6 @@ inline std::ostream& operator<< (std::ostream& s, TYPE& dkv_type) {
     case DKV::TYPE::FILE:
       s << "file";
       break;
-#ifdef MCMC_ENABLE_RAMCLOUD
-    case DKV::TYPE::RAMCLOUD:
-      s << "ramcloud";
-      break;
-#endif
 #ifdef MCMC_ENABLE_RDMA
     case DKV::TYPE::RDMA:
       s << "rdma";
@@ -85,14 +73,6 @@ inline std::ostream& operator<< (std::ostream& s, TYPE& dkv_type) {
   }
 
   return s;
-}
-
-
-namespace RW_MODE {
-  enum RWMode {
-    READ_ONLY,
-    READ_WRITE,
-  };
 }
 
 
@@ -186,11 +166,19 @@ class DKVStoreInterface {
   virtual ~DKVStoreInterface() {
   }
 
+  /**
+   * @param cache_buffer_capacity is capacity <strong>per buffer</strong>
+   */
   virtual void Init(::size_t value_size, ::size_t total_values,
-                    ::size_t max_cache_capacity, ::size_t max_write_capacity) {
+                    ::size_t num_cache_buffers, ::size_t cache_buffer_capacity,
+                    ::size_t max_write_capacity) {
     value_size_ = value_size;
     total_values_ = total_values;
-    cache_buffer_.Init(value_size * max_cache_capacity);
+    num_cache_buffers_ = num_cache_buffers;
+    cache_buffer_.resize(num_cache_buffers);
+    for (auto b : cache_buffer_) {
+      b.Init(value_size * cache_buffer_capacity);
+    }
     write_buffer_.Init(value_size * max_write_capacity);
   }
 
@@ -212,45 +200,29 @@ class DKVStoreInterface {
    * @return pointers into our cached area.
    * @reentrant: no
    */
-  virtual void ReadKVRecords(std::vector<ValueType *> &cache,
-                             const std::vector<KeyType> &key,
-                             RW_MODE::RWMode rw_mode) = 0;
+  virtual void ReadKVRecords(::size_t buffer, std::vector<ValueType *> &cache,
+                             const std::vector<KeyType> &key) = 0;
 
   /**
    * Write key/value pairs.
-   * @param value
-   *    may be a mix of user-allocated data and buffers obtained through
-   *    GetWriteKVRecords(); in the latter case, may be a zerocopy operation.
    * @reentrant: no
    */
   virtual void WriteKVRecords(const std::vector<KeyType> &key,
                               const std::vector<const ValueType *> &value) = 0;
 
   /**
-   * Zerocopy write interface. Obtain a vector of value pointers to fill.
-   * Written out by a call to WriteKVRecords, which performs the binding from
-   * key to value.
-   * @reentrant: no
-   */
-  virtual std::vector<ValueType *> GetWriteKVRecords(::size_t n) = 0;
-
-  /**
-   * Write back the values that belong to rw-cached keys
-   * @reentrant: no
-   */
-  virtual void FlushKVRecords(const std::vector<KeyType> &key) = 0;
-
-  /**
    * Purge the cache area
    * @reentrant: no
    */
   virtual void PurgeKVRecords() = 0;
+  virtual void PurgeKVRecords(::size_t buffer) = 0;
 
  protected:
   ::size_t value_size_;
   ::size_t total_values_;
+  ::size_t num_cache_buffers_;
 
-  Buffer<ValueType> cache_buffer_;
+  std::vector<Buffer<ValueType> > cache_buffer_;
   Buffer<ValueType> write_buffer_;
 
   std::unordered_map<KeyType, ValueType *> value_of_;

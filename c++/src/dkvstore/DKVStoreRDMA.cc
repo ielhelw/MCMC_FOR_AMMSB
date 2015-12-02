@@ -147,7 +147,8 @@ double DKVStoreRDMA::GBs_from_timer(const Timer &timer, int64_t bytes) {
 }
 
 void DKVStoreRDMA::Init(::size_t value_size, ::size_t total_values,
-                        ::size_t max_cache_capacity,
+                        ::size_t num_cache_buffers,
+                        ::size_t cache_buffer_capacity,
                         ::size_t max_write_capacity) {
   // Feed the options to the QPerf Req
   Req.mtu_size = options_.mtu();
@@ -217,7 +218,7 @@ void DKVStoreRDMA::Init(::size_t value_size, ::size_t total_values,
   } else {
     if (oob_rank_ == 0) {
       // something smallish, does not matter how much
-      my_values = max_cache_capacity;
+      my_values = cache_buffer_capacity;
     } else {
       my_values = (total_values + (options_.oob_num_servers() - 1) - 1) / (options_.oob_num_servers() - 1);
     }
@@ -226,7 +227,8 @@ void DKVStoreRDMA::Init(::size_t value_size, ::size_t total_values,
   std::cout << "MR/value " << value_ << std::endl;
 
   /* memory buffer to hold the cache data */
-  cache_.Init(&res_, &cache_buffer_, max_cache_capacity * value_size);
+  cache_buffer_.resize(num_cache_buffers);
+  cache_.Init(&res_, &cache_buffer_, cache_buffer_capacity * value_size);
   std::cout << "MR/cache " << cache_ << std::endl;
 
   /* memory buffer to hold the zerocopy write data */
@@ -313,7 +315,8 @@ void DKVStoreRDMA::Init(::size_t value_size, ::size_t total_values,
   }
 
   wc_.resize(options_.post_send_chunk());
-  ::size_t q_size = std::max(cache_buffer_.capacity() / value_size,
+  assert(cache_buffer_[0].capacity() >= cache_buffer_capacity);
+  ::size_t q_size = std::max(cache_buffer_[0].capacity() / value_size,
                              write_buffer_.capacity() / value_size);
   ::size_t num_batches = (options_.oob_num_servers() + options_.batch_size() - 1) / options_.batch_size();
   std::cerr << "Resize my queue pointers, use >= " << (num_batches * q_size * sizeof post_descriptor_[0][0] / 1048576.0) << "MB" << std::endl;
@@ -417,13 +420,9 @@ void DKVStoreRDMA::post_batches(
 }
 
 
-void DKVStoreRDMA::ReadKVRecords(std::vector<DKVStoreRDMA::ValueType *> &cache,
-                                 const std::vector<KeyType> &key,
-                                 RW_MODE::RWMode rw_mode) {
-  if (rw_mode != RW_MODE::READ_ONLY) {
-    std::cerr << "Ooppssss.......... writeable records not yet implemented" << std::endl;
-  }
-
+void DKVStoreRDMA::ReadKVRecords(::size_t buffer,
+                                 std::vector<DKVStoreRDMA::ValueType *> &cache,
+                                 const std::vector<KeyType> &key) {
   t_read_.outer.start();
 
   for (auto &s : posts_) {
@@ -441,7 +440,7 @@ void DKVStoreRDMA::ReadKVRecords(std::vector<DKVStoreRDMA::ValueType *> &cache,
       t_read_.local.stop();
 
     } else {
-      ValueType *target = cache_buffer_.get(value_size_);
+      ValueType *target = cache_buffer_[buffer].get(value_size_);
       cache[i] = target;
 
       ::size_t batch = owner / options_.batch_size();
@@ -524,28 +523,18 @@ void DKVStoreRDMA::WriteKVRecords(const std::vector<KeyType> &key,
   t_write_.outer.stop();
 }
 
-
-std::vector<DKVStoreRDMA::ValueType *>
-    DKVStoreRDMA::GetWriteKVRecords(::size_t n) {
-  std::vector<ValueType *> w(n);
-  for (::size_t i = 0; i < n; i++) {
-    w[i] = write_buffer_.get(value_size_);
-  }
-
-  return w;
-}
-
-
-void DKVStoreRDMA::FlushKVRecords(const std::vector<KeyType> &key) {
-  std::cerr << "Ooppssss.......... writeable records not yet implemented" << std::endl;
-  write_buffer_.reset();
-}
-
 /**
  * Purge the cache area
  */
 void DKVStoreRDMA::PurgeKVRecords() {
-  cache_buffer_.reset();
+  for (auto & b : cache_buffer_) {
+    b.reset();
+  }
+  write_buffer_.reset();
+}
+
+void DKVStoreRDMA::PurgeKVRecords(::size_t buffer) {
+  cache_buffer_[buffer].reset();
   write_buffer_.reset();
 }
 

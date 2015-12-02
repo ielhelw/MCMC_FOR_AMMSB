@@ -178,9 +178,20 @@ class rdma_area {
     area_ = reinterpret_cast<ValueType *>(region_.vaddr);
   }
 
-  void Init(const DEVICE *device, Buffer<ValueType> *buffer, ::size_t n_elements) {
+  void Init(const DEVICE *device, Buffer<ValueType> *buffer,
+            ::size_t n_elements) {
     Init(device, n_elements);
     buffer->Init(area_, n_elements);
+  }
+
+  void Init(const DEVICE *device, std::vector<Buffer<ValueType> > *buffer,
+            ::size_t n_elements_per_buffer) {
+    Init(device, buffer->size() * n_elements_per_buffer);
+    ValueType *area = area_;
+    for (auto & b : *buffer) {
+      b.Init(area, n_elements_per_buffer);
+      area += n_elements_per_buffer;
+    }
   }
 
   bool contains(const ValueType *v) const {
@@ -294,7 +305,8 @@ class DKVStoreRDMA : public DKVStoreInterface {
 
  public:
   VIRTUAL void Init(::size_t value_size, ::size_t total_values,
-                    ::size_t max_cache_capacity, ::size_t max_write_capacity);
+                    ::size_t num_cache_buffers, ::size_t cache_buffer_capacity,
+                    ::size_t max_write_capacity);
 
   virtual bool include_master() {
     return include_master_;
@@ -310,21 +322,17 @@ class DKVStoreRDMA : public DKVStoreInterface {
   }
 
 
-  VIRTUAL void ReadKVRecords(std::vector<ValueType *> &cache,
-                             const std::vector<KeyType> &key,
-                             RW_MODE::RWMode rw_mode);
+  VIRTUAL void ReadKVRecords(::size_t buffer, std::vector<ValueType *> &cache,
+                             const std::vector<KeyType> &key);
 
   VIRTUAL void WriteKVRecords(const std::vector<KeyType> &key,
                               const std::vector<const ValueType *> &value);
-
-  VIRTUAL std::vector<ValueType *> GetWriteKVRecords(::size_t n);
-
-  VIRTUAL void FlushKVRecords(const std::vector<KeyType> &key);
 
   /**
    * Purge the cache area
    */
   VIRTUAL void PurgeKVRecords();
+  VIRTUAL void PurgeKVRecords(::size_t buffer);
 
   VIRTUAL void barrier();
 
@@ -373,8 +381,6 @@ class DKVStoreRDMA : public DKVStoreInterface {
   int64_t bytes_remote_read = 0;
   int64_t bytes_local_written = 0;
   int64_t bytes_remote_written = 0;
-
-
 };
 
 }   // namespace DKVRDMA

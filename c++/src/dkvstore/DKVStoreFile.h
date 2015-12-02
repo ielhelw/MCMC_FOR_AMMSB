@@ -59,20 +59,17 @@ class DKVStoreFile : public DKVStoreInterface {
   virtual ~DKVStoreFile();
 
   virtual void Init(::size_t value_size, ::size_t total_values,
-                    ::size_t max_cache_capacity, ::size_t max_write_capacity);
+                    ::size_t num_cache_buffers, ::size_t cache_buffer_capacity,
+                    ::size_t max_write_capacity);
 
-  virtual void ReadKVRecords(std::vector<ValueType *> &cache,
-                             const std::vector<KeyType> &key,
-                             RW_MODE::RWMode rw_mode);
+  virtual void ReadKVRecords(::size_t buffer, std::vector<ValueType *> &cache,
+                             const std::vector<KeyType> &key);
 
   virtual void WriteKVRecords(const std::vector<KeyType> &key,
                               const std::vector<const ValueType *> &value);
 
-  virtual std::vector<ValueType *> GetWriteKVRecords(::size_t n);
-
-  virtual void FlushKVRecords(const std::vector<KeyType> &key);
-
   virtual void PurgeKVRecords();
+  virtual void PurgeKVRecords(::size_t buffer);
 
  private:
   const std::string PiFileName(KeyType node) const;
