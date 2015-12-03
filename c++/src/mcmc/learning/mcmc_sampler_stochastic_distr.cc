@@ -484,8 +484,8 @@ void MCMCSamplerStochasticDistributed::init() {
 
   // for perplexity, cache pi for both vertexes of each edge
   max_perplexity_chunk_ = args_.max_pi_cache_entries_ / 2;
-  ::size_t num_perp_nodes = (2 * network.get_held_out_size() +
-                             mpi_size_ - 1) / mpi_size_;
+  ::size_t num_perp_nodes = 2 * (network.get_held_out_size() +
+                                 mpi_size_ - 1) / mpi_size_;
   ::size_t max_my_perp_nodes = std::min(2 * max_perplexity_chunk_,
                                         num_perp_nodes);
 
