@@ -137,8 +137,6 @@ bool Pipeline::DequeueChunk(::size_t buffer_counter, PiChunk** chunk) {
   *chunk = buffer_[buffer_counter].chunk_;
   buffer_[buffer_counter].state_ = PIPELINE_STATE::FILLING;
 
-  std::cerr << "grab buffer " << buffer_counter << std::endl;
-
   return true;
 }
 
