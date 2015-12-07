@@ -19,9 +19,11 @@ Network::Network(const NetworkInfo& info)
 Network::~Network() {
   delete const_cast<Data*>(data_);
 
-  std::cout << t_sample_sample_ << std::endl;
-  std::cout << t_sample_merge_ << std::endl;
-  std::cout << t_sample_merge_tail_ << std::endl;
+  if (linked_edges != NULL) {
+    std::cout << t_sample_sample_ << std::endl;
+    std::cout << t_sample_merge_ << std::endl;
+    std::cout << t_sample_merge_tail_ << std::endl;
+  }
 }
 
 ::size_t Network::num_pieces_for_minibatch(::size_t mini_batch_size) const {

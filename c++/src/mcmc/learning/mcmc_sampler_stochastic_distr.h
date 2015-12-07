@@ -3,6 +3,8 @@
 
 #include <unordered_set>
 #include <iostream>
+#include <thread>
+#include <boost/thread.hpp>
 
 #include "mcmc/config.h"
 
@@ -67,6 +69,84 @@ class PerpData {
   // OpenMP parallelism requires a vector
   std::vector<EdgeMapItem> data_;
   std::vector<perp_accu> accu_;
+};
+
+
+class PiChunk {
+ public:
+  std::vector<Vertex> chunk_nodes;
+  std::vector<Float *> pi_node;
+  std::vector<Vertex> flat_neighbors;
+  std::vector<Float *> pi_neighbor;
+};
+
+
+// **************************************************************************
+//
+// class Pipeline
+//
+// **************************************************************************
+
+namespace PIPELINE_STATE {
+  enum PipelineState {
+    FILL_COMMAND,
+    FILLING,
+    FILLED,
+    STOP,
+  };
+}
+
+class Pipeline;
+
+class PipelineBuffer {
+ public:
+  PipelineBuffer() : state_(PIPELINE_STATE::FILLED) { }
+
+  PiChunk* chunk_;
+  PIPELINE_STATE::PipelineState state_;
+  boost::condition_variable fill_requested_;
+  boost::condition_variable fill_completed_;
+
+  friend class Pipeline;
+};
+
+
+class Pipeline {
+ public:
+  Pipeline(::size_t num_buffers) : buffer_(num_buffers) { }
+
+  void EnqueueChunk(PiChunk* chunk, ::size_t buffer_counter);
+  void AwaitChunkFilled(::size_t buffer_counter);
+  bool DequeueChunk(::size_t buffer_counter, PiChunk** chunk);
+  void NotifyChunkFilled(::size_t buffer_counter);
+  void Stop();
+  ::size_t num_buffers() const;
+
+private:
+  boost::mutex lock_;
+  std::vector<PipelineBuffer> buffer_;
+};
+
+
+// **************************************************************************
+//
+// class DKVServer
+//
+// **************************************************************************
+
+class DKVServer {
+ public:
+  DKVServer(Pipeline& pipeline, DKV::DKVStoreInterface& d_kv_store);
+
+  virtual ~DKVServer();
+  void operator() ();
+  std::ostream& report(std::ostream& s) const;
+
+ private:
+  Pipeline&     pipeline_;
+  DKV::DKVStoreInterface& d_kv_store_;
+  Timer         t_load_pi_minibatch_;
+  Timer         t_load_pi_neighbor_;
 };
 
 
@@ -140,11 +220,11 @@ class MCMCSamplerStochasticDistributed : public MCMCSamplerStochastic {
 
   void init_pi();
 
-  void ScatterSubGraph(const std::vector<std::vector<int32_t> > &subminibatch);
+  void ScatterSubGraph(const std::vector<std::vector<Vertex> > &subminibatch);
   EdgeSample deploy_mini_batch();
   void update_phi(std::vector<std::vector<Float> >* phi_node);
   void update_phi_node(::size_t index, Vertex i, const Float* pi_node,
-                       const std::vector<int32_t>::iterator &neighbors,
+                       const std::vector<Vertex>::iterator &neighbors,
                        const std::vector<Float*>::iterator &pi,
                        Float eps_t, Random::Random* rnd,
                        std::vector<Float>* phi_node	// out parameter
@@ -184,7 +264,7 @@ class MCMCSamplerStochasticDistributed : public MCMCSamplerStochastic {
   ::size_t	max_perplexity_chunk_;
 
   // Lift to class member to avoid (de)allocation in each iteration
-  std::vector<int32_t> nodes_;		// my minibatch nodes
+  std::vector<Vertex> nodes_;		// my minibatch nodes
   std::vector<Float*> pi_update_;
   // gradients K*2 dimension
   std::vector<std::vector<std::vector<Float> > > grads_beta_;
@@ -195,6 +275,13 @@ class MCMCSamplerStochasticDistributed : public MCMCSamplerStochastic {
 
   bool          master_is_worker_;
   bool          master_hosts_pi_;
+
+  ::size_t      num_buffers_;
+  ::size_t      current_buffer_;
+  std::unique_ptr<Pipeline> pipeline_;
+  std::unique_ptr<DKVServer> dkv_server_;
+  boost::thread dkv_server_thread_;
+  std::vector<PiChunk> pi_chunk_;
 
   std::unique_ptr<DKV::DKVStoreInterface> d_kv_store_;
 
@@ -218,8 +305,6 @@ class MCMCSamplerStochasticDistributed : public MCMCSamplerStochastic {
   Timer         t_sample_neighbor_nodes_;
   Timer         t_update_phi_pi_;
   Timer         t_update_phi_;
-  Timer         t_load_pi_minibatch_;
-  Timer         t_load_pi_neighbor_;
   Timer         t_barrier_phi_;
   Timer         t_update_pi_;
   Timer         t_store_pi_minibatch_;

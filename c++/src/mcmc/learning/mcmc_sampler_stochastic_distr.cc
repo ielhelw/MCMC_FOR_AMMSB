@@ -20,113 +20,10 @@
 #ifdef MCMC_ENABLE_DISTRIBUTED
 #  include <mpi.h>
 #else
-
-#define MPI_SUCCESS		0
-
-typedef int MPI_Comm;
-#define MPI_COMM_WORLD	0
-
-enum MPI_ERRORS {
-  MPI_ERRORS_RETURN,
-  MPI_ERRORS_ARE_FATAL,
-};
-
-enum MPI_Datatype {
-  MPI_INT                    = 0x4c000405,
-  MPI_LONG                   = 0x4c000407,
-  MPI_UNSIGNED_LONG          = 0x4c000408,
-  MPI_DOUBLE                 = 0x4c00080b,
-  MPI_BYTE                   = 0x4c00010d,
-};
-
-enum MPI_Op {
-  MPI_SUM,
-};
-
-void *MPI_IN_PLACE = (void *)0x88888888;
-
-
-int MPI_Init(int *argc, char ***argv) {
-  return MPI_SUCCESS;
-}
-
-int MPI_Finalize() {
-  return MPI_SUCCESS;
-}
-
-int MPI_Bcast(void *buffer, int count, MPI_Datatype datatype,
-              int root, MPI_Comm comm) {
-  return MPI_SUCCESS;
-}
-
-int MPI_Barrier(MPI_Comm comm) {
-  return MPI_SUCCESS;
-}
-
-int MPI_Comm_set_errhandler(MPI_Comm comm, int mode) {
-  return MPI_SUCCESS;
-}
-
-int MPI_Comm_size(MPI_Comm comm, int *mpi_size) {
-  *mpi_size = 1;
-  return MPI_SUCCESS;
-}
-
-int MPI_Comm_rank(MPI_Comm comm, int *mpi_rank) {
-  *mpi_rank = 0;
-  return MPI_SUCCESS;
-}
-
-::size_t mpi_datatype_size(MPI_Datatype type) {
-  switch (type) {
-  case MPI_INT:
-    return sizeof(int32_t);
-  case MPI_LONG:
-    return sizeof(int64_t);
-  case MPI_UNSIGNED_LONG:
-    return sizeof(uint64_t);
-  case MPI_FLOAT:
-    return sizeof(float);
-  case MPI_DOUBLE:
-    return sizeof(double);
-  case MPI_BYTE:
-    return 1;
-  default:
-    std::cerr << "Unknown MPI datatype" << std::cerr;
-    return 0;
-  }
-}
-
-int MPI_Scatter(void *sendbuf, int sendcount, MPI_Datatype sendtype,
-                void *recvbuf, int recvcount, MPI_Datatype recvtype,
-                int root, MPI_Comm comm) {
-  memcpy(recvbuf, sendbuf, sendcount * mpi_datatype_size(sendtype));
-  return MPI_SUCCESS;
-}
-
-int MPI_Scatterv(void *sendbuf, int *sendcounts, int *displs, MPI_Datatype sendtype,
-                 void *recvbuf, int recvcount, MPI_Datatype recvtype,
-                 int root, MPI_Comm comm) {
-  return MPI_Scatter((char *)sendbuf + displs[0] * mpi_datatype_size(sendtype),
-                     sendcounts[0], sendtype,
-                     recvbuf, recvcount, recvtype,
-                     root, comm);
-}
-
-int MPI_Allreduce(void *sendbuf, void *recvbuf, int count, MPI_Datatype datatype,
-                  MPI_Op op, MPI_Comm comm) {
-  if (sendbuf != MPI_IN_PLACE) {
-    memcpy(recvbuf, sendbuf, count * mpi_datatype_size(datatype));
-  }
-  return MPI_SUCCESS;
-}
-
+#  include "mock_mpi.h"
 #endif
 
 #include "dkvstore/DKVStoreFile.h"
-#ifdef MCMC_ENABLE_RAMCLOUD
-#include "dkvstore/DKVStoreRamCloud.h"
-#endif
 #ifdef MCMC_ENABLE_RDMA
 #include "dkvstore/DKVStoreRDMA.h"
 #endif
@@ -204,6 +101,119 @@ void PerpData::Init(::size_t max_perplexity_chunk) {
 }
 
 
+// **************************************************************************
+//
+// class Pipeline
+//
+// **************************************************************************
+
+void Pipeline::EnqueueChunk(PiChunk* chunk, ::size_t buffer_counter) {
+  boost::unique_lock<boost::mutex> lock(lock_);
+  assert(buffer_[buffer_counter].state_ == PIPELINE_STATE::FILLED);
+
+  buffer_[buffer_counter].chunk_ = chunk;
+  buffer_[buffer_counter].state_ = PIPELINE_STATE::FILL_COMMAND;
+  buffer_[buffer_counter].fill_requested_.notify_one();
+}
+
+
+void Pipeline::AwaitChunkFilled(::size_t buffer_counter) {
+  boost::unique_lock<boost::mutex> lock(lock_);
+  while (buffer_[buffer_counter].state_ != PIPELINE_STATE::FILLED) {
+    buffer_[buffer_counter].fill_completed_.wait(lock);
+  }
+}
+
+
+bool Pipeline::DequeueChunk(::size_t buffer_counter, PiChunk** chunk) {
+  boost::unique_lock<boost::mutex> lock(lock_);
+  while (buffer_[buffer_counter].state_ != PIPELINE_STATE::FILL_COMMAND) {
+    if (buffer_[buffer_counter].state_ == PIPELINE_STATE::STOP) {
+      return false;
+    }
+    buffer_[buffer_counter].fill_requested_.wait(lock);
+  }
+
+  *chunk = buffer_[buffer_counter].chunk_;
+  buffer_[buffer_counter].state_ = PIPELINE_STATE::FILLING;
+
+  std::cerr << "grab buffer " << buffer_counter << std::endl;
+
+  return true;
+}
+
+
+void Pipeline::NotifyChunkFilled(::size_t buffer_counter) {
+  boost::unique_lock<boost::mutex> lock(lock_);
+  assert(buffer_[buffer_counter].state_ == PIPELINE_STATE::FILLING);
+
+  buffer_[buffer_counter].state_ = PIPELINE_STATE::FILLED;
+  buffer_[buffer_counter].fill_completed_.notify_one();
+}
+
+void Pipeline::Stop() {
+  boost::unique_lock<boost::mutex> lock(lock_);
+  for (auto& b : buffer_) {
+    b.state_ = PIPELINE_STATE::STOP;
+    b.fill_requested_.notify_one();
+  }
+}
+
+::size_t Pipeline::num_buffers() const {
+  return buffer_.size();
+}
+
+
+// **************************************************************************
+//
+// class DKVServer
+//
+// **************************************************************************
+
+DKVServer::DKVServer(Pipeline& pipeline, DKV::DKVStoreInterface& d_kv_store)
+    : pipeline_(pipeline), d_kv_store_(d_kv_store) {
+}
+
+void DKVServer::operator() () {
+  std::cerr << "RDMA Server runs" << std::endl;
+  ::size_t buffer_counter = 0;
+  PiChunk* chunk;
+  t_load_pi_minibatch_     = Timer("      load minibatch pi");
+  t_load_pi_neighbor_      = Timer("      load neighbor pi");
+
+  while (true) {
+    if (! pipeline_.DequeueChunk(buffer_counter, &chunk)) {
+      break;
+    }
+
+    // ************ load minibatch node pi from D-KV store **************
+    t_load_pi_minibatch_.start();
+    d_kv_store_.ReadKVRecords(0, chunk->pi_node, chunk->chunk_nodes);
+    t_load_pi_minibatch_.stop();
+
+    // ************ load neighbor pi from D-KV store **********
+    t_load_pi_neighbor_.start();
+    d_kv_store_.ReadKVRecords(0, chunk->pi_neighbor, chunk->flat_neighbors);
+    t_load_pi_neighbor_.stop();
+
+    pipeline_.NotifyChunkFilled(buffer_counter);
+
+    ++buffer_counter;
+    if (buffer_counter == pipeline_.num_buffers()) {
+      buffer_counter = 0;
+    }
+  }
+}
+
+DKVServer::~DKVServer() {
+}
+
+std::ostream& DKVServer::report(std::ostream& s) const {
+  s << t_load_pi_minibatch_ << std::endl;
+  s << t_load_pi_neighbor_ << std::endl;
+  return s;
+}
+
 
 // **************************************************************************
 //
@@ -226,8 +236,6 @@ MCMCSamplerStochasticDistributed::MCMCSamplerStochasticDistributed(
   t_broadcast_theta_beta_  = Timer("    broadcast theta/beta");
   t_sample_neighbor_nodes_ = Timer("      sample_neighbor_nodes");
   t_update_phi_pi_         = Timer("    update_phi_pi");
-  t_load_pi_minibatch_     = Timer("      load minibatch pi");
-  t_load_pi_neighbor_      = Timer("      load neighbor pi");
   t_update_phi_            = Timer("      update_phi");
   t_barrier_phi_           = Timer("      barrier after update phi");
   t_update_pi_             = Timer("      update_pi");
@@ -395,26 +403,6 @@ void MCMCSamplerStochasticDistributed::init() {
   std::cerr << "MPI_Init() done, rank " << mpi_rank_ <<
     " size " << mpi_size_ << std::endl;
 
-  std::cerr << "Use D-KV store type " << args_.dkv_type << std::endl;
-  switch (args_.dkv_type) {
-  case DKV::TYPE::FILE:
-    d_kv_store_ = std::unique_ptr<DKV::DKVFile::DKVStoreFile>(
-                    new DKV::DKVFile::DKVStoreFile(args_.getRemains()));
-    break;
-#ifdef MCMC_ENABLE_RAMCLOUD
-  case DKV::TYPE::RAMCLOUD:
-    d_kv_store_ = std::unique_ptr<DKV::DKVRamCloud::DKVStoreRamCloud>(
-                    new DKV::DKVRamCloud::DKVStoreRamCloud(args_.getRemains()));
-    break;
-#endif
-#ifdef MCMC_ENABLE_RDMA
-  case DKV::TYPE::RDMA:
-    d_kv_store_ = std::unique_ptr<DKV::DKVRDMA::DKVStoreRDMA>(
-                    new DKV::DKVRDMA::DKVStoreRDMA(args_.getRemains()));
-    break;
-#endif
-  }
-
   if (args_.forced_master_is_worker) {
     master_is_worker_ = true;
   } else {
@@ -460,7 +448,7 @@ void MCMCSamplerStochasticDistributed::init() {
     }
     // /proc/meminfo reports KB
     ::size_t pi_total = (1024 * mem_total) / ((K + 1) * sizeof(Float));
-    args_.max_pi_cache_entries_ = pi_total / 32;
+    args_.max_pi_cache_entries_ = pi_total / 16;
   }
 
   // Calculate DKV store buffer requirements
@@ -473,8 +461,9 @@ void MCMCSamplerStochasticDistributed::init() {
     workers = mpi_size_ - 1;
   }
 
+  ::size_t num_buffers_ = args_.num_buffers_;
   // pi cache hosts chunked subset of minibatch nodes + their neighbors
-  max_minibatch_chunk_ = args_.max_pi_cache_entries_ / (1 + real_num_node_sample());
+  max_minibatch_chunk_ = args_.max_pi_cache_entries_ / num_buffers_ / (1 + real_num_node_sample());
   ::size_t max_my_minibatch_nodes = std::min(max_minibatch_chunk_,
                                              (max_minibatch_nodes_ +
                                                 workers - 1) /
@@ -484,8 +473,8 @@ void MCMCSamplerStochasticDistributed::init() {
 
   // for perplexity, cache pi for both vertexes of each edge
   max_perplexity_chunk_ = args_.max_pi_cache_entries_ / 2;
-  ::size_t num_perp_nodes = (2 * network.get_held_out_size() +
-                             mpi_size_ - 1) / mpi_size_;
+  ::size_t num_perp_nodes = 2 * (network.get_held_out_size() +
+                                 mpi_size_ - 1) / mpi_size_;
   ::size_t max_my_perp_nodes = std::min(2 * max_perplexity_chunk_,
                                         num_perp_nodes);
 
@@ -510,8 +499,24 @@ void MCMCSamplerStochasticDistributed::init() {
     " local " << num_perp_nodes <<
     " mine " << max_my_perp_nodes <<
     " chunk " << max_perplexity_chunk_ << std::endl;
+  std::cerr << "phi pipeline depth " << num_buffers_ << std::endl;
 
-  d_kv_store_->Init(K + 1, N, 1, max_pi_cache, max_my_minibatch_nodes);
+  std::cerr << "Use D-KV store type " << args_.dkv_type << std::endl;
+  switch (args_.dkv_type) {
+  case DKV::TYPE::FILE:
+    d_kv_store_ = std::unique_ptr<DKV::DKVFile::DKVStoreFile>(
+                    new DKV::DKVFile::DKVStoreFile(args_.getRemains()));
+    break;
+#ifdef MCMC_ENABLE_RDMA
+  case DKV::TYPE::RDMA:
+    d_kv_store_ = std::unique_ptr<DKV::DKVRDMA::DKVStoreRDMA>(
+                    new DKV::DKVRDMA::DKVStoreRDMA(args_.getRemains()));
+    break;
+#endif
+  }
+
+  d_kv_store_->Init(K + 1, N, num_buffers_, max_pi_cache,
+                    max_my_minibatch_nodes);
 
   master_hosts_pi_ = d_kv_store_->include_master();
 
@@ -534,8 +539,15 @@ void MCMCSamplerStochasticDistributed::init() {
   }
   grads_beta_.resize(omp_get_max_threads());
   for (auto &g : grads_beta_) {
-    g = std::vector<std::vector<Float> >(2, std::vector<Float>(K));    // gradients K*2 dimension
+    // gradients K*2 dimension
+    g = std::vector<std::vector<Float> >(2, std::vector<Float>(K));
   }
+
+  pipeline_ = std::unique_ptr<Pipeline>(new Pipeline(num_buffers_));
+  dkv_server_ = std::unique_ptr<DKVServer>(new DKVServer(*pipeline_,
+                                                         *d_kv_store_));
+  pi_chunk_.resize(num_buffers_);
+  dkv_server_thread_ = boost::thread(boost::ref(*dkv_server_.get()));
 }
 
 void MCMCSamplerStochasticDistributed::run() {
@@ -611,6 +623,9 @@ void MCMCSamplerStochasticDistributed::run() {
 
   check_perplexity(true);
 
+  pipeline_->Stop();
+  dkv_server_thread_.join();
+
   r = MPI_Barrier(MPI_COMM_WORLD);
   mpi_error_test(r, "MPI_Barrier(post pi) fails");
 
@@ -627,10 +642,9 @@ void MCMCSamplerStochasticDistributed::run() {
   std::cout << t_mini_batch_ << std::endl;
   std::cout << t_nodes_in_mini_batch_ << std::endl;
   std::cout << t_broadcast_theta_beta_ << std::endl;
+  dkv_server_->report(std::cout);
   std::cout << t_update_phi_pi_ << std::endl;
   std::cout << t_sample_neighbor_nodes_ << std::endl;
-  std::cout << t_load_pi_minibatch_ << std::endl;
-  std::cout << t_load_pi_neighbor_ << std::endl;
   std::cout << t_update_phi_ << std::endl;
   std::cout << t_barrier_phi_ << std::endl;
   std::cout << t_update_pi_ << std::endl;
@@ -700,7 +714,7 @@ void MCMCSamplerStochasticDistributed::init_pi() {
   Float pi[K + 1];
   std::cerr << "*************** FIXME: load pi only on pi-hoster nodes" <<
     std::endl;
-  for (int32_t i = mpi_rank_; i < static_cast<int32_t>(N); i += mpi_size_) {
+  for (Vertex i = mpi_rank_; i < static_cast<Vertex>(N); i += mpi_size_) {
     std::vector<Float> phi_pi = rng_[0]->gamma(1, 1, 1, K)[0];
 #ifndef NDEBUG
     for (auto ph : phi_pi) {
@@ -710,7 +724,7 @@ void MCMCSamplerStochasticDistributed::init_pi() {
 
     pi_from_phi(pi, phi_pi);
 
-    std::vector<int32_t> node(1, i);
+    std::vector<Vertex> node(1, i);
     std::vector<const Float*> pi_wrapper(1, pi);
     // Easy performance improvement: accumulate records up to write area
     // size, the Write/Purge
@@ -753,7 +767,7 @@ void MCMCSamplerStochasticDistributed::check_perplexity(bool force) {
 
 
 void MCMCSamplerStochasticDistributed::ScatterSubGraph(
-    const std::vector<std::vector<int32_t> > &subminibatch) {
+    const std::vector<std::vector<Vertex> > &subminibatch) {
   std::vector<int32_t> set_size(nodes_.size());
   std::vector<Vertex> flat_subgraph;
   int r;
@@ -977,7 +991,7 @@ void MCMCSamplerStochasticDistributed::update_phi(
     std::vector<std::vector<Float> >* phi_node) {
   std::vector<Float*> pi_node;
   std::vector<Float*> pi_neighbor;
-  std::vector<int32_t> flat_neighbors;
+  std::vector<Vertex> flat_neighbors;
 
   Float eps_t = get_eps_t();
 
@@ -987,23 +1001,21 @@ void MCMCSamplerStochasticDistributed::update_phi(
     ::size_t chunk = std::min(max_minibatch_chunk_,
                               nodes_.size() - chunk_start);
 
-    std::vector<int32_t> chunk_nodes(nodes_.begin() + chunk_start,
-                                     nodes_.begin() + chunk_start + chunk);
-
-    // ************ load minibatch node pi from D-KV store **************
-    t_load_pi_minibatch_.start();
-    pi_node.resize(chunk_nodes.size());
-    d_kv_store_->ReadKVRecords(0, pi_node, chunk_nodes);
-    t_load_pi_minibatch_.stop();
+    auto *pi_chunk = &pi_chunk_[current_buffer_];
+    const auto &chunk_begin = nodes_.begin() + chunk_start;
+    pi_chunk->chunk_nodes.assign(chunk_begin, chunk_begin + chunk);
+    pi_chunk->pi_node.resize(pi_chunk->chunk_nodes.size());
 
     // ************ sample neighbor nodes in parallel at each host ******
     // std::cerr << "Sample neighbor nodes" << std::endl;
     t_sample_neighbor_nodes_.start();
-    pi_neighbor.resize(chunk_nodes.size() * real_num_node_sample());
-    flat_neighbors.resize(chunk_nodes.size() * real_num_node_sample());
+    pi_chunk->pi_neighbor.resize(pi_chunk->chunk_nodes.size() *
+                                real_num_node_sample());
+    pi_chunk->flat_neighbors.resize(pi_chunk->chunk_nodes.size() *
+                                   real_num_node_sample());
 #pragma omp parallel for // num_threads (12)
-    for (::size_t i = 0; i < chunk_nodes.size(); ++i) {
-      Vertex node = chunk_nodes[i];
+    for (::size_t i = 0; i < pi_chunk->chunk_nodes.size(); ++i) {
+      Vertex node = pi_chunk->chunk_nodes[i];
       // sample a mini-batch of neighbors
       auto rng = rng_[omp_get_thread_num()];
       NeighborSet neighbors = sample_neighbor_nodes(num_node_sample, node,
@@ -1013,37 +1025,40 @@ void MCMCSamplerStochasticDistributed::update_phi(
       // attempt to resize flat_neighbors.
       ::size_t j = i * real_num_node_sample();
       for (auto n : neighbors) {
-        memcpy(flat_neighbors.data() + j, &n, sizeof n);
+        memcpy(pi_chunk->flat_neighbors.data() + j, &n, sizeof n);
         ++j;
       }
     }
     t_sample_neighbor_nodes_.stop();
 
-    // ************ load neighor pi from D-KV store **********
-    t_load_pi_neighbor_.start();
-    d_kv_store_->ReadKVRecords(0, pi_neighbor, flat_neighbors);
-    t_load_pi_neighbor_.stop();
+    pipeline_->EnqueueChunk(pi_chunk, current_buffer_);
+    pipeline_->AwaitChunkFilled(current_buffer_);
 
     t_update_phi_.start();
 #pragma omp parallel for // num_threads (12)
-    for (::size_t i = 0; i < chunk_nodes.size(); ++i) {
-      Vertex node = chunk_nodes[i];
-      update_phi_node(chunk_start + i, node, pi_node[i],
-                      flat_neighbors.begin() + i * real_num_node_sample(),
-                      pi_neighbor.begin() + i * real_num_node_sample(),
+    for (::size_t i = 0; i < pi_chunk->chunk_nodes.size(); ++i) {
+      Vertex node = pi_chunk->chunk_nodes[i];
+      update_phi_node(chunk_start + i, node, pi_chunk->pi_node[i],
+                      pi_chunk->flat_neighbors.begin() + i * real_num_node_sample(),
+                      pi_chunk->pi_neighbor.begin() + i * real_num_node_sample(),
                       eps_t, rng_[omp_get_thread_num()],
                       &(*phi_node)[chunk_start + i]);
     }
     t_update_phi_.stop();
 
-    d_kv_store_->PurgeKVRecords();
+    d_kv_store_->PurgeKVRecords(current_buffer_);
+
+    ++current_buffer_;
+    if (current_buffer_ == pipeline_->num_buffers()) {
+      current_buffer_ = 0;
+    }
   }
 }
 
 
 void MCMCSamplerStochasticDistributed::update_phi_node(
     ::size_t index, Vertex i, const Float* pi_node,
-    const std::vector<int32_t>::iterator &neighbors,
+    const std::vector<Vertex>::iterator &neighbors,
     const std::vector<Float*>::iterator &pi,
     Float eps_t, Random::Random* rnd,
     std::vector<Float>* phi_node	// out parameter
@@ -1053,7 +1068,7 @@ void MCMCSamplerStochasticDistributed::update_phi_node(
   std::vector<Float> grads(K, 0.0);	// gradient for K classes
 
   for (::size_t ix = 0; ix < real_num_node_sample(); ++ix) {
-    int32_t neighbor = neighbors[ix];
+    Vertex neighbor = neighbors[ix];
     if (i != neighbor) {
       int y_ab = 0;		// observation
       if (args_.REPLICATED_NETWORK) {
@@ -1411,6 +1426,10 @@ Float MCMCSamplerStochasticDistributed::cal_perplexity_held_out() {
     a.non_link.reset();
   }
 
+  t_purge_pi_perp_.start();
+  d_kv_store_->PurgeKVRecords(0);
+  t_purge_pi_perp_.stop();
+
   for (::size_t chunk_start = 0;
        chunk_start < perp_.data_.size();
        chunk_start += max_perplexity_chunk_) {
@@ -1418,9 +1437,9 @@ Float MCMCSamplerStochasticDistributed::cal_perplexity_held_out() {
                               perp_.data_.size() - chunk_start);
 
     // chunk_size is about edges; nodes are at 2i and 2i+1
-    std::vector<int32_t> chunk_nodes(perp_.nodes_.begin() + 2 * chunk_start,
-                                     perp_.nodes_.begin() + 2 * (chunk_start +
-                                                                 chunk));
+    std::vector<Vertex> chunk_nodes(perp_.nodes_.begin() + 2 * chunk_start,
+                                    perp_.nodes_.begin() + 2 * (chunk_start +
+                                                                chunk));
 
     t_load_pi_perp_.start();
     d_kv_store_->ReadKVRecords(0, perp_.pi_, chunk_nodes);
@@ -1468,7 +1487,7 @@ Float MCMCSamplerStochasticDistributed::cal_perplexity_held_out() {
     }
 
     t_purge_pi_perp_.start();
-    d_kv_store_->PurgeKVRecords();
+    d_kv_store_->PurgeKVRecords(0);
     t_purge_pi_perp_.stop();
   }
 

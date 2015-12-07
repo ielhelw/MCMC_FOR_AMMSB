@@ -206,6 +206,9 @@ class Options {
 #endif
          ),
        "D-KV store type (file/ramcloud/rdma)")
+      ("mcmc.num-buffers",
+       po::value< ::size_t>(&num_buffers_)->default_value(2),
+       "#buffers for update-phi multibuffering")
       ("mcmc.max-pi-cache",
        po::value< ::size_t>(&max_pi_cache_entries_)->default_value(0),
        "minibatch chunk size")
@@ -290,6 +293,7 @@ class Options {
   DKV::TYPE dkv_type;
   bool forced_master_is_worker;
   mutable ::size_t	max_pi_cache_entries_;
+  ::size_t num_buffers_;
   bool REPLICATED_NETWORK;
 #endif
   po::options_description desc_all;
