@@ -182,6 +182,7 @@ class MCMCSamplerStochasticDistributed : public MCMCSamplerStochastic {
   ::size_t	max_minibatch_nodes_;
   ::size_t	max_minibatch_chunk_;
   ::size_t	max_perplexity_chunk_;
+  ::size_t  max_dkv_write_entries_;
 
   // Lift to class member to avoid (de)allocation in each iteration
   std::vector<int32_t> nodes_;		// my minibatch nodes

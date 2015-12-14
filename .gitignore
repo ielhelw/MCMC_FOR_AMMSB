@@ -12,6 +12,7 @@ python/com/uva/custom_random/*.cpp
 .Python
 env/
 build/
+build-*/
 develop-eggs/
 dist/
 eggs/
