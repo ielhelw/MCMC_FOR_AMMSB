@@ -44,16 +44,21 @@ class MCMCSamplerStochastic(Learner):
         # call base class initialization
         Learner.__init__(self, args, graph, compatibility_mode)
 
+        self._strategy = args.strategy
+
         self._interval = args.interval
         self.__num_pieces = graph.get_num_pieces()
         
         # step size parameters. 
-        self.__a = args.a
         # FIXME RFHH make SURE self.__b is initialized to a float. As published,
         # it is an int = 1024, which results in integer step_count / b so
         # eps_t always equals self.__a.
         self.__b = 1.0 * args.b
-        self.__c = args.c
+        self.__c = 1.0 * args.c
+        if (args.a == 0.0):
+            self.__a = pow(self.__b, -self.__c)
+        else:
+            self.__a = 1.0 * args.a
         
         # control parameters for learning
         #self.__num_node_sample = int(math.sqrt(self._network.get_num_nodes())) 
@@ -79,6 +84,11 @@ class MCMCSamplerStochastic(Learner):
 
 
     def update_pi_from_phi(self):
+        sys.stdout.write("len(phi) %d len(phi[0]) %d\n" % (len(self.__phi), len(self.__phi[0])))
+        for p in self.__phi:
+            if len(p) != len(self.__phi[0]):
+                sys.stderr.write("Havoc, phi length is %d, should be %d\n" % (len(p), len(self.__phi[0])))
+
         self._pi = self.__phi/np.sum(self.__phi,1)[:,np.newaxis]
 
     def update_beta_from_theta(self):
@@ -88,6 +98,7 @@ class MCMCSamplerStochastic(Learner):
     def run(self):
         """ run mini-batch based MCMC sampler, based on the sungjin's note """
 
+        sys.stdout.write("sample strategy %s\n" % self._strategy)
         sys.stdout.write("beta[0] %.12f\n" % self._beta[0])
         sys.stdout.write("phi[0][0] %.12f\n" % self.__phi[0][0])
         sys.stdout.write("pi[0][0] %.12f\n" % self._pi[0][0])
@@ -115,7 +126,7 @@ class MCMCSamplerStochastic(Learner):
                 sys.stdout.write("step count: %d time: %.3f perplexity for hold out set is: %.12f\n" % (self._step_count, t_outer.now() - start, ppx_score))
                 self._ppxs_held_out.append(ppx_score)
            
-            (mini_batch, scale) = self._network.sample_mini_batch(self.__num_pieces, "stratified-random-node")
+            (mini_batch, scale) = self._network.sample_mini_batch(self.__num_pieces, self._strategy)
             # latent_vars = {}
             # size = {}
             

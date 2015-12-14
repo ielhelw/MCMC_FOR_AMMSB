@@ -67,7 +67,7 @@ inline std::istream& operator>> (std::istream& in, TYPE& dkv_type) {
 }
 
 
-inline std::ostream& operator<< (std::ostream& s, TYPE& dkv_type) {
+inline std::ostream& operator<< (std::ostream& s, const TYPE& dkv_type) {
   switch (dkv_type) {
     case DKV::TYPE::FILE:
       s << "file";
