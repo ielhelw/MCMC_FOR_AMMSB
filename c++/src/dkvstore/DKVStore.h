@@ -211,10 +211,14 @@ class DKVStoreInterface {
                               const std::vector<const ValueType *> &value) = 0;
 
   /**
-   * Purge the cache area
+   * Flush writes from the cache area
    * @reentrant: no
    */
-  virtual void PurgeKVRecords() = 0;
+  virtual void FlushKVRecords() = 0;
+  /**
+   * Purge reads from the cache area
+   * @reentrant: no
+   */
   virtual void PurgeKVRecords(::size_t buffer) = 0;
 
  protected:

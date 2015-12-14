@@ -328,10 +328,7 @@ class DKVStoreRDMA : public DKVStoreInterface {
   VIRTUAL void WriteKVRecords(const std::vector<KeyType> &key,
                               const std::vector<const ValueType *> &value);
 
-  /**
-   * Purge the cache area
-   */
-  VIRTUAL void PurgeKVRecords();
+  VIRTUAL void FlushKVRecords();
   VIRTUAL void PurgeKVRecords(::size_t buffer);
 
   VIRTUAL void barrier();

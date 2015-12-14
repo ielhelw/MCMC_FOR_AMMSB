@@ -211,7 +211,10 @@ class Options {
        "#buffers for update-phi multibuffering")
       ("mcmc.max-pi-cache",
        po::value< ::size_t>(&max_pi_cache_entries_)->default_value(0),
-       "minibatch chunk size")
+       "minibatch pi cache area size")
+      ("mcmc.pi-cache-chunks",
+       po::value< ::size_t>(&pi_cache_chunks_)->default_value(0),
+       "minibatch pi cache #chunks")
       ("mcmc.master_is_worker",
        po::bool_switch(&forced_master_is_worker)->default_value(false),
        "master host also is a worker")
@@ -293,6 +296,7 @@ class Options {
   DKV::TYPE dkv_type;
   bool forced_master_is_worker;
   mutable ::size_t	max_pi_cache_entries_;
+  mutable ::size_t pi_cache_chunks_;
   ::size_t num_buffers_;
   bool REPLICATED_NETWORK;
 #endif

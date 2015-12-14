@@ -68,7 +68,7 @@ class DKVStoreFile : public DKVStoreInterface {
   virtual void WriteKVRecords(const std::vector<KeyType> &key,
                               const std::vector<const ValueType *> &value);
 
-  virtual void PurgeKVRecords();
+  virtual void FlushKVRecords();
   virtual void PurgeKVRecords(::size_t buffer);
 
  private:

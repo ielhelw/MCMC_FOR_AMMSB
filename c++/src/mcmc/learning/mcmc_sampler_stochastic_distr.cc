@@ -103,53 +103,76 @@ void PerpData::Init(::size_t max_perplexity_chunk) {
 
 // **************************************************************************
 //
-// class Pipeline
+// class ChunkPipeline
 //
 // **************************************************************************
 
-void Pipeline::EnqueueChunk(PiChunk* chunk, ::size_t buffer_counter) {
+void ChunkPipeline::EnqueueChunk(PiChunk* chunk) {
   boost::unique_lock<boost::mutex> lock(lock_);
-  assert(buffer_[buffer_counter].state_ == PIPELINE_STATE::FILLED);
+  assert(buffer_[client_enq_].state_ == PIPELINE_STATE::FREE);
 
-  buffer_[buffer_counter].chunk_ = chunk;
-  buffer_[buffer_counter].state_ = PIPELINE_STATE::FILL_COMMAND;
-  buffer_[buffer_counter].fill_requested_.notify_one();
+  // std::cerr << "Client: enqueue buffer[" << client_enq_ << "] for filling" << std::endl;
+  buffer_[client_enq_].chunk_ = chunk;
+  buffer_[client_enq_].state_ = PIPELINE_STATE::FILL_REQUESTED;
+  buffer_[client_enq_].fill_requested_.notify_one();
+  client_enq_ = (client_enq_ + 1) % num_buffers();
 }
 
 
-void Pipeline::AwaitChunkFilled(::size_t buffer_counter) {
+PiChunk* ChunkPipeline::AwaitChunkFilled() {
   boost::unique_lock<boost::mutex> lock(lock_);
-  while (buffer_[buffer_counter].state_ != PIPELINE_STATE::FILLED) {
-    buffer_[buffer_counter].fill_completed_.wait(lock);
+  // std::cerr << "Client: await buffer[" << client_deq_ << "] as full" << std::endl;
+  while (buffer_[client_deq_].state_ != PIPELINE_STATE::FILLED) {
+    buffer_[client_deq_].fill_completed_.wait(lock);
   }
+  // std::cerr << "Client: got buffer[" << client_deq_ << "], now compute" << std::endl;
+  PiChunk* pi_chunk = buffer_[client_deq_].chunk_;
+  client_clear_ = client_deq_;
+  client_deq_ = (client_deq_ + 1) % num_buffers();
+  return pi_chunk;
 }
 
 
-bool Pipeline::DequeueChunk(::size_t buffer_counter, PiChunk** chunk) {
+PiChunk* ChunkPipeline::DequeueChunk() {
   boost::unique_lock<boost::mutex> lock(lock_);
-  while (buffer_[buffer_counter].state_ != PIPELINE_STATE::FILL_COMMAND) {
-    if (buffer_[buffer_counter].state_ == PIPELINE_STATE::STOP) {
-      return false;
+  while (buffer_[server_deq_].state_ != PIPELINE_STATE::FILL_REQUESTED) {
+    if (buffer_[server_deq_].state_ == PIPELINE_STATE::STOP) {
+      return NULL;
     }
-    buffer_[buffer_counter].fill_requested_.wait(lock);
+    buffer_[server_deq_].fill_requested_.wait(lock);
   }
+  // std::cerr << "Server: dequeue buffer[" << server_deq_ << "] for filling" << std::endl;
 
-  *chunk = buffer_[buffer_counter].chunk_;
-  buffer_[buffer_counter].state_ = PIPELINE_STATE::FILLING;
+  PiChunk* chunk = buffer_[server_deq_].chunk_;
+  chunk->buffer_index_ = server_deq_ % num_buffers();
+  buffer_[server_deq_].state_ = PIPELINE_STATE::FILLING;
+  server_deq_ = (server_deq_ + 1) % num_buffers();
 
-  return true;
+  return chunk;
 }
 
 
-void Pipeline::NotifyChunkFilled(::size_t buffer_counter) {
+void ChunkPipeline::NotifyChunkFilled() {
   boost::unique_lock<boost::mutex> lock(lock_);
-  assert(buffer_[buffer_counter].state_ == PIPELINE_STATE::FILLING);
+  // std::cerr << "Server: notify buffer[" << server_complete_ << "] as full" << std::endl;
+  assert(buffer_[server_complete_].state_ == PIPELINE_STATE::FILLING);
 
-  buffer_[buffer_counter].state_ = PIPELINE_STATE::FILLED;
-  buffer_[buffer_counter].fill_completed_.notify_one();
+  buffer_[server_complete_].state_ = PIPELINE_STATE::FILLED;
+  buffer_[server_complete_].fill_completed_.notify_one();
+  server_complete_ = (server_complete_ + 1) % num_buffers();
 }
 
-void Pipeline::Stop() {
+
+void ChunkPipeline::ReleaseChunk() {
+  boost::unique_lock<boost::mutex> lock(lock_);
+  // std::cerr << "Client: purge buffer[" << client_clear_ << "] as full" << std::endl;
+  buffer_[client_clear_].state_ = PIPELINE_STATE::FREE;
+  d_kv_store_.PurgeKVRecords(client_clear_);
+  client_clear_ = (client_clear_ + 1) % num_buffers();
+}
+
+
+void ChunkPipeline::Stop() {
   boost::unique_lock<boost::mutex> lock(lock_);
   for (auto& b : buffer_) {
     b.state_ = PIPELINE_STATE::STOP;
@@ -157,59 +180,156 @@ void Pipeline::Stop() {
   }
 }
 
-::size_t Pipeline::num_buffers() const {
+
+::size_t ChunkPipeline::num_buffers() const {
   return buffer_.size();
 }
 
 
-// **************************************************************************
-//
-// class DKVServer
-//
-// **************************************************************************
-
-DKVServer::DKVServer(Pipeline& pipeline, DKV::DKVStoreInterface& d_kv_store)
-    : pipeline_(pipeline), d_kv_store_(d_kv_store) {
-}
-
-void DKVServer::operator() () {
-  std::cerr << "RDMA Server runs" << std::endl;
-  ::size_t buffer_counter = 0;
+void ChunkPipeline::operator() () {
+  std::cerr << "DKV Pipeline server runs" << std::endl;
   PiChunk* chunk;
   t_load_pi_minibatch_     = Timer("      load minibatch pi");
   t_load_pi_neighbor_      = Timer("      load neighbor pi");
 
   while (true) {
-    if (! pipeline_.DequeueChunk(buffer_counter, &chunk)) {
+    chunk = DequeueChunk();
+    if (chunk == NULL) {
       break;
     }
 
     // ************ load minibatch node pi from D-KV store **************
     t_load_pi_minibatch_.start();
-    d_kv_store_.ReadKVRecords(0, chunk->pi_node, chunk->chunk_nodes);
+    d_kv_store_.ReadKVRecords(chunk->buffer_index_, chunk->pi_node_,
+                              chunk->chunk_nodes_);
     t_load_pi_minibatch_.stop();
 
     // ************ load neighbor pi from D-KV store **********
     t_load_pi_neighbor_.start();
-    d_kv_store_.ReadKVRecords(0, chunk->pi_neighbor, chunk->flat_neighbors);
+    d_kv_store_.ReadKVRecords(chunk->buffer_index_, chunk->pi_neighbor_,
+                              chunk->flat_neighbors_);
     t_load_pi_neighbor_.stop();
 
-    pipeline_.NotifyChunkFilled(buffer_counter);
-
-    ++buffer_counter;
-    if (buffer_counter == pipeline_.num_buffers()) {
-      buffer_counter = 0;
-    }
+    NotifyChunkFilled();
   }
 }
 
-DKVServer::~DKVServer() {
-}
 
-std::ostream& DKVServer::report(std::ostream& s) const {
+std::ostream& ChunkPipeline::report(std::ostream& s) const {
   s << t_load_pi_minibatch_ << std::endl;
   s << t_load_pi_neighbor_ << std::endl;
   return s;
+}
+
+
+::size_t ChunkPipeline::GrabFreeBufferIndex() const {
+  for (::size_t i = 0; i < buffer_.size(); ++i) {
+    if (buffer_[i].state_ == PIPELINE_STATE::FREE) {
+      return i;
+    }
+  }
+  throw MCMCException("No free buffers in pi cache");
+}
+
+
+// **************************************************************************
+//
+// class PiChunk
+//
+// **************************************************************************
+
+void PiChunk::swap(PiChunk& x) {
+  std::swap(buffer_index_, x.buffer_index_);
+  std::swap(start_, x.start_);
+  chunk_nodes_.swap(x.chunk_nodes_);
+  pi_node_.swap(x.pi_node_);
+  flat_neighbors_.swap(x.flat_neighbors_);
+  pi_neighbor_.swap(x.pi_neighbor_);
+}
+
+
+// **************************************************************************
+//
+// class MinibatchPipeline
+//
+// **************************************************************************
+
+MinibatchPipeline::MinibatchPipeline(MCMCSamplerStochasticDistributed& sampler,
+                                     ::size_t max_minibatch_chunk,
+                                     ChunkPipeline& chunk_pipeline)
+    : sampler_(sampler), chunk_pipeline_(chunk_pipeline),
+      max_minibatch_chunk_(max_minibatch_chunk),
+      prev_(2), current_(0), next_(1) {
+  minibatch_slice_.resize(3);    // prev, current, next
+}
+
+
+void MinibatchPipeline::StageNextChunk() {
+  MinibatchSlice* mb_slice = &minibatch_slice_[current_];
+  if (mb_slice->processed_ >= mb_slice->pi_chunks_.size()) {
+    StageNextMinibatch();
+  } else {
+    chunk_pipeline_.EnqueueChunk(&mb_slice->pi_chunks_[mb_slice->processed_]);
+    ++mb_slice->processed_;
+  }
+}
+
+
+void MinibatchPipeline::AdvanceMinibatch() {
+  prev_ = current_;
+  current_ = next_;
+  next_ = (next_ + 1) % minibatch_slice_.size();
+}
+
+
+void MinibatchPipeline::StageNextMinibatch() {
+  // Receives minibatch slice from master;
+  //    samples neighbors for the minibatch slice
+  //    builds the chunks so the first chunk has no overlap w/ prev_chunk
+  // Receives the full minibatch nodes from master.
+  MinibatchSlice* mb_slice = &minibatch_slice_[next_];
+  sampler_.deploy_mini_batch(mb_slice);
+  sampler_.SampleNeighbors(mb_slice);
+  chunk_pipeline_.EnqueueChunk(&mb_slice->pi_chunks_[0]);
+  mb_slice->processed_ = 1;
+}
+
+
+bool MinibatchPipeline::PreviousMinibatchOverlap(Vertex one) const {
+  const VertexSet& other = minibatch_slice_[prev_].full_minibatch_nodes_;
+  return (other.find(one) != other.end());
+}
+
+
+bool MinibatchPipeline::PreviousMinibatchOverlap(
+    const std::vector<Vertex>& one) const {
+  std::vector<int> overlap(omp_get_max_threads());
+#pragma omp parallel for
+  for (::size_t i = 0; i < overlap.size(); ++i) {
+    overlap[i] = 0;
+  }
+
+  const VertexSet& other = minibatch_slice_[prev_].full_minibatch_nodes_;
+
+#pragma omp parallel for // num_threads (12)
+  for (::size_t i = 0; i < one.size(); ++i) {
+    if (other.find(one[i]) != other.end()) {
+      // overlap in the minibatch itself
+      overlap[omp_get_thread_num()] = 1;
+      // break;
+    }
+  }
+
+  bool result = 0;
+  ::size_t i;
+#pragma omp parallel for \
+    default(shared) private(i) \
+    reduction(+:result)
+  for (i = 0; i < overlap.size(); ++i) {
+    result = result + overlap[i];
+  }
+
+  return result > 0;
 }
 
 
@@ -233,6 +353,7 @@ MCMCSamplerStochasticDistributed::MCMCSamplerStochasticDistributed(
   t_nodes_in_mini_batch_   = Timer("      nodes_in_mini_batch");
   t_broadcast_theta_beta_  = Timer("    broadcast theta/beta");
   t_sample_neighbor_nodes_ = Timer("      sample_neighbor_nodes");
+  t_resample_neighbor_nodes_ = Timer("      resample_neighbor_nodes");
   t_update_phi_pi_         = Timer("    update_phi_pi");
   t_update_phi_            = Timer("      update_phi");
   t_barrier_phi_           = Timer("      barrier after update phi");
@@ -541,12 +662,14 @@ void MCMCSamplerStochasticDistributed::init() {
     g = std::vector<std::vector<Float> >(2, std::vector<Float>(K));
   }
 
-  pipeline_ = std::unique_ptr<Pipeline>(new Pipeline(num_buffers_));
-  dkv_server_ = std::unique_ptr<DKVServer>(new DKVServer(*pipeline_,
-                                                         *d_kv_store_));
-  pi_chunk_.resize(num_buffers_);
-  dkv_server_thread_ = boost::thread(boost::ref(*dkv_server_.get()));
+  chunk_pipeline_ = std::unique_ptr<ChunkPipeline>(
+                      new ChunkPipeline(num_buffers_, *d_kv_store_));
+  dkv_server_thread_ = boost::thread(boost::ref(*chunk_pipeline_.get()));
+  minibatch_pipeline_ = std::unique_ptr<MinibatchPipeline>(
+                          new MinibatchPipeline(*this, max_minibatch_chunk_,
+                                                *chunk_pipeline_));
 }
+
 
 void MCMCSamplerStochasticDistributed::run() {
   /** run mini-batch based MCMC sampler, based on the sungjin's note */
@@ -565,6 +688,8 @@ void MCMCSamplerStochasticDistributed::run() {
 
   t_start_ = std::chrono::system_clock::now();
 
+  minibatch_pipeline_->StageNextMinibatch();
+
   while (step_count < max_iteration && ! is_converged()) {
 
     t_outer_.start();
@@ -573,17 +698,12 @@ void MCMCSamplerStochasticDistributed::run() {
     //interval = 2;
     //}
 
+    minibatch_pipeline_->AdvanceMinibatch();
+
     broadcast_theta_beta();
 
     // requires beta at the workers
     check_perplexity(false);
-
-    t_deploy_minibatch_.start();
-    // edgeSample is nonempty only at the master
-    // assigns nodes_
-    EdgeSample edgeSample = deploy_mini_batch();
-    t_deploy_minibatch_.stop();
-    // std::cerr << "Minibatch nodes " << nodes_.size() << std::endl;
 
     t_update_phi_pi_.start();
     update_phi(&phi_node);
@@ -594,7 +714,8 @@ void MCMCSamplerStochasticDistributed::run() {
     mpi_error_test(r, "MPI_Barrier(post pi) fails");
     t_barrier_phi_.stop();
 
-    update_pi(phi_node);
+    const MinibatchSlice& mb_slice = minibatch_pipeline_->CurrentChunk();
+    update_pi(mb_slice, phi_node);
 
     // barrier: ensure we read pi/phi_sum from current iteration
     t_barrier_pi_.start();
@@ -604,11 +725,11 @@ void MCMCSamplerStochasticDistributed::run() {
     t_update_phi_pi_.stop();
 
     t_update_beta_.start();
-    update_beta(*edgeSample.first, edgeSample.second);
+    update_beta(*mb_slice.edge_sample_.first, mb_slice.edge_sample_.second);
     t_update_beta_.stop();
 
     if (mpi_rank_ == mpi_master_) {
-      delete edgeSample.first;
+      delete mb_slice.edge_sample_.first;
     }
 
     ++step_count;
@@ -621,7 +742,7 @@ void MCMCSamplerStochasticDistributed::run() {
 
   check_perplexity(true);
 
-  pipeline_->Stop();
+  chunk_pipeline_->Stop();
   dkv_server_thread_.join();
 
   r = MPI_Barrier(MPI_COMM_WORLD);
@@ -631,18 +752,19 @@ void MCMCSamplerStochasticDistributed::run() {
   std::cout << t_populate_pi_ << std::endl;
   std::cout << t_outer_ << std::endl;
   std::cout << t_deploy_minibatch_ << std::endl;
+  std::cout << t_mini_batch_ << std::endl;
   std::cout << t_scatter_subgraph_ << std::endl;
   std::cout << t_scatter_subgraph_marshall_edge_count_ << std::endl;
   std::cout << t_scatter_subgraph_scatterv_edge_count_ << std::endl;
   std::cout << t_scatter_subgraph_marshall_edges_ << std::endl;
   std::cout << t_scatter_subgraph_scatterv_edges_ << std::endl;
   std::cout << t_scatter_subgraph_unmarshall_ << std::endl;
-  std::cout << t_mini_batch_ << std::endl;
   std::cout << t_nodes_in_mini_batch_ << std::endl;
-  std::cout << t_broadcast_theta_beta_ << std::endl;
-  dkv_server_->report(std::cout);
-  std::cout << t_update_phi_pi_ << std::endl;
   std::cout << t_sample_neighbor_nodes_ << std::endl;
+  std::cout << t_resample_neighbor_nodes_ << std::endl;
+  std::cout << t_broadcast_theta_beta_ << std::endl;
+  std::cout << t_update_phi_pi_ << std::endl;
+  chunk_pipeline_->report(std::cout);
   std::cout << t_update_phi_ << std::endl;
   std::cout << t_barrier_phi_ << std::endl;
   std::cout << t_update_pi_ << std::endl;
@@ -687,12 +809,18 @@ void MCMCSamplerStochasticDistributed::init_theta() {
   // theta = rng_[0]->->gamma(100.0, 0.01, K, 2);
 }
 
+
 void MCMCSamplerStochasticDistributed::beta_from_theta() {
   std::vector<std::vector<Float> > temp(theta.size(),
                                          std::vector<Float>(theta[0].size()));
   np::row_normalize(&temp, theta);
   std::transform(temp.begin(), temp.end(), beta.begin(),
                  np::SelectColumn<Float>(1));
+#ifndef NDEBUG
+  for (::size_t k = 0; k < K; ++k) {
+    assert(! isnan(beta[k]));
+  }
+#endif
 }
 
 
@@ -725,9 +853,9 @@ void MCMCSamplerStochasticDistributed::init_pi() {
     std::vector<Vertex> node(1, i);
     std::vector<const Float*> pi_wrapper(1, pi);
     // Easy performance improvement: accumulate records up to write area
-    // size, the Write/Purge
+    // size, then Flush
     d_kv_store_->WriteKVRecords(node, pi_wrapper);
-    d_kv_store_->PurgeKVRecords();
+    d_kv_store_->FlushKVRecords();
 
     if ((i - mpi_rank_) % (256 * 1024) == 0) {
       std::cerr << ".";
@@ -765,12 +893,13 @@ void MCMCSamplerStochasticDistributed::check_perplexity(bool force) {
 
 
 void MCMCSamplerStochasticDistributed::ScatterSubGraph(
-    const std::vector<std::vector<Vertex> > &subminibatch) {
-  std::vector<int32_t> set_size(nodes_.size());
+    const std::vector<std::vector<Vertex> > &subminibatch,
+    MinibatchSlice *mb_slice) {
+  std::vector<int32_t> set_size(mb_slice->nodes_.size());
   std::vector<Vertex> flat_subgraph;
   int r;
 
-  local_network_.reset();
+  mb_slice->local_network_.reset();
 
   if (mpi_rank_ == mpi_master_) {
     std::vector<int32_t> size_count(mpi_size_);	        // FIXME: lift to class
@@ -881,42 +1010,53 @@ void MCMCSamplerStochasticDistributed::ScatterSubGraph(
   ::size_t offset = 0;
   for (::size_t i = 0; i < set_size.size(); ++i) {
     Vertex* marshall = &flat_subgraph[offset];
-    local_network_.unmarshall_local_graph(i, marshall, set_size[i]);
+    mb_slice->local_network_.unmarshall_local_graph(i, marshall, set_size[i]);
     offset += set_size[i];
   }
   t_scatter_subgraph_unmarshall_.stop();
 }
 
 
-EdgeSample MCMCSamplerStochasticDistributed::deploy_mini_batch() {
+void MCMCSamplerStochasticDistributed::deploy_mini_batch(
+    MinibatchSlice* mb_slice) {
+  t_deploy_minibatch_.start();
   std::vector<std::vector<int> > subminibatch;
   std::vector<int32_t> minibatch_chunk(mpi_size_);      // FIXME: lift to class
   std::vector<int32_t> scatter_minibatch;               // FIXME: lift to class
   std::vector<int32_t> scatter_displs(mpi_size_);       // FIXME: lift to class
   int		r;
-  EdgeSample edgeSample;
+  std::vector<Vertex> nodes_vector; // FIXME: duplicates scatter_minibatch
 
   if (mpi_rank_ == mpi_master_) {
     // std::cerr << "Invoke sample_mini_batch" << std::endl;
-    t_mini_batch_.start();
-    edgeSample = network.sample_mini_batch(mini_batch_size, strategy);
-    t_mini_batch_.stop();
-    const MinibatchSet &mini_batch = *edgeSample.first;
-    // std::cerr << "Done sample_mini_batch" << std::endl;
+    while (true) {
+      t_mini_batch_.start();
+      mb_slice->edge_sample_ = network.sample_mini_batch(mini_batch_size,
+                                                         strategy);
+      t_mini_batch_.stop();
+      const MinibatchSet &mini_batch = *mb_slice->edge_sample_.first;
+      // std::cerr << "Done sample_mini_batch" << std::endl;
 
-    // iterate through each node in the mini batch.
-    t_nodes_in_mini_batch_.start();
-    MinibatchNodeSet nodes = nodes_in_batch(mini_batch);
-    t_nodes_in_mini_batch_.stop();
-    // std::cerr << "mini_batch size " << mini_batch.size() <<
-    //   " num_node_sample " << num_node_sample << std::endl;
+      // iterate through each node in the mini batch.
+      t_nodes_in_mini_batch_.start();
+      MinibatchNodeSet nodes = nodes_in_batch(mini_batch);
+      nodes_vector.assign(nodes.begin(), nodes.end());
+      t_nodes_in_mini_batch_.stop();
+      // std::cerr << "mini_batch size " << mini_batch.size() <<
+      //   " num_node_sample " << num_node_sample << std::endl;
+      if (! minibatch_pipeline_->PreviousMinibatchOverlap(nodes_vector)) {
+        break;
+      }
+      std::cerr << "Minibatch has overlap with previous, resample" << std::endl;
+      delete mb_slice->edge_sample_.first;
+    }
 
     subminibatch.resize(mpi_size_);	// FIXME: lift to class, size is static
 
     ::size_t workers = master_is_worker_ ? mpi_size_ : mpi_size_ - 1;
-    ::size_t upper_bound = (nodes.size() + workers - 1) / workers;
+    ::size_t upper_bound = (nodes_vector.size() + workers - 1) / workers;
     std::unordered_set<Vertex> unassigned;
-    for (auto n: nodes) {
+    for (auto n: nodes_vector) {
       ::size_t owner = node_owner(n);
       if (subminibatch[owner].size() == upper_bound) {
         unassigned.insert(n);
@@ -951,7 +1091,7 @@ EdgeSample MCMCSamplerStochasticDistributed::deploy_mini_batch() {
                   &my_minibatch_size, 1, MPI_INT,
                   mpi_master_, MPI_COMM_WORLD);
   mpi_error_test(r, "MPI_Scatter of minibatch chunks fails");
-  nodes_.resize(my_minibatch_size);
+  mb_slice->nodes_.resize(my_minibatch_size);
 
   if (mpi_rank_ == mpi_master_) {
     // TODO Master scatters the minibatch nodes over the workers,
@@ -960,7 +1100,7 @@ EdgeSample MCMCSamplerStochasticDistributed::deploy_mini_batch() {
                      minibatch_chunk.data(),
                      scatter_displs.data(),
                      MPI_INT,
-                     nodes_.data(),
+                     mb_slice->nodes_.data(),
                      my_minibatch_size,
                      MPI_INT,
                      mpi_master_,
@@ -969,104 +1109,141 @@ EdgeSample MCMCSamplerStochasticDistributed::deploy_mini_batch() {
 
   } else {
     r = MPI_Scatterv(NULL, NULL, NULL, MPI_INT,
-                     nodes_.data(), my_minibatch_size, MPI_INT,
+                     mb_slice->nodes_.data(), my_minibatch_size, MPI_INT,
                      mpi_master_, MPI_COMM_WORLD);
     mpi_error_test(r, "MPI_Scatterv of minibatch fails");
   }
 
-
   if (! args_.REPLICATED_NETWORK) {
     t_scatter_subgraph_.start();
-    ScatterSubGraph(subminibatch);
+    ScatterSubGraph(subminibatch, mb_slice);
     t_scatter_subgraph_.stop();
   }
 
-  return edgeSample;
+  // Broadcast nodes of the full minibatch
+  int32_t num_nodes = nodes_vector.size();
+  r = MPI_Bcast(&num_nodes, 1, MPI_INT, mpi_master_, MPI_COMM_WORLD);
+  mpi_error_test(r, "MPI_Bcast of minibatch num_nodes fails");
+  nodes_vector.resize(num_nodes);
+  r = MPI_Bcast(nodes_vector.data(), num_nodes, MPI_INT, mpi_master_,
+                MPI_COMM_WORLD);
+  mpi_error_test(r, "MPI_Bcast of minibatch nodes fails");
+  mb_slice->full_minibatch_nodes_.clear();
+  mb_slice->full_minibatch_nodes_.insert(nodes_vector.begin(),
+                                         nodes_vector.end());
+  t_deploy_minibatch_.stop();
+}
+
+
+bool MCMCSamplerStochasticDistributed::SampleNeighborSet(PiChunk* pi_chunk,
+                                                         ::size_t i) {
+  Vertex node = pi_chunk->chunk_nodes_[i];
+  // sample a mini-batch of neighbors
+  auto rng = rng_[omp_get_thread_num()];
+  NeighborSet neighbors = sample_neighbor_nodes(num_node_sample, node, rng);
+  assert(neighbors.size() == real_num_node_sample());
+  // Cannot use flat_neighbors_.insert() because it may (concurrently)
+  // attempt to resize flat_neighbors_.
+  ::size_t j = i * real_num_node_sample();
+  for (auto n : neighbors) {
+    if (i == 0 && minibatch_pipeline_->PreviousMinibatchOverlap(n)) {
+      // std::cerr << "neighbor " << n << " is also in previous minibatch" << std::endl;
+      return false;
+    }
+    // is this flagged by OpenMP? pi_chunk->flat_neighbors_[j] = n;
+    memcpy(pi_chunk->flat_neighbors_.data() + j, &n, sizeof n);
+    ++j;
+  }
+  return true;
+}
+
+
+void MCMCSamplerStochasticDistributed::SampleNeighbors(
+    MinibatchSlice* mb_slice) {
+  t_sample_neighbor_nodes_.start();
+  ::size_t num_chunks = (mb_slice->nodes_.size() + max_minibatch_chunk_ - 1) /
+                          max_minibatch_chunk_;
+  if (num_chunks <= 1) {
+    num_chunks = 2;
+  }
+  ::size_t chunk_size = (mb_slice->nodes_.size() + num_chunks - 1) / num_chunks;
+  mb_slice->pi_chunks_.resize(num_chunks);
+
+  ::size_t chunk_start = 0;
+  for (::size_t b = 0; b < num_chunks; b++) {
+    ::size_t chunk = std::min(chunk_size,
+                              mb_slice->nodes_.size() - chunk_start);
+
+    auto *pi_chunk = &mb_slice->pi_chunks_[b];
+    const auto &chunk_begin = mb_slice->nodes_.begin() + chunk_start;
+    pi_chunk->chunk_nodes_.assign(chunk_begin, chunk_begin + chunk);
+    pi_chunk->pi_node_.resize(pi_chunk->chunk_nodes_.size());
+    pi_chunk->start_ = chunk_start;
+    chunk_start += chunk;
+
+    // ************ sample neighbor nodes in parallel at each host ******
+    // std::cerr << "Sample neighbor nodes" << std::endl;
+    pi_chunk->pi_neighbor_.resize(pi_chunk->chunk_nodes_.size() *
+                                  real_num_node_sample());
+    pi_chunk->flat_neighbors_.resize(pi_chunk->chunk_nodes_.size() *
+                                     real_num_node_sample());
+
+#pragma omp parallel for // num_threads (12)
+    for (::size_t i = 0; i < pi_chunk->chunk_nodes_.size(); ++i) {
+      if (! SampleNeighborSet(pi_chunk, i)) {
+        t_resample_neighbor_nodes_.start();
+        while (! SampleNeighborSet(pi_chunk, i)) {
+          // overlap, sample again
+          // std::cerr << "Overlap in neighbor sample " << i << ", do it again" << std::endl;
+        }
+        t_resample_neighbor_nodes_.stop();
+      }
+    }
+  }
+  assert(chunk_start == mb_slice->nodes_.size());
+  t_sample_neighbor_nodes_.stop();
 }
 
 
 void MCMCSamplerStochasticDistributed::update_phi(
     std::vector<std::vector<Float> >* phi_node) {
-  std::vector<Float*> pi_node;
-  std::vector<Float*> pi_neighbor;
-  std::vector<Vertex> flat_neighbors;
-
   Float eps_t = get_eps_t();
 
-  for (::size_t chunk_start = 0;
-       chunk_start < nodes_.size();
-       chunk_start += max_minibatch_chunk_) {
-    ::size_t chunk = std::min(max_minibatch_chunk_,
-                              nodes_.size() - chunk_start);
-
-    auto *pi_chunk = &pi_chunk_[current_buffer_];
-    const auto &chunk_begin = nodes_.begin() + chunk_start;
-    pi_chunk->chunk_nodes.assign(chunk_begin, chunk_begin + chunk);
-    pi_chunk->pi_node.resize(pi_chunk->chunk_nodes.size());
-
-    // ************ sample neighbor nodes in parallel at each host ******
-    // std::cerr << "Sample neighbor nodes" << std::endl;
-    t_sample_neighbor_nodes_.start();
-    pi_chunk->pi_neighbor.resize(pi_chunk->chunk_nodes.size() *
-                                real_num_node_sample());
-    pi_chunk->flat_neighbors.resize(pi_chunk->chunk_nodes.size() *
-                                   real_num_node_sample());
-#pragma omp parallel for // num_threads (12)
-    for (::size_t i = 0; i < pi_chunk->chunk_nodes.size(); ++i) {
-      Vertex node = pi_chunk->chunk_nodes[i];
-      // sample a mini-batch of neighbors
-      auto rng = rng_[omp_get_thread_num()];
-      NeighborSet neighbors = sample_neighbor_nodes(num_node_sample, node,
-                                                    rng);
-      assert(neighbors.size() == real_num_node_sample());
-      // Cannot use flat_neighbors.insert() because it may (concurrently)
-      // attempt to resize flat_neighbors.
-      ::size_t j = i * real_num_node_sample();
-      for (auto n : neighbors) {
-        memcpy(pi_chunk->flat_neighbors.data() + j, &n, sizeof n);
-        ++j;
-      }
-    }
-    t_sample_neighbor_nodes_.stop();
-
-    pipeline_->EnqueueChunk(pi_chunk, current_buffer_);
-    pipeline_->AwaitChunkFilled(current_buffer_);
+  assert(minibatch_pipeline_->CurrentChunk().pi_chunks_.size() >= 2);
+  for (::size_t b = 0;
+       b < minibatch_pipeline_->CurrentChunk().pi_chunks_.size();
+       ++b) {
+    minibatch_pipeline_->StageNextChunk();                   // next chunk
+    auto *pi_chunk = chunk_pipeline_->AwaitChunkFilled();   // current chunk
 
     t_update_phi_.start();
 #pragma omp parallel for // num_threads (12)
-    for (::size_t i = 0; i < pi_chunk->chunk_nodes.size(); ++i) {
-      Vertex node = pi_chunk->chunk_nodes[i];
-      update_phi_node(chunk_start + i, node, pi_chunk->pi_node[i],
-                      pi_chunk->flat_neighbors.begin() + i * real_num_node_sample(),
-                      pi_chunk->pi_neighbor.begin() + i * real_num_node_sample(),
+    for (::size_t i = 0; i < pi_chunk->chunk_nodes_.size(); ++i) {
+      Vertex node = pi_chunk->chunk_nodes_[i];
+      update_phi_node(minibatch_pipeline_->CurrentChunk(), *pi_chunk,
+                      pi_chunk->start_ + i, node, pi_chunk->pi_node_[i],
                       eps_t, rng_[omp_get_thread_num()],
-                      &(*phi_node)[chunk_start + i]);
+                      &(*phi_node)[pi_chunk->start_ + i]);
     }
     t_update_phi_.stop();
 
-    d_kv_store_->PurgeKVRecords(current_buffer_);
-
-    ++current_buffer_;
-    if (current_buffer_ == pipeline_->num_buffers()) {
-      current_buffer_ = 0;
-    }
+    chunk_pipeline_->ReleaseChunk();
+    // d_kv_store_->PurgeKVRecords(pi_chunk->buffer_index_);
   }
 }
 
 
 void MCMCSamplerStochasticDistributed::update_phi_node(
+    const MinibatchSlice& mb_slice, const PiChunk& pi_chunk,
     ::size_t index, Vertex i, const Float* pi_node,
-    const std::vector<Vertex>::iterator &neighbors,
-    const std::vector<Float*>::iterator &pi,
     Float eps_t, Random::Random* rnd,
     std::vector<Float>* phi_node	// out parameter
     ) {
-
   Float phi_i_sum = pi_node[K];
   std::vector<Float> grads(K, 0.0);	// gradient for K classes
 
   for (::size_t ix = 0; ix < real_num_node_sample(); ++ix) {
-    Vertex neighbor = neighbors[ix];
+    Vertex neighbor = pi_chunk.flat_neighbors_[ix];
     if (i != neighbor) {
       int y_ab = 0;		// observation
       if (args_.REPLICATED_NETWORK) {
@@ -1076,7 +1253,7 @@ void MCMCSamplerStochasticDistributed::update_phi_node(
         }
       } else {
         Edge edge(index, neighbor);
-        if (local_network_.find(edge)) {
+        if (mb_slice.local_network_.find(edge)) {
           y_ab = 1;
         }
       }
@@ -1085,10 +1262,12 @@ void MCMCSamplerStochasticDistributed::update_phi_node(
       Float e = (y_ab == 1) ? epsilon : 1.0 - epsilon;
       for (::size_t k = 0; k < K; ++k) {
         Float f = (y_ab == 1) ? (beta[k] - epsilon) : (epsilon - beta[k]);
-        probs[k] = pi_node[k] * (pi[ix][k] * f + e);
+        probs[k] = pi_node[k] * (pi_chunk.pi_neighbor_[ix][k] * f + e);
+        assert(! isnan(probs[k]));
       }
 
       Float prob_sum = np::sum(probs);
+      assert(prob_sum > 0);
       // std::cerr << std::fixed << std::setprecision(12) << "node " << i <<
       //    " neighb " << neighbor << " prob_sum " << prob_sum <<
       //    " phi_i_sum " << phi_i_sum <<
@@ -1096,6 +1275,7 @@ void MCMCSamplerStochasticDistributed::update_phi_node(
       for (::size_t k = 0; k < K; ++k) {
         assert(phi_i_sum > 0);
         grads[k] += ((probs[k] / prob_sum) / pi_node[k] - 1.0) / phi_i_sum;
+        assert(! isnan(grads[k]));
       }
     } else {
       std::cerr << "Skip self loop <" << i << "," << neighbor << ">" <<
@@ -1110,11 +1290,8 @@ void MCMCSamplerStochasticDistributed::update_phi_node(
     Float phi_node_k = pi_node[k] * phi_i_sum;
     assert(phi_node_k > FLOAT(0.0));
     phi_node_k = std::abs(phi_node_k + eps_t / 2 * (alpha - phi_node_k +
-                                                    Nn * grads[k])
-#ifndef MCMC_NO_NOISE
-                          + sqrt(eps_t * phi_node_k) * noise[k]
-#endif
-                         );
+                                                    Nn * grads[k]) +
+                          sqrt(eps_t * phi_node_k) * noise[k]);
     if (phi_node_k < MCMC_NONZERO_GUARD) {
       (*phi_node)[k] = MCMC_NONZERO_GUARD;
     } else {
@@ -1126,21 +1303,22 @@ void MCMCSamplerStochasticDistributed::update_phi_node(
 
 
 void MCMCSamplerStochasticDistributed::update_pi(
+    const MinibatchSlice& mb_slice,
     const std::vector<std::vector<Float> >& phi_node) {
   // calculate and store updated values for pi/phi_sum
 
   if (mpi_rank_ != mpi_master_ || master_is_worker_) {
     t_update_pi_.start();
 #pragma omp parallel for // num_threads (12)
-    for (::size_t i = 0; i < nodes_.size(); ++i) {
+    for (::size_t i = 0; i < mb_slice.nodes_.size(); ++i) {
       pi_from_phi(pi_update_[i], phi_node[i]);
     }
     t_update_pi_.stop();
 
     t_store_pi_minibatch_.start();
-    d_kv_store_->WriteKVRecords(nodes_, constify(pi_update_));
+    d_kv_store_->WriteKVRecords(mb_slice.nodes_, constify(pi_update_));
     t_store_pi_minibatch_.stop();
-    d_kv_store_->PurgeKVRecords();
+    d_kv_store_->FlushKVRecords();
   }
 }
 
@@ -1266,7 +1444,7 @@ void MCMCSamplerStochasticDistributed::beta_calc_grads(
 
   t_load_pi_beta_.start();
   std::vector<Float*> pi(node_rank.size());
-  d_kv_store_->ReadKVRecords(0, pi, nodes);
+  d_kv_store_->ReadKVRecords(chunk_pipeline_->GrabFreeBufferIndex(), pi, nodes);
   t_load_pi_beta_.stop();
 
   // update gamma, only update node in the grad
@@ -1294,6 +1472,7 @@ void MCMCSamplerStochasticDistributed::beta_calc_grads(
 
     Float prob_0 = ((y == 1) ? epsilon : (1.0 - epsilon)) * (1.0 - pi_sum);
     Float prob_sum = np::sum(probs) + prob_0;
+    assert(prob_sum > FLOAT(0.0));
     for (::size_t k = 0; k < K; ++k) {
       Float f = probs[k] / prob_sum;
       Float one_over_theta_sum = 1.0 / theta_sum[k];
@@ -1350,16 +1529,11 @@ void MCMCSamplerStochasticDistributed::beta_update_theta(Float scale) {
 #pragma omp parallel for
     for (::size_t k = 0; k < K; ++k) {
       for (::size_t i = 0; i < 2; ++i) {
-#ifndef MCMC_NO_NOISE
         Float f = std::sqrt(eps_t * theta[k][i]);
-#endif
         theta[k][i] = std::abs(theta[k][i] +
                                eps_t / 2.0 * (eta[i] - theta[k][i] +
-                                              scale * grads_beta_[0][i][k])
-#ifndef MCMC_NO_NOISE
-                               + f * noise[k][i]
-#endif
-                              );
+                                              scale * grads_beta_[0][i][k]) +
+                               f * noise[k][i]);
         if (theta[k][i] < MCMC_NONZERO_GUARD) {
           theta[k][i] = MCMC_NONZERO_GUARD;
         }
@@ -1382,7 +1556,7 @@ void MCMCSamplerStochasticDistributed::update_beta(
 
   beta_update_theta(scale);
 
-  d_kv_store_->PurgeKVRecords();
+  d_kv_store_->PurgeKVRecords(chunk_pipeline_->GrabFreeBufferIndex());
 }
 
 
@@ -1425,7 +1599,7 @@ Float MCMCSamplerStochasticDistributed::cal_perplexity_held_out() {
   }
 
   t_purge_pi_perp_.start();
-  d_kv_store_->PurgeKVRecords(0);
+  d_kv_store_->PurgeKVRecords(chunk_pipeline_->GrabFreeBufferIndex());
   t_purge_pi_perp_.stop();
 
   for (::size_t chunk_start = 0;
@@ -1440,7 +1614,8 @@ Float MCMCSamplerStochasticDistributed::cal_perplexity_held_out() {
                                                                 chunk));
 
     t_load_pi_perp_.start();
-    d_kv_store_->ReadKVRecords(0, perp_.pi_, chunk_nodes);
+    d_kv_store_->ReadKVRecords(chunk_pipeline_->GrabFreeBufferIndex(), perp_.pi_,
+                               chunk_nodes);
     t_load_pi_perp_.stop();
 
     t_cal_edge_likelihood_.start();
@@ -1485,7 +1660,7 @@ Float MCMCSamplerStochasticDistributed::cal_perplexity_held_out() {
     }
 
     t_purge_pi_perp_.start();
-    d_kv_store_->PurgeKVRecords(0);
+    d_kv_store_->PurgeKVRecords(chunk_pipeline_->GrabFreeBufferIndex());
     t_purge_pi_perp_.stop();
   }
 

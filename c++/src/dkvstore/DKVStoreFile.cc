@@ -84,17 +84,12 @@ void DKVStoreFile::WriteKVRecords(const std::vector<KeyType> &key,
   }
 }
 
-void DKVStoreFile::PurgeKVRecords() {
-  for (auto b : cache_buffer_) {
-    b.reset();
-  }
+void DKVStoreFile::FlushKVRecords() {
   write_buffer_.reset();
-  value_of_.clear();
 }
 
 void DKVStoreFile::PurgeKVRecords(::size_t buffer) {
   cache_buffer_[buffer].reset();
-  write_buffer_.reset();
   value_of_.clear();
 }
 

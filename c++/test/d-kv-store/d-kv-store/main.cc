@@ -150,7 +150,7 @@ class DKVWrapper {
         std::vector<int32_t> k(1, static_cast<int32_t>(i));
         std::vector<const ValueType *> v(1, pi.data());
         d_kv_store_->WriteKVRecords(k, v);
-        d_kv_store_->PurgeKVRecords();
+        d_kv_store_->FlushKVRecords();
       }
       duration dur = std::chrono::duration_cast<duration>(hires::now() - t);
       std::cout << "Populate " << N << "x" << K << " takes " <<
@@ -218,7 +218,8 @@ class DKVWrapper {
           " GB/s" << std::endl;
       }
 
-      d_kv_store_->PurgeKVRecords();
+      d_kv_store_->FlushKVRecords();
+      d_kv_store_->PurgeKVRecords(0);
 
       delete neighbor;
 

@@ -260,7 +260,8 @@ class DKVWrapper {
         d_kv_store_->barrier();
       }
 
-      d_kv_store_->PurgeKVRecords();
+      d_kv_store_->PurgeKVRecords(0);
+      d_kv_store_->FlushKVRecords();
 
       std::cout << "*********" << iter << ":  Sync... " << std::endl;
       d_kv_store_->barrier();

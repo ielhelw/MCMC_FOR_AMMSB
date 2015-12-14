@@ -344,7 +344,7 @@ EdgeSample Network::stratified_random_node_sampling(::size_t num_pieces) {
 
       Float scale = (Float)N * num_pieces;
       scale *= (double)num_total_edges / ((double)N * (N - 1.0) / 2.0 - num_total_edges);
-      if (false) {
+      if (true) {
         std::cerr << "A Create mini batch size " << mini_batch_set->size()
                   << " scale " << scale << std::endl;
       }
@@ -361,7 +361,7 @@ EdgeSample Network::stratified_random_node_sampling(::size_t num_pieces) {
         }
       }
 
-      if (false) {
+      if (true) {
         std::cerr << "B Create mini batch size " << mini_batch_set->size()
                   << " scale " << N << std::endl;
       }

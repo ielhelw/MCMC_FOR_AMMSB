@@ -523,19 +523,12 @@ void DKVStoreRDMA::WriteKVRecords(const std::vector<KeyType> &key,
   t_write_.outer.stop();
 }
 
-/**
- * Purge the cache area
- */
-void DKVStoreRDMA::PurgeKVRecords() {
-  for (auto & b : cache_buffer_) {
-    b.reset();
-  }
+void DKVStoreRDMA::FlushKVRecords() {
   write_buffer_.reset();
 }
 
 void DKVStoreRDMA::PurgeKVRecords(::size_t buffer) {
   cache_buffer_[buffer].reset();
-  write_buffer_.reset();
 }
 
 void DKVStoreRDMA::barrier() {

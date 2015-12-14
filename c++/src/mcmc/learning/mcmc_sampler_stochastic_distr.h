@@ -72,81 +72,152 @@ class PerpData {
 };
 
 
+// **************************************************************************
+//
+// class PiChunk
+//
+// **************************************************************************
+
 class PiChunk {
  public:
-  std::vector<Vertex> chunk_nodes;
-  std::vector<Float *> pi_node;
-  std::vector<Vertex> flat_neighbors;
-  std::vector<Float *> pi_neighbor;
+  ::size_t      buffer_index_;
+  ::size_t      start_;
+  std::vector<Vertex> chunk_nodes_;
+  std::vector<Float *> pi_node_;
+  std::vector<Vertex> flat_neighbors_;
+  std::vector<Float *> pi_neighbor_;
+  void swap(PiChunk& x);
 };
 
 
 // **************************************************************************
 //
-// class Pipeline
+// class ChunkPipeline
 //
 // **************************************************************************
 
 namespace PIPELINE_STATE {
   enum PipelineState {
-    FILL_COMMAND,
+    FILL_REQUESTED,
     FILLING,
     FILLED,
+    FREE,
     STOP,
   };
 }
 
-class Pipeline;
+class ChunkPipeline;
 
 class PipelineBuffer {
  public:
-  PipelineBuffer() : state_(PIPELINE_STATE::FILLED) { }
+  PipelineBuffer() : state_(PIPELINE_STATE::FREE) { }
 
   PiChunk* chunk_;
   PIPELINE_STATE::PipelineState state_;
   boost::condition_variable fill_requested_;
   boost::condition_variable fill_completed_;
 
-  friend class Pipeline;
+  friend class ChunkPipeline;
 };
 
 
-class Pipeline {
+class ChunkPipeline {
  public:
-  Pipeline(::size_t num_buffers) : buffer_(num_buffers) { }
+  ChunkPipeline(::size_t num_buffers, DKV::DKVStoreInterface& d_kv_store)
+      : buffer_(num_buffers), d_kv_store_(d_kv_store),
+        client_enq_(0), client_deq_(0), client_clear_(0),
+        server_deq_(0), server_complete_(0) {
+  }
 
-  void EnqueueChunk(PiChunk* chunk, ::size_t buffer_counter);
-  void AwaitChunkFilled(::size_t buffer_counter);
-  bool DequeueChunk(::size_t buffer_counter, PiChunk** chunk);
-  void NotifyChunkFilled(::size_t buffer_counter);
+  // Queue interface
+  void EnqueueChunk(PiChunk* chunk);
+  PiChunk* AwaitChunkFilled();
+  PiChunk* DequeueChunk();
+  void NotifyChunkFilled();
+  void ReleaseChunk();
   void Stop();
   ::size_t num_buffers() const;
+
+  void operator() ();
+  std::ostream& report(std::ostream& s) const;
+
+  // Nonqueue interface
+  ::size_t GrabFreeBufferIndex() const;
 
 private:
   boost::mutex lock_;
   std::vector<PipelineBuffer> buffer_;
+  DKV::DKVStoreInterface& d_kv_store_;
+  ::size_t client_enq_;
+  ::size_t client_deq_;
+  ::size_t client_clear_;
+  ::size_t server_deq_;
+  ::size_t server_complete_;
+
+  Timer         t_load_pi_minibatch_;
+  Timer         t_load_pi_neighbor_;
 };
 
 
 // **************************************************************************
 //
-// class DKVServer
+// class MinibatchSlice
 //
 // **************************************************************************
 
-class DKVServer {
+class MinibatchSlice {
  public:
-  DKVServer(Pipeline& pipeline, DKV::DKVStoreInterface& d_kv_store);
+  MinibatchSlice() : processed_(0) {
+  }
 
-  virtual ~DKVServer();
-  void operator() ();
-  std::ostream& report(std::ostream& s) const;
+  std::vector<PiChunk> pi_chunks_;
+  std::vector<Vertex> nodes_;       // my subsample of the minibatch
+  VertexSet full_minibatch_nodes_;
+  LocalNetwork  local_network_;
+  EdgeSample edge_sample_;
 
  private:
-  Pipeline&     pipeline_;
-  DKV::DKVStoreInterface& d_kv_store_;
-  Timer         t_load_pi_minibatch_;
-  Timer         t_load_pi_neighbor_;
+  ::size_t processed_;
+
+  friend class MinibatchPipeline;
+};
+
+
+// **************************************************************************
+//
+// class MinibatchPipeline
+//
+// **************************************************************************
+
+class MCMCSamplerStochasticDistributed;
+
+class MinibatchPipeline {
+ public:
+  MinibatchPipeline(MCMCSamplerStochasticDistributed& sampler,
+                    ::size_t max_minibatch_chunk,
+                    ChunkPipeline& chunk_pipeline);
+  void StageNextChunk();
+  void StageNextMinibatch();
+  void AdvanceMinibatch();
+  const MinibatchSlice& CurrentChunk() {
+    return minibatch_slice_[current_];
+  }
+  // Returns whether any node is in <code>one</code> and the previous
+  // minibatch set
+  bool PreviousMinibatchOverlap(Vertex one) const;
+  bool PreviousMinibatchOverlap(const std::vector<Vertex>& one) const;
+
+ private:
+
+  MCMCSamplerStochasticDistributed& sampler_;
+  ChunkPipeline& chunk_pipeline_;
+
+  std::vector<MinibatchSlice> minibatch_slice_;
+  ::size_t      max_minibatch_chunk_;
+
+  ::size_t      prev_;
+  ::size_t      current_;
+  ::size_t      next_;
 };
 
 
@@ -198,6 +269,11 @@ class MCMCSamplerStochasticDistributed : public MCMCSamplerStochastic {
 
   void run() override;
 
+  void deploy_mini_batch(MinibatchSlice* mb_chunk);
+  void SampleNeighbors(MinibatchSlice* mb_chunk);
+  /** @return false if there is overlap with previous minibatch sample */
+  bool SampleNeighborSet(PiChunk* pi_chunk, ::size_t i);
+
  protected:
   template <typename T>
   std::vector<const T*>& constify(std::vector<T*>& v) {
@@ -220,16 +296,16 @@ class MCMCSamplerStochasticDistributed : public MCMCSamplerStochastic {
 
   void init_pi();
 
-  void ScatterSubGraph(const std::vector<std::vector<Vertex> > &subminibatch);
-  EdgeSample deploy_mini_batch();
+  void ScatterSubGraph(const std::vector<std::vector<Vertex> >& subminibatch,
+                       MinibatchSlice *mb_chunk);
   void update_phi(std::vector<std::vector<Float> >* phi_node);
-  void update_phi_node(::size_t index, Vertex i, const Float* pi_node,
-                       const std::vector<Vertex>::iterator &neighbors,
-                       const std::vector<Float*>::iterator &pi,
+  void update_phi_node(const MinibatchSlice& mb_chunk, const PiChunk& pi_chunk,
+                       ::size_t index, Vertex i, const Float* pi_node,
                        Float eps_t, Random::Random* rnd,
                        std::vector<Float>* phi_node	// out parameter
                       );
-  void update_pi(const std::vector<std::vector<Float> >& phi_node);
+  void update_pi(const MinibatchSlice& mb_chunk,
+                 const std::vector<std::vector<Float> >& phi_node);
 
   void broadcast_theta_beta();
   void scatter_minibatch_for_theta(const MinibatchSet &mini_batch,
@@ -263,29 +339,23 @@ class MCMCSamplerStochasticDistributed : public MCMCSamplerStochastic {
   ::size_t	max_minibatch_chunk_;
   ::size_t	max_perplexity_chunk_;
 
-  // Lift to class member to avoid (de)allocation in each iteration
-  std::vector<Vertex> nodes_;		// my minibatch nodes
   std::vector<Float*> pi_update_;
   // gradients K*2 dimension
   std::vector<std::vector<std::vector<Float> > > grads_beta_;
 
   const int     mpi_master_;
-  int		mpi_size_;
-  int		mpi_rank_;
+  int		    mpi_size_;
+  int		    mpi_rank_;
 
   bool          master_is_worker_;
   bool          master_hosts_pi_;
 
   ::size_t      num_buffers_;
-  ::size_t      current_buffer_;
-  std::unique_ptr<Pipeline> pipeline_;
-  std::unique_ptr<DKVServer> dkv_server_;
+  std::unique_ptr<ChunkPipeline> chunk_pipeline_;
   boost::thread dkv_server_thread_;
-  std::vector<PiChunk> pi_chunk_;
+  std::unique_ptr<MinibatchPipeline> minibatch_pipeline_;
 
   std::unique_ptr<DKV::DKVStoreInterface> d_kv_store_;
-
-  LocalNetwork  local_network_;
 
   PerpData      perp_;
 
@@ -303,6 +373,7 @@ class MCMCSamplerStochasticDistributed : public MCMCSamplerStochastic {
   Timer         t_scatter_subgraph_unmarshall_;
   Timer         t_nodes_in_mini_batch_;
   Timer         t_sample_neighbor_nodes_;
+  Timer         t_resample_neighbor_nodes_;
   Timer         t_update_phi_pi_;
   Timer         t_update_phi_;
   Timer         t_barrier_phi_;
