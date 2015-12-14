@@ -103,8 +103,10 @@ class Network(object):
         """
         if False:
             pass
+        elif strategy == "random-edge":
+            return self.__random_edge_sampling(mini_batch_size)
         elif strategy == "stratified-random-node":
-            return self.__stratified_random_node_sampling(10)
+            return self.__stratified_random_node_sampling((self.__N + mini_batch_size - 1) / mini_batch_size)
         else:
             print "Invalid sampling strategy, please make sure you are using the correct one:\
                 [random-pair, random-node, stratified-random-pair, stratified-random-node]"
@@ -142,7 +144,32 @@ class Network(object):
     def get_minibatch_size(num_pieces):
         return __N / num_pieces
     
+    def __sample_full_training_set(self):
+        mini_batch_set = Set()
+        for edge in self.__linked_edges:
+            if edge in self.__held_out_map or edge in self.__test_map:
+                continue
+            mini_batch_set.add(edge)
+        return (mini_batch_set, ((self.__N - 1) * self.__N) / 2.0 / len(mini_batch_set))
     
+    def __random_edge_sampling(self, mini_batch_size):
+        if mini_batch_size >= self.__num_total_edges - self.__held_out_size - len(self.__test_map):
+            return self.__sample_full_training_set()
+
+        mini_batch_set = Set()
+        p = mini_batch_size
+        while p > 0:
+            sampled_linked_edges = random.get("minibatch sampler").sample(self.__linked_edges, mini_batch_size)
+            for edge in sampled_linked_edges:
+                if p < 0:
+                    break
+                if edge in self.__held_out_map or edge in self.__test_map or edge in mini_batch_set:
+                    continue
+                mini_batch_set.add(edge)
+                p -= 1
+
+        return (mini_batch_set, len(self.__linked_edges) / mini_batch_size)
+
     def __stratified_random_node_sampling(self, num_pieces):
         """
         stratified sampling approach gives more attention to link edges (the edge is connected by two
