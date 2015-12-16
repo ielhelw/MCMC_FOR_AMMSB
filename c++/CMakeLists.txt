@@ -25,7 +25,7 @@ endif()
 
 SET(MCMC_ENABLE_OPENMP ${MCMC_BUILD_MODE_DISTR} CACHE BOOL "Enable the use of OpenMP")
 
-option( MCMC_SINGLE_PRECISION  "Enable single precision" OFF )
+option( MCMC_SINGLE_PRECISION  "Enable single precision" ON )
 
 ######################################
 ## CONDITIONAL OPTION ON DISTR MODE ##
