@@ -744,7 +744,11 @@ void MCMCSamplerStochasticDistributed::init_pi() {
   while (my_max > 0) {
     ::size_t chunk = std::min(max_dkv_write_entries_, my_max);
     my_max -= chunk;
-    std::vector<std::vector<Float> > phi_pi = rng_[0]->gamma(1, 1, chunk, K);
+    std::vector<std::vector<Float> > phi_pi(chunk);
+#pragma omp parallel for // num_threads (12)
+    for (::size_t j = 0; j < chunk; ++j) {
+      phi_pi[j] = rng_[omp_get_thread_num()]->gamma(1, 1, 1, K)[0];
+    }
 #ifndef NDEBUG
     for (auto & phs : phi_pi) {
       for (auto ph : phs) {
@@ -753,6 +757,7 @@ void MCMCSamplerStochasticDistributed::init_pi() {
     }
 #endif
 
+#pragma omp parallel for // num_threads (12)
     for (::size_t j = 0; j < chunk; ++j) {
       pi_from_phi(pi[j], phi_pi[j]);
     }
@@ -1102,6 +1107,9 @@ void MCMCSamplerStochasticDistributed::update_phi_node(
     ) {
 
   Float phi_i_sum = pi_node[K];
+  if (phi_i_sum == FLOAT(0.0)) {
+    std::cerr << "Ooopppssss.... phi_i_sum " << phi_i_sum << std::endl;
+  }
   std::vector<Float> grads(K, 0.0);	// gradient for K classes
 
   for (::size_t ix = 0; ix < real_num_node_sample(); ++ix) {
