@@ -27,6 +27,12 @@
 
 #include <dkvstore/config.h>
 
+#ifdef MCMC_THREAD_SAFE
+#include <boost/thread.hpp>
+#else
+#  error "What's up?"
+#endif
+
 
 namespace DKV {
 
@@ -228,6 +234,10 @@ class DKVStoreInterface {
 
   std::vector<Buffer<ValueType> > cache_buffer_;
   Buffer<ValueType> write_buffer_;
+
+#ifdef MCMC_THREAD_SAFE
+  boost::mutex lock_;
+#endif
 
   std::unordered_map<KeyType, ValueType *> value_of_;
 };

@@ -63,6 +63,8 @@ void DKVStoreFile::Init(::size_t value_size, ::size_t total_values,
 void DKVStoreFile::ReadKVRecords(::size_t buffer,
                                  std::vector<ValueType *> &cache,
                                  const std::vector<KeyType> &key) {
+  SCOPED_LOCK(lock_);
+
   assert(cache.size() >= key.size());
   for (::size_t i = 0; i < key.size(); i++) {
     ValueType *cache_pointer = cache_buffer_[buffer].get(value_size_);
@@ -78,6 +80,8 @@ void DKVStoreFile::ReadKVRecords(::size_t buffer,
 
 void DKVStoreFile::WriteKVRecords(const std::vector<KeyType> &key,
                                   const std::vector<const ValueType *> &value) {
+  SCOPED_LOCK(lock_);
+
   assert(value.size() >= key.size());
   for (::size_t i = 0; i < key.size(); ++i) {
     WriteKVRecord(key[i], value[i]);
@@ -85,16 +89,22 @@ void DKVStoreFile::WriteKVRecords(const std::vector<KeyType> &key,
 }
 
 void DKVStoreFile::FlushKVRecords() {
+  SCOPED_LOCK(lock_);
+
   write_buffer_.reset();
 }
 
 void DKVStoreFile::PurgeKVRecords(::size_t buffer) {
+  SCOPED_LOCK(lock_);
+
   cache_buffer_[buffer].reset();
   value_of_.clear();
 }
 
 void DKVStoreFile::WriteKVRecord(const KeyType key,
                                  const ValueType *cached) {
+  SCOPED_LOCK(lock_);
+
   std::string pi_file = PiFileName(key);
   CreateDirNameOf(pi_file);
   std::ofstream writer(pi_file.c_str(),

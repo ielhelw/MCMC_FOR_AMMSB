@@ -423,6 +423,8 @@ void DKVStoreRDMA::post_batches(
 void DKVStoreRDMA::ReadKVRecords(::size_t buffer,
                                  std::vector<DKVStoreRDMA::ValueType *> &cache,
                                  const std::vector<KeyType> &key) {
+  SCOPED_LOCK(lock_);
+
   t_read_.outer.start();
 
   for (auto &s : posts_) {
@@ -470,6 +472,8 @@ void DKVStoreRDMA::ReadKVRecords(::size_t buffer,
 
 void DKVStoreRDMA::WriteKVRecords(const std::vector<KeyType> &key,
                                   const std::vector<const ValueType *> &value) {
+  SCOPED_LOCK(lock_);
+
   t_write_.outer.start();
 
   for (auto &s : posts_) {
@@ -524,10 +528,14 @@ void DKVStoreRDMA::WriteKVRecords(const std::vector<KeyType> &key,
 }
 
 void DKVStoreRDMA::FlushKVRecords() {
+  SCOPED_LOCK(lock_);
+
   write_buffer_.reset();
 }
 
 void DKVStoreRDMA::PurgeKVRecords(::size_t buffer) {
+  SCOPED_LOCK(lock_);
+
   cache_buffer_[buffer].reset();
 }
 
