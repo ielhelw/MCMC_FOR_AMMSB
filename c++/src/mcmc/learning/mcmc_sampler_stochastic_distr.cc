@@ -634,8 +634,9 @@ void MCMCSamplerStochasticDistributed::init() {
 #endif
   }
 
+  max_dkv_write_entries_ = max_my_minibatch_nodes;
   d_kv_store_->Init(K + 1, N, num_buffers_, max_pi_cache,
-                    max_my_minibatch_nodes);
+                    max_dkv_write_entries_);
 
   master_hosts_pi_ = d_kv_store_->include_master();
 
@@ -837,31 +838,47 @@ void MCMCSamplerStochasticDistributed::pi_from_phi(
 
 
 void MCMCSamplerStochasticDistributed::init_pi() {
-  Float pi[K + 1];
-  std::cerr << "*************** FIXME: load pi only on pi-hoster nodes" <<
-    std::endl;
-  for (Vertex i = mpi_rank_; i < static_cast<Vertex>(N); i += mpi_size_) {
-    std::vector<Float> phi_pi = rng_[0]->gamma(1, 1, 1, K)[0];
+  std::vector<Float*> pi(max_dkv_write_entries_);
+  for (auto & p : pi) {
+    p = new Float[K + 1];
+  }
+
+  ::size_t servers = master_hosts_pi_ ? mpi_size_ : mpi_size_ - 1;
+  ::size_t my_max = N / servers;
+  int my_server = master_hosts_pi_ ? mpi_rank_ : mpi_rank_ - 1;
+  if (my_server < 0) {
+    my_max = 0;
+  } else if (static_cast<::size_t>(my_server) < N - my_max * servers) {
+    ++my_max;
+  }
+  int last_node = my_server;
+  while (my_max > 0) {
+    ::size_t chunk = std::min(max_dkv_write_entries_, my_max);
+    my_max -= chunk;
+    std::vector<std::vector<Float> > phi_pi = rng_[0]->gamma(1, 1, chunk, K);
 #ifndef NDEBUG
     for (auto ph : phi_pi) {
       assert(ph >= 0.0);
     }
 #endif
 
-    pi_from_phi(pi, phi_pi);
-
-    std::vector<Vertex> node(1, i);
-    std::vector<const Float*> pi_wrapper(1, pi);
-    // Easy performance improvement: accumulate records up to write area
-    // size, then Flush
-    d_kv_store_->WriteKVRecords(node, pi_wrapper);
-    d_kv_store_->FlushKVRecords();
-
-    if ((i - mpi_rank_) % (256 * 1024) == 0) {
-      std::cerr << ".";
+    for (::size_t j = 0; j < chunk; ++j) {
+      pi_from_phi(pi[j], phi_pi[j]);
     }
+
+    std::vector<int32_t> node(chunk);
+    for (::size_t j = 0; j < chunk; ++j) {
+      node[j] = last_node;
+      last_node += servers;
+    }
+
+    d_kv_store_->WriteKVRecords(node, constify(pi));
+    d_kv_store_->PurgeKVRecords();
   }
-  std::cerr << std::endl;
+
+  for (auto & p : pi) {
+    delete[] p;
+  }
 }
 
 
@@ -1703,7 +1720,7 @@ Float MCMCSamplerStochasticDistributed::cal_perplexity_held_out() {
 
 
 int MCMCSamplerStochasticDistributed::node_owner(Vertex node) const {
-  if (master_is_worker_) {
+  if (master_hosts_pi_) {
     return node % mpi_size_;
   } else {
     return 1 + (node % (mpi_size_ - 1));

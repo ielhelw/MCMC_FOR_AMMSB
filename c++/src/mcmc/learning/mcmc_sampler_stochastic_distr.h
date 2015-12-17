@@ -338,6 +338,7 @@ class MCMCSamplerStochasticDistributed : public MCMCSamplerStochastic {
   ::size_t	max_minibatch_nodes_;
   ::size_t	max_minibatch_chunk_;
   ::size_t	max_perplexity_chunk_;
+  ::size_t  max_dkv_write_entries_;
 
   std::vector<Float*> pi_update_;
   // gradients K*2 dimension

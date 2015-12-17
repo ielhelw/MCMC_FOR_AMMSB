@@ -34,7 +34,7 @@ inline std::istream& operator>> (std::istream& in, strategy& strategy) {
 }
 
 
-inline std::ostream& operator<< (std::ostream& s, strategy& strategy) {
+inline std::ostream& operator<< (std::ostream& s, const strategy& strategy) {
   switch (strategy) {
     case STRATIFIED_RANDOM_NODE:
       s << "stratified-random-node";

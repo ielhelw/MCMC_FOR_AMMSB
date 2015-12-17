@@ -30,6 +30,7 @@ def main():
 
     parser = argparse.ArgumentParser()
     parser.add_argument('--filename', '-f', type=str, default="netscience.txt", required=False)
+    parser.add_argument('--strategy', type=str, default='stratified-random-node', required=False)
     parser.add_argument('--alpha', type=float, default=0.0, required=False)
     parser.add_argument('--eta0', type=float, default=1, required=False)
     parser.add_argument('--eta1', type=float, default=1, required=False)
@@ -41,9 +42,9 @@ def main():
     parser.add_argument('--interval', '-i', type=int, default=1000, required=False)
     
     # parameters for step size
-    parser.add_argument('--a', '-a', type=float, default=0.01, required=False)
+    parser.add_argument('--a', '-a', type=float, default=0.0, required=False)
     parser.add_argument('--b', '-b', type=float, default=1024.0, required=False)
-    parser.add_argument('--c', '-c', type=float, default=0.55, required=False)
+    parser.add_argument('--c', '-c', type=float, default=0.5, required=False)
     
     parser.add_argument('--num_updates', type=int, default=1000, required=False)
     parser.add_argument('--hold_out_prob', type=float, default=0.1, required=False)
