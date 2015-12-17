@@ -14,6 +14,10 @@ Network::Network(const NetworkInfo& info)
   fan_out_cumul_distro = std::vector< ::size_t>(1, info.max_fan_out);
   assert(N != 0);
   print_mem_usage(std::cerr);
+
+  t_sample_sample_       = Timer("      sample sample");
+  t_sample_merge_        = Timer("      sample merge");
+  t_sample_merge_tail_   = Timer("      sample merge/tail");
 }
 
 Network::~Network() {
@@ -85,10 +89,6 @@ void Network::Init(const Options& args, double held_out_ratio,
 
     calc_max_fan_out();
   }
-
-  t_sample_sample_       = Timer("      sample sample");
-  t_sample_merge_        = Timer("      sample merge");
-  t_sample_merge_tail_   = Timer("      sample merge/tail");
 }
 
 const Data* Network::get_data() const { return data_; }

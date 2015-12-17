@@ -259,12 +259,6 @@ class MCMCSamplerStochasticDistributed : public MCMCSamplerStochastic {
 
   virtual ~MCMCSamplerStochasticDistributed();
 
-  void BroadcastNetworkInfo();
-
-  void BroadcastHeldOut();
-
-  void MasterAwareLoadNetwork();
-
   void init() override;
 
   void run() override;
@@ -284,20 +278,31 @@ class MCMCSamplerStochasticDistributed : public MCMCSamplerStochastic {
     return reinterpret_cast<std::vector<const T*>&>(v);
   }
 
+  void BroadcastNetworkInfo();
+
+  void BroadcastHeldOut();
+
+  void MasterAwareLoadNetwork();
+
   void InitSlaveState(const NetworkInfo &info, ::size_t world_rank);
+
+  void InitDKVStore();
 
   ::size_t real_num_node_sample() const;
 
   void init_theta();
   void beta_from_theta();
 
+  void init_pi();
   // Calculate pi[0..K> ++ phi_sum from phi[0..K>
   void pi_from_phi(Float* pi, const std::vector<Float> &phi);
 
-  void init_pi();
-
   void ScatterSubGraph(const std::vector<std::vector<Vertex> >& subminibatch,
                        MinibatchSlice *mb_chunk);
+
+  std::ostream& PrintStats(std::ostream& out) const;
+
+  EdgeSample deploy_mini_batch();
   void update_phi(std::vector<std::vector<Float> >* phi_node);
   void update_phi_node(const MinibatchSlice& mb_chunk, const PiChunk& pi_chunk,
                        ::size_t index, Vertex i, const Float* pi_node,
@@ -360,6 +365,9 @@ class MCMCSamplerStochasticDistributed : public MCMCSamplerStochastic {
 
   PerpData      perp_;
 
+  ::size_t      stats_print_interval_;
+  Timer         t_load_network_;
+  Timer         t_init_dkv_;
   Timer         t_outer_;
   Timer         t_populate_pi_;
   Timer         t_perplexity_;

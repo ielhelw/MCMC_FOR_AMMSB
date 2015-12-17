@@ -340,6 +340,10 @@ bool MinibatchPipeline::PreviousMinibatchOverlap(
 // **************************************************************************
 MCMCSamplerStochasticDistributed::MCMCSamplerStochasticDistributed(
     const Options &args) : MCMCSamplerStochastic(args), mpi_master_(0) {
+  stats_print_interval_ = 64 * 1024;
+
+  t_load_network_          = Timer("  load network graph");
+  t_init_dkv_              = Timer("  initialize DKV store");
   t_populate_pi_           = Timer("  populate pi");
   t_outer_                 = Timer("  iteration");
   t_deploy_minibatch_      = Timer("    deploy minibatch");
@@ -504,47 +508,30 @@ void MCMCSamplerStochasticDistributed::MasterAwareLoadNetwork() {
 }
 
 
-void MCMCSamplerStochasticDistributed::init() {
-  int r;
+void MCMCSamplerStochasticDistributed::InitDKVStore() {
+  t_init_dkv_.start();
 
-  // In an OpenMP program: no need for thread support
-  r = MPI_Init(NULL, NULL);
-  mpi_error_test(r, "MPI_Init() fails");
-
-  r = MPI_Comm_set_errhandler(MPI_COMM_WORLD, MPI_ERRORS_RETURN);
-  mpi_error_test(r, "MPI_Comm_set_errhandler fails");
-
-  r = MPI_Comm_size(MPI_COMM_WORLD, &mpi_size_);
-  mpi_error_test(r, "MPI_Comm_size() fails");
-  r = MPI_Comm_rank(MPI_COMM_WORLD, &mpi_rank_);
-  mpi_error_test(r, "MPI_Comm_rank() fails");
-
-  std::cerr << "MPI_Init() done, rank " << mpi_rank_ <<
-    " size " << mpi_size_ << std::endl;
-
-  if (args_.forced_master_is_worker) {
-    master_is_worker_ = true;
-  } else {
-    master_is_worker_ = (mpi_size_ == 1);
+  std::cerr << "Use D-KV store type " << args_.dkv_type << std::endl;
+  switch (args_.dkv_type) {
+  case DKV::TYPE::FILE:
+    d_kv_store_ = std::unique_ptr<DKV::DKVFile::DKVStoreFile>(
+                    new DKV::DKVFile::DKVStoreFile(args_.getRemains()));
+    break;
+#ifdef MCMC_ENABLE_RAMCLOUD
+  case DKV::TYPE::RAMCLOUD:
+    d_kv_store_ = std::unique_ptr<DKV::DKVRamCloud::DKVStoreRamCloud>(
+                    new DKV::DKVRamCloud::DKVStoreRamCloud(args_.getRemains()));
+    break;
+#endif
+#ifdef MCMC_ENABLE_RDMA
+  case DKV::TYPE::RDMA:
+    d_kv_store_ = std::unique_ptr<DKV::DKVRDMA::DKVStoreRDMA>(
+                    new DKV::DKVRDMA::DKVStoreRDMA(args_.getRemains()));
+    break;
+#endif
   }
 
-  MasterAwareLoadNetwork();
-
-  // control parameters for learning
-  //num_node_sample = static_cast< ::size_t>(std::sqrt(network.get_num_nodes()));
-  if (args_.num_node_sample == 0) {
-    // TODO: automative update..... 
-    num_node_sample = N/50;
-  } else {
-    num_node_sample = args_.num_node_sample;
-  }
-  if (args_.mini_batch_size == 0) {
-    // old default for STRATIFIED_RANDOM_NODE_SAMPLING
-    mini_batch_size = N / 10;
-  }
-
-  sampler_stochastic_info(std::cerr);
-
+  num_buffers_ = args_.num_buffers_;
   if (args_.max_pi_cache_entries_ == 0) {
     std::ifstream meminfo("/proc/meminfo");
     int64_t mem_total = -1;
@@ -567,7 +554,7 @@ void MCMCSamplerStochasticDistributed::init() {
     }
     // /proc/meminfo reports KB
     ::size_t pi_total = (1024 * mem_total) / ((K + 1) * sizeof(Float));
-    args_.max_pi_cache_entries_ = pi_total / 16;
+    args_.max_pi_cache_entries_ = num_buffers_ * pi_total / 32;
   }
 
   // Calculate DKV store buffer requirements
@@ -580,7 +567,6 @@ void MCMCSamplerStochasticDistributed::init() {
     workers = mpi_size_ - 1;
   }
 
-  ::size_t num_buffers_ = args_.num_buffers_;
   // pi cache hosts chunked subset of minibatch nodes + their neighbors
   max_minibatch_chunk_ = args_.max_pi_cache_entries_ / num_buffers_ / (1 + real_num_node_sample());
   ::size_t max_my_minibatch_nodes = std::min(max_minibatch_chunk_,
@@ -620,29 +606,63 @@ void MCMCSamplerStochasticDistributed::init() {
     " chunk " << max_perplexity_chunk_ << std::endl;
   std::cerr << "phi pipeline depth " << num_buffers_ << std::endl;
 
-  std::cerr << "Use D-KV store type " << args_.dkv_type << std::endl;
-  switch (args_.dkv_type) {
-  case DKV::TYPE::FILE:
-    d_kv_store_ = std::unique_ptr<DKV::DKVFile::DKVStoreFile>(
-                    new DKV::DKVFile::DKVStoreFile(args_.getRemains()));
-    break;
-#ifdef MCMC_ENABLE_RDMA
-  case DKV::TYPE::RDMA:
-    d_kv_store_ = std::unique_ptr<DKV::DKVRDMA::DKVStoreRDMA>(
-                    new DKV::DKVRDMA::DKVStoreRDMA(args_.getRemains()));
-    break;
-#endif
-  }
-
   max_dkv_write_entries_ = max_my_minibatch_nodes;
   d_kv_store_->Init(K + 1, N, num_buffers_, max_pi_cache,
                     max_dkv_write_entries_);
+  t_init_dkv_.stop();
 
   master_hosts_pi_ = d_kv_store_->include_master();
 
   std::cerr << "Master is " << (master_is_worker_ ? "" : "not ") <<
     "a worker, does " << (master_hosts_pi_ ? "" : "not ") <<
     "host pi values" << std::endl;
+}
+
+
+void MCMCSamplerStochasticDistributed::init() {
+  int r;
+
+  // In an OpenMP program: no need for thread support
+  r = MPI_Init(NULL, NULL);
+  mpi_error_test(r, "MPI_Init() fails");
+
+  r = MPI_Comm_set_errhandler(MPI_COMM_WORLD, MPI_ERRORS_RETURN);
+  mpi_error_test(r, "MPI_Comm_set_errhandler fails");
+
+  r = MPI_Comm_size(MPI_COMM_WORLD, &mpi_size_);
+  mpi_error_test(r, "MPI_Comm_size() fails");
+  r = MPI_Comm_rank(MPI_COMM_WORLD, &mpi_rank_);
+  mpi_error_test(r, "MPI_Comm_rank() fails");
+
+  std::cerr << "MPI_Init() done, rank " << mpi_rank_ <<
+    " size " << mpi_size_ << std::endl;
+
+  if (args_.forced_master_is_worker) {
+    master_is_worker_ = true;
+  } else {
+    master_is_worker_ = (mpi_size_ == 1);
+  }
+
+  t_load_network_.start();
+  MasterAwareLoadNetwork();
+  t_load_network_.stop();
+
+  // control parameters for learning
+  //num_node_sample = static_cast< ::size_t>(std::sqrt(network.get_num_nodes()));
+  if (args_.num_node_sample == 0) {
+    // TODO: automative update..... 
+    num_node_sample = N/50;
+  } else {
+    num_node_sample = args_.num_node_sample;
+  }
+  if (args_.mini_batch_size == 0) {
+    // old default for STRATIFIED_RANDOM_NODE_SAMPLING
+    mini_batch_size = N / 10;
+  }
+
+  sampler_stochastic_info(std::cerr);
+
+  InitDKVStore();
 
   // Need to know max_perplexity_chunk_ to Init perp_
   perp_.Init(max_perplexity_chunk_);
@@ -669,6 +689,50 @@ void MCMCSamplerStochasticDistributed::init() {
   minibatch_pipeline_ = std::unique_ptr<MinibatchPipeline>(
                           new MinibatchPipeline(*this, max_minibatch_chunk_,
                                                 *chunk_pipeline_));
+}
+
+
+std::ostream& MCMCSamplerStochasticDistributed::PrintStats(
+    std::ostream& out) const {
+  Timer::printHeader(out);
+  out << t_load_network_ << std::endl;
+  out << t_init_dkv_ << std::endl;
+  out << t_populate_pi_ << std::endl;
+  out << t_outer_ << std::endl;
+  out << t_deploy_minibatch_ << std::endl;
+  out << t_scatter_subgraph_ << std::endl;
+  out << t_scatter_subgraph_marshall_edge_count_ << std::endl;
+  out << t_scatter_subgraph_scatterv_edge_count_ << std::endl;
+  out << t_scatter_subgraph_marshall_edges_ << std::endl;
+  out << t_scatter_subgraph_scatterv_edges_ << std::endl;
+  out << t_scatter_subgraph_unmarshall_ << std::endl;
+  out << t_mini_batch_ << std::endl;
+  out << t_nodes_in_mini_batch_ << std::endl;
+  out << t_broadcast_theta_beta_ << std::endl;
+  out << t_update_phi_pi_ << std::endl;
+  out << t_sample_neighbor_nodes_ << std::endl;
+  out << t_resample_neighbor_nodes_ << std::endl;
+  chunk_pipeline_->report(std::cout);
+  out << t_update_phi_ << std::endl;
+  out << t_barrier_phi_ << std::endl;
+  out << t_update_pi_ << std::endl;
+  out << t_store_pi_minibatch_ << std::endl;
+  out << t_barrier_pi_ << std::endl;
+  out << t_update_beta_ << std::endl;
+  out << t_beta_zero_ << std::endl;
+  out << t_beta_rank_ << std::endl;
+  out << t_load_pi_beta_ << std::endl;
+  out << t_beta_calc_grads_ << std::endl;
+  out << t_beta_sum_grads_ << std::endl;
+  out << t_beta_reduce_grads_ << std::endl;
+  out << t_beta_update_theta_ << std::endl;
+  out << t_perplexity_ << std::endl;
+  out << t_load_pi_perp_ << std::endl;
+  out << t_cal_edge_likelihood_ << std::endl;
+  out << t_purge_pi_perp_ << std::endl;
+  out << t_reduce_perp_ << std::endl;
+
+  return out;
 }
 
 
@@ -736,6 +800,10 @@ void MCMCSamplerStochasticDistributed::run() {
     ++step_count;
     t_outer_.stop();
     // auto l2 = std::chrono::system_clock::now();
+
+    if (step_count % stats_print_interval_ == 0) {
+      PrintStats(std::cout);
+    }
   }
 
   r = MPI_Barrier(MPI_COMM_WORLD);
@@ -749,41 +817,7 @@ void MCMCSamplerStochasticDistributed::run() {
   r = MPI_Barrier(MPI_COMM_WORLD);
   mpi_error_test(r, "MPI_Barrier(post pi) fails");
 
-  Timer::printHeader(std::cout);
-  std::cout << t_populate_pi_ << std::endl;
-  std::cout << t_outer_ << std::endl;
-  std::cout << t_deploy_minibatch_ << std::endl;
-  std::cout << t_mini_batch_ << std::endl;
-  std::cout << t_scatter_subgraph_ << std::endl;
-  std::cout << t_scatter_subgraph_marshall_edge_count_ << std::endl;
-  std::cout << t_scatter_subgraph_scatterv_edge_count_ << std::endl;
-  std::cout << t_scatter_subgraph_marshall_edges_ << std::endl;
-  std::cout << t_scatter_subgraph_scatterv_edges_ << std::endl;
-  std::cout << t_scatter_subgraph_unmarshall_ << std::endl;
-  std::cout << t_nodes_in_mini_batch_ << std::endl;
-  std::cout << t_sample_neighbor_nodes_ << std::endl;
-  std::cout << t_resample_neighbor_nodes_ << std::endl;
-  std::cout << t_broadcast_theta_beta_ << std::endl;
-  std::cout << t_update_phi_pi_ << std::endl;
-  chunk_pipeline_->report(std::cout);
-  std::cout << t_update_phi_ << std::endl;
-  std::cout << t_barrier_phi_ << std::endl;
-  std::cout << t_update_pi_ << std::endl;
-  std::cout << t_store_pi_minibatch_ << std::endl;
-  std::cout << t_barrier_pi_ << std::endl;
-  std::cout << t_update_beta_ << std::endl;
-  std::cout << t_beta_zero_ << std::endl;
-  std::cout << t_beta_rank_ << std::endl;
-  std::cout << t_load_pi_beta_ << std::endl;
-  std::cout << t_beta_calc_grads_ << std::endl;
-  std::cout << t_beta_sum_grads_ << std::endl;
-  std::cout << t_beta_reduce_grads_ << std::endl;
-  std::cout << t_beta_update_theta_ << std::endl;
-  std::cout << t_perplexity_ << std::endl;
-  std::cout << t_load_pi_perp_ << std::endl;
-  std::cout << t_cal_edge_likelihood_ << std::endl;
-  std::cout << t_purge_pi_perp_ << std::endl;
-  std::cout << t_reduce_perp_ << std::endl;
+  PrintStats(std::cout);
 }
 
 
@@ -855,13 +889,20 @@ void MCMCSamplerStochasticDistributed::init_pi() {
   while (my_max > 0) {
     ::size_t chunk = std::min(max_dkv_write_entries_, my_max);
     my_max -= chunk;
-    std::vector<std::vector<Float> > phi_pi = rng_[0]->gamma(1, 1, chunk, K);
+    std::vector<std::vector<Float> > phi_pi(chunk);
+#pragma omp parallel for // num_threads (12)
+    for (::size_t j = 0; j < chunk; ++j) {
+      phi_pi[j] = rng_[omp_get_thread_num()]->gamma(1, 1, 1, K)[0];
+    }
 #ifndef NDEBUG
-    for (auto ph : phi_pi) {
-      assert(ph >= 0.0);
+    for (auto & phs : phi_pi) {
+      for (auto ph : phs) {
+        assert(ph >= 0.0);
+      }
     }
 #endif
 
+#pragma omp parallel for // num_threads (12)
     for (::size_t j = 0; j < chunk; ++j) {
       pi_from_phi(pi[j], phi_pi[j]);
     }
@@ -873,8 +914,10 @@ void MCMCSamplerStochasticDistributed::init_pi() {
     }
 
     d_kv_store_->WriteKVRecords(node, constify(pi));
-    d_kv_store_->PurgeKVRecords();
+    d_kv_store_->FlushKVRecords();
+    std::cerr << ".";
   }
+  std::cerr << std::endl;
 
   for (auto & p : pi) {
     delete[] p;
@@ -899,12 +942,11 @@ void MCMCSamplerStochasticDistributed::check_perplexity(bool force) {
                 << " time: " << std::setprecision(3) << (t_ms / 1000.0)
                 << " perplexity for hold out set: " << std::setprecision(12) <<
                 ppx_score << std::endl;
-      ppxs_heldout_cb_.push_back(ppx_score);
-
       double seconds = t_ms / 1000.0;
       timings_.push_back(seconds);
     }
 
+    ppxs_heldout_cb_.push_back(ppx_score);
   }
 }
 
@@ -1149,6 +1191,8 @@ void MCMCSamplerStochasticDistributed::deploy_mini_batch(
   mb_slice->full_minibatch_nodes_.insert(nodes_vector.begin(),
                                          nodes_vector.end());
   t_deploy_minibatch_.stop();
+
+  std::cerr << step_count << ": Minibatch deployed" << std::endl;
 }
 
 
@@ -1191,6 +1235,15 @@ void MCMCSamplerStochasticDistributed::SampleNeighbors(
     ::size_t chunk = std::min(chunk_size,
                               mb_slice->nodes_.size() - chunk_start);
 
+    if (true || chunk <= 1) {
+      if (b == 0) {
+        std::cerr << "Minibatch slice size " << mb_slice->nodes_.size() << " chunk size";
+      }
+      std::cerr << " " << chunk;
+      if (b == num_chunks - 1) {
+        std::cerr << std::endl;
+      }
+    }
     auto *pi_chunk = &mb_slice->pi_chunks_[b];
     const auto &chunk_begin = mb_slice->nodes_.begin() + chunk_start;
     pi_chunk->chunk_nodes_.assign(chunk_begin, chunk_begin + chunk);
@@ -1233,6 +1286,7 @@ void MCMCSamplerStochasticDistributed::update_phi(
     minibatch_pipeline_->StageNextChunk();                   // next chunk
     auto *pi_chunk = chunk_pipeline_->AwaitChunkFilled();   // current chunk
 
+    std::cerr << step_count << ": compute chunk " << b << " size " << pi_chunk->chunk_nodes_.size() << std::endl;
     t_update_phi_.start();
 #pragma omp parallel for // num_threads (12)
     for (::size_t i = 0; i < pi_chunk->chunk_nodes_.size(); ++i) {
@@ -1257,6 +1311,9 @@ void MCMCSamplerStochasticDistributed::update_phi_node(
     std::vector<Float>* phi_node	// out parameter
     ) {
   Float phi_i_sum = pi_node[K];
+  if (phi_i_sum == FLOAT(0.0)) {
+    std::cerr << "Ooopppssss.... phi_i_sum " << phi_i_sum << std::endl;
+  }
   std::vector<Float> grads(K, 0.0);	// gradient for K classes
 
   for (::size_t ix = 0; ix < real_num_node_sample(); ++ix) {
@@ -1459,9 +1516,10 @@ void MCMCSamplerStochasticDistributed::beta_calc_grads(
   }
   t_beta_rank_.stop();
 
-  t_load_pi_beta_.start();
   std::vector<Float*> pi(node_rank.size());
-  d_kv_store_->ReadKVRecords(chunk_pipeline_->GrabFreeBufferIndex(), pi, nodes);
+  t_load_pi_beta_.start();
+  d_kv_store_->ReadKVRecords(chunk_pipeline_->GrabFreeBufferIndex(),
+                             pi, nodes);
   t_load_pi_beta_.stop();
 
   // update gamma, only update node in the grad
@@ -1609,15 +1667,10 @@ void MCMCSamplerStochasticDistributed::reduce_plus(const perp_accu &in,
  * which is not true representation of actual data set, which is extremely sparse.
  */
 Float MCMCSamplerStochasticDistributed::cal_perplexity_held_out() {
-
   for (auto & a : perp_.accu_) {
     a.link.reset();
     a.non_link.reset();
   }
-
-  t_purge_pi_perp_.start();
-  d_kv_store_->PurgeKVRecords(chunk_pipeline_->GrabFreeBufferIndex());
-  t_purge_pi_perp_.stop();
 
   for (::size_t chunk_start = 0;
        chunk_start < perp_.data_.size();
