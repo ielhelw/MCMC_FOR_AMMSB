@@ -4,11 +4,18 @@
 namespace DKV {
 
 #cmakedefine MCMC_SINGLE_PRECISION
+#cmakedefine MCMC_THREAD_SAFE
 
 #ifdef MCMC_SINGLE_PRECISION
 typedef float   Float;
 #else
 typedef double  Float;
+#endif
+
+#ifdef MCMC_THREAD_SAFE
+#define		SCOPED_LOCK(lock__)	boost::unique_lock<boost::mutex> lock(lock__)
+#else
+#define		SCOPED_LOCK(lock__)
 #endif
 
 }	// namespace DKV
