@@ -301,38 +301,6 @@ bool MinibatchPipeline::PreviousMinibatchOverlap(Vertex one) const {
 }
 
 
-bool MinibatchPipeline::PreviousMinibatchOverlap(
-    const std::vector<Vertex>& one) const {
-  std::vector<int> overlap(omp_get_max_threads());
-#pragma omp parallel for
-  for (::size_t i = 0; i < overlap.size(); ++i) {
-    overlap[i] = 0;
-  }
-
-  const VertexSet& other = minibatch_slice_[prev_].full_minibatch_nodes_;
-
-#pragma omp parallel for // num_threads (12)
-  for (::size_t i = 0; i < one.size(); ++i) {
-    if (other.find(one[i]) != other.end()) {
-      // overlap in the minibatch itself
-      overlap[omp_get_thread_num()] = 1;
-      // break;
-    }
-  }
-
-  bool result = 0;
-  ::size_t i;
-#pragma omp parallel for \
-    default(shared) private(i) \
-    reduction(+:result)
-  for (i = 0; i < overlap.size(); ++i) {
-    result = result + overlap[i];
-  }
-
-  return result > 0;
-}
-
-
 // **************************************************************************
 //
 // class MCMCSamplerStochasticDistributed
@@ -1088,7 +1056,6 @@ void MCMCSamplerStochasticDistributed::deploy_mini_batch(
 
   if (mpi_rank_ == mpi_master_) {
     // std::cerr << "Invoke sample_mini_batch" << std::endl;
-    while (true) {
       t_mini_batch_.start();
       mb_slice->edge_sample_ = network.sample_mini_batch(mini_batch_size,
                                                          strategy);
@@ -1103,11 +1070,6 @@ void MCMCSamplerStochasticDistributed::deploy_mini_batch(
       t_nodes_in_mini_batch_.stop();
       // std::cerr << "mini_batch size " << mini_batch.size() <<
       //   " num_node_sample " << num_node_sample << std::endl;
-      if (! minibatch_pipeline_->PreviousMinibatchOverlap(nodes_vector)) {
-        break;
-      }
-      std::cerr << "Minibatch has overlap with previous, resample" << std::endl;
-      delete mb_slice->edge_sample_.first;
     }
 
     subminibatch.resize(mpi_size_);	// FIXME: lift to class, size is static

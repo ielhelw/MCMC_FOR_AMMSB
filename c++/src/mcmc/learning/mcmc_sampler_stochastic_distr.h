@@ -205,7 +205,6 @@ class MinibatchPipeline {
   // Returns whether any node is in <code>one</code> and the previous
   // minibatch set
   bool PreviousMinibatchOverlap(Vertex one) const;
-  bool PreviousMinibatchOverlap(const std::vector<Vertex>& one) const;
 
  private:
 
