@@ -35,6 +35,8 @@ class LocalNetwork {
 
   const EndpointSet &linked_edges(::size_t i) const;
 
+  void swap(::size_t from, ::size_t to);
+
  protected:
   std::vector<EndpointSet> linked_edges_;
 };
@@ -80,8 +82,8 @@ class PerpData {
 
 class PiChunk {
  public:
-  ::size_t      buffer_index_;
-  ::size_t      start_;
+  ::size_t      buffer_index_;  // index into the multi-buffer
+  ::size_t      start_;         // start index of my chunk nodes into the graph
   std::vector<Vertex> chunk_nodes_;
   std::vector<Float *> pi_node_;
   std::vector<Vertex> flat_neighbors_;
@@ -170,6 +172,8 @@ class MinibatchSlice {
   MinibatchSlice() : processed_(0) {
   }
 
+  void SwapNodeAndGraph(::size_t i, ::size_t with, PiChunk* c, PiChunk* with_c);
+
   std::vector<PiChunk> pi_chunks_;
   std::vector<Vertex> nodes_;       // my subsample of the minibatch
   VertexSet full_minibatch_nodes_;
@@ -195,7 +199,8 @@ class MinibatchPipeline {
  public:
   MinibatchPipeline(MCMCSamplerStochasticDistributed& sampler,
                     ::size_t max_minibatch_chunk,
-                    ChunkPipeline& chunk_pipeline);
+                    ChunkPipeline& chunk_pipeline,
+                    std::vector<Random::Random*>& rng);
   void StageNextChunk();
   void StageNextMinibatch();
   void AdvanceMinibatch();
@@ -205,6 +210,13 @@ class MinibatchPipeline {
   // Returns whether any node is in <code>one</code> and the previous
   // minibatch set
   bool PreviousMinibatchOverlap(Vertex one) const;
+  void ReorderMinibatchOverlap(MinibatchSlice* mb_chunk);
+  void CreateMinibatchSliceChunks(MinibatchSlice* mb_chunk);
+  void SampleNeighbors(MinibatchSlice* mb_chunk);
+  /** @return false if there is overlap with previous minibatch sample */
+  bool SampleNeighborSet(PiChunk* pi_chunk, ::size_t i);
+
+  std::ostream& report(std::ostream& s) const;
 
  private:
 
@@ -214,9 +226,16 @@ class MinibatchPipeline {
   std::vector<MinibatchSlice> minibatch_slice_;
   ::size_t      max_minibatch_chunk_;
 
+  std::vector<Random::Random*>& rng_;
+
   ::size_t      prev_;
   ::size_t      current_;
   ::size_t      next_;
+
+  Timer         t_chunk_minibatch_slice_;
+  Timer         t_reorder_minibatch_overlap_;
+  Timer         t_sample_neighbor_nodes_;
+  Timer         t_resample_neighbor_nodes_;
 };
 
 
@@ -263,9 +282,8 @@ class MCMCSamplerStochasticDistributed : public MCMCSamplerStochastic {
   void run() override;
 
   void deploy_mini_batch(MinibatchSlice* mb_chunk);
-  void SampleNeighbors(MinibatchSlice* mb_chunk);
-  /** @return false if there is overlap with previous minibatch sample */
-  bool SampleNeighborSet(PiChunk* pi_chunk, ::size_t i);
+
+  ::size_t real_num_node_sample() const;
 
  protected:
   template <typename T>
@@ -286,8 +304,6 @@ class MCMCSamplerStochasticDistributed : public MCMCSamplerStochastic {
   void InitSlaveState(const NetworkInfo &info, ::size_t world_rank);
 
   void InitDKVStore();
-
-  ::size_t real_num_node_sample() const;
 
   void init_theta();
   void beta_from_theta();
@@ -380,8 +396,6 @@ class MCMCSamplerStochasticDistributed : public MCMCSamplerStochastic {
   Timer         t_scatter_subgraph_scatterv_edges_;
   Timer         t_scatter_subgraph_unmarshall_;
   Timer         t_nodes_in_mini_batch_;
-  Timer         t_sample_neighbor_nodes_;
-  Timer         t_resample_neighbor_nodes_;
   Timer         t_update_phi_pi_;
   Timer         t_update_phi_;
   Timer         t_barrier_phi_;

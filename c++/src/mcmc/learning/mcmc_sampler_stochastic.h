@@ -79,13 +79,17 @@ class MCMCSamplerStochastic : public Learner {
 
   void run() override;
 
+  NeighborSet sample_neighbor_nodes(::size_t sample_size, Vertex nodeId,
+                                    Random::Random *rnd);
+
+  ::size_t get_num_node_sample() const {
+    return num_node_sample;
+  }
+
  protected:
   void update_beta(const MinibatchSet &mini_batch, Float scale);
 
   void update_phi(Vertex i, const NeighborSet &neighbors, Float eps_t);
-
-  NeighborSet sample_neighbor_nodes(::size_t sample_size, Vertex nodeId,
-                                    Random::Random *rnd);
 
   MinibatchNodeSet nodes_in_batch(const MinibatchSet &mini_batch) const;
 

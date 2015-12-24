@@ -74,6 +74,10 @@ const LocalNetwork::EndpointSet& LocalNetwork::linked_edges(::size_t i) const {
   return linked_edges_[i];
 }
 
+void LocalNetwork::swap(::size_t from, ::size_t to) {
+  linked_edges_[from].swap(linked_edges_[to]);
+}
+
 
 // **************************************************************************
 //
@@ -250,17 +254,38 @@ void PiChunk::swap(PiChunk& x) {
 
 // **************************************************************************
 //
+// class MinibatchSlice
+//
+// **************************************************************************
+
+void MinibatchSlice::SwapNodeAndGraph(::size_t i, ::size_t with,
+                                      PiChunk* c, PiChunk* with_c) {
+  std::cerr << "Node[" << i << "] " << c->chunk_nodes_[i] << " overlaps previous minibatch, swap with [" << with_c->start_ + with << "] " << with_c->chunk_nodes_[with];
+  std::swap(c->chunk_nodes_[i], with_c->chunk_nodes_[with]);
+  std::swap(nodes_[i], nodes_[with_c->start_ + with]);
+  local_network_.swap(c->start_ + i, with_c->start_ + with);
+  std::cerr << " becomes [" << i << "] " << c->chunk_nodes_[i] << " swap with [" << with_c->start_ + with << "] " << with_c->chunk_nodes_[with] << std::endl;
+}
+
+
+// **************************************************************************
+//
 // class MinibatchPipeline
 //
 // **************************************************************************
 
 MinibatchPipeline::MinibatchPipeline(MCMCSamplerStochasticDistributed& sampler,
                                      ::size_t max_minibatch_chunk,
-                                     ChunkPipeline& chunk_pipeline)
+                                     ChunkPipeline& chunk_pipeline,
+                                     std::vector<Random::Random*>& rng)
     : sampler_(sampler), chunk_pipeline_(chunk_pipeline),
-      max_minibatch_chunk_(max_minibatch_chunk),
+      max_minibatch_chunk_(max_minibatch_chunk), rng_(rng),
       prev_(2), current_(0), next_(1) {
   minibatch_slice_.resize(3);    // prev, current, next
+  t_chunk_minibatch_slice_     = Timer("      create minibatch slice chunks");
+  t_reorder_minibatch_overlap_ = Timer("      reorder minibatch overlap");
+  t_sample_neighbor_nodes_     = Timer("      sample_neighbor_nodes");
+  t_resample_neighbor_nodes_   = Timer("      resample_neighbor_nodes");
 }
 
 
@@ -289,15 +314,233 @@ void MinibatchPipeline::StageNextMinibatch() {
   // Receives the full minibatch nodes from master.
   MinibatchSlice* mb_slice = &minibatch_slice_[next_];
   sampler_.deploy_mini_batch(mb_slice);
-  sampler_.SampleNeighbors(mb_slice);
+  CreateMinibatchSliceChunks(mb_slice);
+  SampleNeighbors(mb_slice);
   chunk_pipeline_.EnqueueChunk(&mb_slice->pi_chunks_[0]);
   mb_slice->processed_ = 1;
 }
 
 
 bool MinibatchPipeline::PreviousMinibatchOverlap(Vertex one) const {
-  const VertexSet& other = minibatch_slice_[prev_].full_minibatch_nodes_;
+  const VertexSet& other = minibatch_slice_[current_].full_minibatch_nodes_;
   return (other.find(one) != other.end());
+}
+
+
+/**
+ * If the first chunk of the current minibatch has nodes that overlap with the
+ * previous minibatch, reorder the minibatch nodes. Note: the entries in the
+ * graph must also be reordered to keep consistent.
+ */
+void MinibatchPipeline::ReorderMinibatchOverlap(
+    MinibatchSlice* mb_slice) {
+  auto *pi_chunk = &mb_slice->pi_chunks_[0];
+  ::size_t last_checked_chunk = mb_slice->pi_chunks_.size() - 1;
+  auto *last_pi_chunk = &mb_slice->pi_chunks_[last_checked_chunk];
+  ::size_t last_checked_node = last_pi_chunk->chunk_nodes_.size();
+  bool first = true;
+  for (::size_t i = 0; i < pi_chunk->chunk_nodes_.size(); ++i) {
+    if (PreviousMinibatchOverlap(pi_chunk->chunk_nodes_[i])) {
+      if (first) {
+        first = false;
+        std::cerr << "Previous minibatch: ";
+        for (auto v : minibatch_slice_[current_].full_minibatch_nodes_) {
+          std::cerr << v << " ";
+        }
+        std::cerr << std::endl;
+        std::cerr << "Current minibatch: ";
+        for (auto v : minibatch_slice_[next_].full_minibatch_nodes_) {
+          std::cerr << v << " ";
+        }
+        std::cerr << std::endl;
+        std::cerr << "My chunks:" << std::endl;
+        for (auto& c : mb_slice->pi_chunks_) {
+          std::cerr << "    ";
+          for (auto v : c.chunk_nodes_) {
+            std::cerr << v << " ";
+          }
+          std::cerr << std::endl;
+        }
+      }
+      t_reorder_minibatch_overlap_.start();
+      while (true) {
+        while (last_checked_node == 0) {
+          --last_checked_chunk;
+          last_pi_chunk = &mb_slice->pi_chunks_[last_checked_chunk];
+          last_checked_node = last_pi_chunk->chunk_nodes_.size();
+          if (last_checked_chunk == 0) {
+            /* Special case: run out of swappable vertices in higher chunks.
+             * Do a different algorithm. */
+            std::cerr << "********************** Cannot swap [" << i << "] " << pi_chunk->chunk_nodes_[i] << std::endl;
+            std::cerr << "First chunk in my current minibatch slice: ";
+            for (auto v : pi_chunk->chunk_nodes_) {
+              std::cerr << v << " ";
+            }
+            std::cerr << std::endl;
+
+            /*
+             * Algorithm:
+             *  - swap the current vertex w/ the last nonoverlapping vertex
+             *    within this chunk, do the same w/ graph entries
+             *  - at the end
+             *     + insert the overlapping vertices of the first chunk into the
+             *       beginning of the second chunk
+             *     + decrement the start pointer of the second chunk
+             * Border case? the next chunk is empty.
+             */
+            for (; i < last_checked_node; ++i) {
+              if (PreviousMinibatchOverlap(pi_chunk->chunk_nodes_[i])) {
+                while (last_checked_node > i) {
+                  --last_checked_node;
+                  if (! PreviousMinibatchOverlap(pi_chunk->chunk_nodes_[last_checked_node])) {
+                    mb_slice->SwapNodeAndGraph(i, last_checked_node, pi_chunk,
+                                               pi_chunk);
+                    break;
+                  }
+                }
+              }
+            }
+
+            last_pi_chunk = &mb_slice->pi_chunks_[1];
+            ::size_t n_swap = pi_chunk->chunk_nodes_.size() - last_checked_node;
+            if (last_pi_chunk->chunk_nodes_.size() == 0) {
+              last_pi_chunk->start_ = 0;
+            } else {
+              assert(last_pi_chunk->start_ >= n_swap);
+              last_pi_chunk->start_ -= n_swap;
+            }
+            last_pi_chunk->chunk_nodes_.insert(
+              last_pi_chunk->chunk_nodes_.begin(),
+              pi_chunk->chunk_nodes_.begin() +
+                (pi_chunk->chunk_nodes_.size() - n_swap),
+              pi_chunk->chunk_nodes_.end());
+            pi_chunk->chunk_nodes_.erase(pi_chunk->chunk_nodes_.begin() + last_checked_node, pi_chunk->chunk_nodes_.end());
+
+            std::cerr << "After: my chunks:" << std::endl;
+            for (auto& c : mb_slice->pi_chunks_) {
+              std::cerr << "    start=" << c.start_ << " ";
+              for (auto v : c.chunk_nodes_) {
+                std::cerr << v << " ";
+              }
+              std::cerr << std::endl;
+            }
+            t_reorder_minibatch_overlap_.stop();
+            return;
+          }
+        }
+
+        --last_checked_node;
+        if (! PreviousMinibatchOverlap(last_pi_chunk->chunk_nodes_[last_checked_node])) {
+          mb_slice->SwapNodeAndGraph(i, last_checked_node, pi_chunk,
+                                     last_pi_chunk);
+          break;
+        }
+      }
+      t_reorder_minibatch_overlap_.stop();
+    }
+  }
+}
+
+
+void MinibatchPipeline::CreateMinibatchSliceChunks(
+    MinibatchSlice* mb_slice) {
+  t_chunk_minibatch_slice_.start();
+
+  ::size_t num_chunks = (mb_slice->nodes_.size() + max_minibatch_chunk_ - 1) /
+                          max_minibatch_chunk_;
+  if (num_chunks <= 1) {
+    num_chunks = 2;
+  }
+  ::size_t chunk_size = (mb_slice->nodes_.size() + num_chunks - 1) / num_chunks;
+  mb_slice->pi_chunks_.resize(num_chunks);
+
+  ::size_t chunk_start = 0;
+  for (::size_t b = 0; b < num_chunks; b++) {
+    ::size_t chunk = std::min(chunk_size,
+                              mb_slice->nodes_.size() - chunk_start);
+
+    if (true || chunk <= 1) {
+      if (b == 0) {
+        std::cerr << "Minibatch slice size " << mb_slice->nodes_.size() << " chunk size";
+      }
+      std::cerr << " " << chunk;
+      if (b == num_chunks - 1) {
+        std::cerr << std::endl;
+      }
+    }
+    auto *pi_chunk = &mb_slice->pi_chunks_[b];
+    const auto &chunk_begin = mb_slice->nodes_.begin() + chunk_start;
+    pi_chunk->chunk_nodes_.assign(chunk_begin, chunk_begin + chunk);
+    pi_chunk->pi_node_.resize(pi_chunk->chunk_nodes_.size());
+    pi_chunk->start_ = chunk_start;
+    chunk_start += chunk;
+  }
+  assert(chunk_start == mb_slice->nodes_.size());
+
+  ReorderMinibatchOverlap(mb_slice);
+  t_chunk_minibatch_slice_.stop();
+}
+
+
+// ************ sample neighbor nodes in parallel at each host ******
+void MinibatchPipeline::SampleNeighbors(
+    MinibatchSlice* mb_slice) {
+  t_sample_neighbor_nodes_.start();
+  ::size_t num_chunks = mb_slice->pi_chunks_.size();
+
+  for (::size_t b = 0; b < num_chunks; b++) {
+    auto *pi_chunk = &mb_slice->pi_chunks_[b];
+    pi_chunk->pi_neighbor_.resize(pi_chunk->chunk_nodes_.size() *
+                                  sampler_.real_num_node_sample());
+    pi_chunk->flat_neighbors_.resize(pi_chunk->chunk_nodes_.size() *
+                                     sampler_.real_num_node_sample());
+
+    // std::cerr << "Sample neighbor nodes" << std::endl;
+#pragma omp parallel for // num_threads (12)
+    for (::size_t i = 0; i < pi_chunk->chunk_nodes_.size(); ++i) {
+      if (! SampleNeighborSet(pi_chunk, i)) {
+        t_resample_neighbor_nodes_.start();
+        while (! SampleNeighborSet(pi_chunk, i)) {
+          // overlap, sample again
+          std::cerr << "Overlap in neighbor sample " << i << ", do it again" << std::endl;
+        }
+        t_resample_neighbor_nodes_.stop();
+      }
+    }
+  }
+  t_sample_neighbor_nodes_.stop();
+}
+
+
+bool MinibatchPipeline::SampleNeighborSet(PiChunk* pi_chunk, ::size_t i) {
+  Vertex node = pi_chunk->chunk_nodes_[i];
+  // sample a mini-batch of neighbors
+  auto rng = rng_[omp_get_thread_num()];
+  NeighborSet neighbors = sampler_.sample_neighbor_nodes(
+    sampler_.get_num_node_sample(), node, rng);
+  assert(neighbors.size() == sampler_.real_num_node_sample());
+  // Cannot use flat_neighbors_.insert() because it may (concurrently)
+  // attempt to resize flat_neighbors_.
+  ::size_t j = i * sampler_.real_num_node_sample();
+  for (auto n : neighbors) {
+    if (i == 0 && PreviousMinibatchOverlap(n)) {
+      // std::cerr << "neighbor " << n << " is also in previous minibatch" << std::endl;
+      return false;
+    }
+    // is this flagged by OpenMP? pi_chunk->flat_neighbors_[j] = n;
+    memcpy(pi_chunk->flat_neighbors_.data() + j, &n, sizeof n);
+    ++j;
+  }
+  return true;
+}
+
+
+std::ostream& MinibatchPipeline::report(std::ostream& s) const {
+  s << t_chunk_minibatch_slice_ << std::endl;
+  s << t_reorder_minibatch_overlap_ << std::endl;
+  s << t_sample_neighbor_nodes_ << std::endl;
+  s << t_resample_neighbor_nodes_ << std::endl;
+  return s;
 }
 
 
@@ -324,8 +567,6 @@ MCMCSamplerStochasticDistributed::MCMCSamplerStochasticDistributed(
   t_scatter_subgraph_unmarshall_          = Timer("        unmarshall edges");
   t_nodes_in_mini_batch_   = Timer("      nodes_in_mini_batch");
   t_broadcast_theta_beta_  = Timer("    broadcast theta/beta");
-  t_sample_neighbor_nodes_ = Timer("      sample_neighbor_nodes");
-  t_resample_neighbor_nodes_ = Timer("      resample_neighbor_nodes");
   t_update_phi_pi_         = Timer("    update_phi_pi");
   t_update_phi_            = Timer("      update_phi");
   t_barrier_phi_           = Timer("      barrier after update phi");
@@ -656,7 +897,7 @@ void MCMCSamplerStochasticDistributed::init() {
   dkv_server_thread_ = boost::thread(boost::ref(*chunk_pipeline_.get()));
   minibatch_pipeline_ = std::unique_ptr<MinibatchPipeline>(
                           new MinibatchPipeline(*this, max_minibatch_chunk_,
-                                                *chunk_pipeline_));
+                                                *chunk_pipeline_, rng_));
 }
 
 
@@ -676,10 +917,9 @@ std::ostream& MCMCSamplerStochasticDistributed::PrintStats(
   out << t_scatter_subgraph_unmarshall_ << std::endl;
   out << t_mini_batch_ << std::endl;
   out << t_nodes_in_mini_batch_ << std::endl;
+  minibatch_pipeline_->report(std::cout);
   out << t_broadcast_theta_beta_ << std::endl;
   out << t_update_phi_pi_ << std::endl;
-  out << t_sample_neighbor_nodes_ << std::endl;
-  out << t_resample_neighbor_nodes_ << std::endl;
   chunk_pipeline_->report(std::cout);
   out << t_update_phi_ << std::endl;
   out << t_barrier_phi_ << std::endl;
@@ -1056,21 +1296,19 @@ void MCMCSamplerStochasticDistributed::deploy_mini_batch(
 
   if (mpi_rank_ == mpi_master_) {
     // std::cerr << "Invoke sample_mini_batch" << std::endl;
-      t_mini_batch_.start();
-      mb_slice->edge_sample_ = network.sample_mini_batch(mini_batch_size,
-                                                         strategy);
-      t_mini_batch_.stop();
-      const MinibatchSet &mini_batch = *mb_slice->edge_sample_.first;
-      // std::cerr << "Done sample_mini_batch" << std::endl;
+    t_mini_batch_.start();
+    mb_slice->edge_sample_ = network.sample_mini_batch(mini_batch_size,
+                                                       strategy);
+    t_mini_batch_.stop();
+    const MinibatchSet &mini_batch = *mb_slice->edge_sample_.first;
+    // std::cerr << "Done sample_mini_batch" << std::endl;
 
-      // iterate through each node in the mini batch.
-      t_nodes_in_mini_batch_.start();
-      MinibatchNodeSet nodes = nodes_in_batch(mini_batch);
-      nodes_vector.assign(nodes.begin(), nodes.end());
-      t_nodes_in_mini_batch_.stop();
-      // std::cerr << "mini_batch size " << mini_batch.size() <<
-      //   " num_node_sample " << num_node_sample << std::endl;
-    }
+    t_nodes_in_mini_batch_.start();
+    MinibatchNodeSet nodes = nodes_in_batch(mini_batch);
+    nodes_vector.assign(nodes.begin(), nodes.end());
+    t_nodes_in_mini_batch_.stop();
+    // std::cerr << "mini_batch size " << mini_batch.size() <<
+    //   " num_node_sample " << num_node_sample << std::endl;
 
     subminibatch.resize(mpi_size_);	// FIXME: lift to class, size is static
 
@@ -1155,85 +1393,6 @@ void MCMCSamplerStochasticDistributed::deploy_mini_batch(
   t_deploy_minibatch_.stop();
 
   std::cerr << step_count << ": Minibatch deployed" << std::endl;
-}
-
-
-bool MCMCSamplerStochasticDistributed::SampleNeighborSet(PiChunk* pi_chunk,
-                                                         ::size_t i) {
-  Vertex node = pi_chunk->chunk_nodes_[i];
-  // sample a mini-batch of neighbors
-  auto rng = rng_[omp_get_thread_num()];
-  NeighborSet neighbors = sample_neighbor_nodes(num_node_sample, node, rng);
-  assert(neighbors.size() == real_num_node_sample());
-  // Cannot use flat_neighbors_.insert() because it may (concurrently)
-  // attempt to resize flat_neighbors_.
-  ::size_t j = i * real_num_node_sample();
-  for (auto n : neighbors) {
-    if (i == 0 && minibatch_pipeline_->PreviousMinibatchOverlap(n)) {
-      // std::cerr << "neighbor " << n << " is also in previous minibatch" << std::endl;
-      return false;
-    }
-    // is this flagged by OpenMP? pi_chunk->flat_neighbors_[j] = n;
-    memcpy(pi_chunk->flat_neighbors_.data() + j, &n, sizeof n);
-    ++j;
-  }
-  return true;
-}
-
-
-void MCMCSamplerStochasticDistributed::SampleNeighbors(
-    MinibatchSlice* mb_slice) {
-  t_sample_neighbor_nodes_.start();
-  ::size_t num_chunks = (mb_slice->nodes_.size() + max_minibatch_chunk_ - 1) /
-                          max_minibatch_chunk_;
-  if (num_chunks <= 1) {
-    num_chunks = 2;
-  }
-  ::size_t chunk_size = (mb_slice->nodes_.size() + num_chunks - 1) / num_chunks;
-  mb_slice->pi_chunks_.resize(num_chunks);
-
-  ::size_t chunk_start = 0;
-  for (::size_t b = 0; b < num_chunks; b++) {
-    ::size_t chunk = std::min(chunk_size,
-                              mb_slice->nodes_.size() - chunk_start);
-
-    if (true || chunk <= 1) {
-      if (b == 0) {
-        std::cerr << "Minibatch slice size " << mb_slice->nodes_.size() << " chunk size";
-      }
-      std::cerr << " " << chunk;
-      if (b == num_chunks - 1) {
-        std::cerr << std::endl;
-      }
-    }
-    auto *pi_chunk = &mb_slice->pi_chunks_[b];
-    const auto &chunk_begin = mb_slice->nodes_.begin() + chunk_start;
-    pi_chunk->chunk_nodes_.assign(chunk_begin, chunk_begin + chunk);
-    pi_chunk->pi_node_.resize(pi_chunk->chunk_nodes_.size());
-    pi_chunk->start_ = chunk_start;
-    chunk_start += chunk;
-
-    // ************ sample neighbor nodes in parallel at each host ******
-    // std::cerr << "Sample neighbor nodes" << std::endl;
-    pi_chunk->pi_neighbor_.resize(pi_chunk->chunk_nodes_.size() *
-                                  real_num_node_sample());
-    pi_chunk->flat_neighbors_.resize(pi_chunk->chunk_nodes_.size() *
-                                     real_num_node_sample());
-
-#pragma omp parallel for // num_threads (12)
-    for (::size_t i = 0; i < pi_chunk->chunk_nodes_.size(); ++i) {
-      if (! SampleNeighborSet(pi_chunk, i)) {
-        t_resample_neighbor_nodes_.start();
-        while (! SampleNeighborSet(pi_chunk, i)) {
-          // overlap, sample again
-          // std::cerr << "Overlap in neighbor sample " << i << ", do it again" << std::endl;
-        }
-        t_resample_neighbor_nodes_.stop();
-      }
-    }
-  }
-  assert(chunk_start == mb_slice->nodes_.size());
-  t_sample_neighbor_nodes_.stop();
 }
 
 
