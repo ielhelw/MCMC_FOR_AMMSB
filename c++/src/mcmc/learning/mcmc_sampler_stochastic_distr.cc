@@ -260,11 +260,11 @@ void PiChunk::swap(PiChunk& x) {
 
 void MinibatchSlice::SwapNodeAndGraph(::size_t i, ::size_t with,
                                       PiChunk* c, PiChunk* with_c) {
-  std::cerr << "Node[" << i << "] " << c->chunk_nodes_[i] << " overlaps previous minibatch, swap with [" << with_c->start_ + with << "] " << with_c->chunk_nodes_[with];
+  // std::cerr << "Node[" << i << "] " << c->chunk_nodes_[i] << " overlaps previous minibatch, swap with [" << with_c->start_ + with << "] " << with_c->chunk_nodes_[with];
   std::swap(c->chunk_nodes_[i], with_c->chunk_nodes_[with]);
   std::swap(nodes_[i], nodes_[with_c->start_ + with]);
   local_network_.swap(c->start_ + i, with_c->start_ + with);
-  std::cerr << " becomes [" << i << "] " << c->chunk_nodes_[i] << " swap with [" << with_c->start_ + with << "] " << with_c->chunk_nodes_[with] << std::endl;
+  // std::cerr << " becomes [" << i << "] " << c->chunk_nodes_[i] << " swap with [" << with_c->start_ + with << "] " << with_c->chunk_nodes_[with] << std::endl;
 }
 
 
@@ -341,7 +341,7 @@ void MinibatchPipeline::ReorderMinibatchOverlap(
   bool first = true;
   for (::size_t i = 0; i < pi_chunk->chunk_nodes_.size(); ++i) {
     if (PreviousMinibatchOverlap(pi_chunk->chunk_nodes_[i])) {
-      if (first) {
+      if (false && first) {
         first = false;
         std::cerr << "Previous minibatch: ";
         for (auto v : minibatch_slice_[current_].full_minibatch_nodes_) {
@@ -416,13 +416,15 @@ void MinibatchPipeline::ReorderMinibatchOverlap(
               pi_chunk->chunk_nodes_.end());
             pi_chunk->chunk_nodes_.erase(pi_chunk->chunk_nodes_.begin() + last_checked_node, pi_chunk->chunk_nodes_.end());
 
-            std::cerr << "After: my chunks:" << std::endl;
-            for (auto& c : mb_slice->pi_chunks_) {
-              std::cerr << "    start=" << c.start_ << " ";
-              for (auto v : c.chunk_nodes_) {
-                std::cerr << v << " ";
+            if (false) {
+              std::cerr << "After: my chunks:" << std::endl;
+              for (auto& c : mb_slice->pi_chunks_) {
+                std::cerr << "    start=" << c.start_ << " ";
+                for (auto v : c.chunk_nodes_) {
+                  std::cerr << v << " ";
+                }
+                std::cerr << std::endl;
               }
-              std::cerr << std::endl;
             }
             t_reorder_minibatch_overlap_.stop();
             return;
@@ -459,7 +461,7 @@ void MinibatchPipeline::CreateMinibatchSliceChunks(
     ::size_t chunk = std::min(chunk_size,
                               mb_slice->nodes_.size() - chunk_start);
 
-    if (true || chunk <= 1) {
+    if (false || chunk <= 1) {
       if (b == 0) {
         std::cerr << "Minibatch slice size " << mb_slice->nodes_.size() << " chunk size";
       }
@@ -917,9 +919,9 @@ std::ostream& MCMCSamplerStochasticDistributed::PrintStats(
   out << t_scatter_subgraph_unmarshall_ << std::endl;
   out << t_mini_batch_ << std::endl;
   out << t_nodes_in_mini_batch_ << std::endl;
-  minibatch_pipeline_->report(std::cout);
   out << t_broadcast_theta_beta_ << std::endl;
   out << t_update_phi_pi_ << std::endl;
+  minibatch_pipeline_->report(std::cout);
   chunk_pipeline_->report(std::cout);
   out << t_update_phi_ << std::endl;
   out << t_barrier_phi_ << std::endl;
