@@ -174,6 +174,9 @@ class Options {
        "held_out_ratio")
       ("mcmc.seed",
        po::value<int>(&random_seed)->default_value(42), "random seed")
+      ("mcmc.convergence",
+       po::value<double>(&convergence_threshold)->default_value(0.000000000001),
+       "convergence threshold")
       ;
     desc_all.add(desc_mcmc);
 
@@ -284,6 +287,7 @@ class Options {
   bool input_compressed_;
 
   int random_seed;
+  double convergence_threshold;
 
   std::vector<std::string> remains;
 #ifdef MCMC_ENABLE_DISTRIBUTED

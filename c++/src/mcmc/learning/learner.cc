@@ -37,7 +37,7 @@ Learner::Learner(const Options &args) : args_(args), ppxs_heldout_cb_(10) {
   step_count = 1;
 
   max_iteration = args_.max_iteration;
-  CONVERGENCE_THRESHOLD = 0.000000000001;
+  CONVERGENCE_THRESHOLD = args_.convergence_threshold;
 
   stepsize_switch = false;
 
