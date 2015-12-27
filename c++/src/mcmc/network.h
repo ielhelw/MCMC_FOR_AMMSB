@@ -150,8 +150,6 @@ class Network {
    */
   EdgeSample sample_mini_batch(::size_t mini_batch_size,
                                strategy::strategy strategy);
-  ::size_t num_pieces_for_minibatch(::size_t mini_batch_size) const;
-  ::size_t real_minibatch_size(::size_t mini_batch_size) const;
 
   ::size_t max_minibatch_nodes_for_strategy(::size_t mini_batch_size,
                                             strategy::strategy strategy) const;
@@ -192,7 +190,9 @@ class Network {
    * edges
    *         we sample equals to  number of all non-link edges / num_pieces
    */
-  EdgeSample stratified_random_node_sampling(::size_t num_pieces);
+  EdgeSample stratified_random_node_sampling_nonlinks(::size_t mini_batch_size);
+  EdgeSample stratified_random_node_sampling_links(::size_t mini_batch_size);
+  EdgeSample stratified_random_node_sampling(::size_t mini_batch_size);
 
  protected:
   /**

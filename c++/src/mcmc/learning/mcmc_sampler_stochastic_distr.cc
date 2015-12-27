@@ -1157,9 +1157,7 @@ void MCMCSamplerStochasticDistributed::update_phi_node(
     assert(phi_node_k > FLOAT(0.0));
     phi_node_k = std::abs(phi_node_k + eps_t / 2 * (alpha - phi_node_k +
                                                     Nn * grads[k])
-#ifndef MCMC_NO_NOISE
                           + sqrt(eps_t * phi_node_k) * noise[k]
-#endif
                          );
     if (phi_node_k < MCMC_NONZERO_GUARD) {
       (*phi_node)[k] = MCMC_NONZERO_GUARD;
@@ -1396,15 +1394,11 @@ void MCMCSamplerStochasticDistributed::beta_update_theta(Float scale) {
 #pragma omp parallel for
     for (::size_t k = 0; k < K; ++k) {
       for (::size_t i = 0; i < 2; ++i) {
-#ifndef MCMC_NO_NOISE
         Float f = std::sqrt(eps_t * theta[k][i]);
-#endif
         theta[k][i] = std::abs(theta[k][i] +
                                eps_t / 2.0 * (eta[i] - theta[k][i] +
                                               scale * grads_beta_[0][i][k])
-#ifndef MCMC_NO_NOISE
                                + f * noise[k][i]
-#endif
                               );
         if (theta[k][i] < MCMC_NONZERO_GUARD) {
           theta[k][i] = MCMC_NONZERO_GUARD;

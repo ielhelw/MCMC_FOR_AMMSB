@@ -82,19 +82,7 @@ void MCMCSamplerStochastic::sampler_stochastic_info(std::ostream &s) {
   s << "num_node_sample " << num_node_sample << std::endl;
   s << "a " << a << " b " << b << " c " << c;
   s << " eta (" << eta[0] << "," << eta[1] << ")" << std::endl;
-  switch (strategy) {
-    case strategy::STRATIFIED_RANDOM_NODE:
-      s << "minibatch size: specified " << mini_batch_size <<
-          " from num_pieces (" <<
-          network.num_pieces_for_minibatch(mini_batch_size) <<
-          ") is " << network.real_minibatch_size(mini_batch_size) << std::endl;
-      break;
-    case strategy::RANDOM_EDGE:
-      s << "minibatch size: " << mini_batch_size << std::endl;
-  }
-#ifdef MCMC_NO_NOISE
-  s << "remove noise to do SungJin's experiment" << std::endl;
-#endif
+  s << "minibatch size: " << mini_batch_size << std::endl;
 }
 
 void MCMCSamplerStochastic::run() {

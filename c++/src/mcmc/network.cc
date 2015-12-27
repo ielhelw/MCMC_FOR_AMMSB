@@ -28,14 +28,6 @@ Network::~Network() {
   std::cout << t_sample_merge_tail_ << std::endl;
 }
 
-::size_t Network::num_pieces_for_minibatch(::size_t mini_batch_size) const {
-  return (N + mini_batch_size - 1) / mini_batch_size;
-}
-
-::size_t Network::real_minibatch_size(::size_t mini_batch_size) const {
-  return N / num_pieces_for_minibatch(mini_batch_size);
-}
-
 void Network::Init(const Options& args, double held_out_ratio,
                    std::vector<Random::Random*>* rng) {
   rng_ = rng;
@@ -163,8 +155,11 @@ EdgeSample Network::sample_mini_batch(::size_t mini_batch_size,
                                       strategy::strategy strategy) {
   switch (strategy) {
     case strategy::STRATIFIED_RANDOM_NODE:
-      return stratified_random_node_sampling(
-               num_pieces_for_minibatch(mini_batch_size));
+      return stratified_random_node_sampling(mini_batch_size);
+    case strategy::STRATIFIED_RANDOM_NODE_LINKS:
+      return stratified_random_node_sampling_links(mini_batch_size);
+    case strategy::STRATIFIED_RANDOM_NODE_NONLINKS:
+      return stratified_random_node_sampling_nonlinks(mini_batch_size);
     case strategy::RANDOM_EDGE:
       return random_edge_sampling(mini_batch_size);
     default:
@@ -176,6 +171,8 @@ EdgeSample Network::sample_mini_batch(::size_t mini_batch_size,
     ::size_t mini_batch_size, strategy::strategy strategy) const {
   switch (strategy) {
     case strategy::STRATIFIED_RANDOM_NODE:
+    case strategy::STRATIFIED_RANDOM_NODE_LINKS:
+    case strategy::STRATIFIED_RANDOM_NODE_NONLINKS:
       return max_minibatch_edges_for_strategy(mini_batch_size, strategy) + 1;
     case strategy::RANDOM_EDGE:
       return 2 * mini_batch_size;
@@ -188,6 +185,8 @@ EdgeSample Network::sample_mini_batch(::size_t mini_batch_size,
     ::size_t mini_batch_size, strategy::strategy strategy) const {
   switch (strategy) {
     case strategy::STRATIFIED_RANDOM_NODE:
+    case strategy::STRATIFIED_RANDOM_NODE_LINKS:
+    case strategy::STRATIFIED_RANDOM_NODE_NONLINKS:
       return std::max(mini_batch_size + 1, get_max_fan_out(1));
     // return fan_out_cumul_distro[mini_batch_size];
     case strategy::RANDOM_EDGE:
@@ -230,6 +229,7 @@ EdgeSample Network::sample_full_training_set() const {
   return EdgeSample(mini_batch_set, weight);
 }
 
+
 EdgeSample Network::random_edge_sampling(::size_t mini_batch_size) {
   ::size_t undirected_edges = linked_edges->size() / 2;
   if (mini_batch_size >= undirected_edges - held_out_map.size() - test_map.size()) {
@@ -263,115 +263,137 @@ EdgeSample Network::random_edge_sampling(::size_t mini_batch_size) {
   return EdgeSample(mini_batch_set, weight);
 }
 
-EdgeSample Network::stratified_random_node_sampling(::size_t num_pieces) {
+
+/**
+ * stratified random node: sample non-link edges
+ */
+EdgeSample Network::stratified_random_node_sampling_nonlinks(
+    ::size_t mini_batch_size) {
   Random::Random* rng = (*rng_)[0];
-  while (true) {
+  // randomly select the node ID
+  int nodeId = rng->randint(0, N - 1);
+
+  MinibatchSet* mini_batch_set = new MinibatchSet();
+
+  // this is approximation, since the size of self.train_link_map[nodeId]
+  // greatly smaller than N.
+
+  std::vector<MinibatchSet> local_minibatch(rng_->size());
+  while (mini_batch_set->size() < mini_batch_size) {
+#pragma omp parallel for
+    for (::size_t t = 0; t < local_minibatch.size(); ++t) {
+      local_minibatch[t].clear();
+    }
+
+    t_sample_sample_.start();
+    ::size_t sample_size = (mini_batch_size - mini_batch_set->size() + local_minibatch.size() - 1) / local_minibatch.size();
+#pragma omp parallel for
+    for (::size_t t = 0; t < local_minibatch.size(); ++t) {
+      Random::Random *rng = (*rng_)[t];
+      auto nodeList = rng->sampleRange(N, sample_size);
+      for (std::vector<int>::iterator neighborId = nodeList->begin();
+           neighborId != nodeList->end(); neighborId++) {
+        // std::cerr << "random neighbor " << *neighborId << std::endl;
+        if (*neighborId != nodeId) {
+          // check condition, and insert into mini_batch_set if it is valid.
+          Edge edge(std::min(nodeId, *neighborId),
+                    std::max(nodeId, *neighborId));
+          if (! edge.in(*linked_edges) && ! edge.in(held_out_map) &&
+              ! edge.in(test_map) && ! edge.in(*mini_batch_set)) {
+
+            local_minibatch[t].insert(edge);
+          }
+        }
+      }
+      delete nodeList;
+    }
+    t_sample_sample_.stop();
+
+    for (::size_t t = 0; t < local_minibatch.size(); ++t) {
+      ::size_t chunk = std::min(mini_batch_size - mini_batch_set->size(),
+                                local_minibatch[t].size());
+      if (chunk < local_minibatch[t].size()) {
+        t_sample_merge_tail_.start();
+        for (auto x : local_minibatch[t]) {
+          mini_batch_set->insert(x);
+          chunk--;
+          if (chunk == 0) {
+            t_sample_merge_tail_.stop();
+            break;
+          }
+        }
+        break;
+      } else {
+        t_sample_merge_.start();
+        mini_batch_set->insert(local_minibatch[t].begin(),
+                               local_minibatch[t].end());
+        t_sample_merge_.stop();
+      }
+    }
+  }
+
+  // num_pieces = N / m
+  // scale = N num_pieces = N^2 / m
+  Float scale = (Float)N * N / (Float)mini_batch_size;
+  scale *= (double)num_total_edges / ((double)N * (N - 1.0) / 2.0 - num_total_edges);
+  if (false) {
+    std::cerr << "A Create mini batch size " << mini_batch_set->size()
+      << " scale " << scale << std::endl;
+  }
+
+  return EdgeSample(mini_batch_set, scale);
+}
+
+
+/**
+ * stratified random node: sample linked edges
+ */
+EdgeSample Network::stratified_random_node_sampling_links(
+    ::size_t mini_batch_size) {
+  Random::Random* rng = (*rng_)[0];
+
+  MinibatchSet* mini_batch_set = new MinibatchSet();
+
+  while (mini_batch_set->size() == 0) {
     // randomly select the node ID
     int nodeId = rng->randint(0, N - 1);
-    // decide to sample links or non-links
-    // flag=0: non-link edges  flag=1: link edges
-    int flag = rng->randint(0, 1);
-    // std::cerr << "num_pieces " << num_pieces << " flag " << flag <<
-    // std::endl;
 
-    MinibatchSet* mini_batch_set = new MinibatchSet();
-
-    if (flag == 0) {
-      /* sample non-link edges */
-      // this is approximation, since the size of self.train_link_map[nodeId]
-      // greatly smaller than N.
-      // ::size_t mini_batch_size = (int)((N - train_link_map[nodeId].size()) /
-      // num_pieces);
-      ::size_t mini_batch_size = (::size_t)(N / num_pieces);
-
-      std::vector<MinibatchSet> local_minibatch(rng_->size());
-
-      while (mini_batch_set->size() < mini_batch_size) {
-#pragma omp parallel for
-        for (::size_t t = 0; t < local_minibatch.size(); ++t) {
-          local_minibatch[t].clear();
-        }
-
-        t_sample_sample_.start();
-        ::size_t sample_size = (mini_batch_size - mini_batch_set->size() + local_minibatch.size() - 1) / local_minibatch.size();
-#pragma omp parallel for
-        for (::size_t t = 0; t < local_minibatch.size(); ++t) {
-          Random::Random *rng = (*rng_)[t];
-          auto nodeList = rng->sampleRange(N, sample_size);
-          for (std::vector<int>::iterator neighborId = nodeList->begin();
-               neighborId != nodeList->end(); neighborId++) {
-            // std::cerr << "random neighbor " << *neighborId << std::endl;
-            if (*neighborId != nodeId) {
-              // check condition, and insert into mini_batch_set if it is valid.
-              Edge edge(std::min(nodeId, *neighborId),
-                        std::max(nodeId, *neighborId));
-              if (! edge.in(*linked_edges) && ! edge.in(held_out_map) &&
-                  ! edge.in(test_map) && ! edge.in(*mini_batch_set)) {
-
-                local_minibatch[t].insert(edge);
-              }
-            }
-          }
-          delete nodeList;
-        }
-        t_sample_sample_.stop();
-
-        for (::size_t t = 0; t < local_minibatch.size(); ++t) {
-          ::size_t chunk = std::min(mini_batch_size - mini_batch_set->size(),
-                                    local_minibatch[t].size());
-          if (chunk < local_minibatch[t].size()) {
-            t_sample_merge_tail_.start();
-            for (auto x : local_minibatch[t]) {
-              mini_batch_set->insert(x);
-              chunk--;
-              if (chunk == 0) {
-                t_sample_merge_tail_.stop();
-                break;
-              }
-            }
-            break;
-          } else {
-            t_sample_merge_.start();
-            mini_batch_set->insert(local_minibatch[t].begin(),
-                                   local_minibatch[t].end());
-            t_sample_merge_.stop();
-          }
-        }
-      }
-
-
-      Float scale = (Float)N * num_pieces;
-      scale *= (double)num_total_edges / ((double)N * (N - 1.0) / 2.0 - num_total_edges);
-      if (false) {
-        std::cerr << "A Create mini batch size " << mini_batch_set->size()
-                  << " scale " << scale << std::endl;
-      }
-
-      return EdgeSample(mini_batch_set, scale);
-
-    } else {
-/* sample linked edges */
-// return all linked edges
-      for (auto neighborId : linked_edges->edges_at(nodeId)) {
-        Edge e(std::min(nodeId, neighborId), std::max(nodeId, neighborId));
-        if (!e.in(test_map) && !e.in(held_out_map)) {
-          mini_batch_set->insert(e);
-        }
-      }
-
-      if (false) {
-        std::cerr << "B Create mini batch size " << mini_batch_set->size()
-                  << " scale " << N << std::endl;
-      }
-
-      if (mini_batch_set->size() != 0) {
-        return EdgeSample(mini_batch_set, N);
+    // return all linked edges
+    for (auto neighborId : linked_edges->edges_at(nodeId)) {
+      Edge e(std::min(nodeId, neighborId), std::max(nodeId, neighborId));
+      if (!e.in(test_map) && !e.in(held_out_map)) {
+        mini_batch_set->insert(e);
       }
     }
 
-    std::cerr << "Empty minibatch, try again..." << std::endl;
+    if (mini_batch_set->size() == 0) {
+      std::cerr << "Empty minibatch, try again..." << std::endl;
+    }
+  }
+
+  Float scale = N;
+  if (false) {
+    std::cerr << "B Create mini batch size " << mini_batch_set->size()
+      << " scale " << scale << std::endl;
+  }
+
+  return EdgeSample(mini_batch_set, scale);
+}
+
+
+EdgeSample Network::stratified_random_node_sampling(::size_t mini_batch_size) {
+  Random::Random* rng = (*rng_)[0];
+  // decide to sample links or non-links
+  // flag=0: non-link edges  flag=1: link edges
+  int flag = rng->randint(0, 1);
+
+  if (flag == 0) {
+    return stratified_random_node_sampling_nonlinks(mini_batch_size);
+  } else {
+    return stratified_random_node_sampling_links(mini_batch_size);
   }
 }
+
 
 void Network::init_train_link_map() {
   std::cerr << "train_link_map is gone; calculate membership for each edge as "
