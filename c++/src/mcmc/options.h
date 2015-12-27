@@ -160,6 +160,9 @@ class Options {
        po::value<strategy::strategy>(&strategy)->multitoken()->default_value(
           strategy::STRATIFIED_RANDOM_NODE),
        "sampling strategy")
+      ("mcmc.sampler.max-source",
+       po::value< ::size_t>(&sampler_max_source_)->default_value(1),
+       "max #sources in random-node sampling")
       ("mcmc.max-iteration,x",
        po::value< ::size_t>(&max_iteration)->default_value(10000000),
        "max_iteration")
@@ -269,6 +272,7 @@ class Options {
   ::size_t mini_batch_size;
   ::size_t num_node_sample;
   strategy::strategy strategy;
+  ::size_t sampler_max_source_;
   Float epsilon;
   ::size_t max_iteration;
   ::size_t interval;

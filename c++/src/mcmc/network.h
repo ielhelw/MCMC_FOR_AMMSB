@@ -327,6 +327,8 @@ class Network {
   EdgeMap test_map;      // store all test edges
 
   std::vector< ::size_t> fan_out_cumul_distro;
+  ::size_t sampler_max_source_;
+
   ::size_t progress = 0;
 
   Timer t_sample_sample_;

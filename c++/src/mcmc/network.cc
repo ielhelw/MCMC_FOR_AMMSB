@@ -79,6 +79,8 @@ void Network::Init(const Options& args, double held_out_ratio,
 
     calc_max_fan_out();
   }
+
+  sampler_max_source_ = args.sampler_max_source_;
 }
 
 const Data* Network::get_data() const { return data_; }
@@ -173,7 +175,9 @@ EdgeSample Network::sample_mini_batch(::size_t mini_batch_size,
     case strategy::STRATIFIED_RANDOM_NODE:
     case strategy::STRATIFIED_RANDOM_NODE_LINKS:
     case strategy::STRATIFIED_RANDOM_NODE_NONLINKS:
-      return max_minibatch_edges_for_strategy(mini_batch_size, strategy) + 1;
+      return std::min(static_cast< ::size_t>(N),
+                      2 * max_minibatch_edges_for_strategy(mini_batch_size,
+                                                           strategy) + 1);
     case strategy::RANDOM_EDGE:
       return 2 * mini_batch_size;
     default:
@@ -187,8 +191,8 @@ EdgeSample Network::sample_mini_batch(::size_t mini_batch_size,
     case strategy::STRATIFIED_RANDOM_NODE:
     case strategy::STRATIFIED_RANDOM_NODE_LINKS:
     case strategy::STRATIFIED_RANDOM_NODE_NONLINKS:
-      return std::max(mini_batch_size + 1, get_max_fan_out(1));
-    // return fan_out_cumul_distro[mini_batch_size];
+      return mini_batch_size + get_max_fan_out(1) - 1;
+      // return fan_out_cumul_distro[mini_batch_size];
     case strategy::RANDOM_EDGE:
       return mini_batch_size;
     default:
@@ -355,14 +359,21 @@ EdgeSample Network::stratified_random_node_sampling_links(
   MinibatchSet* mini_batch_set = new MinibatchSet();
 
   while (mini_batch_set->size() == 0) {
-    // randomly select the node ID
-    int nodeId = rng->randint(0, N - 1);
+    for (::size_t source = 0; source < sampler_max_source_; ++source) {
+      // randomly select the node ID
+      int nodeId = rng->randint(0, N - 1);
+      if (source > 0 &&
+            mini_batch_set->size() + linked_edges->edges_at(nodeId).size() >
+             mini_batch_size) {
+        break;
+      }
 
-    // return all linked edges
-    for (auto neighborId : linked_edges->edges_at(nodeId)) {
-      Edge e(std::min(nodeId, neighborId), std::max(nodeId, neighborId));
-      if (!e.in(test_map) && !e.in(held_out_map)) {
-        mini_batch_set->insert(e);
+      // return all linked edges
+      for (auto neighborId : linked_edges->edges_at(nodeId)) {
+        Edge e(std::min(nodeId, neighborId), std::max(nodeId, neighborId));
+        if (!e.in(test_map) && !e.in(held_out_map)) {
+          mini_batch_set->insert(e);
+        }
       }
     }
 
@@ -371,10 +382,25 @@ EdgeSample Network::stratified_random_node_sampling_links(
     }
   }
 
-  Float scale = N;
+  Float scale;
+  if (sampler_max_source_ == 1) {
+    scale = N;
+  } else {
+    scale = num_total_edges / (Float)mini_batch_set->size();
+  }
   if (false) {
     std::cerr << "B Create mini batch size " << mini_batch_set->size()
       << " scale " << scale << std::endl;
+    if (mini_batch_set->size() > mini_batch_size) {
+      std::cerr << "************ ahola, have a LARGE first sample" << std::endl;
+    }
+  }
+
+  if (mini_batch_set->size() >
+       max_minibatch_edges_for_strategy(
+         mini_batch_size, strategy::STRATIFIED_RANDOM_NODE_LINKS)) {
+    std::cerr << "Exceeds allocated buffer?" << std::endl;
+    throw MCMCException("#edge in minibatch exceeds buffer size upper bound");
   }
 
   return EdgeSample(mini_batch_set, scale);
