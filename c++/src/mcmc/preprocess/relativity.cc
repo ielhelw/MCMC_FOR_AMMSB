@@ -2,6 +2,12 @@
 
 #include <unordered_set>
 #include <unordered_map>
+#include <fstream>
+#include <chrono>
+
+#include <boost/algorithm/string/predicate.hpp>
+#include <boost/iostreams/filtering_streambuf.hpp>
+#include <boost/iostreams/filter/gzip.hpp>
 
 namespace mcmc {
 namespace preprocess {
@@ -16,6 +22,10 @@ const Data *Relativity::process() {
   auto start = system_clock::now();
 
   std::ios_base::openmode mode = std::ios_base::in;
+  if (boost::algorithm::ends_with(filename_, ".gz")) {
+    compressed_ = true;
+  }
+
   if (compressed_) {
     mode |= std::ios_base::binary;
   }
