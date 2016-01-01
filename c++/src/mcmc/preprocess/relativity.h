@@ -12,13 +12,6 @@
 #ifndef MCMC_PREPROCESS_RELATIVITY_H__
 #define MCMC_PREPROCESS_RELATIVITY_H__
 
-#include <unordered_set>
-#include <fstream>
-#include <chrono>
-
-#include <boost/iostreams/filtering_streambuf.hpp>
-#include <boost/iostreams/filter/gzip.hpp>
-
 #include "mcmc/data.h"
 #include "mcmc/preprocess/dataset.h"
 

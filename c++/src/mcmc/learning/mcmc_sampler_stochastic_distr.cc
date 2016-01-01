@@ -371,12 +371,14 @@ void MinibatchPipeline::ReorderMinibatchOverlap(
           if (last_checked_chunk == 0) {
             /* Special case: run out of swappable vertices in higher chunks.
              * Do a different algorithm. */
-            std::cerr << "********************** Cannot swap [" << i << "] " << pi_chunk->chunk_nodes_[i] << std::endl;
-            std::cerr << "First chunk in my current minibatch slice: ";
-            for (auto v : pi_chunk->chunk_nodes_) {
-              std::cerr << v << " ";
+            if (false) {
+              std::cerr << "********************** Cannot swap [" << i << "] " << pi_chunk->chunk_nodes_[i] << std::endl;
+              std::cerr << "First chunk in my current minibatch slice: ";
+              for (auto v : pi_chunk->chunk_nodes_) {
+                std::cerr << v << " ";
+              }
+              std::cerr << std::endl;
             }
-            std::cerr << std::endl;
 
             /*
              * Algorithm:
@@ -461,7 +463,7 @@ void MinibatchPipeline::CreateMinibatchSliceChunks(
     ::size_t chunk = std::min(chunk_size,
                               mb_slice->nodes_.size() - chunk_start);
 
-    if (false || chunk <= 1) {
+    if (false && chunk <= 1) {
       if (b == 0) {
         std::cerr << "Minibatch slice size " << mb_slice->nodes_.size() << " chunk size";
       }
@@ -504,7 +506,7 @@ void MinibatchPipeline::SampleNeighbors(
         t_resample_neighbor_nodes_.start();
         while (! SampleNeighborSet(pi_chunk, i)) {
           // overlap, sample again
-          std::cerr << "Overlap in neighbor sample " << i << ", do it again" << std::endl;
+          // std::cerr << "Overlap in neighbor sample " << i << ", do it again" << std::endl;
         }
         t_resample_neighbor_nodes_.stop();
       }
@@ -765,7 +767,8 @@ void MCMCSamplerStochasticDistributed::InitDKVStore() {
     }
     // /proc/meminfo reports KB
     ::size_t pi_total = (1024 * mem_total) / ((K + 1) * sizeof(Float));
-    args_.max_pi_cache_entries_ = num_buffers_ * pi_total / 32;
+    // args_.max_pi_cache_entries_ = num_buffers_ * pi_total / 32;
+    args_.max_pi_cache_entries_ = pi_total / 32;
   }
 
   // Calculate DKV store buffer requirements
@@ -1394,7 +1397,7 @@ void MCMCSamplerStochasticDistributed::deploy_mini_batch(
                                          nodes_vector.end());
   t_deploy_minibatch_.stop();
 
-  std::cerr << step_count << ": Minibatch deployed" << std::endl;
+  // std::cerr << step_count << ": Minibatch deployed" << std::endl;
 }
 
 
@@ -1409,7 +1412,7 @@ void MCMCSamplerStochasticDistributed::update_phi(
     minibatch_pipeline_->StageNextChunk();                   // next chunk
     auto *pi_chunk = chunk_pipeline_->AwaitChunkFilled();   // current chunk
 
-    std::cerr << step_count << ": compute chunk " << b << " size " << pi_chunk->chunk_nodes_.size() << std::endl;
+    // std::cerr << step_count << ": compute chunk " << b << " size " << pi_chunk->chunk_nodes_.size() << std::endl;
     t_update_phi_.start();
 #pragma omp parallel for // num_threads (12)
     for (::size_t i = 0; i < pi_chunk->chunk_nodes_.size(); ++i) {
@@ -1475,8 +1478,7 @@ void MCMCSamplerStochasticDistributed::update_phi_node(
         assert(! isnan(grads[k]));
       }
     } else {
-      std::cerr << "Skip self loop <" << i << "," << neighbor << ">" <<
-        std::endl;
+      // std::cerr << "Skip self loop <" << i << "," << neighbor << ">" << std::endl;
     }
   }
 

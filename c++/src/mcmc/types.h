@@ -10,6 +10,8 @@ namespace strategy {
 
 enum strategy {
   STRATIFIED_RANDOM_NODE,
+  STRATIFIED_RANDOM_NODE_LINKS,
+  STRATIFIED_RANDOM_NODE_NONLINKS,
   RANDOM_EDGE,
 };
 
@@ -23,6 +25,10 @@ inline std::istream& operator>> (std::istream& in, strategy& strategy) {
   if (false) {
   } else if (token == "stratified-random-node") {
     strategy = STRATIFIED_RANDOM_NODE;
+  } else if (token == "stratified-random-node-links") {
+    strategy = STRATIFIED_RANDOM_NODE_LINKS;
+  } else if (token == "stratified-random-node-nonlinks") {
+    strategy = STRATIFIED_RANDOM_NODE_NONLINKS;
   } else if (token == "random-edge") {
     strategy = RANDOM_EDGE;
   } else {
@@ -38,6 +44,12 @@ inline std::ostream& operator<< (std::ostream& s, const strategy& strategy) {
   switch (strategy) {
     case STRATIFIED_RANDOM_NODE:
       s << "stratified-random-node";
+      break;
+    case STRATIFIED_RANDOM_NODE_LINKS:
+      s << "stratified-random-node-links";
+      break;
+    case STRATIFIED_RANDOM_NODE_NONLINKS:
+      s << "stratified-random-node-nonlinks";
       break;
     case RANDOM_EDGE:
       s << "random-edge";

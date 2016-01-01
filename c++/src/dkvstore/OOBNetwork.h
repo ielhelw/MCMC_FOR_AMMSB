@@ -201,6 +201,7 @@ class OOBNetworkServer {
                                             peer_oob[rank[i]].size() *
                                              sizeof peer_oob[rank[i]][0]),
                         boost::asio::transfer_all(), error);
+      std::cerr << "Got OOB info from " << i << std::endl;
     }
 
     for (::size_t i = 0; i < oob_.num_hosts_; ++i) {
@@ -218,6 +219,7 @@ class OOBNetworkServer {
       if (error) {
         throw boost::system::system_error(error);
       }
+      std::cerr << "Wrote OOB info to " << i << std::endl;
     }
 
     // Receive an ack or a barrier from everybody
