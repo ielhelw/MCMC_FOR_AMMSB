@@ -26,6 +26,7 @@
 #endif
 
 #include <mcmc/timer.h>
+#include <mcmc/data.h>
 
 typedef std::chrono::high_resolution_clock hires;
 typedef std::chrono::duration<double> duration;
@@ -176,9 +177,9 @@ class DKVWrapper {
       }
     }
 
-    ::size_t K = options_.K;                            // #communities
-    ::size_t m = options_.mini_batch_size;          // #nodes in minibatch, total
-    ::size_t n = options_.num_node_sample;          // #neighbors for each minibatch node
+    ::size_t K = options_.K;               // #communities
+    ::size_t m = options_.mini_batch_size; // #nodes in minibatch, total
+    ::size_t n = options_.num_node_sample; // #neighbors for each minibatch node
     ::size_t iterations = options_.max_iteration;
 
     if (m == 0 || n == 0) {
@@ -202,6 +203,8 @@ class DKVWrapper {
 
     d_kv_store_->barrier();
 
+    mcmc::print_mem_usage(std::cout);
+
     mcmc::Random::Random random(seed + rank);
 
     std::cout << "N " << N << " K " << K <<
@@ -213,7 +216,8 @@ class DKVWrapper {
       " random " << random_request <<
       " single-request " << single_request <<
       " read " << do_read << " write " << do_write << std::endl;
-    std::cout << "value size: " << (sizeof(ValueType) * CHAR_BIT) << std::endl;
+    std::cout << "value size: " << (sizeof(ValueType) * CHAR_BIT) << "bit" <<
+      std::endl;
 
     auto t = hires::now();
     // populate
@@ -244,6 +248,7 @@ class DKVWrapper {
       std::cout << "Populate " << N << "x" << K << " takes " <<
         (1000.0 * dur.count()) << "ms thrp " << (GB(N, K) / dur.count()) <<
         " GB/s" << std::endl;
+      mcmc::print_mem_usage(std::cout);
 
       d_kv_store_->barrier();
     }
@@ -293,6 +298,7 @@ class DKVWrapper {
           std::cout << average_m << " Read " << average_m << "x" << n <<
             "x" << K << " takes " << (1000.0 * dur.count()) << "ms thrp " <<
             (GB(average_m * n, K) / dur.count()) << " GB/s" << std::endl;
+          mcmc::print_mem_usage(std::cout);
           if (false) {
             for (::size_t i = 0; i < average_m * n; ++i) {
               std::cerr << "Key " << (*neighbor)[i] << " pi = {";
