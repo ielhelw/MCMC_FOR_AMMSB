@@ -1,5 +1,7 @@
 #include "mcmc/learning/learner.h"
 
+#include <boost/asio.hpp>
+
 #include "mcmc/np.h"            // Only for omp_get_max_threads() report :-(
 
 namespace mcmc {
@@ -9,7 +11,8 @@ Learner::Learner(const Options &args) : args_(args), ppxs_heldout_cb_(10) {
   std::cerr << "Floating point precision: " << (sizeof(Float) * CHAR_BIT) <<
     "bit" << std::endl;
 
-  std::cerr << "PID " << getpid() << std::endl;
+  std::string hostname = boost::asio::ip::host_name();
+  std::cerr << "Host " << hostname << " PID " << getpid() << std::endl;
 
   std::cerr << "Build type " <<
 #ifdef NDEBUG

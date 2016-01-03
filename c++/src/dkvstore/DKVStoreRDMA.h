@@ -4,10 +4,6 @@
 #ifndef APPS_MCMC_D_KV_STORE_RDMA_RDMA_DKVSTORE_H__
 #define APPS_MCMC_D_KV_STORE_RDMA_RDMA_DKVSTORE_H__
 
-#ifndef MCMC_ENABLE_RDMA
-#error "This file should not be included if the project is not setup to support RDMA"
-#endif
-
 // #define OK_TO_DEFINE_IN_CC_FILE
 // #ifdef OK_TO_DEFINE_IN_CC_FILE
 // #define VIRTUAL virtual
@@ -27,10 +23,15 @@
 
 #include <chrono>
 
-#include "mcmc/config.h"
-#include "mcmc/timer.h"
+#include "dkvstore/config.h"
+
+#ifndef MCMC_ENABLE_RDMA
+#error "This file should not be included if the project is not setup to support RDMA"
+#endif
 
 #include "DKVStore.h"
+
+#include "mcmc/timer.h"
 
 #include "qperf-rdma.h"
 

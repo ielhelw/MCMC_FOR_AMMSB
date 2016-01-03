@@ -363,10 +363,12 @@ class OOBNetwork {
                          std::vector<PeerInfo>* peer_oob) {
     boost::system::error_code error;
 
+    std::cerr << rank_ << ": going to send OOB info to master" << std::endl;
     boost::asio::write(*socket_,
                        boost::asio::buffer(my_oob.data(),
                                            my_oob.size() * sizeof my_oob[0]),
                        boost::asio::transfer_all(), error);
+    std::cerr << rank_ << ": sent OOB info to master, error " << error << std::endl;
     if (error) {
       throw boost::system::system_error(error);
     }

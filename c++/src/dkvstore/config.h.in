@@ -3,6 +3,9 @@
 
 namespace DKV {
 
+#cmakedefine MCMC_ENABLE_RAMCLOUD
+#cmakedefine MCMC_ENABLE_RDMA
+
 #cmakedefine MCMC_SINGLE_PRECISION
 #cmakedefine MCMC_THREAD_SAFE
 

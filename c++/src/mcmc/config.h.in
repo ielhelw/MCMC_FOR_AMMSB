@@ -3,9 +3,6 @@
 
 namespace mcmc {
 
-#cmakedefine MCMC_ENABLE_RAMCLOUD
-#cmakedefine MCMC_ENABLE_RDMA
-
 #cmakedefine MCMC_ENABLE_OPENMP
 #cmakedefine MCMC_ENABLE_DISTRIBUTED
 

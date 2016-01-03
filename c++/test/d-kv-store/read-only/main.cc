@@ -1,3 +1,4 @@
+#include <dkvstore/DKVStore.h>
 
 #include <chrono>
 #ifndef __INTEL_COMPILER
@@ -21,7 +22,6 @@
 #include <dkvstore/DKVStoreRamCloud.h>
 #endif
 #ifdef MCMC_ENABLE_RDMA
-#include <infiniband/verbs.h>
 #include <dkvstore/DKVStoreRDMA.h>
 #endif
 
@@ -66,6 +66,7 @@ class DKVWrapper {
 
     int64_t seed;
     ::size_t N;   // #nodes in the graph
+    ::size_t num_buffers;
 
     bool no_populate;
     bool unidirectional;
@@ -82,6 +83,9 @@ class DKVWrapper {
       ("network,N",
        po::value< ::size_t>(&N)->default_value(1 << 20),
        "nodes in the network")
+      ("buffer,b",
+       po::value< ::size_t>(&num_buffers)->default_value(1),
+       "number of DKV load area buffers")
       ("no-populate,P",
        po::bool_switch(&no_populate)->default_value(false),
        "do not populate at start of run")
@@ -190,7 +194,7 @@ class DKVWrapper {
     ::size_t average_m = (m + n_hosts - 1) / n_hosts;
 
     try {
-      d_kv_store_->Init(K, N, 1, my_m * n, my_m);
+      d_kv_store_->Init(K, N, num_buffers, my_m * n, my_m);
     } catch (po::error &e) {
       std::cerr << "Option error: " << e.what() << std::endl;
       return;
@@ -209,6 +213,7 @@ class DKVWrapper {
       " random " << random_request <<
       " single-request " << single_request <<
       " read " << do_read << " write " << do_write << std::endl;
+    std::cout << "value size: " << (sizeof(ValueType) * CHAR_BIT) << std::endl;
 
     auto t = hires::now();
     // populate
