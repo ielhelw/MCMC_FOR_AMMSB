@@ -186,7 +186,16 @@ void DKVStoreRDMA::Init(::size_t value_size, ::size_t total_values,
     "cludes the master node" << std::endl;
 
   if (rd_open(&res_, IBV_QPT_RC, options_.post_send_chunk(), 0) != 0) {
-    throw QPerfException("rd_open");
+    if (options_.oob_num_servers() == 1) {
+      std::cerr << "*** No working Infiniband. Sequential run, continue" <<
+        std::endl;
+      // sentinel
+      if (res_.ib.context != NULL) {
+        throw QPerfException("res_.ib.context not NULL");
+      }
+    } else {
+      throw QPerfException("rd_open");
+    }
   }
 
   if (options_.batch_size() == 0) {
@@ -462,8 +471,10 @@ void DKVStoreRDMA::ReadKVRecords(std::vector<DKVStoreRDMA::ValueType *> &cache,
     }
   }
 
-  post_batches(post_descriptor_, posts_, cache_.region_.mr->lkey,
-               IBV_WR_RDMA_READ, t_read_);
+  if (res_.ib.context != NULL) {
+    post_batches(post_descriptor_, posts_, cache_.region_.mr->lkey,
+                 IBV_WR_RDMA_READ, t_read_);
+  }
 
   t_read_.outer.stop();
 }
@@ -518,8 +529,10 @@ void DKVStoreRDMA::WriteKVRecords(const std::vector<KeyType> &key,
     }
   }
 
-  post_batches(post_descriptor_, posts_, write_.region_.mr->lkey,
-               IBV_WR_RDMA_WRITE, t_write_);
+  if (res_.ib.context != NULL) {
+    post_batches(post_descriptor_, posts_, write_.region_.mr->lkey,
+                 IBV_WR_RDMA_WRITE, t_write_);
+  }
 
   t_write_.outer.stop();
 }
