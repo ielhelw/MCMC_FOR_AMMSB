@@ -1,5 +1,7 @@
 #include "mcmc/preprocess/data_factory.h"
 
+#include <boost/filesystem.hpp>
+
 namespace mcmc {
 namespace preprocess {
 
@@ -26,6 +28,21 @@ DataFactory::DataFactory(const Options &options)
     compressed_ = true;
     dataset_class_ = "sparsehash";
     filename_ = filename_ + "/graph.gz";
+  }
+
+  if (dataset_class_ == "relativity") {
+    if (boost::filesystem::is_directory(filename_)) {
+      if (boost::filesystem::exists(filename_ + "/aux.gz") &&
+          boost::filesystem::exists(filename_ + "/graph.gz") &&
+          boost::filesystem::exists(filename_ + "/held-out.gz") &&
+          boost::filesystem::exists(filename_ + "/test.gz")) {
+        std::cerr << "Deduced that it is a 'preprocessed' input class" <<
+          std::endl;
+        compressed_ = true;
+        dataset_class_ = "sparsehash";
+        filename_ = filename_ + "/graph.gz";
+      }
+    }
   }
 }
 
