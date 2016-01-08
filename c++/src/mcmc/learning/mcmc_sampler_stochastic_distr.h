@@ -191,6 +191,7 @@ class MCMCSamplerStochasticDistributed : public MCMCSamplerStochastic {
   // Lift to class member to avoid (de)allocation in each iteration
   std::vector<int32_t> nodes_;		// my minibatch nodes
   std::vector<Float*> pi_update_;
+  std::vector<std::vector<Float>> phi_node_;
   // gradients K*2 dimension
   std::vector<std::vector<std::vector<Float> > > grads_beta_;
 
