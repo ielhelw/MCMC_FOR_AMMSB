@@ -361,6 +361,7 @@ class MCMCSamplerStochasticDistributed : public MCMCSamplerStochastic {
   ::size_t  max_dkv_write_entries_;
 
   std::vector<Float*> pi_update_;
+  std::vector<std::vector<Float>> phi_node_;
   // gradients K*2 dimension
   std::vector<std::vector<std::vector<Float> > > grads_beta_;
 

@@ -702,6 +702,7 @@ void MCMCSamplerStochasticDistributed::BroadcastHeldOut() {
                      perp_.data_.data(),
                      perp_.data_.size() * sizeof(EdgeMapItem), MPI_BYTE,
                      mpi_master_, MPI_COMM_WORLD);
+    std::cerr << "My held-out size " << my_held_out_size << std::endl;
   }
 }
 
@@ -769,6 +770,7 @@ void MCMCSamplerStochasticDistributed::InitDKVStore() {
     ::size_t pi_total = (1024 * mem_total) / ((K + 1) * sizeof(Float));
     // args_.max_pi_cache_entries_ = num_buffers_ * pi_total / 32;
     args_.max_pi_cache_entries_ = pi_total / 32;
+    std::cerr << "mem_total " << mem_total << " pi_total " << pi_total << " max pi cache entries " << args_.max_pi_cache_entries_ << std::endl;
   }
 
   // Calculate DKV store buffer requirements
@@ -783,15 +785,14 @@ void MCMCSamplerStochasticDistributed::InitDKVStore() {
 
   // pi cache hosts chunked subset of minibatch nodes + their neighbors
   max_minibatch_chunk_ = args_.max_pi_cache_entries_ / num_buffers_ / (1 + real_num_node_sample());
+  max_dkv_write_entries_ = (max_minibatch_nodes_ + workers - 1) / workers;
   ::size_t max_my_minibatch_nodes = std::min(max_minibatch_chunk_,
-                                             (max_minibatch_nodes_ +
-                                                workers - 1) /
-                                             workers);
+                                             max_dkv_write_entries_);
   ::size_t max_minibatch_neighbors = max_my_minibatch_nodes *
                                       real_num_node_sample();
 
   // for perplexity, cache pi for both vertexes of each edge
-  max_perplexity_chunk_ = args_.max_pi_cache_entries_ / 2;
+  max_perplexity_chunk_ = args_.max_pi_cache_entries_ / num_buffers_;
   ::size_t num_perp_nodes = 2 * (network.get_held_out_size() +
                                  mpi_size_ - 1) / mpi_size_;
   ::size_t max_my_perp_nodes = std::min(2 * max_perplexity_chunk_,
@@ -811,8 +812,12 @@ void MCMCSamplerStochasticDistributed::InitDKVStore() {
 
   std::cerr << "minibatch size param " << mini_batch_size <<
     " max " << max_minibatch_nodes_ <<
+    " my max " << max_my_minibatch_nodes <<
     " chunk " << max_minibatch_chunk_ <<
-    " #neighbors(total) " << max_minibatch_neighbors << std::endl;
+    " #neighbors(total) " << max_minibatch_neighbors <<
+    " cache max entries " << max_pi_cache <<
+    " computed max pi cache entries " << args_.max_pi_cache_entries_ <<
+    std::endl;
   std::cerr << "perplexity nodes total " <<
     (network.get_held_out_size() * 2) <<
     " local " << num_perp_nodes <<
@@ -820,7 +825,6 @@ void MCMCSamplerStochasticDistributed::InitDKVStore() {
     " chunk " << max_perplexity_chunk_ << std::endl;
   std::cerr << "phi pipeline depth " << num_buffers_ << std::endl;
 
-  max_dkv_write_entries_ = max_my_minibatch_nodes;
   d_kv_store_->Init(K + 1, N, num_buffers_, max_pi_cache,
                     max_dkv_write_entries_);
   t_init_dkv_.stop();
@@ -887,9 +891,13 @@ void MCMCSamplerStochasticDistributed::init() {
   init_pi();
   t_populate_pi_.stop();
 
-  pi_update_.resize(max_minibatch_nodes_);
+  pi_update_.resize(max_dkv_write_entries_);
   for (auto &p : pi_update_) {
     p = new Float[K + 1];
+  }
+  phi_node_.resize(max_dkv_write_entries_);
+  for (auto &p : phi_node_) {
+    p.resize(K + 1);
   }
   grads_beta_.resize(omp_get_max_threads());
   for (auto &g : grads_beta_) {
@@ -952,12 +960,9 @@ std::ostream& MCMCSamplerStochasticDistributed::PrintStats(
 void MCMCSamplerStochasticDistributed::run() {
   /** run mini-batch based MCMC sampler, based on the sungjin's note */
 
-  PRINT_MEM_USAGE();
-
   using namespace std::chrono;
 
-  std::vector<std::vector<Float> > phi_node(max_minibatch_nodes_,
-                                            std::vector<Float>(K + 1));
+  PRINT_MEM_USAGE();
 
   int r;
 
@@ -984,7 +989,7 @@ void MCMCSamplerStochasticDistributed::run() {
     check_perplexity(false);
 
     t_update_phi_pi_.start();
-    update_phi(&phi_node);
+    update_phi(&phi_node_);
 
     // barrier: peers must not read pi already updated in the current iteration
     t_barrier_phi_.start();
@@ -993,7 +998,7 @@ void MCMCSamplerStochasticDistributed::run() {
     t_barrier_phi_.stop();
 
     const MinibatchSlice& mb_slice = minibatch_pipeline_->CurrentChunk();
-    update_pi(mb_slice, phi_node);
+    update_pi(mb_slice, phi_node_);
 
     // barrier: ensure we read pi/phi_sum from current iteration
     t_barrier_pi_.start();
@@ -1356,6 +1361,19 @@ void MCMCSamplerStochasticDistributed::deploy_mini_batch(
                   mpi_master_, MPI_COMM_WORLD);
   mpi_error_test(r, "MPI_Scatter of minibatch chunks fails");
   mb_slice->nodes_.resize(my_minibatch_size);
+  if (mb_slice->nodes_.size() > pi_update_.size()) {
+    std::cerr << "Resize pi_update_/phi_node_ from " << pi_update_.size() << " to " << mb_slice->nodes_.size() << std::endl;
+    ::size_t old_size = pi_update_.size();
+    pi_update_.resize(mb_slice->nodes_.size());
+    for (::size_t i = old_size; i < mb_slice->nodes_.size(); ++i) {
+      pi_update_[i] = new Float[K + 1];
+    }
+    phi_node_.resize(mb_slice->nodes_.size());
+    for (::size_t i = old_size; i < mb_slice->nodes_.size(); ++i) {
+      phi_node_[i].resize(K + 1);
+    }
+    PRINT_MEM_USAGE();
+  }
 
   if (mpi_rank_ == mpi_master_) {
     // TODO Master scatters the minibatch nodes over the workers,
