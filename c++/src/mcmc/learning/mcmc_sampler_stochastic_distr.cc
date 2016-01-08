@@ -1362,17 +1362,10 @@ void MCMCSamplerStochasticDistributed::deploy_mini_batch(
   mpi_error_test(r, "MPI_Scatter of minibatch chunks fails");
   mb_slice->nodes_.resize(my_minibatch_size);
   if (mb_slice->nodes_.size() > pi_update_.size()) {
-    std::cerr << "Resize pi_update_/phi_node_ from " << pi_update_.size() << " to " << mb_slice->nodes_.size() << std::endl;
-    ::size_t old_size = pi_update_.size();
-    pi_update_.resize(mb_slice->nodes_.size());
-    for (::size_t i = old_size; i < mb_slice->nodes_.size(); ++i) {
-      pi_update_[i] = new Float[K + 1];
-    }
-    phi_node_.resize(mb_slice->nodes_.size());
-    for (::size_t i = old_size; i < mb_slice->nodes_.size(); ++i) {
-      phi_node_[i].resize(K + 1);
-    }
     PRINT_MEM_USAGE();
+    std::ostringstream msg;
+    msg << "Out of bounds for pi_update_/phi_node_: bounds " << pi_update_.size() << " required " << mb_slice->nodes_.size();
+    throw BufferSizeException(msg.str());
   }
 
   if (mpi_rank_ == mpi_master_) {
