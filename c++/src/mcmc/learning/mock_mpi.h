@@ -17,6 +17,7 @@ enum MPI_Datatype {
   MPI_INT                    = 0x4c000405,
   MPI_LONG                   = 0x4c000407,
   MPI_UNSIGNED_LONG          = 0x4c000408,
+  MPI_FLOAT                  = 0x4c00040a,
   MPI_DOUBLE                 = 0x4c00080b,
   MPI_BYTE                   = 0x4c00010d,
 };
@@ -93,6 +94,12 @@ int MPI_Scatterv(void *sendbuf, int *sendcounts, int *displs, MPI_Datatype sendt
                      sendcounts[0], sendtype,
                      recvbuf, recvcount, recvtype,
                      root, comm);
+}
+
+int MPI_Reduce(const void *sendbuf, void *recvbuf, int count, MPI_Datatype datatype,
+               MPI_Op op, int root, MPI_Comm comm) {
+  memcpy(recvbuf, sendbuf, count * mpi_datatype_size(datatype));
+  return MPI_SUCCESS;
 }
 
 int MPI_Allreduce(void *sendbuf, void *recvbuf, int count, MPI_Datatype datatype,
