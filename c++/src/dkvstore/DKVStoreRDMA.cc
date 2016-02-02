@@ -435,45 +435,57 @@ void DKVStoreRDMA::ReadKVRecords(std::vector<DKVStoreRDMA::ValueType *> &cache,
 
   t_read_.outer.start();
 
-  for (auto &s : posts_) {
-    s = 0;
-  }
-  for (::size_t i = 0; i < key.size(); i++) {
-    ::size_t owner = HostOf(key[i]);
-    if (owner == oob_rank_) {
-      // FIXME: do this asynchronously
-      t_read_.local.start();
-      // Read directly, without RDMA
-      cache[i] = value_.area_ + OffsetOf(key[i]);
-
-      bytes_local_read += value_size_ * sizeof(ValueType);
-      t_read_.local.stop();
-
-    } else {
-      ValueType *target = cache_buffer_.get(value_size_);
-      cache[i] = target;
-
-      ::size_t batch = owner / options_.batch_size();
-      ::size_t n = posts_[batch];
-      posts_[batch] += 1;
-      assert(post_descriptor_.capacity() > batch);
-      assert(post_descriptor_[batch].capacity() > n);
-
-      auto *d = &post_descriptor_[batch][n];
-      d->connection_ = &peer_[owner].connection;
-      d->rkey_ = peer_[owner].props.value_rkey;
-      d->local_addr_ = target;
-      d->sizes_ = value_size_ * sizeof(ValueType);
-      d->remote_addr_ = (const ValueType *)(peer_[owner].props.value +
-                                            OffsetOf(key[i]) * sizeof(ValueType));
-
-      bytes_remote_read += value_size_ * sizeof(ValueType);
+  if (options_.oob_num_servers() > 1 /* res_.ib.context != NULL */) {
+    for (auto &s : posts_) {
+      s = 0;
     }
-  }
+    for (::size_t i = 0; i < key.size(); i++) {
+      ::size_t owner = HostOf(key[i]);
+      if (owner == oob_rank_) {
+        // FIXME: do this asynchronously
+        t_read_.local.start();
+        // Read directly, without RDMA
+        cache[i] = value_.area_ + OffsetOf(key[i]);
 
-  if (res_.ib.context != NULL) {
+        bytes_local_read += value_size_ * sizeof(ValueType);
+        t_read_.local.stop();
+
+      } else {
+        ValueType *target = cache_buffer_.get(value_size_);
+        cache[i] = target;
+
+        ::size_t batch = owner / options_.batch_size();
+        ::size_t n = posts_[batch];
+        posts_[batch] += 1;
+        assert(post_descriptor_.capacity() > batch);
+        assert(post_descriptor_[batch].capacity() > n);
+
+        auto *d = &post_descriptor_[batch][n];
+        d->connection_ = &peer_[owner].connection;
+        d->rkey_ = peer_[owner].props.value_rkey;
+        d->local_addr_ = target;
+        d->sizes_ = value_size_ * sizeof(ValueType);
+        d->remote_addr_ = (const ValueType *)(peer_[owner].props.value +
+                                              OffsetOf(key[i]) *
+                                                 sizeof(ValueType));
+
+        bytes_remote_read += value_size_ * sizeof(ValueType);
+      }
+    }
+
     post_batches(post_descriptor_, posts_, cache_.region_.mr->lkey,
                  IBV_WR_RDMA_READ, t_read_);
+
+  } else {
+    t_read_.local.start();
+#pragma omp parallel for
+    for (::size_t i = 0; i < key.size(); i++) {
+      // Read directly, without RDMA
+      cache[i] = value_.area_ + OffsetOf(key[i]);
+    }
+    t_read_.local.stop();
+
+    bytes_local_read += key.size() * value_size_ * sizeof(ValueType);
   }
 
   t_read_.outer.stop();
@@ -484,54 +496,67 @@ void DKVStoreRDMA::WriteKVRecords(const std::vector<KeyType> &key,
                                   const std::vector<const ValueType *> &value) {
   t_write_.outer.start();
 
-  for (auto &s : posts_) {
-    s = 0;
-  }
-  for (::size_t i = 0; i < key.size(); i++) {
-    ::size_t owner = HostOf(key[i]);
-    if (owner == oob_rank_) {
+  if (options_.oob_num_servers() > 1 /* res_.ib.context != NULL */) {
+    for (auto &s : posts_) {
+      s = 0;
+    }
+    for (::size_t i = 0; i < key.size(); i++) {
+      ::size_t owner = HostOf(key[i]);
+      if (owner == oob_rank_) {
+        // FIXME: do this asynchronously
+        t_write_.local.start();
+        // Write directly, without RDMA
+        ValueType *target = value_.area_ + OffsetOf(key[i]);
+        memcpy(target, value[i], value_size_ * sizeof(ValueType));
+        t_write_.local.stop();
+
+        bytes_local_written += value_size_ * sizeof(ValueType);
+
+      } else {
+        const ValueType *source;
+        if (write_.contains(value[i])) {
+          source = value[i];
+        } else {
+          ValueType *v = write_buffer_.get(value_size_);
+          memcpy(v, value[i], value_size_ * sizeof(ValueType));
+          source = v;
+        }
+        assert(source >= write_buffer_.buffer());
+        assert(source + value_size_ <= write_buffer_.buffer() + write_buffer_.capacity());
+
+        ::size_t batch = owner / options_.batch_size();
+        ::size_t n = posts_[batch];
+        posts_[batch] += 1;
+        assert(post_descriptor_.capacity() > batch); 
+        assert(post_descriptor_[batch].capacity() > n);
+
+        auto *d = &post_descriptor_[batch][n];
+        d->connection_ = &peer_[owner].connection;
+        d->rkey_ = peer_[owner].props.value_rkey;
+        d->local_addr_ = const_cast<ValueType *>(source);       // sorry, API
+        d->sizes_ = value_size_ * sizeof(ValueType);
+        d->remote_addr_ = (const ValueType *)(peer_[owner].props.value +
+                                              OffsetOf(key[i]) * sizeof(ValueType));
+
+        bytes_remote_written += value_size_ * sizeof(ValueType);
+      }
+    }
+
+    post_batches(post_descriptor_, posts_, write_.region_.mr->lkey,
+                 IBV_WR_RDMA_WRITE, t_write_);
+
+  } else {
+    t_write_.local.start();
+#pragma omp parallel for
+    for (::size_t i = 0; i < key.size(); i++) {
       // FIXME: do this asynchronously
-      t_write_.local.start();
       // Write directly, without RDMA
       ValueType *target = value_.area_ + OffsetOf(key[i]);
       memcpy(target, value[i], value_size_ * sizeof(ValueType));
-      t_write_.local.stop();
 
-      bytes_local_written += value_size_ * sizeof(ValueType);
-
-    } else {
-      const ValueType *source;
-      if (write_.contains(value[i])) {
-        source = value[i];
-      } else {
-        ValueType *v = write_buffer_.get(value_size_);
-        memcpy(v, value[i], value_size_ * sizeof(ValueType));
-        source = v;
-      }
-      assert(source >= write_buffer_.buffer());
-      assert(source + value_size_ <= write_buffer_.buffer() + write_buffer_.capacity());
-
-      ::size_t batch = owner / options_.batch_size();
-      ::size_t n = posts_[batch];
-      posts_[batch] += 1;
-      assert(post_descriptor_.capacity() > batch); 
-      assert(post_descriptor_[batch].capacity() > n);
-
-      auto *d = &post_descriptor_[batch][n];
-      d->connection_ = &peer_[owner].connection;
-      d->rkey_ = peer_[owner].props.value_rkey;
-      d->local_addr_ = const_cast<ValueType *>(source);       // sorry, API
-      d->sizes_ = value_size_ * sizeof(ValueType);
-      d->remote_addr_ = (const ValueType *)(peer_[owner].props.value +
-                                            OffsetOf(key[i]) * sizeof(ValueType));
-
-      bytes_remote_written += value_size_ * sizeof(ValueType);
     }
-  }
-
-  if (res_.ib.context != NULL) {
-    post_batches(post_descriptor_, posts_, write_.region_.mr->lkey,
-                 IBV_WR_RDMA_WRITE, t_write_);
+    bytes_local_written += key.size() * value_size_ * sizeof(ValueType);
+    t_write_.local.stop();
   }
 
   t_write_.outer.stop();
