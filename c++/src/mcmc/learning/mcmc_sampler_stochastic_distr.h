@@ -169,7 +169,8 @@ private:
 
 class MinibatchSlice {
  public:
-  MinibatchSlice() : processed_(0) {
+  MinibatchSlice(bool replicated_network)
+      : processed_(0), replicated_network_(replicated_network) {
   }
 
   void SwapNodeAndGraph(::size_t i, ::size_t with, PiChunk* c, PiChunk* with_c);
@@ -182,6 +183,7 @@ class MinibatchSlice {
 
  private:
   ::size_t processed_;
+  bool replicated_network_;
 
   friend class MinibatchPipeline;
 };
@@ -200,7 +202,8 @@ class MinibatchPipeline {
   MinibatchPipeline(MCMCSamplerStochasticDistributed& sampler,
                     ::size_t max_minibatch_chunk,
                     ChunkPipeline& chunk_pipeline,
-                    std::vector<Random::Random*>& rng);
+                    std::vector<Random::Random*>& rng,
+                    bool replicated_network);
   void StageNextChunk();
   void StageNextMinibatch();
   void AdvanceMinibatch();

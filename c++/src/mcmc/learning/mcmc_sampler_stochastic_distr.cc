@@ -263,7 +263,9 @@ void MinibatchSlice::SwapNodeAndGraph(::size_t i, ::size_t with,
   // std::cerr << "Node[" << i << "] " << c->chunk_nodes_[i] << " overlaps previous minibatch, swap with [" << with_c->start_ + with << "] " << with_c->chunk_nodes_[with];
   std::swap(c->chunk_nodes_[i], with_c->chunk_nodes_[with]);
   std::swap(nodes_[i], nodes_[with_c->start_ + with]);
-  local_network_.swap(c->start_ + i, with_c->start_ + with);
+  if (! replicated_network_) {
+    local_network_.swap(c->start_ + i, with_c->start_ + with);
+  }
   // std::cerr << " becomes [" << i << "] " << c->chunk_nodes_[i] << " swap with [" << with_c->start_ + with << "] " << with_c->chunk_nodes_[with] << std::endl;
 }
 
@@ -277,11 +279,12 @@ void MinibatchSlice::SwapNodeAndGraph(::size_t i, ::size_t with,
 MinibatchPipeline::MinibatchPipeline(MCMCSamplerStochasticDistributed& sampler,
                                      ::size_t max_minibatch_chunk,
                                      ChunkPipeline& chunk_pipeline,
-                                     std::vector<Random::Random*>& rng)
+                                     std::vector<Random::Random*>& rng,
+                                     bool replicated_network)
     : sampler_(sampler), chunk_pipeline_(chunk_pipeline),
       max_minibatch_chunk_(max_minibatch_chunk), rng_(rng),
       prev_(2), current_(0), next_(1) {
-  minibatch_slice_.resize(3);    // prev, current, next
+  minibatch_slice_.resize(3, replicated_network);    // prev, current, next
   t_chunk_minibatch_slice_     = Timer("      create minibatch slice chunks");
   t_reorder_minibatch_overlap_ = Timer("      reorder minibatch overlap");
   t_sample_neighbor_nodes_     = Timer("      sample_neighbor_nodes");
@@ -792,7 +795,7 @@ void MCMCSamplerStochasticDistributed::InitDKVStore() {
                                       real_num_node_sample();
 
   // for perplexity, cache pi for both vertexes of each edge
-  max_perplexity_chunk_ = args_.max_pi_cache_entries_ / num_buffers_;
+  max_perplexity_chunk_ = args_.max_pi_cache_entries_ / (2 * num_buffers_);
   ::size_t num_perp_nodes = 2 * (network.get_held_out_size() +
                                  mpi_size_ - 1) / mpi_size_;
   ::size_t max_my_perp_nodes = std::min(2 * max_perplexity_chunk_,
@@ -910,7 +913,8 @@ void MCMCSamplerStochasticDistributed::init() {
   dkv_server_thread_ = boost::thread(boost::ref(*chunk_pipeline_.get()));
   minibatch_pipeline_ = std::unique_ptr<MinibatchPipeline>(
                           new MinibatchPipeline(*this, max_minibatch_chunk_,
-                                                *chunk_pipeline_, rng_));
+                                                *chunk_pipeline_, rng_,
+                                                args_.REPLICATED_NETWORK));
 }
 
 
