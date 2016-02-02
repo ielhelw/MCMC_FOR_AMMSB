@@ -163,8 +163,12 @@ class rdma_area {
   }
 
   ~rdma_area() {
-    if (rd_mrfree(&region_, res_) != 0) {
-      throw QPerfException("rd_mrfree");
+    if (res_->ib.context == NULL) {
+      delete[] area_;
+    } else {
+      if (rd_mrfree(&region_, res_) != 0) {
+        throw QPerfException("rd_mrfree");
+      }
     }
   }
 
@@ -173,10 +177,14 @@ class rdma_area {
     n_elements_ = n_elements;
 
     /* allocate the memory buffer that will hold the data */
-    if (rd_mralloc(&region_, device, n_elements * sizeof(ValueType)) != 0) {
-      throw QPerfException("rd_mralloc");
+    if (res_->ib.context == NULL) {
+      area_ = new ValueType[n_elements];
+    } else {
+      if (rd_mralloc(&region_, device, n_elements * sizeof(ValueType)) != 0) {
+        throw QPerfException("rd_mralloc");
+      }
+      area_ = reinterpret_cast<ValueType *>(region_.vaddr);
     }
-    area_ = reinterpret_cast<ValueType *>(region_.vaddr);
   }
 
   void Init(const DEVICE *device, Buffer<ValueType> *buffer,
@@ -204,15 +212,17 @@ class rdma_area {
     s << std::hex;
     s << "addr=" << (void *)area_;
     s << " size " << (n_elements_ * sizeof(ValueType));
-    s << std::hex;
-    s << ", lkey=0x" << region_.mr->lkey;
-    s << ", rkey=0x" << region_.mr->rkey;
-    s << ", flags=0x" << (IBV_ACCESS_LOCAL_WRITE  |
-                          IBV_ACCESS_REMOTE_READ  |
-                          IBV_ACCESS_REMOTE_WRITE |
-                          IBV_ACCESS_REMOTE_ATOMIC);
-    s << ", mr=" << (void *)&region_.mr;
-    s.flags(flags);
+    if (res_->ib.context != NULL) {
+      s << std::hex;
+      s << ", lkey=0x" << region_.mr->lkey;
+      s << ", rkey=0x" << region_.mr->rkey;
+      s << ", flags=0x" << (IBV_ACCESS_LOCAL_WRITE  |
+                            IBV_ACCESS_REMOTE_READ  |
+                            IBV_ACCESS_REMOTE_WRITE |
+                            IBV_ACCESS_REMOTE_ATOMIC);
+      s << ", mr=" << (void *)&region_.mr;
+      s.flags(flags);
+    }
 
     return s;
   }
