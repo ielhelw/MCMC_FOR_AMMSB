@@ -286,6 +286,9 @@ class MCMCSamplerStochasticDistributed : public MCMCSamplerStochastic {
 
   void deploy_mini_batch(MinibatchSlice* mb_chunk);
 
+  NeighborSet sample_neighbor_nodes(::size_t sample_size, Vertex nodeId,
+                                    Random::Random* rnd);
+
   ::size_t real_num_node_sample() const;
 
  protected:
@@ -381,6 +384,7 @@ class MCMCSamplerStochasticDistributed : public MCMCSamplerStochastic {
   std::unique_ptr<MinibatchPipeline> minibatch_pipeline_;
 
   std::unique_ptr<DKV::DKVStoreInterface> d_kv_store_;
+  MinibatchSet  held_out_test_;
 
   PerpData      perp_;
 

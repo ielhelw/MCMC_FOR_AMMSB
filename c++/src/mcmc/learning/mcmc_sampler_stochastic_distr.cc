@@ -705,8 +705,23 @@ void MCMCSamplerStochasticDistributed::BroadcastHeldOut() {
                      perp_.data_.data(),
                      perp_.data_.size() * sizeof(EdgeMapItem), MPI_BYTE,
                      mpi_master_, MPI_COMM_WORLD);
+    mpi_error_test(r, "MPI_Scatterv of held-out set data fails");
     std::cerr << "My held-out size " << my_held_out_size << std::endl;
   }
+
+  /* Implies broadcast of the keys in held_out set */
+  GoogleHashEdgeSet held_out(network.get_held_out_set(),
+                             mpi_rank_, mpi_master_, MPI_COMM_WORLD);
+  /* Implies broadcast of the keys in test set */
+  GoogleHashEdgeSet test(network.get_test_set(),
+                         mpi_rank_, mpi_master_, MPI_COMM_WORLD);
+
+  held_out_test_.insert(held_out.begin(), held_out.end());
+  held_out_test_.insert(test.begin(), test.end());
+
+  std::cerr << "Held-out+test size " << held_out_test_.size() << std::endl;
+  std::cerr << "Test size " << network.get_test_set().size() << std::endl;
+  std::cerr << "Held-out size " << network.get_held_out_set().size() << std::endl;
 }
 
 
@@ -1413,6 +1428,30 @@ void MCMCSamplerStochasticDistributed::deploy_mini_batch(
   t_deploy_minibatch_.stop();
 
   // std::cerr << step_count << ": Minibatch deployed" << std::endl;
+}
+
+
+NeighborSet MCMCSamplerStochasticDistributed::sample_neighbor_nodes(
+    ::size_t sample_size, Vertex nodeId, Random::Random* rnd) {
+  /**
+  Sample subset of neighborhood nodes.
+   */
+  int p = (int)sample_size;
+  NeighborSet neighbor_nodes;
+
+  for (int i = 0; i <= p; ++i) {
+    Vertex neighborId;
+    Edge edge(0, 0);
+    do {
+      neighborId = rnd->randint(0, N - 1);
+      edge = Edge(std::min(nodeId, neighborId), std::max(nodeId, neighborId));
+    } while (neighborId == nodeId || edge.in(held_out_test_)
+             || neighbor_nodes.find(neighborId) != neighbor_nodes.end()
+             );
+    neighbor_nodes.insert(neighborId);
+  }
+
+  return neighbor_nodes;
 }
 
 
