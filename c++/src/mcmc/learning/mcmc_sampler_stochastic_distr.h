@@ -207,7 +207,7 @@ class MinibatchPipeline {
   void StageNextChunk();
   void StageNextMinibatch();
   void AdvanceMinibatch();
-  const MinibatchSlice& CurrentChunk() {
+  const MinibatchSlice& CurrentSlice() {
     return minibatch_slice_[current_];
   }
   // Returns whether any node is in <code>one</code> and the previous

@@ -1016,7 +1016,7 @@ void MCMCSamplerStochasticDistributed::run() {
     mpi_error_test(r, "MPI_Barrier(post pi) fails");
     t_barrier_phi_.stop();
 
-    const MinibatchSlice& mb_slice = minibatch_pipeline_->CurrentChunk();
+    const MinibatchSlice& mb_slice = minibatch_pipeline_->CurrentSlice();
     update_pi(mb_slice, phi_node_);
 
     // barrier: ensure we read pi/phi_sum from current iteration
@@ -1459,9 +1459,9 @@ void MCMCSamplerStochasticDistributed::update_phi(
     std::vector<std::vector<Float> >* phi_node) {
   Float eps_t = get_eps_t();
 
-  assert(minibatch_pipeline_->CurrentChunk().pi_chunks_.size() >= 2);
+  assert(minibatch_pipeline_->CurrentSlice().pi_chunks_.size() >= 2);
   for (::size_t b = 0;
-       b < minibatch_pipeline_->CurrentChunk().pi_chunks_.size();
+       b < minibatch_pipeline_->CurrentSlice().pi_chunks_.size();
        ++b) {
     minibatch_pipeline_->StageNextChunk();                   // next chunk
     auto *pi_chunk = chunk_pipeline_->AwaitChunkFilled();   // current chunk
@@ -1471,7 +1471,7 @@ void MCMCSamplerStochasticDistributed::update_phi(
 #pragma omp parallel for // num_threads (12)
     for (::size_t i = 0; i < pi_chunk->chunk_nodes_.size(); ++i) {
       Vertex node = pi_chunk->chunk_nodes_[i];
-      update_phi_node(minibatch_pipeline_->CurrentChunk(), *pi_chunk,
+      update_phi_node(minibatch_pipeline_->CurrentSlice(), *pi_chunk,
                       pi_chunk->start_ + i, node, pi_chunk->pi_node_[i],
                       eps_t, rng_[omp_get_thread_num()],
                       &(*phi_node)[pi_chunk->start_ + i]);
