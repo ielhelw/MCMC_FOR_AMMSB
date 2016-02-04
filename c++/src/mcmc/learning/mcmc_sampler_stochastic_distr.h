@@ -146,6 +146,8 @@ class MCMCSamplerStochasticDistributed : public MCMCSamplerStochastic {
   std::ostream& PrintStats(std::ostream& out) const;
 
   EdgeSample deploy_mini_batch();
+  NeighborSet sample_neighbor_nodes(::size_t sample_size, Vertex nodeId,
+                                    Random::Random* rnd);
   void update_phi(std::vector<std::vector<Float> >* phi_node);
   void update_phi_node(::size_t index, Vertex i, const Float* pi_node,
                        const std::vector<int32_t>::iterator &neighbors,
@@ -205,6 +207,7 @@ class MCMCSamplerStochasticDistributed : public MCMCSamplerStochastic {
   std::unique_ptr<DKV::DKVStoreInterface> d_kv_store_;
 
   LocalNetwork  local_network_;
+  MinibatchSet  held_out_test_;
 
   PerpData      perp_;
 
