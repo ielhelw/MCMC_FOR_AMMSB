@@ -386,7 +386,7 @@ void MinibatchPipeline::ReorderMinibatchOverlap(
             /*
              * Algorithm:
              *  - swap the current vertex w/ the last nonoverlapping vertex
-             *    within this chunk, do the same w/ graph entries
+             *    within this slice, do the same w/ graph entries
              *  - at the end
              *     + insert the overlapping vertices of the first chunk into the
              *       beginning of the second chunk
