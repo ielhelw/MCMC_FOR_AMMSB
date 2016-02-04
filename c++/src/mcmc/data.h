@@ -14,6 +14,10 @@
 
 #include "mcmc/config.h"
 
+#ifdef MCMC_ENABLE_DISTRIBUTED
+#include <mpi.h>
+#endif
+
 #include <unistd.h>
 
 #include <utility>
@@ -88,7 +92,6 @@ struct EdgeHash {
 
 
 typedef std::unordered_set<Vertex> VertexSet;
-typedef std::unordered_set<Vertex> NodeSet;
 typedef std::unordered_set<Edge, EdgeHash> MinibatchSet;
 
 class GoogleHashSet : public google::sparse_hash_set<Vertex> {
@@ -110,6 +113,18 @@ class GoogleHashMap
     : public google::sparse_hash_map<Edge, bool, EdgeHash, EdgeEquals> {
  public:
   GoogleHashMap() { this->set_deleted_key(Edge(-2, -2)); }
+};
+
+class GoogleHashEdgeSet
+    : public google::sparse_hash_set<Edge, EdgeHash, EdgeEquals> {
+ public:
+  GoogleHashEdgeSet() { this->set_deleted_key(Edge(-2, -2)); }
+
+#ifdef MCMC_ENABLE_DISTRIBUTED
+  /* Broadcast to all the keys of HashMap that exists at rank=root */
+  GoogleHashEdgeSet(const GoogleHashMap &hash_map, int rank, int root,
+                    MPI_Comm comm);
+#endif
 };
 
 
@@ -297,8 +312,8 @@ class NetworkGraph {
   ::size_t size_ = 0;
 };
 
-typedef NodeSet MinibatchNodeSet;
-typedef NodeSet NeighborSet;
+typedef VertexSet MinibatchNodeSet;
+typedef VertexSet NeighborSet;
 typedef std::list<Edge> EdgeList;
 
 

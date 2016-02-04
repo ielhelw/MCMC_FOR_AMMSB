@@ -47,6 +47,50 @@ void print_mem_usage(std::ostream &s) {
     << "resident " << ((resident * pagesize) / MEGA) << "MB " << std::endl;
 }
 
+
+#ifdef MCMC_ENABLE_DISTRIBUTED
+
+GoogleHashEdgeSet::GoogleHashEdgeSet(const GoogleHashMap& hash_map,
+                                     int rank, int root, MPI_Comm comm) {
+  uint64_t size = static_cast<uint64_t>(hash_map.size());
+
+  int r;
+  r = MPI_Bcast(&size, 1, MPI_LONG, root, comm);
+  if (r != MPI_SUCCESS) {
+    throw MCMCException(std::string("MPI error ") + std::to_string(r) + std::string(": broadcast graph size fails"));
+  }
+  std::vector<Vertex> flat(2 * size);
+  if (rank == root) {
+    // marshall
+    ::size_t i = 0;
+    for (auto e : hash_map) {
+      flat[i] = e.first.first;
+      i++;
+      flat[i] = e.first.second;
+      i++;
+    }
+  }
+
+  r = MPI_Bcast(flat.data(), flat.size(), MPI_INT, root, comm);
+  if (r != MPI_SUCCESS) {
+    throw MCMCException(std::string("MPI error ") + std::to_string(r) + std::string(": broadcast graph data fails"));
+  }
+
+  if (rank != root) {
+    // unmarshall
+    for (::size_t i = 0; i < flat.size(); ++i) {
+      Edge e;
+      e.first = flat[i];
+      i++;
+      e.second = flat[i];
+      insert(e);
+    }
+  }
+}
+
+#endif  // def MCMC_ENABLE_DISTRIBUTED
+
+
 NetworkGraph::NetworkGraph(const std::string &filename, ::size_t progress) {
   FileHandle f(filename, true, "r");
 
