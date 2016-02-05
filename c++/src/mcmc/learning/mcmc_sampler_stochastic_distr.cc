@@ -421,6 +421,9 @@ void MinibatchPipeline::ReorderMinibatchOverlap(
               pi_chunk->chunk_nodes_.end());
             pi_chunk->chunk_nodes_.erase(pi_chunk->chunk_nodes_.begin() + last_checked_node, pi_chunk->chunk_nodes_.end());
 
+            last_pi_chunk->pi_node_.resize(last_pi_chunk->chunk_nodes_.size());
+            pi_chunk->pi_node_.resize(pi_chunk->chunk_nodes_.size());
+
             if (false) {
               std::cerr << "After: my chunks:" << std::endl;
               for (auto& c : mb_slice->pi_chunks_) {
