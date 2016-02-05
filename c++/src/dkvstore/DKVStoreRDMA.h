@@ -162,7 +162,7 @@ class rdma_area {
   }
 
   ~rdma_area() {
-    if (res_->ib.context == NULL) {
+    if (area_owned_) {
       delete[] area_;
     } else {
       if (rd_mrfree(&region_, res_) != 0) {
@@ -176,7 +176,8 @@ class rdma_area {
     n_elements_ = n_elements;
 
     /* allocate the memory buffer that will hold the data */
-    if (res_->ib.context == NULL) {
+    area_owned_ = (res_->ib.context == NULL);
+    if (area_owned_) {
       area_ = new ValueType[n_elements];
     } else {
       if (rd_mralloc(&region_, device, n_elements * sizeof(ValueType)) != 0) {
@@ -221,6 +222,7 @@ class rdma_area {
  public:
   ::size_t n_elements_;         // alias for ease of use
   ValueType *area_;             // alias for ease of use
+  bool area_owned_;
   REGION region_;
 };
 
