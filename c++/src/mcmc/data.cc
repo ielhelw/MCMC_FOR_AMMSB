@@ -76,15 +76,13 @@ GoogleHashEdgeSet::GoogleHashEdgeSet(const GoogleHashMap& hash_map,
     throw MCMCException(std::string("MPI error ") + std::to_string(r) + std::string(": broadcast graph data fails"));
   }
 
-  if (rank != root) {
-    // unmarshall
-    for (::size_t i = 0; i < flat.size(); ++i) {
-      Edge e;
-      e.first = flat[i];
-      i++;
-      e.second = flat[i];
-      insert(e);
-    }
+  // unmarshall
+  for (::size_t i = 0; i < flat.size(); ++i) {
+    Edge e;
+    e.first = flat[i];
+    i++;
+    e.second = flat[i];
+    insert(e);
   }
 }
 

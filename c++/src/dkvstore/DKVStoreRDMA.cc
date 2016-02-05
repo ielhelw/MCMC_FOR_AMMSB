@@ -434,6 +434,10 @@ void DKVStoreRDMA::ReadKVRecords(::size_t buffer,
                                  const std::vector<KeyType> &key) {
   SCOPED_LOCK(lock_);
 
+  if (cache.size() < key.size()) {
+    throw RDMAException("cache.size < key.size");
+  }
+
   t_read_.outer.start();
 
   if (options_.oob_num_servers() > 1 /* res_.ib.context != NULL */) {
@@ -497,6 +501,10 @@ void DKVStoreRDMA::WriteKVRecords(const std::vector<KeyType> &key,
   SCOPED_LOCK(lock_);
 
   t_write_.outer.start();
+
+  if (value.size() < key.size()) {
+    throw RDMAException("value.size < key.size");
+  }
 
   if (options_.oob_num_servers() > 1 /* res_.ib.context != NULL */) {
     for (auto &s : posts_) {
