@@ -500,6 +500,10 @@ void DKVStoreRDMA::WriteKVRecords(const std::vector<KeyType> &key,
                                   const std::vector<const ValueType *> &value) {
   SCOPED_LOCK(lock_);
 
+  if (value.size() < key.size()) {
+    throw RDMAException("value.size < key.size");
+  }
+
   t_write_.outer.start();
 
   if (value.size() < key.size()) {
