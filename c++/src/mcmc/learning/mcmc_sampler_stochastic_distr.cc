@@ -113,7 +113,9 @@ void PerpData::Init(::size_t max_perplexity_chunk) {
 
 void ChunkPipeline::EnqueueChunk(PiChunk* chunk) {
   boost::unique_lock<boost::mutex> lock(lock_);
-  assert(buffer_[client_enq_].state_ == PIPELINE_STATE::FREE);
+  if (buffer_[client_enq_].state_ != PIPELINE_STATE::FREE) {
+    throw MCMCException("Buffer should be free but it isn't");
+  }
 
   // std::cerr << "Client: enqueue buffer[" << client_enq_ << "] for filling" << std::endl;
   buffer_[client_enq_].chunk_ = chunk;
@@ -157,9 +159,11 @@ PiChunk* ChunkPipeline::DequeueChunk() {
 
 
 void ChunkPipeline::NotifyChunkFilled() {
+  if (buffer_[server_complete_].state_ != PIPELINE_STATE::FILLING) {
+    throw MCMCException("Buffer state should be FILLING");
+  }
   boost::unique_lock<boost::mutex> lock(lock_);
   // std::cerr << "Server: notify buffer[" << server_complete_ << "] as full" << std::endl;
-  assert(buffer_[server_complete_].state_ == PIPELINE_STATE::FILLING);
 
   buffer_[server_complete_].state_ = PIPELINE_STATE::FILLED;
   buffer_[server_complete_].fill_completed_.notify_one();
@@ -168,6 +172,9 @@ void ChunkPipeline::NotifyChunkFilled() {
 
 
 void ChunkPipeline::ReleaseChunk() {
+  if (buffer_[client_clear_].state_ != PIPELINE_STATE::FILLED) {
+    throw MCMCException("Buffer state should be FILLED");
+  }
   boost::unique_lock<boost::mutex> lock(lock_);
   // std::cerr << "Client: purge buffer[" << client_clear_ << "] as full" << std::endl;
   buffer_[client_clear_].state_ = PIPELINE_STATE::FREE;
@@ -226,13 +233,25 @@ std::ostream& ChunkPipeline::report(std::ostream& s) const {
 }
 
 
-::size_t ChunkPipeline::GrabFreeBufferIndex() const {
+::size_t ChunkPipeline::GrabFreeBufferIndex() {
+  boost::unique_lock<boost::mutex> lock(lock_);
   for (::size_t i = 0; i < buffer_.size(); ++i) {
     if (buffer_[i].state_ == PIPELINE_STATE::FREE) {
+      buffer_[i].state_ = PIPELINE_STATE::USE_EXTERN;
       return i;
     }
   }
   throw MCMCException("No free buffers in pi cache");
+}
+
+
+void ChunkPipeline::ReleaseGrabbedBuffer(::size_t index) {
+  if (buffer_[index].state_ != PIPELINE_STATE::USE_EXTERN) {
+    throw MCMCException("Buffer state should be USE_EXTERN");
+  }
+  boost::unique_lock<boost::mutex> lock(lock_);
+  d_kv_store_.PurgeKVRecords(index);
+  buffer_[index].state_ = PIPELINE_STATE::FREE;
 }
 
 
@@ -1057,6 +1076,7 @@ void MCMCSamplerStochasticDistributed::run() {
   r = MPI_Barrier(MPI_COMM_WORLD);
   mpi_error_test(r, "MPI_Barrier(post pi) fails");
 
+  std::cout << "*************** converged *******************" << std::endl;
   PrintStats(std::cout);
 }
 
@@ -1700,8 +1720,8 @@ void MCMCSamplerStochasticDistributed::beta_calc_grads(
 
   std::vector<Float*> pi(node_rank.size());
   t_load_pi_beta_.start();
-  d_kv_store_->ReadKVRecords(chunk_pipeline_->GrabFreeBufferIndex(),
-                             pi, nodes);
+  ::size_t buffer_index = chunk_pipeline_->GrabFreeBufferIndex();
+  d_kv_store_->ReadKVRecords(buffer_index, pi, nodes);
   t_load_pi_beta_.stop();
 
   // update gamma, only update node in the grad
@@ -1733,12 +1753,15 @@ void MCMCSamplerStochasticDistributed::beta_calc_grads(
     for (::size_t k = 0; k < K; ++k) {
       Float f = probs[k] / prob_sum;
       Float one_over_theta_sum = 1.0 / theta_sum[k];
+
       grads_beta_[omp_get_thread_num()][0][k] += f * ((1 - y) / theta[k][0] -
                                                       one_over_theta_sum);
       grads_beta_[omp_get_thread_num()][1][k] += f * (y / theta[k][1] -
                                                       one_over_theta_sum);
     }
   }
+
+  chunk_pipeline_->ReleaseGrabbedBuffer(buffer_index);
   t_beta_calc_grads_.stop();
 }
 
@@ -1812,8 +1835,6 @@ void MCMCSamplerStochasticDistributed::update_beta(
   beta_sum_grads();
 
   beta_update_theta(scale);
-
-  d_kv_store_->PurgeKVRecords(chunk_pipeline_->GrabFreeBufferIndex());
 }
 
 
@@ -1866,8 +1887,8 @@ Float MCMCSamplerStochasticDistributed::cal_perplexity_held_out() {
                                                                 chunk));
 
     t_load_pi_perp_.start();
-    d_kv_store_->ReadKVRecords(chunk_pipeline_->GrabFreeBufferIndex(), perp_.pi_,
-                               chunk_nodes);
+    ::size_t buffer_index = chunk_pipeline_->GrabFreeBufferIndex();
+    d_kv_store_->ReadKVRecords(buffer_index, perp_.pi_, chunk_nodes);
     t_load_pi_perp_.stop();
 
     t_cal_edge_likelihood_.start();
@@ -1912,7 +1933,7 @@ Float MCMCSamplerStochasticDistributed::cal_perplexity_held_out() {
     }
 
     t_purge_pi_perp_.start();
-    d_kv_store_->PurgeKVRecords(chunk_pipeline_->GrabFreeBufferIndex());
+    chunk_pipeline_->ReleaseGrabbedBuffer(buffer_index);
     t_purge_pi_perp_.stop();
   }
 

@@ -104,6 +104,7 @@ namespace PIPELINE_STATE {
     FILLING,
     FILLED,
     FREE,
+    USE_EXTERN,
     STOP,
   };
 }
@@ -144,7 +145,8 @@ class ChunkPipeline {
   std::ostream& report(std::ostream& s) const;
 
   // Nonqueue interface
-  ::size_t GrabFreeBufferIndex() const;
+  ::size_t GrabFreeBufferIndex();
+  void ReleaseGrabbedBuffer(::size_t index);
 
 private:
   boost::mutex lock_;
