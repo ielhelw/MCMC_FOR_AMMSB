@@ -11,6 +11,8 @@
 #include "mcmc/exception.h"
 #include "mcmc/config.h"
 
+#include "mcmc/fixed-size-set.h"
+
 #ifdef MCMC_SINGLE_PRECISION
 #  define FLOATTYPE_MPI MPI_FLOAT
 #else
@@ -1061,56 +1063,41 @@ void MCMCSamplerStochasticDistributed::DrawNeighbors(
     const int32_t* chunk_nodes,
     ::size_t n_chunk_nodes,
     int32_t *flat_neighbors) {
+  const ::size_t p = real_num_node_sample();
   t_sample_neighbors_sample_.start();
   c_minibatch_chunk_size_.tick(n_chunk_nodes);
-  ::size_t p = real_num_node_sample();
-  // std::vector<std::vector<Vertex>> local_neighbors(n_chunk_nodes);
-  // std::vector<NeighborSet> neighbors(n_chunk_nodes);
-  NeighborSet *neighbors = new NeighborSet[n_chunk_nodes];
-  Random::Random **rngs = rng_.data();
-#pragma omp parallel for schedule(static, 32), firstprivate(neighbors, rngs, p, chunk_nodes) // num_threads (32)
+#pragma omp parallel for // schedule(static, 1)
   for (::size_t i = 0; i < n_chunk_nodes; ++i) {
-    Vertex node = chunk_nodes[i];
-    auto* rng = rngs[omp_get_thread_num()];
+    const Vertex node = chunk_nodes[i];
+    auto* rng = rng_[omp_get_thread_num()];
+    // std::unordered_set neighbors;
+    FixedSizeSet neighbors(p);
+    // std::vector<Vertex> neighbors;
     // sample a mini-batch of neighbors
-    /**
-      Sample subset of neighborhood nodes.
-      */
-    // while (neighbors.size() < p) {
-    for (::size_t x = 0; x < p; ++x) {
-      Vertex neighborId = rng->randint(0, N - 1);
-      // Vertex neighborId = 42 * i + x;
+    while (neighbors.size() < p) {
+      const Vertex neighborId = rng->randint(0, N - 1);
       if (neighborId != node
-          && neighbors[i].find(neighborId) == neighbors[i].end()
+          && neighbors.find(neighborId) == neighbors.end()
+          // && std::find(neighbors.begin(), neighbors.end(), neighborId) == neighbors.end()
           ) {
-        Edge edge = Edge(std::min(node, neighborId),
-                         std::max(node, neighborId));
-        // if (edge.first == edge.second) { } // use edge
+        const Edge edge = Edge(std::min(node, neighborId),
+                               std::max(node, neighborId));
         if (! edge.in(held_out_test_)) {
-          neighbors[i].insert(neighborId);
+          neighbors.insert(neighborId);
+          // neighbors.push_back(neighborId);
         }
       }
     }
-  }
-  t_sample_neighbors_sample_.stop();
 
-  t_sample_neighbors_flatten_.start();
-#pragma omp parallel for // num_threads (32)
-  for (::size_t i = 0; i < n_chunk_nodes; ++i) {
     // Cannot use flat_neighbors.insert() because it may (concurrently)
     // attempt to resize flat_neighbors.
     ::size_t j = i * p;
-    // ::size_t j = 0;
-    for (auto n : neighbors[i]) {
-      memcpy(flat_neighbors + j, &n, sizeof n);
-      // flat_neighbors[j] = n;
-      // local_neighbors[i][j] = n;
+    for (auto n : neighbors) {
+      flat_neighbors[j] = n;
       ++j;
     }
   }
-  t_sample_neighbors_flatten_.stop();
-
-  delete[] neighbors;
+  t_sample_neighbors_sample_.stop();
 }
 
 
