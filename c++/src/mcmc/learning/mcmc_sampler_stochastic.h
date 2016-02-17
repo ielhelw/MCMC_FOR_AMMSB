@@ -84,8 +84,28 @@ class MCMCSamplerStochastic : public Learner {
 
   void update_phi(Vertex i, const NeighborSet &neighbors, Float eps_t);
 
-  NeighborSet sample_neighbor_nodes(::size_t sample_size, Vertex nodeId,
-                                    Random::Random *rnd);
+  inline void sample_neighbor_nodes(NeighborSet *neighbor_nodes,
+                                    ::size_t sample_size, Vertex nodeId,
+                                    Random::Random *rnd) {
+    /**
+      Sample subset of neighborhood nodes.
+      */
+    int p = (int)sample_size + 1;
+    const EdgeMap &held_out_set = network.get_held_out_set();
+    const EdgeMap &test_set = network.get_test_set();
+
+    for (int i = 0; i < p; ++i) {
+      Vertex neighborId;
+      Edge edge(0, 0);
+      do {
+        neighborId = rnd->randint(0, N - 1);
+        edge = Edge(std::min(nodeId, neighborId), std::max(nodeId, neighborId));
+      } while (neighborId == nodeId || edge.in(held_out_set) || edge.in(test_set)
+               || neighbor_nodes->find(neighborId) != neighbor_nodes->end()
+              );
+      neighbor_nodes->insert(neighborId);
+    }
+  }
 
   MinibatchNodeSet nodes_in_batch(const MinibatchSet &mini_batch) const;
 
@@ -94,6 +114,8 @@ class MCMCSamplerStochastic : public Learner {
     // return std::pow(1024+step_count, -0.5);
   }
 
+  std::ostream& PrintStats(std::ostream& out) const;
+
   // replicated in both mcmc_sampler_
   Float a;
   Float b;
@@ -101,11 +123,20 @@ class MCMCSamplerStochastic : public Learner {
 
   ::size_t num_node_sample;
   ::size_t interval;
+  ::size_t stats_print_interval_;
 
   std::vector<std::vector<Float> > theta;  // parameterization for \beta
   std::vector<std::vector<Float> > phi;    // parameterization for \pi
 
   std::chrono::time_point<std::chrono::system_clock> t_start_;
+  timer::Timer t_outer;
+  timer::Timer t_perplexity;
+  timer::Timer t_mini_batch;
+  timer::Timer t_nodes_in_mini_batch;
+  timer::Timer t_sample_neighbor_nodes;
+  timer::Timer t_update_phi;
+  timer::Timer t_update_pi;
+  timer::Timer t_update_beta;
 };
 
 }  // namespace learning

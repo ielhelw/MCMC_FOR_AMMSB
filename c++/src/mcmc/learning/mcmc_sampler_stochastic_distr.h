@@ -9,6 +9,7 @@
 #include "dkvstore/DKVStore.h"
 #include "mcmc/random.h"
 #include "mcmc/timer.h"
+#include "mcmc/counter.h"
 
 #include "mcmc/learning/mcmc_sampler_stochastic.h"
 
@@ -146,8 +147,9 @@ class MCMCSamplerStochasticDistributed : public MCMCSamplerStochastic {
   std::ostream& PrintStats(std::ostream& out) const;
 
   EdgeSample deploy_mini_batch();
-  NeighborSet sample_neighbor_nodes(::size_t sample_size, Vertex nodeId,
-                                    Random::Random* rnd);
+  void DrawNeighbors(const int32_t* chunk_nodes,
+                     ::size_t n_chunk_nodes,
+                     int32_t *flat_neighbors);
   void update_phi(std::vector<std::vector<Float> >* phi_node);
   void update_phi_node(::size_t index, Vertex i, const Float* pi_node,
                        const std::vector<int32_t>::iterator &neighbors,
@@ -211,7 +213,6 @@ class MCMCSamplerStochasticDistributed : public MCMCSamplerStochastic {
 
   PerpData      perp_;
 
-  ::size_t      stats_print_interval_;
   Timer         t_load_network_;
   Timer         t_init_dkv_;
   Timer         t_outer_;
@@ -228,6 +229,8 @@ class MCMCSamplerStochasticDistributed : public MCMCSamplerStochastic {
   Timer         t_scatter_subgraph_unmarshall_;
   Timer         t_nodes_in_mini_batch_;
   Timer         t_sample_neighbor_nodes_;
+  Timer         t_sample_neighbors_sample_;
+  Timer         t_sample_neighbors_flatten_;
   Timer         t_update_phi_pi_;
   Timer         t_update_phi_;
   Timer         t_load_pi_minibatch_;
@@ -248,6 +251,8 @@ class MCMCSamplerStochasticDistributed : public MCMCSamplerStochastic {
   Timer         t_purge_pi_perp_;
   Timer         t_reduce_perp_;
   Timer         t_broadcast_theta_beta_;
+
+  Counter       c_minibatch_chunk_size_;
 
   std::vector<double> timings_;
 };

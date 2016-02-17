@@ -169,6 +169,9 @@ class Options {
       ("mcmc.interval,i",
        po::value< ::size_t>(&interval)->default_value(0),
        "perplexity interval")
+      ("mcmc.stats,I",
+       po::value< ::size_t>(&stats_print_interval)->default_value(0),
+       "statistics dump interval")
       ("mcmc.num-updates",
        po::value< ::size_t>(&num_updates)->default_value(1000),
        "num_updates")
@@ -276,6 +279,7 @@ class Options {
   Float epsilon;
   ::size_t max_iteration;
   ::size_t interval;
+  ::size_t stats_print_interval;
 
   // parameters for step size
   Float a;

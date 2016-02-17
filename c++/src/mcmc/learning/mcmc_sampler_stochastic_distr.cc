@@ -212,8 +212,6 @@ void PerpData::Init(::size_t max_perplexity_chunk) {
 // **************************************************************************
 MCMCSamplerStochasticDistributed::MCMCSamplerStochasticDistributed(
     const Options &args) : MCMCSamplerStochastic(args), mpi_master_(0) {
-  stats_print_interval_ = 64 * 1024;
-
   t_load_network_          = Timer("  load network graph");
   t_init_dkv_              = Timer("  initialize DKV store");
   t_populate_pi_           = Timer("  populate pi");
@@ -229,6 +227,8 @@ MCMCSamplerStochasticDistributed::MCMCSamplerStochasticDistributed(
   t_nodes_in_mini_batch_   = Timer("      nodes_in_mini_batch");
   t_broadcast_theta_beta_  = Timer("    broadcast theta/beta");
   t_sample_neighbor_nodes_ = Timer("      sample_neighbor_nodes");
+  t_sample_neighbors_sample_ = Timer("        sample");
+  t_sample_neighbors_flatten_ = Timer("        flatten");
   t_update_phi_pi_         = Timer("    update_phi_pi");
   t_load_pi_minibatch_     = Timer("      load minibatch pi");
   t_load_pi_neighbor_      = Timer("      load neighbor pi");
@@ -250,6 +250,7 @@ MCMCSamplerStochasticDistributed::MCMCSamplerStochasticDistributed(
   t_cal_edge_likelihood_   = Timer("      calc edge likelihood");
   t_purge_pi_perp_         = Timer("      purge perplexity pi");
   t_reduce_perp_           = Timer("      reduce/plus perplexity");
+  c_minibatch_chunk_size_  = Counter("minibatch chunk size");
   Timer::setTabular(true);
 }
 
@@ -596,6 +597,8 @@ std::ostream& MCMCSamplerStochasticDistributed::PrintStats(
   out << t_broadcast_theta_beta_ << std::endl;
   out << t_update_phi_pi_ << std::endl;
   out << t_sample_neighbor_nodes_ << std::endl;
+  out << t_sample_neighbors_sample_ << std::endl;
+  out << t_sample_neighbors_flatten_ << std::endl;
   out << t_load_pi_minibatch_ << std::endl;
   out << t_load_pi_neighbor_ << std::endl;
   out << t_update_phi_ << std::endl;
@@ -616,6 +619,7 @@ std::ostream& MCMCSamplerStochasticDistributed::PrintStats(
   out << t_cal_edge_likelihood_ << std::endl;
   out << t_purge_pi_perp_ << std::endl;
   out << t_reduce_perp_ << std::endl;
+  out << c_minibatch_chunk_size_ << std::endl;
 
   return out;
 }
@@ -1053,27 +1057,60 @@ EdgeSample MCMCSamplerStochasticDistributed::deploy_mini_batch() {
 }
 
 
-NeighborSet MCMCSamplerStochasticDistributed::sample_neighbor_nodes(
-    ::size_t sample_size, Vertex nodeId, Random::Random* rnd) {
-  /**
-  Sample subset of neighborhood nodes.
-   */
-  int p = (int)sample_size;
-  NeighborSet neighbor_nodes;
-
-  for (int i = 0; i <= p; ++i) {
-    Vertex neighborId;
-    Edge edge(0, 0);
-    do {
-      neighborId = rnd->randint(0, N - 1);
-      edge = Edge(std::min(nodeId, neighborId), std::max(nodeId, neighborId));
-    } while (neighborId == nodeId || edge.in(held_out_test_)
-             || neighbor_nodes.find(neighborId) != neighbor_nodes.end()
-             );
-    neighbor_nodes.insert(neighborId);
+void MCMCSamplerStochasticDistributed::DrawNeighbors(
+    const int32_t* chunk_nodes,
+    ::size_t n_chunk_nodes,
+    int32_t *flat_neighbors) {
+  t_sample_neighbors_sample_.start();
+  c_minibatch_chunk_size_.tick(n_chunk_nodes);
+  ::size_t p = real_num_node_sample();
+  // std::vector<std::vector<Vertex>> local_neighbors(n_chunk_nodes);
+  // std::vector<NeighborSet> neighbors(n_chunk_nodes);
+  NeighborSet *neighbors = new NeighborSet[n_chunk_nodes];
+  Random::Random **rngs = rng_.data();
+#pragma omp parallel for schedule(static, 32), firstprivate(neighbors, rngs, p, chunk_nodes) // num_threads (32)
+  for (::size_t i = 0; i < n_chunk_nodes; ++i) {
+    Vertex node = chunk_nodes[i];
+    auto* rng = rngs[omp_get_thread_num()];
+    // sample a mini-batch of neighbors
+    /**
+      Sample subset of neighborhood nodes.
+      */
+    // while (neighbors.size() < p) {
+    for (::size_t x = 0; x < p; ++x) {
+      Vertex neighborId = rng->randint(0, N - 1);
+      // Vertex neighborId = 42 * i + x;
+      if (neighborId != node
+          && neighbors[i].find(neighborId) == neighbors[i].end()
+          ) {
+        Edge edge = Edge(std::min(node, neighborId),
+                         std::max(node, neighborId));
+        // if (edge.first == edge.second) { } // use edge
+        if (! edge.in(held_out_test_)) {
+          neighbors[i].insert(neighborId);
+        }
+      }
+    }
   }
+  t_sample_neighbors_sample_.stop();
 
-  return neighbor_nodes;
+  t_sample_neighbors_flatten_.start();
+#pragma omp parallel for // num_threads (32)
+  for (::size_t i = 0; i < n_chunk_nodes; ++i) {
+    // Cannot use flat_neighbors.insert() because it may (concurrently)
+    // attempt to resize flat_neighbors.
+    ::size_t j = i * p;
+    // ::size_t j = 0;
+    for (auto n : neighbors[i]) {
+      memcpy(flat_neighbors + j, &n, sizeof n);
+      // flat_neighbors[j] = n;
+      // local_neighbors[i][j] = n;
+      ++j;
+    }
+  }
+  t_sample_neighbors_flatten_.stop();
+
+  delete[] neighbors;
 }
 
 
@@ -1094,34 +1131,19 @@ void MCMCSamplerStochasticDistributed::update_phi(
     std::vector<int32_t> chunk_nodes(nodes_.begin() + chunk_start,
                                      nodes_.begin() + chunk_start + chunk);
 
+    // ************ sample neighbor nodes in parallel at each host ******
+    // std::cerr << "Sample neighbor nodes" << std::endl;
+    pi_neighbor.resize(chunk_nodes.size() * real_num_node_sample());
+    flat_neighbors.resize(chunk_nodes.size() * real_num_node_sample());
+    t_sample_neighbor_nodes_.start();
+    DrawNeighbors(chunk_nodes.data(), chunk_nodes.size(), flat_neighbors.data());
+    t_sample_neighbor_nodes_.stop();
+
     // ************ load minibatch node pi from D-KV store **************
     t_load_pi_minibatch_.start();
     pi_node.resize(chunk_nodes.size());
     d_kv_store_->ReadKVRecords(pi_node, chunk_nodes, DKV::RW_MODE::READ_ONLY);
     t_load_pi_minibatch_.stop();
-
-    // ************ sample neighbor nodes in parallel at each host ******
-    // std::cerr << "Sample neighbor nodes" << std::endl;
-    t_sample_neighbor_nodes_.start();
-    pi_neighbor.resize(chunk_nodes.size() * real_num_node_sample());
-    flat_neighbors.resize(chunk_nodes.size() * real_num_node_sample());
-#pragma omp parallel for // num_threads (12)
-    for (::size_t i = 0; i < chunk_nodes.size(); ++i) {
-      Vertex node = chunk_nodes[i];
-      // sample a mini-batch of neighbors
-      auto rng = rng_[omp_get_thread_num()];
-      NeighborSet neighbors = sample_neighbor_nodes(num_node_sample, node,
-                                                    rng);
-      assert(neighbors.size() == real_num_node_sample());
-      // Cannot use flat_neighbors.insert() because it may (concurrently)
-      // attempt to resize flat_neighbors.
-      ::size_t j = i * real_num_node_sample();
-      for (auto n : neighbors) {
-        memcpy(flat_neighbors.data() + j, &n, sizeof n);
-        ++j;
-      }
-    }
-    t_sample_neighbor_nodes_.stop();
 
     // ************ load neighor pi from D-KV store **********
     t_load_pi_neighbor_.start();

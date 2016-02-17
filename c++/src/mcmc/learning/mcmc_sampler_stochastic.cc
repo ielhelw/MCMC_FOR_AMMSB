@@ -19,6 +19,11 @@ MCMCSamplerStochastic::MCMCSamplerStochastic(const Options &args)
   } else {
     interval = args_.interval;
   }
+  if (args.stats_print_interval == 0) {
+    stats_print_interval_ = 64 * 1024;
+  } else {
+    stats_print_interval_ = args.stats_print_interval;
+  }
 }
 
 void MCMCSamplerStochastic::init() {
@@ -87,15 +92,14 @@ void MCMCSamplerStochastic::sampler_stochastic_info(std::ostream &s) {
 
 void MCMCSamplerStochastic::run() {
   /** run mini-batch based MCMC sampler, based on the sungjin's note */
-  timer::Timer t_outer("  outer");
-  timer::Timer t_perplexity("  perplexity");
-  timer::Timer t_mini_batch("  sample_mini_batch");
-  timer::Timer t_nodes_in_mini_batch("  nodes_in_mini_batch");
-  timer::Timer t_sample_neighbor_nodes("  sample_neighbor_nodes");
-  timer::Timer t_update_phi("  update_phi");
-  timer::Timer t_update_pi("  update_pi");
-  timer::Timer t_update_beta("  update_beta");
-  timer::Timer::setTabular(true);
+  t_outer = timer::Timer("  outer");
+  t_perplexity = timer::Timer("  perplexity");
+  t_mini_batch = timer::Timer("  sample_mini_batch");
+  t_nodes_in_mini_batch = timer::Timer("  nodes_in_mini_batch");
+  t_sample_neighbor_nodes = timer::Timer("  sample_neighbor_nodes");
+  t_update_phi = timer::Timer("  update_phi");
+  t_update_pi = timer::Timer("  update_pi");
+  t_update_beta = timer::Timer("  update_beta");
 
   using namespace std::chrono;
   t_start_ = system_clock::now();
@@ -145,8 +149,8 @@ void MCMCSamplerStochastic::run() {
       Vertex node = node_vector[n];
       t_sample_neighbor_nodes.start();
       // sample a mini-batch of neighbors
-      NeighborSet neighbors = sample_neighbor_nodes(num_node_sample, node,
-                                                    rng_[0]);
+      NeighborSet neighbors;
+      sample_neighbor_nodes(&neighbors, num_node_sample, node, rng_[0]);
       t_sample_neighbor_nodes.stop();
 
       t_update_phi.start();
@@ -169,17 +173,28 @@ void MCMCSamplerStochastic::run() {
 
     step_count++;
     t_outer.stop();
+
+    if (step_count % stats_print_interval_ == 0) {
+      PrintStats(std::cout);
+    }
   }
 
-  timer::Timer::printHeader(std::cout);
-  std::cout << t_outer << std::endl;
-  std::cout << t_perplexity << std::endl;
-  std::cout << t_mini_batch << std::endl;
-  std::cout << t_nodes_in_mini_batch << std::endl;
-  std::cout << t_sample_neighbor_nodes << std::endl;
-  std::cout << t_update_phi << std::endl;
-  std::cout << t_update_pi << std::endl;
-  std::cout << t_update_beta << std::endl;
+  PrintStats(std::cout);
+}
+
+std::ostream& MCMCSamplerStochastic::PrintStats(std::ostream& out) const {
+  timer::Timer::setTabular(true);
+  timer::Timer::printHeader(out);
+  out << t_outer << std::endl;
+  out << t_perplexity << std::endl;
+  out << t_mini_batch << std::endl;
+  out << t_nodes_in_mini_batch << std::endl;
+  out << t_sample_neighbor_nodes << std::endl;
+  out << t_update_phi << std::endl;
+  out << t_update_pi << std::endl;
+  out << t_update_beta << std::endl;
+
+  return out;
 }
 
 void MCMCSamplerStochastic::update_beta(const MinibatchSet &mini_batch,
@@ -295,32 +310,6 @@ void MCMCSamplerStochastic::update_phi(Vertex i, const NeighborSet &neighbors,
     }
   }
 
-}
-
-NeighborSet MCMCSamplerStochastic::sample_neighbor_nodes(::size_t sample_size,
-                                                         Vertex nodeId,
-                                                         Random::Random* rnd) {
-  /**
-  Sample subset of neighborhood nodes.
-   */
-  int p = (int)sample_size;
-  NeighborSet neighbor_nodes;
-  const EdgeMap &held_out_set = network.get_held_out_set();
-  const EdgeMap &test_set = network.get_test_set();
-
-  for (int i = 0; i <= p; ++i) {
-    Vertex neighborId;
-    Edge edge(0, 0);
-    do {
-      neighborId = rnd->randint(0, N - 1);
-      edge = Edge(std::min(nodeId, neighborId), std::max(nodeId, neighborId));
-    } while (neighborId == nodeId || edge.in(held_out_set) || edge.in(test_set)
-             || neighbor_nodes.find(neighborId) != neighbor_nodes.end()
-             );
-    neighbor_nodes.insert(neighborId);
-  }
-
-  return neighbor_nodes;
 }
 
 MinibatchNodeSet MCMCSamplerStochastic::nodes_in_batch(
