@@ -288,10 +288,11 @@ class MCMCSamplerStochasticDistributed : public MCMCSamplerStochastic {
 
   void deploy_mini_batch(MinibatchSlice* mb_chunk);
 
-  NeighborSet sample_neighbor_nodes(::size_t sample_size, Vertex nodeId,
-                                    Random::Random* rnd);
-
   ::size_t real_num_node_sample() const;
+
+  const MinibatchSet& held_out_test() const {
+    return held_out_test_;
+  }
 
  protected:
   template <typename T>
@@ -389,6 +390,8 @@ class MCMCSamplerStochasticDistributed : public MCMCSamplerStochastic {
   MinibatchSet  held_out_test_;
 
   PerpData      perp_;
+
+  friend class MinibatchPipeline;
 
   ::size_t      stats_print_interval_;
   Timer         t_load_network_;
