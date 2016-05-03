@@ -732,11 +732,10 @@ void MCMCSamplerStochasticDistributed::init_theta() {
 }
 
 void MCMCSamplerStochasticDistributed::beta_from_theta() {
-  std::vector<std::vector<Float> > temp(theta.size(),
-                                         std::vector<Float>(theta[0].size()));
-  np::row_normalize(&temp, theta);
-  std::transform(temp.begin(), temp.end(), beta.begin(),
-                 np::SelectColumn<Float>(1));
+#pragma omp parallel for
+  for (::size_t k = 0; k < K; ++k) {
+    beta[k] = theta[k][1] / (theta[k][0] + theta[k][1]);
+  }
 }
 
 
@@ -1250,21 +1249,23 @@ void MCMCSamplerStochasticDistributed::update_pi(
 
 void MCMCSamplerStochasticDistributed::broadcast_theta_beta() {
   t_broadcast_theta_beta_.start();
-  std::vector<Float> theta_marshalled(2 * K);   // FIXME: lift to class level
-  if (mpi_rank_ == mpi_master_) {
-    for (::size_t k = 0; k < K; ++k) {
-      for (::size_t i = 0; i < 2; ++i) {
-        theta_marshalled[2 * k + i] = theta[k][i];
+  if (! args_.REPLICATED_NETWORK) {
+    std::vector<Float> theta_marshalled(2 * K);   // FIXME: lift to class level
+    if (mpi_rank_ == mpi_master_) {
+      for (::size_t k = 0; k < K; ++k) {
+        for (::size_t i = 0; i < 2; ++i) {
+          theta_marshalled[2 * k + i] = theta[k][i];
+        }
       }
     }
-  }
-  int r = MPI_Bcast(theta_marshalled.data(), theta_marshalled.size(),
-                    FLOATTYPE_MPI, mpi_master_, MPI_COMM_WORLD);
-  mpi_error_test(r, "MPI_Bcast(theta) fails");
-  if (mpi_rank_ != mpi_master_) {
-    for (::size_t k = 0; k < K; ++k) {
-      for (::size_t i = 0; i < 2; ++i) {
-        theta[k][i] = theta_marshalled[2 * k + i];
+    int r = MPI_Bcast(theta_marshalled.data(), theta_marshalled.size(),
+                      FLOATTYPE_MPI, mpi_master_, MPI_COMM_WORLD);
+    mpi_error_test(r, "MPI_Bcast(theta) fails");
+    if (mpi_rank_ != mpi_master_) {
+      for (::size_t k = 0; k < K; ++k) {
+        for (::size_t i = 0; i < 2; ++i) {
+          theta[k][i] = theta_marshalled[2 * k + i];
+        }
       }
     }
   }
