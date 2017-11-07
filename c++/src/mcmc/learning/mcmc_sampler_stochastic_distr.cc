@@ -1078,6 +1078,10 @@ void MCMCSamplerStochasticDistributed::run() {
 
   std::cout << "*************** converged *******************" << std::endl;
   PrintStats(std::cout);
+
+  if (args_.dump_pi_file_ != "") {
+    save_pi();
+  }
 }
 
 
@@ -1182,6 +1186,37 @@ void MCMCSamplerStochasticDistributed::init_pi() {
   for (auto & p : pi) {
     delete[] p;
   }
+}
+
+
+void MCMCSamplerStochasticDistributed::save_pi() {
+  std::ofstream save;
+  boost::filesystem::path dir(args_.dump_pi_file_);
+  boost::filesystem::create_directories(dir);
+  save.open(args_.dump_pi_file_);
+  save.precision(12);
+  const ::size_t chunk_size = 65536;
+  std::vector<Float*> pi(chunk_size);
+  for (auto & p : pi) {
+    p = new Float[K + 1];
+  }
+  std::vector<int> nodes(chunk_size);
+  ::size_t stored = 0;
+  while (stored < N) {
+    ::size_t chunk = std::min(chunk_size, N - stored);
+    for (::size_t i = stored; i < chunk; ++i) {
+      nodes[i - stored] = i;
+    }
+    d_kv_store_->ReadKVRecords(0, pi, nodes);
+    for (::size_t i = stored; i < chunk; ++i) {
+      save << i << " ";
+      for (::size_t k = 0; k < N + 1; ++k) {
+        save << pi[i][k] << " ";
+      }
+      save << std::endl;
+    }
+  }
+  save.close();
 }
 
 

@@ -227,6 +227,9 @@ class Options {
       ("mcmc.replicated-graph",
        po::bool_switch(&REPLICATED_NETWORK)->default_value(false),
        "replicate Network graph")
+      ("mcmc.dump-pi",
+       po::value<std::string>(&dump_pi_file_)->default_value(""),
+       "file(s) to dump pi to (one per machine)")
     ;
     desc_all.add(desc_distr);
 #endif
@@ -295,6 +298,7 @@ class Options {
   std::string input_class_;
   bool input_contiguous_;
   bool input_compressed_;
+  std::string pi_dump_file_;
 
   int random_seed;
   double convergence_threshold;
@@ -308,6 +312,7 @@ class Options {
   ::size_t num_buffers_;
   bool REPLICATED_NETWORK;
 #endif
+  std::string dump_pi_file_;
   po::options_description desc_all;
   po::options_description desc_mcmc;
   po::options_description desc_io;
