@@ -11,6 +11,8 @@
 #include "mcmc/exception.h"
 #include "mcmc/config.h"
 
+#include "mcmc/fixed-size-set.h"
+
 #ifdef MCMC_SINGLE_PRECISION
 #  define FLOATTYPE_MPI MPI_FLOAT
 #else
@@ -545,19 +547,29 @@ bool MinibatchPipeline::SampleNeighborSet(PiChunk* pi_chunk, ::size_t i) {
   Vertex node = pi_chunk->chunk_nodes_[i];
   // sample a mini-batch of neighbors
   auto rng = rng_[omp_get_thread_num()];
-  NeighborSet neighbors = sampler_.sample_neighbor_nodes(
-    sampler_.get_num_node_sample(), node, rng);
-  assert(neighbors.size() == sampler_.real_num_node_sample());
+  ::size_t p = sampler_.real_num_node_sample();
+  FixedSizeSet neighbors(p);
+  while (neighbors.size() < p) {
+    const Vertex neighborId = rng->randint(0, sampler_.N - 1); 
+    if (neighborId != node &&
+          neighbors.find(neighborId) == neighbors.end()) {
+      const Edge edge = Edge(std::min(node, neighborId),
+                             std::max(node, neighborId));
+      if (! edge.in(sampler_.held_out_test())) {
+        neighbors.insert(neighborId);
+      }
+    }
+  }
+
   // Cannot use flat_neighbors_.insert() because it may (concurrently)
   // attempt to resize flat_neighbors_.
-  ::size_t j = i * sampler_.real_num_node_sample();
+  ::size_t j = i * p;
   for (auto n : neighbors) {
     if (i == 0 && PreviousMinibatchOverlap(n)) {
       // std::cerr << "neighbor " << n << " is also in previous minibatch" << std::endl;
       return false;
     }
-    // is this flagged by OpenMP? pi_chunk->flat_neighbors_[j] = n;
-    memcpy(pi_chunk->flat_neighbors_.data() + j, &n, sizeof n);
+    pi_chunk->flat_neighbors_[j] = n;
     ++j;
   }
   return true;
@@ -1486,30 +1498,6 @@ void MCMCSamplerStochasticDistributed::deploy_mini_batch(
   t_deploy_minibatch_.stop();
 
   // std::cerr << step_count << ": Minibatch deployed" << std::endl;
-}
-
-
-NeighborSet MCMCSamplerStochasticDistributed::sample_neighbor_nodes(
-    ::size_t sample_size, Vertex nodeId, Random::Random* rnd) {
-  /**
-  Sample subset of neighborhood nodes.
-   */
-  int p = (int)sample_size;
-  NeighborSet neighbor_nodes;
-
-  for (int i = 0; i <= p; ++i) {
-    Vertex neighborId;
-    Edge edge(0, 0);
-    do {
-      neighborId = rnd->randint(0, N - 1);
-      edge = Edge(std::min(nodeId, neighborId), std::max(nodeId, neighborId));
-    } while (neighborId == nodeId || edge.in(held_out_test_)
-             || neighbor_nodes.find(neighborId) != neighbor_nodes.end()
-             );
-    neighbor_nodes.insert(neighborId);
-  }
-
-  return neighbor_nodes;
 }
 
 
