@@ -38,6 +38,8 @@ class SparseHashGraph : public DataSet {
       std::to_string(E->size()) + "\n"; 
     header += "# FromNodeId\tToNodeId\n";
 
+    std::cerr << "****** FIXME no implementation for node_id_map_" << std::endl;
+
     return new Data(NULL, E, N, header);
   }
 };
