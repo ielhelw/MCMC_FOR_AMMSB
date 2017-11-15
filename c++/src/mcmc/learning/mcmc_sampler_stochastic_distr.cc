@@ -1216,6 +1216,7 @@ void MCMCSamplerStochasticDistributed::save_pi() {
   std::cerr << "Save pi to file " << args_.dump_pi_file_ << std::endl;
   std::cerr << "mpi rank " << mpi_rank_ << " size " << mpi_size_ << std::endl;
   save.write(reinterpret_cast<char *>(&N), sizeof N);
+  save.write(reinterpret_cast<char *>(&K), sizeof K);
   int32_t hosts_pi = master_hosts_pi_;
   save.write(reinterpret_cast<char *>(&hosts_pi), sizeof hosts_pi);
   save.write(reinterpret_cast<char *>(&mpi_size_), sizeof mpi_size_);
