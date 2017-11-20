@@ -23,7 +23,7 @@ namespace preprocess {
  */
 class Relativity : public DataSet {
  public:
-  Relativity(const std::string &filename);
+  Relativity(const std::string &filename, std::size_t skip_lines = 4);
 
   virtual ~Relativity();
 
@@ -48,6 +48,7 @@ class Relativity : public DataSet {
 
  private:
   Vertex contiguous_offset_ = 0;
+  ::size_t skip_lines_;
 };
 
 }  // namespace preprocess

@@ -28,51 +28,58 @@ int main(int argc, char *argv[]) {
 #endif
     ;
     po::variables_map vm;
-    po::parsed_options parsed = po::command_line_parser(argc, argv)
-                                    .options(desc)
-                                    .allow_unregistered()
-                                    .run();
-    po::store(parsed, vm);
-    po::notify(vm);
-
     mcmc::Options args;
-    if (vm.count("help") > 0) {
-      std::cout << args << std::endl;
-      DKV::DKVFile::DKVStoreFileOptions file_opts;
-      std::cout << file_opts << std::endl;
+    try {
+      po::parsed_options parsed = po::command_line_parser(argc, argv)
+                                      .options(desc)
+                                      .allow_unregistered()
+                                      .run();
+      po::store(parsed, vm);
+      po::notify(vm);
+
+      if (vm.count("help") > 0) {
+        std::cout << args << std::endl;
+        DKV::DKVFile::DKVStoreFileOptions file_opts;
+        std::cout << file_opts << std::endl;
 #ifdef MCMC_ENABLE_RDMA
-      DKV::DKVRDMA::DKVStoreRDMAOptions rdma_opts;
-      std::cout << rdma_opts << std::endl;
+        DKV::DKVRDMA::DKVStoreRDMAOptions rdma_opts;
+        std::cout << rdma_opts << std::endl;
 #endif
 #ifdef MCMC_ENABLE_RAMCLOUD
-      DKV::DKVRamCloud::DKVStoreRamCloudOptions rc_opts;
-      std::cout << rc_opts << std::endl;
+        DKV::DKVRamCloud::DKVStoreRamCloudOptions rc_opts;
+        std::cout << rc_opts << std::endl;
 #endif
-      return 0;
-    }
-    auto remains = po::collect_unrecognized(parsed.options, po::include_positional);
-    args.Parse(remains);
+        return 0;
+      }
+      auto remains = po::collect_unrecognized(parsed.options, po::include_positional);
+
+      args.Parse(remains);
 
 #ifdef MCMC_ENABLE_DISTRIBUTED
-    if (do_sequential) {
-      do_distributed = false;
-    }
+      if (do_sequential) {
+        do_distributed = false;
+      }
 
-    if (do_distributed) {
-      std::cout << "start MCMC stochastical distributed " << std::endl;
-      MCMCSamplerStochasticDistributed mcmcSampler(args);
-      mcmcSampler.init();
-      mcmcSampler.run();
-    }
+      if (do_distributed) {
+        std::cout << "start MCMC stochastical distributed " << std::endl;
+        MCMCSamplerStochasticDistributed mcmcSampler(args);
+        mcmcSampler.init();
+        mcmcSampler.run();
+      }
 #endif
 
-    if (do_sequential) {
-      // Parameter set for Python comparison:
-      // -s -f ../../../../datasets/netscience.txt -c relativity -K 15 -m 147 -n 10 --mcmc.alpha 0.01 --mcmc.epsilon 0.0000001 --mcmc.held-out-ratio 0.009999999776 -i 1
-      std::cout << "start MCMC stochastical" << std::endl;
-      MCMCSamplerStochastic mcmcSampler(args);
-      mcmcSampler.init();
-      mcmcSampler.run();
+      if (do_sequential) {
+        // Parameter set for Python comparison:
+        // -s -f ../../../../datasets/netscience.txt -c relativity -K 15 -m 147 -n 10 --mcmc.alpha 0.01 --mcmc.epsilon 0.0000001 --mcmc.held-out-ratio 0.009999999776 -i 1
+        std::cout << "start MCMC stochastical" << std::endl;
+        MCMCSamplerStochastic mcmcSampler(args);
+        mcmcSampler.init();
+        mcmcSampler.run();
+      }
+
+    } catch (po::error &e) {
+      std::cerr << e.what() << std::endl;
+      return 33;
     }
 
     return 0;

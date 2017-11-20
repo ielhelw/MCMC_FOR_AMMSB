@@ -11,6 +11,9 @@
 #include <mcmc/types.h>
 #include <mcmc/data.h>
 
+// typedef std::set<mcmc::Vertex> community_t;     // ordered set
+typedef std::unordered_set<mcmc::Vertex> community_t;
+
 class Pi {
  public:
   Pi(const std::string &filename, ::size_t K = 0) : K_(K), filename_(filename) {
@@ -48,7 +51,9 @@ class Pi {
   void save(const std::string &ofile) {
     std::ofstream save;
     boost::filesystem::path dir(ofile);
-    boost::filesystem::create_directories(dir.parent_path());
+    if (dir.parent_path() != "") {
+      boost::filesystem::create_directories(dir.parent_path());
+    }
     save.open(ofile, std::ios::out | std::ios::binary);
     std::cerr << "Save pi to file " << ofile << std::endl;
     std::cerr << "mpi rank " << mpi_rank_ << " size " << mpi_size_ << std::endl;
@@ -71,7 +76,8 @@ class Pi {
   }
 
   float bin_flattened(std::size_t steps, std::size_t total_memberships) {
-    std::vector<std::size_t> bin(steps, 0);
+    bin_.clear();
+    bin_.resize(steps, 0);
     mcmc::Float min = 1.0;
     mcmc::Float max = 0.0;
     for (auto pi: pi_) {
@@ -83,14 +89,14 @@ class Pi {
         max = std::max(max, pi[k]);
         ::size_t b = pi[k] * steps;
         // std::cerr << "pi[" << k << "] " << pi[k] << " bin " << b << std::endl;
-        ++bin[b];
+        ++bin_[b];
       }
     }
     std::cout << "pi range: " << min << " .. " << max << std::endl;
     std::vector<std::size_t> cumul(steps, 0);
-    cumul[steps - 1] = bin[steps - 1];
+    cumul[steps - 1] = bin_[steps - 1];
     for (::size_t i = steps - 1; i > 0; --i) {
-      cumul[i - 1] = cumul[i] + bin[i - 1];
+      cumul[i - 1] = cumul[i] + bin_[i - 1];
     }
     float cutoff = 1.0;
     for (::size_t i = 0; i < steps; ++i) {
@@ -121,12 +127,30 @@ class Pi {
     }
 
     if (false) {
-      for (auto b: bin) {
+      for (auto b: bin_) {
         std::cout << b << std::endl;
       }
     }
 
     return cutoff;
+  }
+
+  const std::vector<std::size_t> &bin() const {
+    return bin_;
+  }
+
+  void save_bin(const std::string &bin_file) const {
+    std::ofstream cf;
+    boost::filesystem::path dir(bin_file);
+    if (dir.parent_path() != "") {
+      boost::filesystem::create_directories(dir.parent_path());
+    }
+    cf.open(bin_file, std::ios::out);
+    std::cerr << "Save bin to file " << bin_file << std::endl;
+    for (auto b: bin_) {
+      cf << b << std::endl;
+    }
+    cf.close();
   }
 
   std::vector<mcmc::Vertex> read_nodemap(const std::string &file) {
@@ -144,8 +168,8 @@ class Pi {
     return nodemap;
   }
 
-  std::vector<std::unordered_set<mcmc::Vertex>> assign_communities(float cutoff) {
-    std::vector<std::unordered_set<mcmc::Vertex>> comms(K_);
+  std::vector<community_t> assign_communities(float cutoff) {
+    std::vector<community_t> comms(K_);
 
     for (::size_t i = 0; i < N_; ++i) {
       for (::size_t k = 0; k < K_; ++k) {
@@ -158,7 +182,7 @@ class Pi {
     return comms;
   }
 
-  void save_communities(const std::string &communities_file, const std::vector<std::unordered_set<mcmc::Vertex>> &communities, const std::vector<mcmc::Vertex> &nodemap) {
+  void save_communities(const std::string &communities_file, const std::vector<community_t> &communities, const std::vector<mcmc::Vertex> &nodemap) const {
     std::ofstream cf;
     boost::filesystem::path dir(communities_file);
     if (dir.parent_path() != "") {
@@ -166,12 +190,25 @@ class Pi {
     }
     cf.open(communities_file, std::ios::out);
     std::cerr << "Save communities to file " << communities_file << std::endl;
-    std::cerr << "******** FIXME need to apply node mapping" << std::endl;
-    for (auto &c: communities) {
-      for (auto n: c) {
-        cf << n << " ";
+    if (nodemap.size() == 0) {
+      std::cerr << "******** FIXME need to apply node mapping" << std::endl;
+      for (auto &c: communities) {
+        for (auto n: c) {
+          cf << n << " ";
+        }
+        cf << std::endl;
       }
-      cf << std::endl;
+    } else {
+      for (auto &c: communities) {
+        std::set<mcmc::Vertex> comm;
+        for (auto n: c) {
+          comm.insert(nodemap[n]);
+        }
+        for (auto n: comm) {
+          cf << n << " ";
+        }
+        cf << std::endl;
+      }
     }
     cf.close();
   }
@@ -184,6 +221,7 @@ class Pi {
   int32_t mpi_size_;
   int32_t mpi_rank_;
   std::vector<std::vector<mcmc::Float>> pi_;
+  std::vector<std::size_t> bin_;
 };
 
 
@@ -191,7 +229,7 @@ static float stdev(float sum, float sumsq, ::size_t n) {
   return std::sqrt((sumsq - sum * sum / n) / (n - 1));
 }
 
-static std::vector<std::unordered_set<mcmc::Vertex>> read_true_communities(const std::string &filename) {
+static std::vector<community_t> read_true_communities(const std::string &filename) {
   auto compressed = boost::algorithm::ends_with(filename, ".gz");
   std::ios_base::openmode mode = std::ios_base::in;
   if (compressed) {
@@ -209,13 +247,13 @@ static std::vector<std::unordered_set<mcmc::Vertex>> read_true_communities(const
   inbuf.push(nmp);
   std::istream instream(&inbuf);
 
-  std::vector<std::unordered_set<mcmc::Vertex>> comms;
-  while (! nmp.eof()) {
+  std::vector<community_t> comms;
+  while (! instream.eof()) {
     std::string line;
-    std::getline(nmp, line);
+    std::getline(instream, line);
 
     std::stringstream ss(line);
-    std::unordered_set<mcmc::Vertex> cm;
+    community_t cm;
     mcmc::Vertex vertex;
     while (ss >> vertex) {
       cm.insert(vertex);
@@ -230,16 +268,20 @@ static std::vector<std::unordered_set<mcmc::Vertex>> read_true_communities(const
 
 
 static void basic_stats(std::ostream &os,
-            const std::vector<std::unordered_set<mcmc::Vertex>> &communities,
+            const std::vector<community_t> &communities,
             const std::string label) {
   float sum = 0.0;
   float sqsum = 0.0;
   for (auto &c: communities) {
-    auto s = (float)c.size();
+    auto s = static_cast<float>(c.size());
     sum += s;
     sqsum += s * s;
+    std::cerr << s << std::endl;
   }
-  os << label << ": community size " << (sum / communities.size()) << " +- " << stdev(sum, sqsum, communities.size()) << std::endl;
+  os << label << ": communities " << communities.size() <<
+    " <size> " << (sum / communities.size()) <<
+    " +- " << stdev(sum, sqsum, communities.size()) <<
+    std::endl;
 }
 
 
@@ -251,6 +293,7 @@ int main(int argc, char *argv[]) {
   std::string communities_file = "";
   std::string true_communities_file = "";
   std::size_t bin = 0;
+  std::string bin_file = "";
   std::size_t total_memberships = 0;
   float cutoff;
 
@@ -279,17 +322,25 @@ int main(int argc, char *argv[]) {
     ("cutoff,x",
      po::value<float>(&cutoff),
      "force cutoff for community assingment")
-    ("bin",
+    ("bin,b",
      po::value<std::size_t>(&bin),
      "bin")
+    ("bin-file,B",
+     po::value<std::string>(&bin_file),
+     "bin dump file")
     ("total-memberships,m",
      po::value<std::size_t>(&total_memberships),
      "total number of memberships (K * average membership)")
     ("help", "print options")
     ;
   po::variables_map vm;
-  po::store(po::parse_command_line(argc, argv, options), vm);
-  po::notify(vm);
+  try {
+    po::store(po::parse_command_line(argc, argv, options), vm);
+    po::notify(vm);
+  } catch (po::error &e) {
+    std::cerr << e.what() << std::endl;
+    return 33;
+  }
 
   if (vm.count("help") > 0) {
     std::cout << options << std::endl;
@@ -310,6 +361,9 @@ int main(int argc, char *argv[]) {
 
     if (bin > 0) {
       cutoff = pi.bin_flattened(bin, total_memberships);
+      if (bin_file != "") {
+        pi.save_bin(bin_file);
+      }
     } else {
       cutoff = 0.00067;
     }

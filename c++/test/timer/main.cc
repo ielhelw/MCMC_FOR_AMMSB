@@ -50,8 +50,13 @@ int main(int argc, char *argv[]) {
     ;
 
   po::variables_map vm;
-  po::store(po::command_line_parser(argc, argv).options(desc).run(), vm);
-  po::notify(vm);
+  try {
+    po::store(po::command_line_parser(argc, argv).options(desc).run(), vm);
+    po::notify(vm);
+  } catch (po::error &e) {
+    std::cerr << e.what() << std::endl;
+    return 33;
+  }
 
   Tester<mcmc::timer::Timer> test_mcmc;
   test_mcmc.run(n, "MCMC");

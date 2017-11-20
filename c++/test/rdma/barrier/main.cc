@@ -94,12 +94,7 @@ class DKVWrapper {
     po::variables_map vm;
     po::parsed_options parsed = po::basic_command_line_parser<char>(remains_).options(desc).allow_unregistered().run();
     po::store(parsed, vm);
-    try {
-      po::notify(vm);
-    } catch (po::error &e) {
-      std::cerr << "Option error: " << e.what() << std::endl;
-      exit(33);
-    }
+    po::notify(vm);
 
     if (vm.count("help") > 0) {
       std::cout << desc << std::endl;
@@ -145,12 +140,7 @@ class DKVWrapper {
 
     ::size_t my_m = (m + n_hosts - 1) / n_hosts;
 
-    try {
-      d_kv_store_->Init(K, N, 1, my_m * n, my_m);
-    } catch (po::error &e) {
-      std::cerr << "Option error: " << e.what() << std::endl;
-      return;
-    }
+    d_kv_store_->Init(K, N, 1, my_m * n, my_m);
 
     d_kv_store_->barrier();
 
@@ -287,6 +277,7 @@ int main(int argc, char *argv[]) {
   }
   std::cout << std::endl;
 
+  try {
     mcmc::Options options(argc, argv);
 
     DKV::TYPE dkv_type = DKV::TYPE::FILE;
@@ -344,5 +335,10 @@ int main(int argc, char *argv[]) {
 #endif
     }
 
-    return 0;
+  } catch (po::error &e) {
+    std::cerr << e.what() << std::endl;
+    return 33;
+  }
+
+  return 0;
 }

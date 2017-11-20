@@ -12,8 +12,9 @@
 namespace mcmc {
 namespace preprocess {
 
-Relativity::Relativity(const std::string &filename)
-    : DataSet(filename == "" ? "datasets/CA-GrQc.txt" : filename) {}
+Relativity::Relativity(const std::string &filename, ::size_t skip_lines)
+    : DataSet(filename == "" ? "datasets/CA-GrQc.txt" : filename),
+      skip_lines_(skip_lines) {}
 
 Relativity::~Relativity() {}
 
@@ -50,7 +51,7 @@ const Data *Relativity::process() {
   std::string header;
 
   // start from the 5th line.
-  for (int i = 0; i < 4; i++) {
+  for (::size_t i = 0; i < skip_lines_; i++) {
     std::getline(instream, line);
     header = header + line + "\n";
   }

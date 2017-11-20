@@ -242,6 +242,7 @@ protected:
 };
 
 int main(int argc, char *argv[]) {
+  try {
     mcmc::Options options(argc, argv);
 
     DKV::TYPE dkv_type;
@@ -259,8 +260,8 @@ int main(int argc, char *argv[]) {
     po::notify(vm);
 
     if (vm.count("help") > 0) {
-        std::cout << desc << std::endl;
-        return 0;
+      std::cout << desc << std::endl;
+      return 0;
     }
 
     std::vector<std::string> remains = po::collect_unrecognized(parsed.options, po::include_positional);
@@ -271,30 +272,35 @@ int main(int argc, char *argv[]) {
     std::cerr << "\"" << std::endl;
 
     switch (dkv_type) {
-	case DKV::TYPE::FILE: {
+      case DKV::TYPE::FILE: {
 #if 0
         DKVWrapper<DKV::DKVFile::DKVStoreFile> dkv_store(options, remains);
         dkv_store.run();
 #endif
         break;
-    }
+      }
 #ifdef MCMC_ENABLE_RAMCLOUD
-	case DKV::TYPE::RAMCLOUD: {
+      case DKV::TYPE::RAMCLOUD: {
 #if 0
         DKVWrapper<DKV::DKVRamCloud::DKVStoreRamCloud> dkv_store(options, remains);
         dkv_store.run();
 #endif
         break;
-    }
+      }
 #endif
 #ifdef MCMC_ENABLE_RDMA
-	case DKV::TYPE::RDMA: {
+      case DKV::TYPE::RDMA: {
         DKVWrapper<DKV::DKVRDMA::DKVStoreRDMA> dkv_store(options, remains);
         dkv_store.run();
         break;
-    }
+      }
 #endif
     }
 
-    return 0;
+  } catch (po::error &e) {
+    std::cerr << e.what() << std::endl;
+    return 33;
+  }
+
+  return 0;
 }

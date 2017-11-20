@@ -116,12 +116,7 @@ class DKVWrapper {
     po::variables_map vm;
     po::parsed_options parsed = po::basic_command_line_parser<char>(remains_).options(desc).allow_unregistered().run();
     po::store(parsed, vm);
-    try {
-      po::notify(vm);
-    } catch (po::error &e) {
-      std::cerr << "Option error: " << e.what() << std::endl;
-      exit(33);
-    }
+    po::notify(vm);
 
     if (vm.count("help") > 0) {
       std::cout << desc << std::endl;
@@ -194,12 +189,7 @@ class DKVWrapper {
     }
     ::size_t average_m = (m + n_hosts - 1) / n_hosts;
 
-    try {
-      d_kv_store_->Init(K, N, num_buffers, my_m * n, my_m);
-    } catch (po::error &e) {
-      std::cerr << "Option error: " << e.what() << std::endl;
-      return;
-    }
+    d_kv_store_->Init(K, N, num_buffers, my_m * n, my_m);
 
     d_kv_store_->barrier();
 
@@ -376,76 +366,82 @@ protected:
 };
 
 int main(int argc, char *argv[]) {
-  std::cout << "Pid " << getpid() << " invoked with options: ";
-  for (int i = 0; i < argc; ++i) {
-    std::cout << argv[i] << " ";
-  }
-  std::cout << std::endl;
+  try {
+    std::cout << "Pid " << getpid() << " invoked with options: ";
+    for (int i = 0; i < argc; ++i) {
+      std::cout << argv[i] << " ";
+    }
+    std::cout << std::endl;
 
-  mcmc::Options options(argc, argv);
+    mcmc::Options options(argc, argv);
 
-  DKV::TYPE dkv_type;
-  po::options_description desc("D-KV store test program");
-  desc.add_options()
-    ("help", "help")
-    ("dkv.type",
-     po::value<DKV::TYPE>(&dkv_type)->multitoken()->default_value(
+    DKV::TYPE dkv_type;
+    po::options_description desc("D-KV store test program");
+    desc.add_options()
+      ("help", "help")
+      ("dkv.type",
+       po::value<DKV::TYPE>(&dkv_type)->multitoken()->default_value(
 #ifdef MCMC_ENABLE_RDMA
-        DKV::TYPE::RDMA
+          DKV::TYPE::RDMA
 #elif defined MCMC_ENABLE_RAMCLOUD
-        DKV::TYPE::RAMCLOUD
+          DKV::TYPE::RAMCLOUD
 #else
-        DKV::TYPE::FILE
+          DKV::TYPE::FILE
 #endif
-        ),
-     "D-KV store type (file/ramcloud/rdma)")
-    ;
+          ),
+       "D-KV store type (file/ramcloud/rdma)")
+      ;
 
-  po::variables_map vm;
-  po::parsed_options parsed = po::basic_command_line_parser<char>(
-    options.getRemains()).options(desc).allow_unregistered().run();
-  po::store(parsed, vm);
-  // po::basic_command_line_parser<char> clp(options.getRemains());
-  // clp.options(desc).allow_unregistered.run();
-  // po::store(clp.run(), vm);
-  po::notify(vm);
+    po::variables_map vm;
+    po::parsed_options parsed = po::basic_command_line_parser<char>(
+      options.getRemains()).options(desc).allow_unregistered().run();
+    po::store(parsed, vm);
+    // po::basic_command_line_parser<char> clp(options.getRemains());
+    // clp.options(desc).allow_unregistered.run();
+    // po::store(clp.run(), vm);
+    po::notify(vm);
 
-  if (vm.count("help") > 0) {
-      std::cout << desc << std::endl;
-      return 0;
-  }
-
-  std::cerr << "D-KV store " << dkv_type << std::endl;
-
-  std::vector<std::string> remains = po::collect_unrecognized(
-    parsed.options, po::include_positional);
-  std::cerr << "main has unparsed options: \"";
-  for (auto r : remains) {
-    std::cerr << r << " ";
-  }
-  std::cerr << "\"" << std::endl;
-
-  switch (dkv_type) {
-    case DKV::TYPE::FILE: {
-      DKVWrapper<DKV::DKVFile::DKVStoreFile> dkv_store(options, remains);
-      dkv_store.run();
-      break;
+    if (vm.count("help") > 0) {
+        std::cout << desc << std::endl;
+        return 0;
     }
+
+    std::cerr << "D-KV store " << dkv_type << std::endl;
+
+    std::vector<std::string> remains = po::collect_unrecognized(
+      parsed.options, po::include_positional);
+    std::cerr << "main has unparsed options: \"";
+    for (auto r : remains) {
+      std::cerr << r << " ";
+    }
+    std::cerr << "\"" << std::endl;
+
+    switch (dkv_type) {
+      case DKV::TYPE::FILE: {
+        DKVWrapper<DKV::DKVFile::DKVStoreFile> dkv_store(options, remains);
+        dkv_store.run();
+        break;
+      }
 #ifdef MCMC_ENABLE_RAMCLOUD
-    case DKV::TYPE::RAMCLOUD: {
-      DKVWrapper<DKV::DKVRamCloud::DKVStoreRamCloud> dkv_store(options,
-                                                               remains);
-      dkv_store.run();
-      break;
-    }
+      case DKV::TYPE::RAMCLOUD: {
+        DKVWrapper<DKV::DKVRamCloud::DKVStoreRamCloud> dkv_store(options,
+                                                                 remains);
+        dkv_store.run();
+        break;
+      }
 #endif
 #ifdef MCMC_ENABLE_RDMA
-    case DKV::TYPE::RDMA: {
-      DKVWrapper<DKV::DKVRDMA::DKVStoreRDMA> dkv_store(options, remains);
-      dkv_store.run();
-      break;
-    }
+      case DKV::TYPE::RDMA: {
+        DKVWrapper<DKV::DKVRDMA::DKVStoreRDMA> dkv_store(options, remains);
+        dkv_store.run();
+        break;
+      }
 #endif
+    }
+
+  } catch (po::error &e) {
+    std::cerr << e.what() << std::endl;
+    return 33;
   }
 
   return 0;
