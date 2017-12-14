@@ -14,27 +14,31 @@
 // typedef std::set<mcmc::Vertex> community_t;     // ordered set
 typedef std::unordered_set<mcmc::Vertex> community_t;
 
+struct Stats {
+  float         mean;
+  float         stdev;
+};
+
+static float stdev(float sum, float sumsq, ::size_t n) {
+  return std::sqrt((sumsq - sum * sum / n) / (n - 1));
+}
+
 class Pi {
  public:
   Pi(const std::string &filename, ::size_t K = 0) : K_(K), filename_(filename) {
+    file_has_K_ = K != 0;
+  }
+
+  void get_info() {
+    std::ifstream saved;
+    saved.open(filename_, std::ios::in | std::ios::binary);
+    read_header(saved);
   }
 
   void load() {
     std::ifstream saved;
     saved.open(filename_, std::ios::in | std::ios::binary);
-    saved.read(reinterpret_cast<char *>(&N_), sizeof N_);
-    if (K_ == 0) {
-      saved.read(reinterpret_cast<char *>(&K_), sizeof K_);
-    }
-    saved.read(reinterpret_cast<char *>(&hosts_pi_), sizeof hosts_pi_);
-    saved.read(reinterpret_cast<char *>(&mpi_size_), sizeof mpi_size_);
-    saved.read(reinterpret_cast<char *>(&mpi_rank_), sizeof mpi_rank_);
-    int32_t padding[3];
-    for (auto i = 0; i < 3; ++i) {
-      saved.read(reinterpret_cast<char *>(&padding[i]), sizeof padding[i]);
-    }
-    std::cerr << "N " << N_ << " K " << K_ << " hosts_pi " << hosts_pi_ <<
-      " mpi_size " << mpi_size_ << " mpi_rank " << mpi_rank_ << std::endl;
+    read_header(saved);
 
     pi_.resize(N_);
     for (auto &pi: pi_) {
@@ -153,6 +157,54 @@ class Pi {
     cf.close();
   }
 
+  Stats stats(void) const {
+    Stats stats;
+    float sum = 0;
+    float sumsq = 0;
+    if (incremental_read_) {
+      std::ifstream saved;
+      saved.open(filename_, std::ios::in | std::ios::binary);
+      skip_header(saved);
+      ::size_t buf_size = mem_avail_ / (K_ * sizeof(float));
+      std::cerr << "Buffer size " << buf_size << " lines" << std::endl;
+      std::vector<std::vector<float>> buffer(buf_size, std::vector<float>(K_));
+
+      ::size_t processed = 0;
+      while (processed < N_) {
+        ::size_t n = std::min(N_ - processed, buf_size);
+        std::cerr << "Now read buffer size " << n << " starting from " << processed << std::endl;
+        for (std::size_t i = 0; i < n; ++i) {
+          ::size_t stored;
+          saved.read(reinterpret_cast<char *>(&stored), sizeof stored);
+          saved.read(reinterpret_cast<char *>(buffer[i].data()),
+                     (K_ + 1) * sizeof buffer[i][0]);
+        }
+        for (::size_t i = 0; i < n; ++i) {
+          for (::size_t k = 0; k < K_; ++k) {
+            sum += buffer[i][k];
+            sumsq += buffer[i][k] * buffer[i][k];
+          }
+        }
+        processed += n;
+      }
+
+    } else {
+      for (auto pi: pi_) {
+        for (::size_t k = 0; k < K_; ++k) {
+          sum += pi[k];
+          sumsq += pi[k] * pi[k];
+        }
+      }
+      assert(pi_.size() == N_);
+    }
+
+    ::size_t n = N_ * K_;
+    stats.stdev = stdev(sum, sumsq, n);
+    stats.mean  = sum / n;
+
+    return stats;
+  }
+
   std::vector<mcmc::Vertex> read_nodemap(const std::string &file) {
     std::ifstream nmp;
     nmp.open(file, std::ios::in);
@@ -213,21 +265,67 @@ class Pi {
     cf.close();
   }
 
+  ::size_t N(void) const {
+    return N_;
+  }
+
+  ::size_t K(void) const {
+    return K_;
+  }
+
+  void set_incremental_read(bool incremental_read, ::size_t mem_avail) {
+    incremental_read_ = incremental_read;
+    mem_avail_ = mem_avail;
+  }
+
  protected:
   ::size_t K_;
   ::size_t N_;
   std::string filename_;
+  bool file_has_K_ = true;
   int32_t hosts_pi_;
   int32_t mpi_size_;
   int32_t mpi_rank_;
   std::vector<std::vector<mcmc::Float>> pi_;
   std::vector<std::size_t> bin_;
+  bool incremental_read_ = false;
+  ::size_t mem_avail_ = 0;
+
+  void read_header(std::ifstream& saved) {
+    saved.read(reinterpret_cast<char *>(&N_), sizeof N_);
+    if (! file_has_K_) {
+      saved.read(reinterpret_cast<char *>(&K_), sizeof K_);
+    }
+    saved.read(reinterpret_cast<char *>(&hosts_pi_), sizeof hosts_pi_);
+    saved.read(reinterpret_cast<char *>(&mpi_size_), sizeof mpi_size_);
+    saved.read(reinterpret_cast<char *>(&mpi_rank_), sizeof mpi_rank_);
+    int32_t padding[3];
+    for (auto i = 0; i < 3; ++i) {
+      saved.read(reinterpret_cast<char *>(&padding[i]), sizeof padding[i]);
+    }
+    std::cerr << "N " << N_ << " K " << K_ << " hosts_pi " << hosts_pi_ <<
+      " mpi_size " << mpi_size_ << " mpi_rank " << mpi_rank_ << std::endl;
+  }
+
+  void skip_header(std::ifstream& saved) const {
+    ::size_t dummy;
+    saved.read(reinterpret_cast<char *>(&dummy), sizeof dummy);
+    if (! file_has_K_) {
+      saved.read(reinterpret_cast<char *>(&dummy), sizeof dummy);
+    }
+    int32_t m;
+    saved.read(reinterpret_cast<char *>(&m), sizeof m);
+    saved.read(reinterpret_cast<char *>(&m), sizeof m);
+    saved.read(reinterpret_cast<char *>(&m), sizeof m);
+    int32_t padding[3];
+    for (auto i = 0; i < 3; ++i) {
+      saved.read(reinterpret_cast<char *>(&padding[i]), sizeof padding[i]);
+    }
+    std::cerr << "N " << N_ << " K " << K_ << " hosts_pi " << hosts_pi_ <<
+      " mpi_size " << mpi_size_ << " mpi_rank " << mpi_rank_ << std::endl;
+  }
 };
 
-
-static float stdev(float sum, float sumsq, ::size_t n) {
-  return std::sqrt((sumsq - sum * sum / n) / (n - 1));
-}
 
 static std::vector<community_t> read_true_communities(const std::string &filename) {
   auto compressed = boost::algorithm::ends_with(filename, ".gz");
@@ -276,7 +374,7 @@ static void basic_stats(std::ostream &os,
     auto s = static_cast<float>(c.size());
     sum += s;
     sqsum += s * s;
-    std::cerr << s << std::endl;
+    // std::cerr << s << std::endl;
   }
   os << label << ": communities " << communities.size() <<
     " <size> " << (sum / communities.size()) <<
@@ -295,7 +393,8 @@ int main(int argc, char *argv[]) {
   std::size_t bin = 0;
   std::string bin_file = "";
   std::size_t total_memberships = 0;
-  float cutoff;
+  std::size_t mem_avail = 32ULL << 30;
+  float cutoff = -1.0;
 
   namespace po = boost::program_options;
 
@@ -331,6 +430,10 @@ int main(int argc, char *argv[]) {
     ("total-memberships,m",
      po::value<std::size_t>(&total_memberships),
      "total number of memberships (K * average membership)")
+    ("stats,S", "print statistics")
+    ("mem-avail,M",
+     po::value<std::size_t>(&mem_avail),
+     "set available core memory")
     ("help", "print options")
     ;
   po::variables_map vm;
@@ -356,27 +459,40 @@ int main(int argc, char *argv[]) {
 
   if (filename != "") {
     Pi pi(filename, K);
-    pi.load();
-    std::cerr << "Done loading " << filename << std::endl;
+    pi.get_info();
+    if (pi.K() * pi.N() * sizeof(float) > mem_avail) {
+      pi.set_incremental_read(true, mem_avail);
+    } else {
+      pi.load();
+      std::cerr << "Done loading " << filename << std::endl;
+    }
+
+    if (vm.count("stats") > 0) {
+      auto stats = pi.stats();
+      std::cerr << "Pi average " << stats.mean << " std " << stats.stdev << std::endl;
+    }
 
     if (bin > 0) {
-      cutoff = pi.bin_flattened(bin, total_memberships);
+      float c = pi.bin_flattened(bin, total_memberships);
+      if (cutoff == -1.0) {
+        cutoff = c;
+      }
       if (bin_file != "") {
         pi.save_bin(bin_file);
       }
-    } else {
-      cutoff = 0.00067;
     }
     std::cerr << "cutoff " << cutoff << std::endl;
-    auto communities = pi.assign_communities(cutoff);
-    basic_stats(std::cerr, communities, "communities from pi");
-    std::vector<mcmc::Vertex> nodemap;
-    if (nodemap_file != "") {
-      nodemap = pi.read_nodemap(nodemap_file);
-    }
+    if (cutoff >= 0.0) {
+      auto communities = pi.assign_communities(cutoff);
+      basic_stats(std::cerr, communities, "communities from pi");
+      std::vector<mcmc::Vertex> nodemap;
+      if (nodemap_file != "") {
+        nodemap = pi.read_nodemap(nodemap_file);
+      }
 
-    if (communities_file != "") {
-      pi.save_communities(communities_file, communities, nodemap);
+      if (communities_file != "") {
+        pi.save_communities(communities_file, communities, nodemap);
+      }
     }
 
     if (outfile != "") {
