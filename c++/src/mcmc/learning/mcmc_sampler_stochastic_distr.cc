@@ -1010,6 +1010,48 @@ std::ostream& MCMCSamplerStochasticDistributed::PrintStats(
 }
 
 
+void MCMCSamplerStochasticDistributed::save_pi() {
+  std::ofstream save;
+  boost::filesystem::path dir(args_.dump_pi_file_);
+  boost::filesystem::create_directories(dir.parent_path());
+  save.open(args_.dump_pi_file_, std::ios::out | std::ios::binary);
+  const ::size_t chunk_size = max_minibatch_chunk_;
+  std::vector<Float*> pi(chunk_size);
+  for (auto & p : pi) {
+    p = new Float[K + 1];
+  }
+  std::vector<int> nodes(chunk_size);
+  ::size_t stored = 0;
+  std::cerr << "Save pi to file " << args_.dump_pi_file_ << std::endl;
+  std::cerr << "mpi rank " << mpi_rank_ << " size " << mpi_size_ << std::endl;
+  save.write(reinterpret_cast<char *>(&N), sizeof N);
+  save.write(reinterpret_cast<char *>(&K), sizeof K);
+  int32_t hosts_pi = master_hosts_pi_;
+  save.write(reinterpret_cast<char *>(&hosts_pi), sizeof hosts_pi);
+  save.write(reinterpret_cast<char *>(&mpi_size_), sizeof mpi_size_);
+  save.write(reinterpret_cast<char *>(&mpi_rank_), sizeof mpi_rank_);
+  // padding
+  for (auto i = 0; i < 3; i++) {
+    save.write(reinterpret_cast<char *>(&i), sizeof i);
+  }
+  while (stored < N) {
+    ::size_t chunk = std::min(chunk_size, N - stored);
+    for (::size_t i = 0; i < chunk; ++i) {
+      nodes[i] = stored + i;
+    }
+    d_kv_store_->ReadKVRecords(0, pi, nodes);
+    for (::size_t i = 0; i < chunk; ++i) {
+      save.write(reinterpret_cast<char *>(&stored), sizeof stored);
+      save.write(reinterpret_cast<char *>(pi[i]), (K + 1)* sizeof pi[i][0]);
+      stored++;
+    }
+    d_kv_store_->PurgeKVRecords(0);
+  }
+  save.close();
+  std::cerr << "Saved pi to file " << args_.dump_pi_file_ << std::endl;
+}
+
+
 void MCMCSamplerStochasticDistributed::run() {
   /** run mini-batch based MCMC sampler, based on the sungjin's note */
 
@@ -1198,48 +1240,6 @@ void MCMCSamplerStochasticDistributed::init_pi() {
   for (auto & p : pi) {
     delete[] p;
   }
-}
-
-
-void MCMCSamplerStochasticDistributed::save_pi() {
-  std::ofstream save;
-  boost::filesystem::path dir(args_.dump_pi_file_);
-  boost::filesystem::create_directories(dir.parent_path());
-  save.open(args_.dump_pi_file_, std::ios::out | std::ios::binary);
-  const ::size_t chunk_size = max_minibatch_chunk_;
-  std::vector<Float*> pi(chunk_size);
-  for (auto & p : pi) {
-    p = new Float[K + 1];
-  }
-  std::vector<int> nodes(chunk_size);
-  ::size_t stored = 0;
-  std::cerr << "Save pi to file " << args_.dump_pi_file_ << std::endl;
-  std::cerr << "mpi rank " << mpi_rank_ << " size " << mpi_size_ << std::endl;
-  save.write(reinterpret_cast<char *>(&N), sizeof N);
-  save.write(reinterpret_cast<char *>(&K), sizeof K);
-  int32_t hosts_pi = master_hosts_pi_;
-  save.write(reinterpret_cast<char *>(&hosts_pi), sizeof hosts_pi);
-  save.write(reinterpret_cast<char *>(&mpi_size_), sizeof mpi_size_);
-  save.write(reinterpret_cast<char *>(&mpi_rank_), sizeof mpi_rank_);
-  // padding
-  for (auto i = 0; i < 3; i++) {
-    save.write(reinterpret_cast<char *>(&i), sizeof i);
-  }
-  while (stored < N) {
-    ::size_t chunk = std::min(chunk_size, N - stored);
-    for (::size_t i = 0; i < chunk; ++i) {
-      nodes[i] = stored + i;
-    }
-    d_kv_store_->ReadKVRecords(0, pi, nodes);
-    for (::size_t i = 0; i < chunk; ++i) {
-      save.write(reinterpret_cast<char *>(&stored), sizeof stored);
-      save.write(reinterpret_cast<char *>(pi[i]), (K + 1)* sizeof pi[i][0]);
-      stored++;
-    }
-    d_kv_store_->PurgeKVRecords(0);
-  }
-  save.close();
-  std::cerr << "Saved pi to file " << args_.dump_pi_file_ << std::endl;
 }
 
 

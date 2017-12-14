@@ -301,7 +301,6 @@ class Options {
   std::string input_class_;
   bool input_contiguous_;
   bool input_compressed_;
-  std::string pi_dump_file_;
 
   int random_seed;
   double convergence_threshold;
