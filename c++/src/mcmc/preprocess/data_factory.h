@@ -29,11 +29,13 @@ class DataFactory {
   void deleteData(const mcmc::Data *data);
 
  protected:
+  void dump_nodemap(const std::unordered_map<Vertex, Vertex> &node_map) const;
   std::string dataset_class_;
   std::string filename_;
   bool		compressed_ = false;
   bool		contiguous_ = false;
   ::size_t	progress_ = 0;
+  std::string   dump_nodemap_file_;
 };
 
 }	// namespace preprocess

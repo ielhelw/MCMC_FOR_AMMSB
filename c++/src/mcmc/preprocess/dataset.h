@@ -14,6 +14,7 @@
 
 #include <iostream>
 #include <string>
+#include <unordered_map>
 
 #include "mcmc/data.h"
 
@@ -47,11 +48,17 @@ class DataSet {
 
   void setProgress(::size_t progress);
 
+  const std::unordered_map<Vertex, Vertex> &nodeMap() const {
+    return node_id_map_;
+  }
+
  protected:
   std::string filename_;
+  std::string dump_nodemap_file_;
   bool compressed_;
   bool contiguous_;
   ::size_t progress_;
+  std::unordered_map<Vertex, Vertex> node_id_map_;
 };
 
 }  // namespace preprocess

@@ -183,6 +183,12 @@ class Options {
       ("mcmc.convergence",
        po::value<double>(&convergence_threshold)->default_value(0.000000000001),
        "convergence threshold")
+      ("mcmc.dump-pi",
+       po::value<std::string>(&dump_pi_file_)->default_value(""),
+       "file(s) to dump pi to")
+      ("mcmc.dump-nodemap",
+       po::value<std::string>(&dump_nodemap_file_)->default_value(""),
+       "file(s) to node map to")
       ;
     desc_all.add(desc_mcmc);
 
@@ -304,6 +310,8 @@ class Options {
   mutable ::size_t	max_pi_cache_entries_;
   bool REPLICATED_NETWORK;
 #endif
+  std::string dump_pi_file_;
+  std::string dump_nodemap_file_;
   po::options_description desc_all;
   po::options_description desc_mcmc;
   po::options_description desc_io;

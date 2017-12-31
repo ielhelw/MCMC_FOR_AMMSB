@@ -103,6 +103,10 @@ const Data *Relativity::process() {
       print_mem_usage(std::cerr);
     }
 
+    for (Vertex i = 0; i < static_cast<Vertex>(N); ++i) {
+      node_id_map_[i] = i + contiguous_offset_;
+    }
+
   } else {
     std::unordered_set<Vertex> vertex;
 
@@ -142,10 +146,9 @@ const Data *Relativity::process() {
     N = nodelist.size();
 
     // change the node ID to make it start from 0
-    std::unordered_map<Vertex, Vertex> node_id_map;
     Vertex i = 0;
     for (auto node_id : nodelist) {
-      node_id_map[node_id] = i;
+      node_id_map_[node_id] = i;
       i++;
     }
     std::cerr << duration_cast<milliseconds>((system_clock::now() - start))
@@ -156,11 +159,11 @@ const Data *Relativity::process() {
     ::size_t self_links = 0;
     count = 0;
     for (auto i : edge) {
-      Vertex node1 = node_id_map[i.first];
-      Vertex node2 = node_id_map[i.second];
+      Vertex node1 = node_id_map_[i.first];
+      Vertex node2 = node_id_map_[i.second];
       Edge eIdent(i.first, i.second);
       if (node1 == node2) {
-        std::cerr << "Self-link " << eIdent << ": ignore" << std::endl;
+        std::cerr << "    Self-link " << eIdent << ": ignore" << std::endl;
         self_links++;
         continue;
       }

@@ -74,6 +74,7 @@ class MCMCSamplerStochastic : public Learner {
   virtual ~MCMCSamplerStochastic();
 
   virtual void init();
+  virtual void save_pi();
 
   void sampler_stochastic_info(std::ostream &s);
 

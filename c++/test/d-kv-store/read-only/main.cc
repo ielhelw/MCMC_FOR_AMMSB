@@ -34,8 +34,9 @@ namespace po = boost::program_options;
 
 using mcmc::timer::Timer;
 
-static double GB(::size_t n, ::size_t k) {
-  return static_cast<double>(n * k * sizeof(double)) /
+template <typename ValueType>
+double GB(::size_t n, ::size_t k) {
+  return static_cast<ValueType>(n * k * sizeof(ValueType)) /
     (1 << 30);
 }
 
@@ -237,7 +238,7 @@ class DKVWrapper {
       }
       duration dur = std::chrono::duration_cast<duration>(hires::now() - t);
       std::cout << "Populate " << N << "x" << K << " takes " <<
-        (1000.0 * dur.count()) << "ms thrp " << (GB(N, K) / dur.count()) <<
+        (1000.0 * dur.count()) << "ms thrp " << (GB<ValueType>(N, K) / dur.count()) <<
         " GB/s" << std::endl;
 
       d_kv_store_->barrier();
@@ -282,13 +283,16 @@ class DKVWrapper {
           std::cout << "*********" << iter << ":  Start reading KVs... " <<
             std::endl;
           // Read the values for the neighbors
+          if (neighbor->size() != average_m * n) {
+            throw DKV::DKVException("neighbor size wrong");
+          }
           auto t = hires::now();
           d_kv_store_->ReadKVRecords(cache, *neighbor,
                                     DKV::RW_MODE::READ_ONLY);
           duration dur = std::chrono::duration_cast<duration>(hires::now() - t);
           std::cout << average_m << " Read " << average_m << "x" << n <<
-            "x" << K << " takes " << (1000.0 * dur.count()) << "ms thrp " <<
-            (GB(average_m * n, K) / dur.count()) << " GB/s" << std::endl;
+            "x" << K << "x" << sizeof(ValueType) << " takes " << (1000.0 * dur.count()) << "ms thrp " <<
+            (GB<ValueType>(average_m * n, K) / dur.count()) << " GB/s" << std::endl;
           if (false) {
             for (::size_t i = 0; i < average_m * n; ++i) {
               std::cerr << "Key " << (*neighbor)[i] << " pi = {";
@@ -327,7 +331,7 @@ class DKVWrapper {
           duration dur = std::chrono::duration_cast<duration>(hires::now() - t);
           std::cout << average_m << " Write " << average_m << "x" << n <<
             "x" << K << " takes " << (1000.0 * dur.count()) << "ms thrp " <<
-            (GB(average_m * n, K) / dur.count()) << " GB/s" << std::endl;
+            (GB<ValueType>(average_m * n, K) / dur.count()) << " GB/s" << std::endl;
           if (false) {
             for (::size_t i = 0; i < average_m * n; ++i) {
               std::cerr << "Key " << (*neighbor)[i] << " pi = {";

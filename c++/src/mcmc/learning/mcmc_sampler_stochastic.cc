@@ -90,6 +90,38 @@ void MCMCSamplerStochastic::sampler_stochastic_info(std::ostream &s) {
   s << "minibatch size: " << mini_batch_size << std::endl;
 }
 
+
+void MCMCSamplerStochastic::save_pi() {
+  std::ofstream save;
+  boost::filesystem::path dir(args_.dump_pi_file_);
+  boost::filesystem::create_directories(dir.parent_path());
+  save.open(args_.dump_pi_file_, std::ios::out | std::ios::binary);
+  std::cerr << "Save pi to file " << args_.dump_pi_file_ << std::endl;
+
+  int32_t mpi_rank = 0;
+  int32_t mpi_size = 1;
+  std::cerr << "mpi rank " << mpi_rank << " size " << mpi_size << std::endl;
+  save.write(reinterpret_cast<char *>(&N), sizeof N);
+  save.write(reinterpret_cast<char *>(&K), sizeof K);
+  int32_t hosts_pi = 0;
+  save.write(reinterpret_cast<char *>(&hosts_pi), sizeof hosts_pi);
+  save.write(reinterpret_cast<char *>(&mpi_size), sizeof mpi_size);
+  save.write(reinterpret_cast<char *>(&mpi_rank), sizeof mpi_rank);
+  // padding
+  for (auto i = 0; i < 3; i++) {
+    save.write(reinterpret_cast<char *>(&i), sizeof i);
+  }
+
+  for (::size_t i = 0; i < N; ++i) {
+    save.write(reinterpret_cast<char *>(&i), sizeof i);
+    save.write(reinterpret_cast<char *>(pi[i].data()), K * sizeof pi[i][0]);
+    Float phi_i_sum = np::sum(phi[i]);
+    save.write(reinterpret_cast<char *>(&phi_i_sum), sizeof phi_i_sum);
+  }
+  save.close();
+  std::cerr << "Saved pi to file " << args_.dump_pi_file_ << std::endl;
+}
+
 void MCMCSamplerStochastic::run() {
   /** run mini-batch based MCMC sampler, based on the sungjin's note */
   t_outer = timer::Timer("  outer");
@@ -180,6 +212,10 @@ void MCMCSamplerStochastic::run() {
   }
 
   PrintStats(std::cout);
+
+  if (args_.dump_pi_file_ != "") {
+    save_pi();
+  }
 }
 
 std::ostream& MCMCSamplerStochastic::PrintStats(std::ostream& out) const {
