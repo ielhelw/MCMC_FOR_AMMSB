@@ -110,6 +110,7 @@ class MCMCSamplerStochasticDistributed : public MCMCSamplerStochastic {
   virtual ~MCMCSamplerStochasticDistributed();
 
   void init() override;
+  void save_pi() override;
 
   void run() override;
 
