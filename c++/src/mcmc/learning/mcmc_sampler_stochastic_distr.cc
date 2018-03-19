@@ -858,16 +858,16 @@ void MCMCSamplerStochasticDistributed::InitDKVStore() {
                         "refactor so update_beta is chunked");
   }
 
-  ::size_t max_pi_cache = std::max(max_my_minibatch_nodes +
-                                     max_minibatch_neighbors,
-                                   max_my_perp_nodes);
+  max_dkv_pi_cache_ = std::max(max_my_minibatch_nodes +
+                               max_minibatch_neighbors,
+                               max_my_perp_nodes);
 
   std::cerr << "minibatch size param " << mini_batch_size <<
     " max " << max_minibatch_nodes_ <<
     " my max " << max_my_minibatch_nodes <<
     " chunk " << max_minibatch_chunk_ <<
     " #neighbors(total) " << max_minibatch_neighbors <<
-    " cache max entries " << max_pi_cache <<
+    " cache max entries " << max_dkv_pi_cache_ <<
     " computed max pi cache entries " << args_.max_pi_cache_entries_ <<
     std::endl;
   std::cerr << "perplexity nodes total " <<
@@ -877,7 +877,7 @@ void MCMCSamplerStochasticDistributed::InitDKVStore() {
     " chunk " << max_perplexity_chunk_ << std::endl;
   std::cerr << "phi pipeline depth " << num_buffers_ << std::endl;
 
-  d_kv_store_->Init(K + 1, N, num_buffers_, max_pi_cache,
+  d_kv_store_->Init(K + 1, N, num_buffers_, max_dkv_pi_cache_,
                     max_dkv_write_entries_);
   t_init_dkv_.stop();
 
@@ -1015,12 +1015,8 @@ void MCMCSamplerStochasticDistributed::save_pi() {
   boost::filesystem::path dir(args_.dump_pi_file_);
   boost::filesystem::create_directories(dir.parent_path());
   save.open(args_.dump_pi_file_, std::ios::out | std::ios::binary);
-  const ::size_t chunk_size = max_minibatch_chunk_;
+  const ::size_t chunk_size = max_dkv_pi_cache_;
   std::vector<Float*> pi(chunk_size);
-  for (auto & p : pi) {
-    p = new Float[K + 1];
-  }
-  std::vector<int> nodes(chunk_size);
   ::size_t stored = 0;
   std::cerr << "Save pi to file " << args_.dump_pi_file_ << std::endl;
   std::cerr << "mpi rank " << mpi_rank_ << " size " << mpi_size_ << std::endl;
@@ -1036,6 +1032,7 @@ void MCMCSamplerStochasticDistributed::save_pi() {
   }
   while (stored < N) {
     ::size_t chunk = std::min(chunk_size, N - stored);
+    std::vector<int> nodes(chunk);
     for (::size_t i = 0; i < chunk; ++i) {
       nodes[i] = stored + i;
     }
@@ -1242,6 +1239,82 @@ void MCMCSamplerStochasticDistributed::init_pi() {
   }
 }
 
+void MCMCSamplerStochasticDistributed::pi_stats(PiStats *stats) {
+  std::vector<Float*> pi(max_dkv_pi_cache_);
+  ::size_t servers = master_hosts_pi_ ? mpi_size_ : mpi_size_ - 1;
+  ::size_t my_max = N / servers;
+  int my_server = master_hosts_pi_ ? mpi_rank_ : mpi_rank_ - 1;
+  if (my_server < 0) {
+    my_max = 0;
+  } else if (static_cast<::size_t>(my_server) < N - my_max * servers) {
+    ++my_max;
+  }
+  ::size_t my_pi_elts = my_max;
+  int last_node = my_server;
+  ::size_t thread_count = omp_get_max_threads();
+  // ::size_t thread_count = max_dkv_pi_cache_;
+  std::vector<double> sum = std::vector<double>(thread_count);
+  std::vector<double> sumsq = std::vector<double>(thread_count);
+  double check_sum = 0.0;
+  if (sum[0] != 0.0) {
+    std::cerr << "Ooppss... this vector elt should be 0" << std::endl;
+  }
+  while (my_max > 0) {
+    ::size_t chunk = std::min(max_dkv_pi_cache_, my_max);
+    my_max -= chunk;
+
+    std::vector<int32_t> node(chunk);
+    for (::size_t j = 0; j < chunk; ++j) {
+      node[j] = last_node;
+      last_node += servers;
+    }
+
+    d_kv_store_->ReadKVRecords(0, pi, node);
+
+// #pragma omp parallel for // num_threads (12)
+    for (::size_t j = 0; j < chunk; ++j) {
+      double sum_j = 0.0;
+      double sumsq_j = 0.0;
+      for (::size_t k = 0; k < K; ++k) {
+        check_sum += pi[j][k];
+        sum_j += pi[j][k];
+        sumsq_j += pi[j][k] * pi[j][k];
+      }
+      sum[omp_get_thread_num()] += sum_j;
+      sumsq[omp_get_thread_num()] += sumsq_j;
+    }
+
+    d_kv_store_->PurgeKVRecords(0);
+  }
+
+  // Do a local reduce(+)
+  // Abuse the existing accu (which was tuned for perplexity)
+  perp_.accu_[0].link.count = my_pi_elts * K;       // N
+  perp_.accu_[0].link.likelihood = 0.0;         // sum
+  perp_.accu_[0].non_link.likelihood = 0.0;     // sumsq
+  for (::size_t j = 0; j < sum.size(); ++j) {
+    perp_.accu_[0].link.likelihood += (Float)sum[j];
+    perp_.accu_[0].non_link.likelihood += (Float)sumsq[j];
+  }
+  std::cerr.setf(std::ios_base::fmtflags(0), std::ios_base::floatfield);
+  std::cerr << std::setprecision(6);
+
+  // Do a distributed reduce(+)
+  perp_accu accu;
+  t_reduce_perp_.start();
+  reduce_plus(perp_.accu_[0], &accu);
+  t_reduce_perp_.stop();
+
+  std::cerr << mpi_rank_ << ": N " << perp_.accu_[0].link.count << " sum " << perp_.accu_[0].link.likelihood << " (check " << check_sum << " sum[0] " << sum[0] << ") sumsq " << perp_.accu_[0].non_link.likelihood << std::endl;
+
+  auto global_sum = accu.link.likelihood;
+  auto global_sumsq = accu.non_link.likelihood;
+  auto N = accu.link.count;
+  stats->N_ = N;
+  stats->mean_ = global_sum / N;
+  stats->stdev_ = stdev(global_sum, global_sumsq, N);
+}
+
 
 void MCMCSamplerStochasticDistributed::check_perplexity(bool force) {
   if (force || (step_count - 1) % interval == 0) {
@@ -1251,6 +1324,10 @@ void MCMCSamplerStochasticDistributed::check_perplexity(bool force) {
     // TODO load pi for the held-out set to calculate perplexity
     Float ppx_score = cal_perplexity_held_out();
     t_perplexity_.stop();
+    PiStats psts;
+    if (args_.pi_stats_) {
+      pi_stats(&psts);
+    }
     if (mpi_rank_ == mpi_master_) {
       auto t_now = system_clock::now();
       auto t_ms = duration_cast<milliseconds>(t_now - t_start_).count();
@@ -1262,6 +1339,10 @@ void MCMCSamplerStochasticDistributed::check_perplexity(bool force) {
                 ppx_score << std::endl;
       double seconds = t_ms / 1000.0;
       timings_.push_back(seconds);
+      if (args_.pi_stats_) {
+        std::cout << "Pi N " << psts.N_ << " average "
+                  << psts.mean_ << " stdev " << psts.stdev_ << std::endl;
+      }
     }
 
     ppxs_heldout_cb_.push_back(ppx_score);

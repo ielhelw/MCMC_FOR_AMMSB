@@ -16,6 +16,12 @@
 namespace mcmc {
 namespace learning {
 
+struct PiStats {
+  Float               mean_;
+  Float               stdev_;
+  ::size_t            N_;
+};
+
 /**
  * This is base class for all concrete learners, including MCMC sampler,
  * variational
@@ -43,6 +49,7 @@ class Learner {
    * 4. Stochastic variational inference
    */
   virtual void run() = 0;
+  virtual void pi_stats(PiStats *stats);
 
  protected:
   // Three-phase init: InitRandom, network::Init, Learner::Init
@@ -57,6 +64,10 @@ class Learner {
   Float cal_perplexity_held_out();
 
   bool is_converged() const;
+
+  static double stdev(double sum, double sumsq, ::size_t n) {
+    return std::sqrt((sumsq - sum * sum / n) / (n - 1));
+  }
 
   /**
    * calculate the perplexity for data.

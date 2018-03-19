@@ -284,6 +284,8 @@ class MCMCSamplerStochasticDistributed : public MCMCSamplerStochastic {
 
   void init() override;
   void save_pi() override;
+  // Calculate statistics (mean, stdev) over pi
+  void pi_stats(PiStats *stats) override;
 
   void run() override;
 
@@ -368,7 +370,8 @@ class MCMCSamplerStochasticDistributed : public MCMCSamplerStochastic {
   ::size_t	max_minibatch_nodes_;
   ::size_t	max_minibatch_chunk_;
   ::size_t	max_perplexity_chunk_;
-  ::size_t  max_dkv_write_entries_;
+  ::size_t      max_dkv_write_entries_;
+  ::size_t      max_dkv_pi_cache_;
 
   std::vector<Float*> pi_update_;
   std::vector<std::vector<Float>> phi_node_;

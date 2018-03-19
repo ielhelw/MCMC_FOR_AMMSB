@@ -133,6 +133,7 @@ Float Learner::cal_perplexity_held_out() {
 bool Learner::is_converged() const {
   ::size_t n = ppxs_heldout_cb_.size();
   if (n < 2) return false;
+  if (CONVERGENCE_THRESHOLD <= 0.0) return false;
   return std::abs(ppxs_heldout_cb_[n - 1] - ppxs_heldout_cb_[n - 2]) /
              ppxs_heldout_cb_[n - 2] <=
          CONVERGENCE_THRESHOLD;
@@ -183,6 +184,21 @@ Float Learner::cal_perplexity(const EdgeMap &data) {
   average_count = average_count + 1;
 
   return (-avg_likelihood);
+}
+
+void Learner::pi_stats(PiStats *stats) {
+  double sum = 0.0;
+  double sumsq = 0.0;
+  for (::size_t j = 0; j < N; ++j) {
+    for (::size_t k = 0; k < K; ++k) {
+      sum += pi[j][k];
+      sumsq += pi[j][k] * pi[j][k];
+    }
+  }
+
+  stats->N_ = N * K;
+  stats->mean_ = (Float)(sum / stats->N_);
+  stats->stdev_ = (Float)stdev(sum, sumsq, stats->N_);
 }
 
 }  // namespace learning

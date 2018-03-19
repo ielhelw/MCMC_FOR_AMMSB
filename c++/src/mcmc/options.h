@@ -180,6 +180,9 @@ class Options {
       ("mcmc.convergence",
        po::value<double>(&convergence_threshold)->default_value(0.000000000001),
        "convergence threshold")
+      ("mcmc.pi-stats",
+       po::bool_switch(&pi_stats_)->default_value(false),
+       "calculate pi average and standard deviation with perplexity")
       ("mcmc.dump-pi",
        po::value<std::string>(&dump_pi_file_)->default_value(""),
        "file(s) to dump pi to")
@@ -314,6 +317,7 @@ class Options {
   ::size_t num_buffers_;
   bool REPLICATED_NETWORK;
 #endif
+  bool pi_stats_;
   std::string dump_pi_file_;
   std::string dump_nodemap_file_;
   po::options_description desc_all;

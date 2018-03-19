@@ -19,7 +19,7 @@ struct Stats {
   float         stdev;
 };
 
-static float stdev(float sum, float sumsq, ::size_t n) {
+static double stdev(double sum, double sumsq, ::size_t n) {
   return std::sqrt((sumsq - sum * sum / n) / (n - 1));
 }
 
@@ -159,8 +159,8 @@ class Pi {
 
   Stats stats(void) const {
     Stats stats;
-    float sum = 0;
-    float sumsq = 0;
+    double sum = 0;
+    double sumsq = 0;
     if (incremental_read_) {
       std::ifstream saved;
       saved.open(filename_, std::ios::in | std::ios::binary);
@@ -199,8 +199,9 @@ class Pi {
     }
 
     ::size_t n = N_ * K_;
-    stats.stdev = stdev(sum, sumsq, n);
-    stats.mean  = sum / n;
+    stats.stdev = (float)stdev(sum, sumsq, n);
+    stats.mean  = (float)(sum / n);
+    std::cerr << "N " << n << " sum " << sum << " sumsq " << sumsq << std::endl;
 
     return stats;
   }

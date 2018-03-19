@@ -140,6 +140,10 @@ void MCMCSamplerStochastic::run() {
     if ((step_count - 1) % interval == 0) {
       t_perplexity.start();
       Float ppx_score = cal_perplexity_held_out();
+      PiStats psts;
+      if (args_.pi_stats_) {
+        pi_stats(&psts);
+      }
       t_perplexity.stop();
       auto t_now = system_clock::now();
       auto t_ms = duration_cast<milliseconds>(t_now - t_start_).count();
@@ -149,6 +153,10 @@ void MCMCSamplerStochastic::run() {
                 << " time: " << std::setprecision(3) << (t_ms / 1000.0)
                 << " perplexity for hold out set: " << std::setprecision(12) <<
                 ppx_score << std::endl;
+      if (args_.pi_stats_) {
+           std::cout << "Pi N " << psts.N_ << " average " 
+                     << psts.mean_ << " stdev " << psts.stdev_ << std::endl;
+      }
       ppxs_heldout_cb_.push_back(ppx_score);
 
       t2 = clock();
