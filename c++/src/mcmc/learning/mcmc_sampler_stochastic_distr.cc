@@ -1079,6 +1079,7 @@ void MCMCSamplerStochasticDistributed::run() {
 
     // requires beta at the workers
     check_perplexity(false);
+    check_dynamic_step();
 
     t_update_phi_pi_.start();
     update_phi(&phi_node_);

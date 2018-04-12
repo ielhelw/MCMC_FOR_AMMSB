@@ -29,6 +29,15 @@ typedef std::unordered_map<Edge, int> EdgeMapZ;
 #endif
 #endif
 
+struct DynamicStep {
+  bool on;
+  double factor;
+  double bound;
+  double minimum;
+  ::size_t last_adaptation;
+  ::size_t interval;
+};
+
 class MCMCSamplerStochastic : public Learner {
  public:
   /**
@@ -95,9 +104,11 @@ class MCMCSamplerStochastic : public Learner {
   MinibatchNodeSet nodes_in_batch(const MinibatchSet &mini_batch) const;
 
   Float get_eps_t() {
-    return a * std::pow(1 + step_count / b, -c);	// step size
+    return dynamic_step_.factor * a * std::pow(1 + step_count / b, -c);	// step size
     // return std::pow(1024+step_count, -0.5);
   }
+
+  void check_dynamic_step();
 
   // replicated in both mcmc_sampler_
   Float a;
@@ -111,6 +122,9 @@ class MCMCSamplerStochastic : public Learner {
   std::vector<std::vector<Float> > phi;    // parameterization for \pi
 
   std::chrono::time_point<std::chrono::system_clock> t_start_;
+
+ private:
+  DynamicStep dynamic_step_;
 };
 
 }  // namespace learning

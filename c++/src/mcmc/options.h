@@ -149,6 +149,14 @@ class Options {
       ("mcmc.a", po::value<Float>(&a)->default_value(0.0), "a")
       ("mcmc.b", po::value<Float>(&b)->default_value(1024), "b")
       ("mcmc.c", po::value<Float>(&c)->default_value(0.5), "c")
+      ("mcmc.dynamic-step",
+       po::bool_switch(&dynamic_step_)->default_value(false))
+      ("mcmc.dynamic-step-bound",
+       po::value<double>(&dynamic_step_bound_)->default_value(0.0))
+      ("mcmc.dynamic-step-interval",
+       po::value< ::size_t>(&dynamic_step_interval_)->default_value(8))
+      ("mcmc.dynamic-step-minimum",
+       po::value<double>(&dynamic_step_minimum_)->default_value(1.0e-09))
       ("mcmc.K,K", po::value< ::size_t>(&K)->default_value(300), "K")
       ("mcmc.mini-batch-size,m",
        po::value< ::size_t>(&mini_batch_size)->default_value(0),
@@ -296,6 +304,10 @@ class Options {
   Float a;
   Float b;
   Float c;
+  bool dynamic_step_;
+  double dynamic_step_bound_;
+  ::size_t dynamic_step_interval_;
+  double dynamic_step_minimum_;
 
   ::size_t num_updates;
   double held_out_ratio;

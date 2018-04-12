@@ -36,6 +36,7 @@ my $iterations;
 my $convergence;
 my $strategy = "(stratified node)";
 my $max_average_domain = "auto";
+my $dynamic_step_bound = 0.0;
 
 my ( $tmphandle, $tmpfile ) = tempfile( UNLINK => 1 );
 
@@ -179,6 +180,9 @@ while (<>) {
 	} elsif (m/^sampling strategy (.*)$/) {
 		$strategy = $1;
 
+	} elsif (m/^dynamic step decrease.*bound ($floatmatch) interval.*/) {
+		$dynamic_step_bound = $1;
+
 	} else {
 		# print "Ignore this line: \"$_\"\n";
 	}
@@ -219,6 +223,9 @@ if ($eps_t ne "") {
 print " eta=($eta0,$eta1) alpha=$alpha";
 if ($max_average_domain ne "auto") {
 	print " max[av]=$max_average_domain";
+}
+if ($dynamic_step_bound != 0.0) {
+	print " dyn-step=$dynamic_step_bound";
 }
 if ($np ne "") {
 	print " np=$np";

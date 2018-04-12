@@ -8,17 +8,34 @@ namespace learning {
 
 MCMCSamplerStochastic::MCMCSamplerStochastic(const Options &args)
     : Learner(args) {
-  // step size parameters.
-  this->a = args_.a;
-  this->b = args_.b;
-  this->c = args_.c;
-
   // control parameters for learning
   if (args_.interval == 0) {
     interval = 50;
   } else {
     interval = args_.interval;
   }
+
+  // step size parameters.
+  this->a = args_.a;
+  this->b = args_.b;
+  this->c = args_.c;
+  this->dynamic_step_.on = args_.dynamic_step_;
+  this->dynamic_step_.factor = 1.0;
+  this->dynamic_step_.bound = args_.dynamic_step_bound_;
+  this->dynamic_step_.minimum = args_.dynamic_step_minimum_;
+  this->dynamic_step_.interval = args_.dynamic_step_interval_;
+  if (this->dynamic_step_.interval == 0) {
+    this->dynamic_step_.interval = interval / 4;
+  }
+  if (this->dynamic_step_.bound == 0.0) {
+    if (CONVERGENCE_THRESHOLD == 0) {
+      this->dynamic_step_.bound = 1e-10;
+    } else {
+      this->dynamic_step_.bound = CONVERGENCE_THRESHOLD * 2.0;
+    }
+  }
+
+  this->dynamic_step_.last_adaptation = 0;
 }
 
 void MCMCSamplerStochastic::init() {
@@ -83,8 +100,33 @@ void MCMCSamplerStochastic::sampler_stochastic_info(std::ostream &s) {
   s << "a " << a << " b " << b << " c " << c;
   s << " eta (" << eta[0] << "," << eta[1] << ")" << std::endl;
   s << "minibatch size: " << mini_batch_size << std::endl;
+  s << "dynamic step decrease " << dynamic_step_.on;
+  if (dynamic_step_.on) {
+    s << " factor " << dynamic_step_.factor;
+    s << " bound " << dynamic_step_.bound;
+    s << " interval " << dynamic_step_.interval;
+  }
+  s << std::endl;
 }
 
+
+void MCMCSamplerStochastic::check_dynamic_step() {
+  if (! dynamic_step_.on) {
+    return;
+  }
+  ::size_t n = ppxs_heldout_cb_.size();
+  if (n < 2) return;
+  if (average_count - dynamic_step_.last_adaptation < dynamic_step_.interval) return;
+  if (dynamic_step_.bound <= 0.0) return;
+  if ((ppxs_heldout_cb_[n - 2] - ppxs_heldout_cb_[n - 1]) /
+             ppxs_heldout_cb_[n - 2] <= dynamic_step_.bound) {
+    dynamic_step_.last_adaptation = average_count;
+    if (dynamic_step_.factor > dynamic_step_.minimum) {
+      dynamic_step_.factor = 0.5 * dynamic_step_.factor;
+      std::cerr << "Decrease dynamic step factor to " << dynamic_step_.factor << " step size now " << get_eps_t() << std::endl;
+    }
+  }
+}
 
 void MCMCSamplerStochastic::save_pi() {
   std::ofstream save;
@@ -145,6 +187,7 @@ void MCMCSamplerStochastic::run() {
         pi_stats(&psts);
       }
       t_perplexity.stop();
+      check_dynamic_step();
       auto t_now = system_clock::now();
       auto t_ms = duration_cast<milliseconds>(t_now - t_start_).count();
       std::cout << "average_count is: " << average_count << " ";
