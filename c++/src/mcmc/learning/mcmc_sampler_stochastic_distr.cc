@@ -1010,15 +1010,19 @@ std::ostream& MCMCSamplerStochasticDistributed::PrintStats(
 }
 
 
-void MCMCSamplerStochasticDistributed::save_pi() {
+void MCMCSamplerStochasticDistributed::save_pi(::size_t step_count) {
   std::ofstream save;
   boost::filesystem::path dir(args_.dump_pi_file_);
   boost::filesystem::create_directories(dir.parent_path());
-  save.open(args_.dump_pi_file_, std::ios::out | std::ios::binary);
   const ::size_t chunk_size = max_dkv_pi_cache_;
   std::vector<Float*> pi(chunk_size);
   ::size_t stored = 0;
-  std::cerr << "Save pi to file " << args_.dump_pi_file_ << std::endl;
+  std::string filename = args_.dump_pi_file_;
+  if (step_count != 0) {
+    filename = filename + "." + std::to_string(step_count);
+  }
+  std::cerr << "Save pi to file " << filename << std::endl;
+  save.open(filename, std::ios::out | std::ios::binary);
   std::cerr << "mpi rank " << mpi_rank_ << " size " << mpi_size_ << std::endl;
   save.write(reinterpret_cast<char *>(&N), sizeof N);
   save.write(reinterpret_cast<char *>(&K), sizeof K);
@@ -1045,7 +1049,7 @@ void MCMCSamplerStochasticDistributed::save_pi() {
     d_kv_store_->PurgeKVRecords(0);
   }
   save.close();
-  std::cerr << "Saved pi to file " << args_.dump_pi_file_ << std::endl;
+  std::cerr << "Saved pi to file " << filename << std::endl;
 }
 
 
@@ -1067,6 +1071,9 @@ void MCMCSamplerStochasticDistributed::run() {
 
   while (step_count < max_iteration && ! is_converged()) {
 
+    if (args_.dump_pi_file_ != "" && (step_count - 1) % args_.dump_pi_interval_ == 0) {
+      save_pi(step_count);
+    }
     t_outer_.start();
     // auto l1 = std::chrono::system_clock::now();
     //if (step_count > 200000){

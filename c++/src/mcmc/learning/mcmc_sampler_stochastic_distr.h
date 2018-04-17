@@ -283,7 +283,7 @@ class MCMCSamplerStochasticDistributed : public MCMCSamplerStochastic {
   virtual ~MCMCSamplerStochasticDistributed();
 
   void init() override;
-  void save_pi() override;
+  void save_pi(::size_t step_count = 0) override;
   // Calculate statistics (mean, stdev) over pi
   void pi_stats(PiStats *stats) override;
 

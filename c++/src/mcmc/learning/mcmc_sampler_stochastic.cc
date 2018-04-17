@@ -128,12 +128,16 @@ void MCMCSamplerStochastic::check_dynamic_step() {
   }
 }
 
-void MCMCSamplerStochastic::save_pi() {
+void MCMCSamplerStochastic::save_pi(::size_t step_count) {
   std::ofstream save;
   boost::filesystem::path dir(args_.dump_pi_file_);
   boost::filesystem::create_directories(dir.parent_path());
-  save.open(args_.dump_pi_file_, std::ios::out | std::ios::binary);
-  std::cerr << "Save pi to file " << args_.dump_pi_file_ << std::endl;
+  std::string filename = args_.dump_pi_file_;
+  if (step_count != 0) {
+    filename = filename + "." + std::to_string(step_count);
+  }
+  std::cerr << "Save pi to file " << filename << std::endl;
+  save.open(filename, std::ios::out | std::ios::binary);
 
   int32_t mpi_rank = 0;
   int32_t mpi_size = 1;
@@ -156,7 +160,7 @@ void MCMCSamplerStochastic::save_pi() {
     save.write(reinterpret_cast<char *>(&phi_i_sum), sizeof phi_i_sum);
   }
   save.close();
-  std::cerr << "Saved pi to file " << args_.dump_pi_file_ << std::endl;
+  std::cerr << "Saved pi to file " << filename << std::endl;
 }
 
 void MCMCSamplerStochastic::run() {
@@ -206,6 +210,9 @@ void MCMCSamplerStochastic::run() {
       double diff = (double)t2 - (double)t1;
       double seconds = diff / CLOCKS_PER_SEC;
       timings.push_back(seconds);
+    }
+    if (args_.dump_pi_file_ != "" && (step_count - 1) % args_.dump_pi_interval_ == 0) {
+      save_pi(step_count);
     }
     t_mini_batch.start();
     EdgeSample edgeSample = network.sample_mini_batch(mini_batch_size,

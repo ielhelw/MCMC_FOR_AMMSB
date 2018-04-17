@@ -194,6 +194,9 @@ class Options {
       ("mcmc.dump-pi",
        po::value<std::string>(&dump_pi_file_)->default_value(""),
        "file(s) to dump pi to")
+      ("mcmc.dump-pi-interval",
+       po::value< ::size_t>(&dump_pi_interval_)->default_value(0),
+       "dump pi at regular intervals (default 0: only at end)")
       ("mcmc.dump-nodemap",
        po::value<std::string>(&dump_nodemap_file_)->default_value(""),
        "file(s) to node map to")
@@ -331,6 +334,7 @@ class Options {
 #endif
   bool pi_stats_;
   std::string dump_pi_file_;
+  ::size_t dump_pi_interval_;
   std::string dump_nodemap_file_;
   po::options_description desc_all;
   po::options_description desc_mcmc;
